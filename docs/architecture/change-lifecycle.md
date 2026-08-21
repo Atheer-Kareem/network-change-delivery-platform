@@ -11,8 +11,9 @@ flowchart TD
   T --> P[Immutable planning]
   P --> B[Batfish assurance]
   B --> R[Risk classification]
-  R --> C[Optional CML digital twin]
-  C --> A[Immutable approval]
+  R --> A[Immutable approval]
+  R -. risk-triggered .-> C[Optional CML digital twin]
+  C --> A
   A --> F[Fresh pre-write verification]
   F --> K[Representative canaries]
   K --> W[Deployment waves]

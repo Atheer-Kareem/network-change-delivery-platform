@@ -20,10 +20,12 @@ not production-ready and must contain no company device, credential,
 configuration, address, topology, internal document, or proprietary data.
 
 Git is authoritative for code, policy, reviewed change requests, and managed
-desired state. NetBox will be authoritative for infrastructure identity and
-metadata: sites, devices, roles, platforms, interfaces, addressing, prefixes,
-VLAN metadata, tags, relationships, management endpoints, environment, and
-criticality. Devices are observed reality, not authoritative desired state.
+device-configuration intent. NetBox will be authoritative for infrastructure
+identity, topology and IPAM relationships, platforms, roles, tags,
+target-selection data, and other inventory metadata. No managed property may be
+authoritative in both systems. Before automation consumes an overlapping NetBox
+or native device field, that property must have one explicit owner. Devices are
+observed reality, not authoritative desired state.
 
 ## Intended lifecycle and fleet behaviour
 
@@ -53,7 +55,10 @@ supported change; Cisco and Junos do not share identical transaction semantics.
 A delayed rollback is a new reviewed change that considers original state,
 later approved changes, current intent, and live state. It computes a safe
 inverse or blocks on conflict; `git revert` alone never authorizes device writes.
-Continuous observability operates independently of pipeline completion.
+Continuous observability operates independently of pipeline completion. The
+eventual reference implementation must route actionable alerts through
+Alertmanager to at least one configured demonstration notification receiver; the
+concrete receiver is deferred.
 
 ## First vertical and acceptance outcomes
 
@@ -62,6 +67,10 @@ IOS/IOS XE and Junos. Acceptance requires reviewed vendor-neutral intent where
 semantics genuinely match, frozen target and plan identity, complete preflight,
 canary and wave controls, vendor-aware execution and recovery, independent
 validation, honest outcomes, and correlated evidence without secrets.
+NetBox identifies each device and interface and may supply targeting and safety
+metadata. Git alone owns the desired device interface description; NetBox's
+interface description field is not a second desired-state authority for this
+vertical.
 
 ## Non-goals
 
@@ -75,6 +84,7 @@ plugins, and any claim that the lab implementation moves unchanged to production
 
 ## Relationship to network-automation-platform
 
-This product is separate from the completed and paused `network-automation-platform`.
-That repository is neither a dependency nor a submodule or source to copy. This
-project starts greenfield and does not modify its predecessor.
+This product is separate from `network-automation-platform`. That project's
+V1.0.0 release and its V1.5 architecture baseline and CAT 8000V/NETCONF
+feasibility work are complete. V1.5 production implementation is paused and has
+not started. This repository does not modify, depend on, or copy that project.

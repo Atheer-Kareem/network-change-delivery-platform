@@ -33,8 +33,11 @@ flowchart LR
   isolated supporting services.
 - **Control/application:** Python 3.12 owns domain policy, target resolution,
   planning, risk, rollout, evidence, recovery decisions, and composition.
-- **Source of truth:** future NetBox owns infrastructure identity and metadata;
-  Git owns automation and intent; devices provide observed state.
+- **Source of truth:** future NetBox owns infrastructure identity, topology/IPAM
+  relationships, platform, role, tags, targeting, and inventory metadata. Git
+  owns managed device-configuration intent. A managed property has exactly one
+  authority, explicitly assigned before overlapping NetBox/native fields are
+  consumed; devices provide observed state.
 - **Secrets:** future OpenBao validates Buildkite OIDC and issues short-lived,
   narrowly scoped credentials; application models never embed static secrets.
 - **Assurance:** future Batfish performs offline multi-vendor behavioural checks.
@@ -49,7 +52,9 @@ flowchart LR
   input, artifact, action, validation, outcome, and recovery ancestor.
 - **Continuous observability:** future Prometheus, Grafana, Alertmanager, gNMIc,
   OpenConfig/gNMI, SNMP Exporter, and Blackbox Exporter run independently of CI.
-  Oxidized with Git provides configuration chronology and drift evidence.
+  Actionable alerts must pass through Alertmanager to at least one configured
+  demonstration notification receiver; receiver selection is deferred. Oxidized
+  with Git provides configuration chronology and drift evidence.
 
 Dependencies point inward to platform-owned policy and types; integrations
 implement explicit boundary contracts. Provider details must not become domain

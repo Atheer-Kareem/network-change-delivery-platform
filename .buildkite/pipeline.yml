@@ -3,6 +3,11 @@ steps:
     key: quality
     commands:
       - docker build --target quality --tag ncdp-quality:${BUILDKITE_BUILD_NUMBER} .
-      - git diff --check "$(git merge-base HEAD main)..HEAD"
+      - |
+        BASE_BRANCH="${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
+        git fetch --no-tags origin \
+          "${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
+        git diff --check \
+          "$(git merge-base HEAD "origin/${BASE_BRANCH}")..HEAD"
     agents:
       queue: default

@@ -5,8 +5,12 @@ Ordering may change when implementation evidence requires it.
 
 1. **Repository/executable foundation:** product and architecture contracts,
    CLI shell, deterministic quality gates, container foundations, and CI definition.
-2. **Thin local Cisco vertical:** one synthetic-lab interface-description change
-   with explicit Cisco safety, validation, evidence, and recovery behaviour.
+2. **Thin local Cisco vertical:** execute typed interface-description intent on
+   one manually prepared personal CML IOS XE target using synthetic, non-company
+   data. Use temporary local inventory and secret loading behind replaceable
+   boundaries; include preflight, immutable planning, execution, independent
+   post-validation, initial evidence, and tested change-specific Cisco recovery
+   semantics. Terraform-managed CML topology and lifecycle remain increment 8.
 3. **NetBox and OpenBao:** authoritative target metadata and short-lived,
    narrowly scoped credential acquisition behind explicit interfaces.
 4. **Juniper vertical:** the same honest common intent with Junos-native candidate,

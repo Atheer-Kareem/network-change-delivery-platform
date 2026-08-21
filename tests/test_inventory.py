@@ -32,6 +32,23 @@ def test_unknown_inventory_target_fails_closed(tmp_path: Path) -> None:
         LocalYamlInventoryProvider(inventory).resolve("missing")
 
 
+@pytest.mark.parametrize("field", ["username", "password"])
+def test_inventory_rejects_credential_fields(tmp_path: Path, field: str) -> None:
+    inventory = tmp_path / "inventory.yaml"
+    inventory.write_text(
+        f"""devices:
+  - name: router-1
+    host: 192.0.2.10
+    platform: cisco_iosxe
+    expected_hostname: lab-router
+    {field}: forbidden
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(InventoryError):
+        LocalYamlInventoryProvider(inventory).resolve("router-1")
+
+
 def test_missing_secret_error_lists_names_only() -> None:
     with pytest.raises(SecretError) as error:
         EnvironmentSecretProvider({}).load()

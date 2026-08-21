@@ -11,43 +11,54 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+CliBoundString = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$"
+    ),
+]
+
+
+def validate_ios_description(value: str, *, require_nonempty: bool = True) -> str:
+    """Validate bounded IOS description data before it can enter CLI syntax."""
+    if len(value) > 240:
+        raise ValueError("description must contain at most 240 characters")
+    if require_nonempty and not value.strip():
+        raise ValueError("description must contain a non-whitespace character")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError("description must not contain control characters")
+    return value
 
 
 class DesiredDescription(BaseModel):
     """Desired interface-description properties."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     description: str = Field(min_length=1, max_length=240)
 
     @model_validator(mode="after")
     def reject_unsafe_characters(self) -> DesiredDescription:
         """Reject whitespace-only, multiline, and control-bearing descriptions."""
-        if not self.description.strip():
-            raise ValueError("description must contain a non-whitespace character")
-        if any(
-            ord(character) < 32 or ord(character) == 127
-            for character in self.description
-        ):
-            raise ValueError("description must not contain control characters")
+        validate_ios_description(self.description)
         return self
 
 
 class InterfaceDescriptionIntent(BaseModel):
     """The only supported change intent in Increment 2."""
 
-    model_config = ConfigDict(frozen=True)
-    change_id: NonEmptyString
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    change_id: CliBoundString
     kind: Literal["interface_description"]
-    target: NonEmptyString
-    interface: NonEmptyString
+    target: CliBoundString
+    interface: CliBoundString
     desired: DesiredDescription
 
 
 class InventoryDevice(BaseModel):
     """Temporary local inventory entry without credentials."""
 
-    model_config = ConfigDict(frozen=True)
-    name: NonEmptyString
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    name: CliBoundString
     host: NonEmptyString
     port: int = Field(default=22, ge=1, le=65535)
     platform: Literal["cisco_iosxe"]
@@ -58,7 +69,7 @@ class InventoryDevice(BaseModel):
 class InventoryDocument(BaseModel):
     """Temporary local inventory document."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     devices: tuple[InventoryDevice, ...]
 
     @model_validator(mode="after")
@@ -73,7 +84,7 @@ class InventoryDocument(BaseModel):
 class InterfaceState(BaseModel):
     """Normalized state required by this vertical."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     observed_hostname: str
     ios_version: str | None = None
     interface: str
@@ -87,7 +98,7 @@ class InterfaceState(BaseModel):
 class CiscoConfigArtifact(BaseModel):
     """Exact immutable IOS configuration section."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     parent: str
     lines: tuple[str, ...]
 
@@ -99,7 +110,7 @@ class CiscoConfigArtifact(BaseModel):
 class PlanPreconditions(BaseModel):
     """Relevant state that must still hold immediately before writing."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     observed_hostname: str
     interface_exists: bool
     interface_protected: bool
@@ -109,14 +120,16 @@ class PlanPreconditions(BaseModel):
 class DeploymentPlan(BaseModel):
     """Digest-bound immutable machine execution plan."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["1"] = "1"
-    change_id: NonEmptyString
+    change_id: CliBoundString
     kind: Literal["interface_description"]
-    target: NonEmptyString
+    target: CliBoundString
+    host: NonEmptyString
+    port: int = Field(ge=1, le=65535)
     expected_hostname: NonEmptyString
     platform: Literal["cisco_iosxe"]
-    interface: NonEmptyString
+    interface: CliBoundString
     current_description: str | None
     desired_description: str
     execution_artifact: CiscoConfigArtifact
@@ -129,6 +142,8 @@ class DeploymentPlan(BaseModel):
     def artifact_matches_supported_operation(self) -> DeploymentPlan:
         """Prevent a valid digest from approving a broader or divergent command."""
         DesiredDescription(description=self.desired_description)
+        if self.current_description is not None:
+            validate_ios_description(self.current_description)
         parent = f"interface {self.interface}"
         expected_execution = (f"description {self.desired_description}",)
         recovery_line = (
@@ -181,7 +196,7 @@ class ExecutionDisposition(StrEnum):
 class ExecutionResult(BaseModel):
     """Secret-safe normalized result of one exact artifact application."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     disposition: ExecutionDisposition
     changed: bool = False
     message: str
@@ -200,12 +215,13 @@ class FinalOutcome(StrEnum):
     POST_VALIDATION_FAILED = "POST_VALIDATION_FAILED"
     RECOVERED = "RECOVERED"
     RECOVERY_FAILED = "RECOVERY_FAILED"
+    RECOVERY_AMBIGUOUS = "RECOVERY_AMBIGUOUS"
 
 
 class StageResult(BaseModel):
     """Bounded status for a lifecycle stage."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     attempted: bool = False
     succeeded: bool | None = None
     changed: bool | None = None
@@ -216,12 +232,14 @@ class StageResult(BaseModel):
 class ChangeRecord(BaseModel):
     """Minimal typed, secret-free evidence for this vertical."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["1"] = "1"
     generated_at: datetime
     change_id: str
     plan_digest: str
     target: str
+    host: str
+    port: int
     expected_hostname: str
     platform: str
     interface: str

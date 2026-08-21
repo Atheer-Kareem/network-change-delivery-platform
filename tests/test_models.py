@@ -150,3 +150,34 @@ def test_loaded_plan_cannot_encode_control_bearing_commands() -> None:
     payload["execution_artifact"]["lines"] = ["description unsafe\ncommand"]
     with pytest.raises(ValidationError):
         type(plan).model_validate(payload)
+
+
+def test_change_intent_rejects_commands_field() -> None:
+    payload = intent().model_dump(mode="json")
+    payload["commands"] = ["show version"]
+    with pytest.raises(ValidationError):
+        InterfaceDescriptionIntent.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ["change_id", "target", "interface"])
+def test_cli_bound_identifiers_reject_control_characters(field: str) -> None:
+    payload = intent().model_dump(mode="json")
+    payload[field] = "safe\nconfigure terminal"
+    with pytest.raises(ValidationError):
+        InterfaceDescriptionIntent.model_validate(payload)
+
+
+def test_unknown_plan_field_is_rejected() -> None:
+    approved = build_plan(intent(), device(), state())
+    payload = approved.model_dump(mode="json")
+    payload["outside_digest"] = "unbound"
+    with pytest.raises(ValidationError):
+        type(approved).model_validate(payload)
+
+
+@pytest.mark.parametrize("description", ["unsafe\ncommand", "x" * 241])
+def test_unsafe_observed_description_cannot_form_recovery(
+    description: str,
+) -> None:
+    with pytest.raises(SafetyError, match="unsafe for targeted recovery"):
+        build_plan(intent(), device(), state(description=description))

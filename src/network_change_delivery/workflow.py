@@ -12,6 +12,7 @@ from network_change_delivery.models import (
     ChangeRecord,
     CiscoConfigArtifact,
     DeploymentPlan,
+    DesiredDescription,
     ExecutionDisposition,
     ExecutionResult,
     FinalOutcome,
@@ -100,6 +101,13 @@ def build_plan(
 ) -> DeploymentPlan:
     """Build and digest the exact immutable artifact from fresh safe state."""
     _assert_safe_state(intent, device, state)
+    if state.description is not None:
+        try:
+            DesiredDescription(description=state.description)
+        except ValueError as error:
+            raise SafetyError(
+                "observed description is unsafe for targeted recovery"
+            ) from error
     if state.description == intent.desired.description:
         raise SafetyError("interface is already compliant")
     parent = f"interface {intent.interface}"
@@ -117,6 +125,8 @@ def build_plan(
         change_id=intent.change_id,
         kind=intent.kind,
         target=intent.target,
+        host=device.host,
+        port=device.port,
         expected_hostname=device.expected_hostname,
         platform=device.platform,
         interface=intent.interface,
@@ -195,6 +205,8 @@ def _record(
         change_id=plan.change_id,
         plan_digest=plan.digest,
         target=plan.target,
+        host=plan.host,
+        port=plan.port,
         expected_hostname=plan.expected_hostname,
         platform=plan.platform,
         interface=plan.interface,
@@ -243,6 +255,32 @@ def deploy_plan(
 
     try:
         device = inventory.resolve(plan.target)
+    except (ValueError, OSError, RuntimeError):
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.BLOCKED,
+            preflight=blocked,
+            now=now,
+        )
+    if (
+        device.name != plan.target
+        or device.host != plan.host
+        or device.port != plan.port
+        or device.platform != plan.platform
+        or device.expected_hostname != plan.expected_hostname
+    ):
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.STALE_PLAN,
+            preflight=blocked.model_copy(
+                update={"message": "approved inventory endpoint binding has changed"}
+            ),
+            now=now,
+        )
+
+    try:
         credentials = secrets.load()
         state = collector.collect(device, credentials, plan.interface)
         intent = InterfaceDescriptionIntent.model_validate(
@@ -329,7 +367,22 @@ def deploy_plan(
             now=now,
         )
 
-    observed = collector.collect(device, credentials, plan.interface)
+    try:
+        observed = collector.collect(device, credentials, plan.interface)
+    except (ValueError, OSError, RuntimeError):
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.POST_VALIDATION_FAILED,
+            preflight=preflight,
+            execution=execution,
+            post_validation=_stage(
+                "fresh post-write collection failed; operator investigation required",
+                attempted=True,
+                succeeded=False,
+            ),
+            now=now,
+        )
     post_identity_matches = (
         observed.observed_hostname == plan.expected_hostname
         and observed.interface == plan.interface
@@ -351,6 +404,23 @@ def deploy_plan(
             now=now,
         )
 
+    if not post_identity_matches:
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.POST_VALIDATION_FAILED,
+            preflight=preflight,
+            execution=execution,
+            post_validation=_stage(
+                "post-write identity or interface mismatch; "
+                "operator investigation required",
+                attempted=True,
+                succeeded=False,
+                observed_description=observed.description,
+            ),
+            now=now,
+        )
+
     post_validation = _stage(
         "fresh observed description does not match desired state",
         attempted=True,
@@ -364,7 +434,18 @@ def deploy_plan(
         succeeded=recovery_result.disposition is ExecutionDisposition.SUCCEEDED,
         changed=recovery_result.changed,
     )
-    if recovery_result.disposition is not ExecutionDisposition.SUCCEEDED:
+    if recovery_result.disposition is ExecutionDisposition.AMBIGUOUS:
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.RECOVERY_AMBIGUOUS,
+            preflight=preflight,
+            execution=execution,
+            post_validation=post_validation,
+            recovery=recovery_stage,
+            now=now,
+        )
+    if recovery_result.disposition is ExecutionDisposition.FAILED:
         return _record(
             plan,
             approval_digest,
@@ -376,7 +457,27 @@ def deploy_plan(
             now=now,
         )
 
-    recovered = collector.collect(device, credentials, plan.interface)
+    try:
+        recovered = collector.collect(device, credentials, plan.interface)
+    except (ValueError, OSError, RuntimeError):
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.RECOVERY_FAILED,
+            preflight=preflight,
+            execution=execution,
+            post_validation=post_validation,
+            recovery=recovery_stage.model_copy(
+                update={
+                    "succeeded": False,
+                    "message": (
+                        "fresh recovery verification collection failed; "
+                        "operator investigation required"
+                    ),
+                }
+            ),
+            now=now,
+        )
     recovery_identity_matches = (
         recovered.observed_hostname == plan.expected_hostname
         and recovered.interface == plan.interface

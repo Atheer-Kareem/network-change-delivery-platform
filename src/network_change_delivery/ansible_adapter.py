@@ -58,9 +58,7 @@ def _known_hosts_query(device: InventoryDevice) -> str:
 
 
 def _known_hosts_path() -> Path:
-    return Path(
-        os.environ.get("NCDP_KNOWN_HOSTS", Path.home() / ".ssh" / "known_hosts")
-    )
+    return Path.home() / ".ssh" / "known_hosts"
 
 
 def _fingerprint_from_line(line: str) -> str | None:

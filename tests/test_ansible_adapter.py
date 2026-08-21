@@ -1,10 +1,12 @@
 """Tests for bounded, secret-safe Runner result normalization."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from network_change_delivery.ansible_adapter import (
     EXECUTION_TASK,
     AnsibleRunnerCiscoAdapter,
+    _known_hosts_path,
 )
 from network_change_delivery.models import (
     CiscoConfigArtifact,
@@ -65,3 +67,10 @@ def test_failed_write_task_is_treated_as_ambiguous(monkeypatch) -> None:
         ),
     )
     assert result.disposition is ExecutionDisposition.AMBIGUOUS
+
+
+def test_known_hosts_path_ignores_custom_environment(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("NCDP_KNOWN_HOSTS", "/tmp/not-used")
+    assert _known_hosts_path() == Path.home() / ".ssh" / "known_hosts"

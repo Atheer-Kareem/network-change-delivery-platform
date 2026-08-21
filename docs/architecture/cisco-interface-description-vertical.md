@@ -23,8 +23,10 @@ boundary is intended to be replaced by OpenBao.
 ## Trusted collection and preflight
 
 Ansible Runner invokes `ansible.netcommon.network_cli` with libssh. Host-key
-checking is enabled, auto-add is disabled, and a pre-existing `known_hosts` entry
-is required. Collection uses `cisco.ios.ios_facts`,
+checking is enabled, auto-add is disabled, and a pre-existing entry is required
+in the current user's standard `~/.ssh/known_hosts`. Increment 2 does not support
+a custom trust-store path, discover keys with `ssh-keyscan`, or automatically
+trust keys. Collection uses `cisco.ios.ios_facts`,
 `cisco.ios.ios_interfaces`, and `cisco.ios.ios_l3_interfaces`, then immediately
 normalizes only identity, IOS XE version, interface existence, description,
 enabled state, and bounded IP-address evidence.
@@ -41,8 +43,10 @@ alone never establishes safety.
 The plan records the exact `cisco.ios.ios_config` parent and lines used for the
 write and targeted recovery. Deterministic compact, sorted-key UTF-8 JSON—without
 the digest field—is hashed with SHA-256. The CLI preview renders directly from
-that same artifact. Deployment requires an exact `--approve-digest` match and
-fresh identity and interface collection immediately before writing. Changed,
+that same artifact. Deployment requires an exact `--approve-digest` match, then
+re-resolves and compares the inventory name, host, port, platform, and expected
+hostname before any live collection. Deployment performs fresh identity and
+interface collection immediately before writing. Changed,
 missing, already-compliant, or otherwise stale preconditions block execution.
 
 The executor applies the stored section once with `match: line` and
@@ -52,11 +56,14 @@ description; Runner task success is not deployment success.
 
 ## Targeted recovery and evidence
 
-If the write is known to have succeeded but post-validation fails, the system
-applies only the approved inverse description artifact. It restores the exact
+If the write is known to have succeeded, post-write collection or identity
+failure is final and requires operator investigation without automatic recovery.
+Only a successful, identity-matching collection whose description differs is
+eligible for the approved inverse description artifact. It restores the exact
 previous description or uses `no description` when none existed, then verifies
 fresh state. Ambiguous writes are not retried or automatically recovered.
-Recovery failure is final and requires operator action.
+Recovery failure is final and requires operator action. Ambiguous recovery is a
+distinct final outcome and is never retried.
 
 The initial typed `ChangeRecord` distinguishes blocking, stale plan, execution
 failure, ambiguity, validation failure, successful recovery, and recovery

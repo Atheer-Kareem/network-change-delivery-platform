@@ -1,0 +1,80 @@
+# Product contract
+
+## Product statement and audiences
+
+Network Change Delivery Platform is a greenfield, self-hosted reference system
+for reviewed, validated, auditable, recoverable, and observable fleet changes.
+It demonstrates enterprise NetDevOps delivery patterns to internal
+network-automation stakeholders, future employers, and engineers learning from
+a personal lab implementation.
+
+Its goals are safe change intent, deterministic planning, vendor-aware
+execution, fleet-aware rollout, independent validation, durable evidence,
+recovery, and continuous monitoring. Eventual vendor scope is Cisco IOS/IOS XE
+and Junos. Fortinet is deferred.
+
+## Reference-environment and authority boundary
+
+The implementation runs only in a personal MacBook and CML mini-PC lab. It is
+not production-ready and must contain no company device, credential,
+configuration, address, topology, internal document, or proprietary data.
+
+Git is authoritative for code, policy, reviewed change requests, and managed
+desired state. NetBox will be authoritative for infrastructure identity and
+metadata: sites, devices, roles, platforms, interfaces, addressing, prefixes,
+VLAN metadata, tags, relationships, management endpoints, environment, and
+criticality. Devices are observed reality, not authoritative desired state.
+
+## Intended lifecycle and fleet behaviour
+
+A pull request proposes intent. Validation and policy precede complete target
+resolution, immutable planning, assurance, risk classification, optional digital
+twin testing, and approval. Immediately before writes, the system re-verifies
+identity, relevant state, and the still-required change. It deploys one canary
+per representative platform, then bounded waves, independently validating each
+stage. Evidence and continuous monitoring follow.
+
+Targets may be one device, explicit lists, selector-derived fleets, vendor-only
+fleets, or mixed fleets. Resolution and preflight cover the complete frozen
+fleet before the first write. Overlapping scopes are serialized or rejected.
+No-op targets are recorded. Failure stops later waves and partial outcomes are
+reported honestly; the system does not claim multi-device atomicity.
+
+## Audit, recovery, and observability
+
+A future typed `ChangeRecord` correlates change and PR identity, commit and
+Buildkite build, container digest, inventory snapshot, target fleet, immutable
+plan and digest, approval, assurance and twin results, per-device preflight,
+execution, validation, rollout history, outcome, Oxidized history, and recovery
+ancestry. It excludes credentials and secret-bearing payloads.
+
+Immediate recovery uses the strongest proven mechanism for each vendor and
+supported change; Cisco and Junos do not share identical transaction semantics.
+A delayed rollback is a new reviewed change that considers original state,
+later approved changes, current intent, and live state. It computes a safe
+inverse or blocks on conflict; `git revert` alone never authorizes device writes.
+Continuous observability operates independently of pipeline completion.
+
+## First vertical and acceptance outcomes
+
+The first eventual vertical is managed interface descriptions across Cisco
+IOS/IOS XE and Junos. Acceptance requires reviewed vendor-neutral intent where
+semantics genuinely match, frozen target and plan identity, complete preflight,
+canary and wave controls, vendor-aware execution and recovery, independent
+validation, honest outcomes, and correlated evidence without secrets.
+
+## Non-goals
+
+Baseline 1 excludes production use, company infrastructure, Kubernetes, NSO,
+Nornir initially, Nautobot, Infrahub, SuzieQ, containerlab, OPA, Terraform device
+configuration, autonomous AI change, self-healing writes, credential
+standardization or mass rotation, PR-supplied arbitrary CLI, full vendor feature
+parity, universal transactions, automatic retry after uncertain writes,
+protocol or endpoint fallback, fleet atomicity, HA clustering, generic dynamic
+plugins, and any claim that the lab implementation moves unchanged to production.
+
+## Relationship to network-automation-platform
+
+This product is separate from the completed and paused `network-automation-platform`.
+That repository is neither a dependency nor a submodule or source to copy. This
+project starts greenfield and does not modify its predecessor.

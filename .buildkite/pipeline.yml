@@ -1,0 +1,8 @@
+steps:
+  - label: ":docker: quality"
+    key: quality
+    commands:
+      - docker build --target quality --tag ncdp-quality:${BUILDKITE_BUILD_NUMBER} .
+      - git diff --check "$(git merge-base HEAD main)..HEAD"
+    agents:
+      queue: default

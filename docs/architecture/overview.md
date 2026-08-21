@@ -62,7 +62,10 @@ policy, and external observations must be normalized before policy consumes them
 
 ## Implemented now
 
-Technology selection is not implementation. PR #1 implements only repository
-structure, documentation baseline, Python CLI shell, Docker foundation, and one
-Buildkite quality-pipeline definition. Every named network, assurance, inventory,
-secret, lab, validation, history, and observability integration remains future work.
+Architecture Baseline 1 implements repository structure, product documentation,
+the Python CLI shell, Docker foundation, and a Buildkite quality definition.
+Increment 2 is implementing the first narrow Cisco IOS XE interface-description
+vertical; its exact boundaries are documented in the
+[Cisco interface-description vertical](cisco-interface-description-vertical.md).
+It remains in progress until live CML write and recovery acceptance completes.
+All other named integrations remain future work.

@@ -1,0 +1,7 @@
+---
+change_id: CHG-DEMO-001
+kind: interface_description
+target: ncdp-iosxe-01
+interface: GigabitEthernet2
+desired:
+  description: managed-by-network-change-delivery-platform

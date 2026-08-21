@@ -1,0 +1,15 @@
+---
+- name: Apply one approved Cisco interface-description artifact
+  hosts: all
+  gather_facts: false
+  vars:
+    ansible_user: "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_USERNAME') }}"
+    ansible_password: "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_PASSWORD') }}"
+  tasks:
+    - name: NCDP apply exact approved artifact
+      cisco.ios.ios_config:
+        parents: "{{ ncdp_artifact.parent }}"
+        lines: "{{ ncdp_artifact.lines }}"
+        match: line
+        save_when: never
+      no_log: true

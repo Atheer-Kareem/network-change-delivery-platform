@@ -43,7 +43,9 @@ because information is useful during development.
 
 Run `uv lock --check`, frozen dependency sync, Ruff lint and format checks,
 pytest, package build, CLI smoke tests, Docker quality/runtime builds and runtime
-smoke test, and `git diff --check` for baseline changes. Fix causes rather than
+smoke test, `ansible-lint` when Ansible content is present, and `git diff --check`.
+Install pinned collections from `ansible/requirements.yml` into the ignored
+`.ansible/collections` path before local Ansible gates. Fix causes rather than
 weakening gates. Inspect the complete diff and status before any authorized
 commit. Do not alter unrelated branches or commits.
 

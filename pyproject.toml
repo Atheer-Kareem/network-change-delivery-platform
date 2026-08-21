@@ -4,13 +4,20 @@ version = "0.1.0"
 description = "A safety-focused reference platform for reviewed network-change delivery."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "ansible-core>=2.21.2,<2.22",
+    "ansible-pylibssh>=1.4.0,<2",
+    "ansible-runner>=2.4.3,<2.5",
+    "pydantic>=2,<3",
+    "pyyaml>=6,<7",
+]
 
 [project.scripts]
 ncdp = "network_change_delivery.cli:main"
 
 [dependency-groups]
 dev = [
+    "ansible-lint>=26.6.0,<27",
     "pytest>=9.1.1,<10",
     "ruff>=0.16.2,<0.17",
 ]

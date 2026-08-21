@@ -3,9 +3,9 @@
 Each increment begins only when predecessor contracts and evidence justify it.
 Ordering may change when implementation evidence requires it.
 
-1. **Repository/executable foundation:** product and architecture contracts,
+1. **Repository/executable foundation — complete:** product and architecture contracts,
    CLI shell, deterministic quality gates, container foundations, and CI definition.
-2. **Thin local Cisco vertical:** execute typed interface-description intent on
+2. **Thin local Cisco vertical — in progress:** execute typed interface-description intent on
    one manually prepared personal CML IOS XE target using synthetic, non-company
    data. Use temporary local inventory and secret loading behind replaceable
    boundaries; include preflight, immutable planning, execution, independent

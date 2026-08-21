@@ -3,14 +3,16 @@
 Each increment begins only when predecessor contracts and evidence justify it.
 Ordering may change when implementation evidence requires it.
 
-1. **Repository/executable foundation:** product and architecture contracts,
+1. **Repository/executable foundation — complete:** product and architecture contracts,
    CLI shell, deterministic quality gates, container foundations, and CI definition.
-2. **Thin local Cisco vertical:** execute typed interface-description intent on
+2. **Thin local Cisco vertical — complete:** executed typed interface-description intent on
    one manually prepared personal CML IOS XE target using synthetic, non-company
-   data. Use temporary local inventory and secret loading behind replaceable
-   boundaries; include preflight, immutable planning, execution, independent
-   post-validation, initial evidence, and tested change-specific Cisco recovery
-   semantics. Terraform-managed CML topology and lifecycle remain increment 8.
+   data. Acceptance covered preflight, immutable digest approval, exact-artifact
+   execution, independent post-validation, bounded evidence, and a read-only
+   idempotency no-op; tested change-specific Cisco recovery semantics remain in
+   place, although successful live validation did not require recovery. See the
+   [live acceptance report](acceptance/cisco-interface-description-increment-2.md).
+   Terraform-managed CML topology and lifecycle remain increment 8.
 3. **NetBox and OpenBao:** authoritative target metadata and short-lived,
    narrowly scoped credential acquisition behind explicit interfaces.
 4. **Juniper vertical:** the same honest common intent with Junos-native candidate,

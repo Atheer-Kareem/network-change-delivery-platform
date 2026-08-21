@@ -10,31 +10,38 @@ ENV UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
 
-FROM base AS quality
+FROM base AS application
+COPY pyproject.toml uv.lock README.md ansible.cfg ./
+COPY src ./src
+COPY ansible ./ansible
+RUN uv sync --frozen --no-group dev \
+    && .venv/bin/ansible-galaxy collection install \
+      --requirements-file ansible/requirements.yml \
+      --collections-path /opt/ansible/collections
+
+FROM application AS quality
 COPY . .
 RUN uv sync --frozen --all-groups \
     && uv run ruff check . \
     && uv run ruff format --check . \
     && uv run pytest \
+    && uv run ansible-lint \
     && uv build
-
-FROM base AS build
-COPY pyproject.toml uv.lock README.md ./
-COPY src ./src
-RUN uv build --wheel
 
 FROM ${PYTHON_IMAGE} AS runtime
 ENV PATH="/app/.venv/bin:${PATH}" \
+    ANSIBLE_CONFIG="/app/ansible.cfg" \
+    ANSIBLE_COLLECTIONS_PATH="/opt/ansible/collections" \
+    NCDP_PROJECT_ROOT="/app" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 RUN groupadd --system ncdp \
     && useradd --system --gid ncdp --home-dir /app --create-home ncdp
 WORKDIR /app
-COPY --from=uv /uv /uvx /bin/
-COPY --from=build /app/dist/*.whl /tmp/
-RUN uv venv /app/.venv \
-    && uv pip install --python /app/.venv/bin/python /tmp/*.whl \
-    && rm -f /tmp/*.whl \
-    && chown -R ncdp:ncdp /app
+COPY --from=application --chown=ncdp:ncdp /app/.venv /app/.venv
+COPY --from=application /opt/ansible/collections /opt/ansible/collections
+COPY --from=application --chown=ncdp:ncdp /app/src /app/src
+COPY --chown=ncdp:ncdp ansible.cfg ./
+COPY --chown=ncdp:ncdp ansible ./ansible
 USER ncdp
 ENTRYPOINT ["ncdp"]

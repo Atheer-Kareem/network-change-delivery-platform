@@ -32,6 +32,12 @@ credentials/
 evidence/
 device-snapshots/
 config-captures/
+inventory/*.yaml
+!inventory/*.example.yaml
+changes/local*.yaml
+plans/
+reports/
+.ansible/
 
 # Terraform and local Buildkite agent state
 *.tfstate

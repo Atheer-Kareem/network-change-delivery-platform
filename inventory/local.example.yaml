@@ -1,0 +1,9 @@
+---
+devices:
+  - name: ncdp-iosxe-01
+    host: 192.0.2.10
+    port: 22
+    platform: cisco_iosxe
+    expected_hostname: lab-iosxe-01
+    protected_interfaces:
+      - GigabitEthernet1

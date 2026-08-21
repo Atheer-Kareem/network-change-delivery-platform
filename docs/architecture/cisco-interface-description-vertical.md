@@ -2,11 +2,15 @@
 
 ## Status and supported operation
 
-Increment 2 is in progress until real CML write and recovery acceptance evidence
-exists. The only supported operation is setting one non-empty description, up to
-240 characters, on one explicitly selected, non-protected Cisco IOS/IOS XE
-interface. Arbitrary commands, fleets, other configuration properties, vendors,
-and production targets are out of scope.
+Increment 2 is complete. Real CML execution, independent post-validation, and
+read-only idempotency evidence are recorded in the
+[live acceptance report](../acceptance/cisco-interface-description-increment-2.md).
+The successful validation path did not make targeted recovery eligible, so no
+live recovery write was attempted; recovery policy and outcomes remain covered
+by automated tests. The only supported operation is setting one non-empty
+description, up to 240 characters, on one explicitly selected, non-protected
+Cisco IOS/IOS XE interface. Arbitrary commands, fleets, other configuration
+properties, vendors, and production targets are out of scope.
 
 ## Temporary boundaries
 

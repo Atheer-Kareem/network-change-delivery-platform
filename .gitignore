@@ -1,0 +1,41 @@
+# Python and quality tools
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local operating-system and editor state
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Secrets and credentials (examples may be committed deliberately)
+.env
+.env.*
+!.env.example
+!.env.*.example
+credentials/
+*.credentials
+*.token
+*.key
+*.pem
+
+# Generated operational data
+evidence/
+device-snapshots/
+config-captures/
+
+# Terraform and local Buildkite agent state
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.buildkite-agent/

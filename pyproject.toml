@@ -1,0 +1,31 @@
+[project]
+name = "network-change-delivery"
+version = "0.1.0"
+description = "A safety-focused reference platform for reviewed network-change delivery."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.scripts]
+ncdp = "network_change_delivery.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1,<10",
+    "ruff>=0.16.2,<0.17",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["A", "ARG", "B", "C4", "E", "F", "I", "N", "PERF", "PTH", "RUF", "SIM", "UP", "W"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]

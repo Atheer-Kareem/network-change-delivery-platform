@@ -30,6 +30,15 @@ logs or evidence. Do not commit, push, merge, rebase, force-push, delete branche
 rewrite history, or perform live network changes unless the task explicitly
 authorizes that action.
 
+## README discipline
+
+Keep `README.md` public-facing, concise, and capability-oriented. Do not use it
+as a changelog, engineering notebook, roadmap mirror, or architecture decision
+log. Put detailed architecture rationale, implementation history, engineering
+progression, acceptance evidence, and operational detail under `docs/`. Link
+from the README only when it helps a repository visitor; do not expand it merely
+because information is useful during development.
+
 ## Testing and Git safety
 
 Run `uv lock --check`, frozen dependency sync, Ruff lint and format checks,

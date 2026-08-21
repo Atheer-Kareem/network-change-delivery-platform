@@ -1,40 +1,36 @@
 # Network Change Delivery Platform
 
-A greenfield, self-hosted reference platform for reviewed, validated, auditable,
-recoverable, and observable network-change delivery across Cisco IOS/IOS XE and
-Junos fleets.
+A self-hosted reference NetDevOps platform for reviewed, validated, auditable,
+recoverable, and observable multi-vendor network changes across Cisco IOS/IOS XE
+and Junos.
 
-**Current status:** Architecture Baseline 1. This repository currently contains
-the product and architecture contracts, a Python CLI shell, a Docker foundation,
-and a Buildkite quality-pipeline definition. No device automation or device
-integration exists yet.
+## What it demonstrates
 
-The first eventual vertical is a vendor-neutral managed interface-description
-change with vendor-aware execution for Cisco IOS/IOS XE and Junos. GitHub owns
-reviewed change inputs, Buildkite orchestrates future gates, Python owns policy
-and lifecycle decisions, and execution adapters will own vendor operations.
-NetBox, OpenBao, Batfish, CML, validation, history, and observability components
-are selected future integrations, not current implementations.
+- Git-reviewed network changes
+- Cisco and Junos multi-vendor delivery
+- Pre-change validation and assurance
+- Controlled fleet rollout
+- Independent post-change verification
+- Audit, recovery, and continuous observability
 
-Company data—including devices, credentials, configurations, addresses,
-topology, and internal documentation—must never enter this repository.
+## Current status
 
-## Local quality
+- Architecture Baseline 1 is established.
+- The first implementation vertical will be a controlled Cisco IOS XE
+  interface-description change in the personal CML lab.
+- No production or company infrastructure or data is used.
 
-```bash
-uv sync --frozen --all-groups
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest
-uv build
-docker build --target quality --tag ncdp-quality:local .
-docker build --target runtime --tag ncdp:local .
-docker run --rm ncdp:local --version
-```
+## Architecture
 
-Start with the [product contract](docs/product/product-contract.md), then read
-the [architecture overview](docs/architecture/overview.md),
-[security boundaries](docs/architecture/security-boundaries.md),
-[change lifecycle](docs/architecture/change-lifecycle.md),
-[threat model](docs/threat-model.md), [ADRs](docs/adr/), and
-[roadmap](docs/roadmap.md).
+The platform separates reviewed intent, workflow orchestration, policy, vendor
+execution, validation, evidence, and operations. See the
+[architecture overview](docs/architecture/overview.md).
+
+## Documentation
+
+- [Product contract](docs/product/product-contract.md)
+- [Architecture](docs/architecture/overview.md)
+- [Security boundaries](docs/architecture/security-boundaries.md)
+- [Change lifecycle](docs/architecture/change-lifecycle.md)
+- [Architecture decision records](docs/adr/)
+- [Roadmap](docs/roadmap.md)

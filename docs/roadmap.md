@@ -29,9 +29,9 @@ Ordering may change when implementation evidence requires it.
    fleet-wide read-only preflight. Increment 5B implements digest-approved
    sequential exact canary/wave execution through the existing device workflow,
    strict stop gates, honest partial evidence, and final whole-fleet read-only
-   validation; it is pending review and has no live acceptance. Increment 5C will
-   add process-local
-   same-target overlap admission and mixed-vendor live CML fleet acceptance.
+   validation and is complete. Increment 5C is in progress: process-local
+   same-device overlap admission is implemented and mixed-vendor live CML fleet
+   acceptance remains pending.
    Distributed/cross-run locks, runner concurrency groups, and multi-worker
    coordination remain in the later Buildkite hardening increment; they do not
    replace local rollout overlap safety.

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from threading import Lock
 
 from network_change_delivery.inventory import (
     FleetInventoryProvider,
@@ -41,6 +42,55 @@ from network_change_delivery.workflow import (
 
 class FleetSafetyError(ValueError):
     """Raised when fleet planning cannot establish one safe frozen population."""
+
+
+class ProcessLocalFleetLease:
+    """Idempotently releases one atomically acquired in-process device set."""
+
+    def __init__(
+        self, controller: ProcessLocalFleetAdmission, identities: frozenset[str]
+    ) -> None:
+        self._controller = controller
+        self._identities = identities
+        self._released = False
+
+    def release(self) -> None:
+        if not self._released:
+            self._controller._release(self._identities)
+            self._released = True
+
+    def __enter__(self) -> ProcessLocalFleetLease:
+        return self
+
+    def __exit__(self, *_exc_info: object) -> None:
+        self.release()
+
+
+class ProcessLocalFleetAdmission:
+    """Thread-safe, all-or-nothing admission for stable device identities."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._held: set[str] = set()
+
+    def acquire(
+        self, device_identities: tuple[str, ...]
+    ) -> ProcessLocalFleetLease | None:
+        identities = frozenset(device_identities)
+        if not identities or len(identities) != len(device_identities):
+            raise ValueError("fleet admission requires unique stable device identities")
+        with self._lock:
+            if self._held.intersection(identities):
+                return None
+            self._held.update(identities)
+        return ProcessLocalFleetLease(self, identities)
+
+    def _release(self, identities: frozenset[str]) -> None:
+        with self._lock:
+            self._held.difference_update(identities)
+
+
+PROCESS_LOCAL_FLEET_ADMISSION = ProcessLocalFleetAdmission()
 
 
 @dataclass(frozen=True)
@@ -217,19 +267,13 @@ def preflight_fleet(
     approval_digest: str | None = None,
 ) -> FleetPreflightResult:
     """Re-resolve and freshly verify every member without any execution boundary."""
-    if not plan.verify_digest():
+    approval_error = validate_fleet_approval(plan, approval_digest)
+    if approval_error is not None:
         return FleetPreflightResult(
             fleet_digest=plan.digest,
             succeeded=False,
             members=(),
-            message="fleet plan digest is invalid",
-        )
-    if approval_digest is not None and approval_digest != plan.digest:
-        return FleetPreflightResult(
-            fleet_digest=plan.digest,
-            succeeded=False,
-            members=(),
-            message="approval digest does not match fleet plan",
+            message=approval_error,
         )
     try:
         selected = inventory.resolve_fleet(plan.selector)
@@ -316,6 +360,17 @@ def preflight_fleet(
             else "complete fleet read-only preflight failed"
         ),
     )
+
+
+def validate_fleet_approval(
+    plan: FleetDeploymentPlan, approval_digest: str | None
+) -> str | None:
+    """Return one bounded pure approval failure without provider contact."""
+    if not plan.verify_digest():
+        return "fleet plan digest is invalid"
+    if approval_digest is not None and approval_digest != plan.digest:
+        return "approval digest does not match fleet plan"
+    return None
 
 
 def validate_fleet_desired_state(
@@ -453,8 +508,87 @@ def deploy_fleet(
     *,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     child_deployer: Callable[..., ChangeRecord] = deploy_plan,
+    admission: ProcessLocalFleetAdmission = PROCESS_LOCAL_FLEET_ADMISSION,
 ) -> FleetChangeRecord:
-    """Execute exact persisted cohorts sequentially through ``deploy_plan`` once."""
+    """Admit the exact device set, then execute the unchanged fleet state machine."""
+    approval_error = validate_fleet_approval(plan, approval_digest)
+    if approval_error is not None:
+        preflight = FleetPreflightResult(
+            fleet_digest=plan.digest,
+            succeeded=False,
+            members=(),
+            message=approval_error,
+        )
+        return _blocked_fleet_record(plan, approval_digest, preflight, now=now)
+    identities = tuple(member.inventory_object_id for member in plan.members)
+    lease = admission.acquire(identities)
+    if lease is None:
+        preflight = FleetPreflightResult(
+            fleet_digest=plan.digest,
+            succeeded=False,
+            members=(),
+            message="process-local fleet target admission blocked",
+        )
+        return _blocked_fleet_record(plan, approval_digest, preflight, now=now)
+    with lease:
+        return _deploy_admitted_fleet(
+            plan,
+            approval_digest,
+            inventory,
+            secrets,
+            collector,
+            executor,
+            now=now,
+            child_deployer=child_deployer,
+        )
+
+
+def _blocked_fleet_record(
+    plan: FleetDeploymentPlan,
+    approval_digest: str,
+    preflight: FleetPreflightResult,
+    *,
+    now: Callable[[], datetime],
+) -> FleetChangeRecord:
+    return FleetChangeRecord(
+        generated_at=now(),
+        change_id=plan.change_id,
+        fleet_plan_digest=plan.digest,
+        approval_digest=approval_digest,
+        selector=plan.selector,
+        rollout=plan.rollout,
+        canaries=plan.canaries,
+        waves=plan.waves,
+        preflight=preflight,
+        fleet_plan=plan,
+        members=_execution_evidence(plan, {}, stopped=False),
+        final_validation=_not_attempted_validation(),
+        final_outcome=FleetFinalOutcome.BLOCKED,
+    )
+
+
+def _not_attempted_validation() -> FleetDesiredStateValidationResult:
+    return FleetDesiredStateValidationResult(
+        attempted=False,
+        succeeded=None,
+        members=(),
+        message="final fleet validation not attempted",
+    )
+
+
+def _deploy_admitted_fleet(
+    plan: FleetDeploymentPlan,
+    approval_digest: str,
+    inventory: FleetPreflightInventoryProvider,
+    secrets: SecretProvider,
+    collector: StateCollector,
+    executor: ArtifactExecutor,
+    *,
+    now: Callable[[], datetime],
+    child_deployer: Callable[..., ChangeRecord],
+) -> FleetChangeRecord:
+    """Run 5B unchanged while the caller holds the complete device lease."""
+    not_attempted_validation = _not_attempted_validation()
     preflight = preflight_fleet(
         plan,
         inventory,
@@ -462,28 +596,8 @@ def deploy_fleet(
         collector,
         approval_digest=approval_digest,
     )
-    not_attempted_validation = FleetDesiredStateValidationResult(
-        attempted=False,
-        succeeded=None,
-        members=(),
-        message="final fleet validation not attempted",
-    )
     if not preflight.succeeded:
-        return FleetChangeRecord(
-            generated_at=now(),
-            change_id=plan.change_id,
-            fleet_plan_digest=plan.digest,
-            approval_digest=approval_digest,
-            selector=plan.selector,
-            rollout=plan.rollout,
-            canaries=plan.canaries,
-            waves=plan.waves,
-            preflight=preflight,
-            fleet_plan=plan,
-            members=_execution_evidence(plan, {}, stopped=False),
-            final_validation=not_attempted_validation,
-            final_outcome=FleetFinalOutcome.BLOCKED,
-        )
+        return _blocked_fleet_record(plan, approval_digest, preflight, now=now)
 
     by_id = {member.inventory_object_id: member for member in plan.members}
     order = [*plan.canaries, *(identity for wave in plan.waves for identity in wave)]

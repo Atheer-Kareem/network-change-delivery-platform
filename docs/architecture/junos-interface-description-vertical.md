@@ -44,8 +44,9 @@ fixed five-minute timeout, and confirmation contract.
 The bounded diff validator recognizes only the known-safe representation of a
 description change under an existing interface or creation of the one typed
 interface stanza containing that description. Any other representation fails
-closed and must be validated against the lab before a first write. Evidence
-retains only the candidate diff SHA-256, never the raw diff or candidate.
+closed and requires separate lab corroboration before it can be accepted for a
+write. Evidence retains only the candidate diff SHA-256, never the raw diff or
+candidate.
 
 ## Validation, confirmation, and honest outcomes
 
@@ -74,12 +75,15 @@ it became active, the confirmation timer should restore the prior committed
 configuration.
 
 Evidence records bounded phase results and never raw NETCONF replies, full
-configuration, candidate diff, or credentials. The first real Junos write still
-requires separate review and explicit approval of the exact immutable digest.
+configuration, candidate diff, or credentials. The first real Junos write was
+separately reviewed and approved by exact immutable digest; its commit-confirmed,
+independent-validation, confirmation, and idempotency evidence is recorded in
+the [Increment 4 acceptance report](../acceptance/junos-interface-description-increment-4.md).
 
 ## Limitations
 
 Increment 4 supports one interface description on one explicit Junos target. It
 does not provide fleets, arbitrary XML, rollback 1 automation, proxy/bastion
 routing, dynamic device credentials, or a claim of generic cross-vendor
-transactions. Completion remains blocked on real vJunos plan/write acceptance.
+transactions. Increment 4 is complete with real vJunos plan/write acceptance;
+those broader capabilities remain later roadmap work.

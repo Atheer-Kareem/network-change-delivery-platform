@@ -4,20 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import stat
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Annotated
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from network_change_delivery.assurance import prepare_snapshot
+from network_change_delivery.models import DeploymentPlan, FleetDeploymentPlan
 from network_change_delivery.plan_assurance import (
     BatfishAssurancePolicy,
     PlanAssuranceRecord,
-    load_plan,
     verify_plan_assurance,
 )
 
@@ -39,7 +40,7 @@ class PromotedArtifact(BaseModel):
 
 class DeploymentPromotionManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: str = "1"
+    schema_version: Literal["1"] = "1"
     git_commit: GitSha
     plan_digest: Sha256
     assurance_record_digest: Sha256
@@ -91,6 +92,37 @@ def _sha(path: Path) -> tuple[str, int]:
     return "sha256:" + hashlib.sha256(data).hexdigest(), len(data)
 
 
+def _write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(
+        path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    try:
+        offset = 0
+        while offset < len(data):
+            written = os.write(fd, data[offset:])
+            if written <= 0:
+                raise OSError("promotion write made no progress")
+            offset += written
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _load_plan_bytes(data: bytes) -> DeploymentPlan | FleetDeploymentPlan:
+    payload = json.loads(data)
+    plan = (
+        FleetDeploymentPlan.model_validate(payload)
+        if "members" in payload
+        else DeploymentPlan.model_validate(payload)
+    )
+    if not plan.verify_digest():
+        raise PromotionError("promotion plan digest verification failed")
+    return plan
+
+
 def _policy(path: Path) -> BatfishAssurancePolicy:
     try:
         return BatfishAssurancePolicy.model_validate(
@@ -117,12 +149,16 @@ def create_promotion_bundle(
 ) -> DeploymentPromotionManifest:
     if destination.exists() or destination.is_symlink():
         raise PromotionError("promotion destination already exists")
-    plan = load_plan(plan_path)
-    policy = _policy(policy_path)
+    plan_bytes = plan_path.read_bytes()
+    policy_bytes = policy_path.read_bytes()
+    assurance_bytes = assurance_path.read_bytes()
+    plan = _load_plan_bytes(plan_bytes)
     try:
-        record = PlanAssuranceRecord.model_validate_json(
-            assurance_path.read_text(encoding="utf-8")
-        )
+        policy = BatfishAssurancePolicy.model_validate(yaml.safe_load(policy_bytes))
+    except Exception as exc:
+        raise PromotionError("invalid assurance policy") from exc
+    try:
+        record = PlanAssuranceRecord.model_validate_json(assurance_bytes)
     except Exception as exc:
         raise PromotionError("invalid assurance record") from exc
     if not record.verify_digest() or record.outcome.value != "PASSED":
@@ -136,13 +172,16 @@ def create_promotion_bundle(
         try:
             (destination / "baseline").mkdir(mode=0o700)
             (destination / "baseline/configs").mkdir(mode=0o700)
-            shutil.copy2(plan_path, destination / "plan.json")
-            shutil.copy2(policy_path, destination / "policy.yaml")
-            shutil.copy2(assurance_path, destination / "assurance.json")
+            _write_bytes(destination / "plan.json", plan_bytes)
+            _write_bytes(destination / "policy.yaml", policy_bytes)
+            _write_bytes(destination / "assurance.json", assurance_bytes)
             for entry in baseline.manifest.files:
                 target = destination / "baseline/configs" / entry.relative_path
                 target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                shutil.copy2(baseline.root / "configs" / entry.relative_path, target)
+                _write_bytes(
+                    target,
+                    (baseline.root / "configs" / entry.relative_path).read_bytes(),
+                )
             artifacts = [
                 _artifact("plan", destination, "plan.json"),
                 _artifact("policy", destination, "policy.yaml"),
@@ -173,10 +212,14 @@ def create_promotion_bundle(
                 update={"digest": manifest.calculated_digest()}
             )
             manifest_path = destination / "manifest.json"
-            manifest_path.write_text(
-                manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
+            _write_bytes(
+                manifest_path, (manifest.model_dump_json(indent=2) + "\n").encode()
             )
-            manifest_path.chmod(0o600)
+            if (
+                verify_promotion_bundle(destination, git_commit).digest
+                != manifest.digest
+            ):
+                raise PromotionError("created promotion failed internal verification")
             return manifest
         except Exception:
             shutil.rmtree(destination, ignore_errors=True)
@@ -197,12 +240,22 @@ def verify_promotion_bundle(
     if not manifest.verify_digest() or manifest.git_commit != expected_git_commit:
         raise PromotionError("promotion manifest binding failed")
     expected = {"manifest.json"} | {a.relative_path for a in manifest.artifacts}
+    expected_dirs = {"baseline", "baseline/configs"}
+    expected_dirs.update(
+        str(Path(a.relative_path).parent)
+        for a in manifest.artifacts
+        if a.relative_path.startswith("baseline/")
+    )
     actual: set[str] = set()
     for path in promotion.rglob("*"):
         rel = path.relative_to(promotion).as_posix()
-        if path.is_symlink() or (
-            path.is_file() and not stat.S_ISREG(path.stat().st_mode)
-        ):
+        if path.is_symlink():
+            raise PromotionError("promotion contains an invalid file")
+        if path.is_dir():
+            if rel not in expected_dirs:
+                raise PromotionError("promotion contains an unexpected directory")
+            continue
+        if not stat.S_ISREG(path.stat().st_mode):
             raise PromotionError("promotion contains an invalid file")
         if path.is_file():
             actual.add(rel)
@@ -212,7 +265,7 @@ def verify_promotion_bundle(
         digest, size = _sha(promotion / artifact.relative_path)
         if digest != artifact.sha256 or size != artifact.size_bytes:
             raise PromotionError("promotion artifact digest mismatch")
-    plan = load_plan(promotion / "plan.json")
+    plan = _load_plan_bytes((promotion / "plan.json").read_bytes())
     policy = _policy(promotion / "policy.yaml")
     record = PlanAssuranceRecord.model_validate_json(
         (promotion / "assurance.json").read_text(encoding="utf-8")

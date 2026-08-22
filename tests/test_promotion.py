@@ -70,10 +70,24 @@ def test_promotion_bundle_and_tamper_checks(tmp_path: Path) -> None:
         PLAN, POLICY, BASELINE, assurance, "a" * 40, destination
     )
     assert manifest.verify_digest()
+    assert destination.stat().st_mode & 0o777 == 0o700
+    for path in destination.rglob("*"):
+        if path.is_file():
+            assert path.stat().st_mode & 0o777 == 0o600
     assert verify_promotion_bundle(destination, "a" * 40).digest == manifest.digest
     with pytest.raises(PromotionError):
         verify_promotion_bundle(destination, "b" * 40)
     (destination / "extra.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(PromotionError):
+        verify_promotion_bundle(destination, "a" * 40)
+
+
+def test_extra_directory_rejected(tmp_path: Path) -> None:
+    assurance = tmp_path / "assurance.json"
+    assurance.write_text(_record().model_dump_json(), encoding="utf-8")
+    destination = tmp_path / "promotion"
+    create_promotion_bundle(PLAN, POLICY, BASELINE, assurance, "a" * 40, destination)
+    (destination / "unexpected").mkdir()
     with pytest.raises(PromotionError):
         verify_promotion_bundle(destination, "a" * 40)
 

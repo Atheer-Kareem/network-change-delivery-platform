@@ -10,3 +10,7 @@ Buildkite CLI was not installed in the local environment; pipeline dry-run and
 external Buildkite acceptance remain pending setup. Required queues are
 `ncdp-validation` and `ncdp-deploy`. Main protection must be configured and
 verified externally before Increment 7 completion.
+
+Approval values are block-step build meta-data, not environment variables.
+The repository-owned gate validates Buildkite context and compares the exact
+untrimmed values before reporting authorization readiness.

@@ -6,7 +6,9 @@ The 7A DAG is `quality` → `pipeline-contract` → `promotion` →
 `ncdp/network-change-deployment` and limit one.
 
 Promotion contains plan, policy, assurance, and frozen baseline bytes only.
-The gate verifies exact digests and prints an authorization summary, then stops.
+The approval block stores its three digest fields as Buildkite build meta-data.
+The gate retrieves those exact values with `buildkite-agent meta-data get`,
+verifies exact digests, and prints an authorization summary, then stops.
 There is no device, NetBox, or OpenBao access. OIDC identity and short-lived
 OpenBao access are deferred to 7B (target lifetime 300 seconds).
 

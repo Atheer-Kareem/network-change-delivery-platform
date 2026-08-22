@@ -9,11 +9,11 @@ trap 'rm -rf "$tmpdir"' EXIT
 buildkite-agent artifact download "promotion/**" "$tmpdir" --step promotion
 promotion="$tmpdir/promotion"
 [[ -f "$promotion/manifest.json" ]]
-plan_digest="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["plan_digest"])' "$promotion/manifest.json")"
-assurance_digest="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["assurance_record_digest"])' "$promotion/manifest.json")"
-promotion_digest="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "$promotion/manifest.json")"
-[[ "${BUILDKITE_APPROVED_PLAN_DIGEST:-}" == "$plan_digest" ]]
-[[ "${BUILDKITE_APPROVED_ASSURANCE_DIGEST:-}" == "$assurance_digest" ]]
-[[ "${BUILDKITE_APPROVED_PROMOTION_DIGEST:-}" == "$promotion_digest" ]]
-ncdp verify-promotion --promotion "$promotion" --git-commit "$BUILDKITE_COMMIT"
-printf 'commit: %s\nplan digest: %s\nassurance digest: %s\npromotion digest: %s\ndeployment authorization gate: PASSED\ndevice write executed: NO\n' "$BUILDKITE_COMMIT" "$plan_digest" "$assurance_digest" "$promotion_digest"
+approved_plan_digest="$(buildkite-agent meta-data get "approved-plan-digest")"
+approved_assurance_digest="$(buildkite-agent meta-data get "approved-assurance-digest")"
+approved_promotion_digest="$(buildkite-agent meta-data get "approved-promotion-digest")"
+uv run ncdp verify-buildkite-gate \
+  --promotion "$promotion" \
+  --approved-plan-digest "$approved_plan_digest" \
+  --approved-assurance-digest "$approved_assurance_digest" \
+  --approved-promotion-digest "$approved_promotion_digest"

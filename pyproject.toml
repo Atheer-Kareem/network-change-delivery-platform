@@ -39,3 +39,4 @@ select = ["A", "ARG", "B", "C4", "E", "F", "I", "N", "PERF", "PTH", "RUF", "SIM"
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"
 testpaths = ["tests"]
+markers = ["batfish_integration: requires an externally running local Batfish service"]

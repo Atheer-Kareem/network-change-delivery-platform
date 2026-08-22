@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from network_change_delivery.assurance import (
     AssuranceObservation,
@@ -8,6 +9,7 @@ from network_change_delivery.assurance import (
     BatfishAssuranceIntent,
     CriticalFlow,
     FlowResult,
+    ParseFileResult,
     ParseSummary,
     build_snapshot_manifest,
     evaluate_assurance,
@@ -31,15 +33,12 @@ def intent() -> BatfishAssuranceIntent:
 def observation(changed: int = 0, *, init: int = 0) -> AssuranceObservation:
     parse = ParseSummary(
         nodes=("core-02", "edge-junos-01", "core-03"),
-        parse_status={
-            "core-02": "PASSED",
-            "edge-junos-01": "PASSED",
-            "core-03": "PASSED",
-        },
+        files=(ParseFileResult(relative_path="core.cfg", status="PASSED"),),
         initialization_issue_count=init,
     )
     return AssuranceObservation(
         pybatfish_version="test",
+        batfish_version="server-test",
         baseline=parse,
         candidate=parse,
         flows=(
@@ -114,3 +113,55 @@ def test_evidence_contains_no_configuration_content(tmp_path: Path) -> None:
     dumped = result.model_dump_json()
     assert "hostname core" not in dumped
     assert "raw" not in dumped
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"expected_nodes": ()},
+        {"expected_nodes": ("core-02", "core-02")},
+        {"critical_flows": ()},
+        {
+            "critical_flows": (
+                CriticalFlow(
+                    source_node="missing",
+                    source_ip="10.0.0.1",
+                    destination_ip="10.0.0.2",
+                ),
+            )
+        },
+        {
+            "critical_flows": (
+                CriticalFlow(
+                    source_node="core-02",
+                    source_ip="not-an-ip",
+                    destination_ip="10.0.0.2",
+                ),
+            )
+        },
+    ],
+)
+def test_intent_contract_rejects_invalid_inputs(changes: dict) -> None:
+    with pytest.raises(ValidationError):
+        BatfishAssuranceIntent.model_validate(
+            intent().model_copy(update=changes).model_dump()
+        )
+
+
+def test_policy_rejects_missing_parse_file(tmp_path: Path) -> None:
+    baseline, candidate = manifests(tmp_path)
+    observed = observation()
+    observed = observed.model_copy(
+        update={
+            "baseline": observed.baseline.model_copy(update={"files": ()}),
+        }
+    )
+    result = evaluate_assurance(intent(), baseline, candidate, observed)
+    assert result.outcome is AssuranceOutcome.FAILED
+
+
+def test_policy_rejects_missing_flow_observation(tmp_path: Path) -> None:
+    baseline, candidate = manifests(tmp_path)
+    observed = observation().model_copy(update={"flows": ()})
+    result = evaluate_assurance(intent(), baseline, candidate, observed)
+    assert result.outcome is AssuranceOutcome.FAILED

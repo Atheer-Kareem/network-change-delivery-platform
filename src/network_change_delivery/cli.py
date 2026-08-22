@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Sequence
-from contextlib import suppress
 from datetime import UTC, datetime
 from importlib.metadata import version
 from io import TextIOWrapper
@@ -22,9 +21,8 @@ from network_change_delivery.assurance import (
     BatfishAssuranceAdapter,
     BatfishAssuranceIntent,
     InvariantResult,
-    ParseSummary,
-    build_snapshot_manifest,
     evaluate_assurance,
+    prepare_snapshot,
 )
 from network_change_delivery.fleet import FleetSafetyError, deploy_fleet, plan_fleet
 from network_change_delivery.inventory import (
@@ -116,7 +114,6 @@ def _blocked_assurance_evidence(
     candidate_digest: str,
     message: str,
 ) -> AssuranceEvidence:
-    empty = ParseSummary(nodes=(), parse_status={}, initialization_issue_count=0)
     return AssuranceEvidence(
         generated_at=datetime.now(UTC),
         subject_digest=intent.subject_digest,
@@ -124,56 +121,46 @@ def _blocked_assurance_evidence(
         baseline_snapshot_digest=baseline_digest,
         candidate_snapshot_digest=candidate_digest,
         expected_nodes=tuple(sorted(intent.expected_nodes)),
-        baseline_parse=empty,
-        candidate_parse=empty,
-        baseline_initialization_issue_count=0,
-        candidate_initialization_issue_count=0,
+        baseline_parse=None,
+        candidate_parse=None,
         critical_flows=(),
-        differential_changed_flow_count=0,
         invariants=(InvariantResult(name="provider", passed=False, detail=message),),
+        failure_reason=message,
         outcome=AssuranceOutcome.BLOCKED,
     )
 
 
 def _run_assure(arguments: argparse.Namespace) -> int:
-    with _reserve_assurance_evidence(arguments.report_json) as evidence:
-        try:
-            intent = _load_assurance_intent(arguments.intent)
-            baseline = build_snapshot_manifest(arguments.baseline)
-            candidate = build_snapshot_manifest(arguments.candidate)
-            observation = BatfishAssuranceAdapter().analyze(
-                arguments.baseline, arguments.candidate, intent
-            )
-            result = evaluate_assurance(intent, baseline, candidate, observation)
-        except (OSError, ValueError, AssuranceProviderError) as error:
-            baseline_digest = "sha256:" + "0" * 64
-            candidate_digest = "sha256:" + "0" * 64
-            with suppress(OSError, ValueError):
-                baseline_digest = build_snapshot_manifest(arguments.baseline).digest
-            with suppress(OSError, ValueError):
-                candidate_digest = build_snapshot_manifest(arguments.candidate).digest
-            result = _blocked_assurance_evidence(
-                intent
-                if "intent" in locals()
-                else BatfishAssuranceIntent(
-                    subject_digest="sha256:" + "0" * 64,
-                    expected_nodes=(),
-                    critical_flows=(),
-                ),
-                baseline_digest,
-                candidate_digest,
-                str(error),
-            )
-        evidence.write(result.model_dump_json(indent=2) + "\n")
-        evidence.flush()
-        os.fsync(evidence.fileno())
+    # Input errors are reported without reserving an evidence artifact.
+    intent = _load_assurance_intent(arguments.intent)
+    with (
+        prepare_snapshot(arguments.baseline) as prepared_baseline,
+        prepare_snapshot(arguments.candidate) as prepared_candidate,
+    ):
+        baseline = prepared_baseline.manifest
+        candidate = prepared_candidate.manifest
+        with _reserve_assurance_evidence(arguments.report_json) as evidence:
+            try:
+                observation = BatfishAssuranceAdapter().analyze(
+                    prepared_baseline.root, prepared_candidate.root, intent
+                )
+                result = evaluate_assurance(intent, baseline, candidate, observation)
+            except (OSError, ValueError, AssuranceProviderError) as error:
+                result = _blocked_assurance_evidence(
+                    intent, baseline.digest, candidate.digest, str(error)
+                )
+            evidence.write(result.model_dump_json(indent=2) + "\n")
+            evidence.flush()
+            os.fsync(evidence.fileno())
     print(f"Subject digest: {result.subject_digest}")
     print(f"Baseline snapshot digest: {result.baseline_snapshot_digest}")
     print(f"Candidate snapshot digest: {result.candidate_snapshot_digest}")
-    print(f"Parsed node count: {len(result.candidate_parse.nodes)}")
-    issue_count = (
-        result.baseline_initialization_issue_count
-        + result.candidate_initialization_issue_count
+    parsed_nodes = len(result.candidate_parse.nodes) if result.candidate_parse else 0
+    print(f"Parsed node count: {parsed_nodes}")
+    issue_count = sum(
+        summary.initialization_issue_count
+        for summary in (result.baseline_parse, result.candidate_parse)
+        if summary is not None
     )
     print(f"Initialization issues: {issue_count}")
     print(f"Critical flows: {len(result.critical_flows)}")

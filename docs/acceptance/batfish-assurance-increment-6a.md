@@ -7,8 +7,9 @@ end-to-end flow from `10.6.2.2` to `10.6.3.3`.
 
 The baseline and behavior-preserving candidate differ only in descriptions.
 The disruptive candidate shuts the sole core-02 transit interface. Unit tests
-exercise manifests, bounded errors, policy, evidence secrecy, and report
-reservation using fakes. Explicit Batfish integration is opt-in and is not part
+exercise manifests, frozen staging, intent validation, exact parse/flow
+coverage, policy, evidence secrecy, and report reservation using fakes. Real
+Batfish integration is an explicit `batfish_integration` marker and is not part
 of ordinary pytest.
 
 Increment 6A does not contact devices, NetBox, OpenBao, company systems, or
@@ -28,4 +29,8 @@ producing `FAILED` (CLI exit 2). The service was disposable and was not used by
 ordinary unit tests.
 
 Evidence is platform-owned bounded JSON: raw configurations, traces, parser
-stacks, and full Batfish answer tables are not retained.
+stacks, and full Batfish answer tables are not retained. The manifest digest
+binds the exact bytes copied into private staging and submitted to Batfish;
+source mutation after preparation cannot change analyzed bytes. Analysis names
+use a random per-run namespace. Client/server versions are recorded separately:
+PyBatfish `2025.7.7.2423`, Batfish server `2026.07.20.3565`.

@@ -12,10 +12,16 @@ computation behind an explicit normalized provider boundary. Batfish receives
 only explicit synthetic snapshot inputs and never discovers production devices.
 
 Platform-owned SHA-256 snapshot manifests bind every input file without storing
-raw configurations. Raw configurations, traces, parser dumps, DataFrames, and
-arbitrary server responses are not evidence. Parser and initialization findings
-remain first-class bounded evidence because Batfish cannot model every vendor
-feature perfectly.
+raw configurations. Source files are read once into private frozen staging;
+the manifest and the bytes submitted to Batfish are therefore the same
+boundary. Raw configurations, traces, parser dumps, DataFrames, and arbitrary
+server responses are not evidence. Parser and initialization findings remain
+first-class bounded evidence because Batfish cannot model every vendor feature
+perfectly.
+
+Each analysis uses a random isolated Batfish namespace with unique snapshot
+names. Evidence records the PyBatfish client version separately from the
+Batfish server version and immutable image identity.
 
 Increment 6A uses a generic `subject_digest`. Binding assurance to an exact
 `DeploymentPlan` or `FleetDeploymentPlan` is deferred to Increment 6B.

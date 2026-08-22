@@ -1,20 +1,27 @@
-"""Offline Batfish assurance boundary and platform-owned evidence."""
+"""Offline Batfish assurance boundary and bounded platform evidence."""
 
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
-import re
-from collections.abc import Mapping
+import shutil
+import stat
+import tempfile
+import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Protocol
+from typing import Annotated, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 Sha256 = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
+MAX_FILES = 128
+MAX_BYTES = 4 * 1024 * 1024
 
 
 class AssuranceProviderError(RuntimeError):
@@ -41,7 +48,7 @@ class SnapshotManifest(BaseModel):
 
     def digest_input(self) -> bytes:
         return json.dumps(
-            {"files": [item.model_dump(mode="json") for item in self.files]},
+            {"files": [f.model_dump(mode="json") for f in self.files]},
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
@@ -51,6 +58,87 @@ class SnapshotManifest(BaseModel):
 
     def verify_digest(self) -> bool:
         return self.digest == self.calculated_digest()
+
+
+class PreparedSnapshot:
+    """Private frozen bytes and their manifest, submitted as one unit."""
+
+    def __init__(self, root: Path, manifest: SnapshotManifest):
+        self.root, self.manifest = root, manifest
+
+    def __enter__(self) -> PreparedSnapshot:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+
+def _read_regular(path: Path) -> bytes:
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("snapshot contains a non-regular file")
+        return os.read(fd, os.fstat(fd).st_size)
+    finally:
+        os.close(fd)
+
+
+def _manifest_from_bytes(files: Iterable[tuple[str, bytes]]) -> SnapshotManifest:
+    entries = tuple(
+        SnapshotFile(
+            relative_path=p,
+            sha256="sha256:" + hashlib.sha256(b).hexdigest(),
+            size_bytes=len(b),
+        )
+        for p, b in files
+    )
+    if not entries:
+        raise ValueError("snapshot config set is empty")
+    provisional = SnapshotManifest(files=entries, digest="sha256:" + "0" * 64)
+    return provisional.model_copy(update={"digest": provisional.calculated_digest()})
+
+
+def prepare_snapshot(root: Path) -> PreparedSnapshot:
+    """Read once, hash once, and stage exactly those bytes for Batfish."""
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("snapshot root must be a real directory")
+    configs = root / "configs"
+    if configs.is_symlink() or not configs.is_dir():
+        raise ValueError("snapshot configs directory is required")
+    source: list[tuple[str, bytes]] = []
+    total = 0
+    for path in sorted(configs.rglob("*"), key=lambda p: p.as_posix()):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("snapshot contains a symlink or non-regular file")
+        relative = PurePosixPath(path.relative_to(configs).as_posix()).as_posix()
+        content = _read_regular(path)
+        source.append((relative, content))
+        total += len(content)
+        if len(source) > MAX_FILES or total > MAX_BYTES:
+            raise ValueError("snapshot exceeds bounded size limits")
+    manifest = _manifest_from_bytes(source)
+    staging = Path(tempfile.mkdtemp(prefix="ncdp-batfish-"))
+    staging.chmod(0o700)
+    (staging / "configs").mkdir(mode=0o700)
+    for relative, content in source:
+        target = staging / "configs" / relative
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        fd = os.open(
+            target,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            os.write(fd, content)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    return PreparedSnapshot(staging, manifest)
+
+
+def build_snapshot_manifest(root: Path) -> SnapshotManifest:
+    with prepare_snapshot(root) as prepared:
+        return prepared.manifest
 
 
 class CriticalFlow(BaseModel):
@@ -63,16 +151,49 @@ class CriticalFlow(BaseModel):
 class BatfishAssuranceIntent(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     subject_digest: Sha256
-    expected_nodes: tuple[str, ...]
-    critical_flows: tuple[CriticalFlow, ...]
+    expected_nodes: tuple[str, ...] = Field(min_length=1)
+    critical_flows: tuple[CriticalFlow, ...] = Field(min_length=1)
     require_no_differential_reachability: bool = True
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> BatfishAssuranceIntent:
+        if len(set(self.expected_nodes)) != len(self.expected_nodes):
+            raise ValueError("expected_nodes must be unique")
+        identities = {
+            (f.source_node, f.source_ip, f.destination_ip) for f in self.critical_flows
+        }
+        if len(identities) != len(self.critical_flows):
+            raise ValueError("critical_flows must be unique")
+        if any(f.source_node not in self.expected_nodes for f in self.critical_flows):
+            raise ValueError("critical flow source_node must be expected")
+        for flow in self.critical_flows:
+            try:
+                src, dst = (
+                    ipaddress.ip_address(flow.source_ip),
+                    ipaddress.ip_address(flow.destination_ip),
+                )
+            except ValueError as exc:
+                raise ValueError("critical flow addresses must be IPv4") from exc
+            if src.version != 4 or dst.version != 4:
+                raise ValueError("critical flow addresses must be IPv4")
+        return self
+
+
+class ParseFileResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    relative_path: str
+    status: str
 
 
 class ParseSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+    files: tuple[ParseFileResult, ...]
     nodes: tuple[str, ...]
-    parse_status: Mapping[str, str]
     initialization_issue_count: int = Field(ge=0)
+
+    @property
+    def parse_status(self) -> dict[str, str]:
+        return {f.relative_path: f.status for f in self.files}
 
 
 class FlowResult(BaseModel):
@@ -83,12 +204,15 @@ class FlowResult(BaseModel):
     baseline_reachable: bool
     candidate_reachable: bool
 
+    @property
+    def identity(self) -> tuple[str, str, str]:
+        return self.source_node, self.source_ip, self.destination_ip
+
 
 class AssuranceObservation(BaseModel):
-    """Normalized observations returned by an assurance provider."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
     pybatfish_version: str
+    batfish_version: str
     service_identity: str | None = None
     baseline: ParseSummary
     candidate: ParseSummary
@@ -107,68 +231,44 @@ class AssuranceEvidence(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     generated_at: datetime
     subject_digest: Sha256
-    provider: str = "batfish"
-    pybatfish_version: str
+    provider: Literal["batfish"] = "batfish"
+    pybatfish_version: str | None = None
+    batfish_version: str | None = None
     service_identity: str | None = None
-    baseline_snapshot_digest: Sha256
-    candidate_snapshot_digest: Sha256
+    baseline_snapshot_digest: Sha256 | None = None
+    candidate_snapshot_digest: Sha256 | None = None
     expected_nodes: tuple[str, ...]
-    baseline_parse: ParseSummary
-    candidate_parse: ParseSummary
-    baseline_initialization_issue_count: int = Field(ge=0)
-    candidate_initialization_issue_count: int = Field(ge=0)
-    critical_flows: tuple[FlowResult, ...]
-    differential_changed_flow_count: int = Field(ge=0)
+    baseline_parse: ParseSummary | None = None
+    candidate_parse: ParseSummary | None = None
+    critical_flows: tuple[FlowResult, ...] = ()
+    differential_changed_flow_count: int | None = Field(default=None, ge=0)
     invariants: tuple[InvariantResult, ...]
+    failure_reason: str | None = None
     outcome: AssuranceOutcome
 
 
 class NetworkAssuranceProvider(Protocol):
     def analyze(
-        self,
-        baseline: Path,
-        candidate: Path,
-        intent: BatfishAssuranceIntent,
-    ) -> AssuranceObservation:
-        """Analyze snapshots and return normalized, bounded observations."""
+        self, baseline: Path, candidate: Path, intent: BatfishAssuranceIntent
+    ) -> AssuranceObservation: ...
 
 
-MAX_FILES = 128
-MAX_BYTES = 4 * 1024 * 1024
-_CONFIG_NAME = re.compile(r"^[^/\\]+$")
-
-
-def build_snapshot_manifest(root: Path) -> SnapshotManifest:
-    """Validate a configs-only snapshot and build its deterministic manifest."""
-    if not root.is_dir() or root.is_symlink():
-        raise ValueError("snapshot root must be a real directory")
-    configs = root / "configs"
-    if not configs.is_dir() or configs.is_symlink():
-        raise ValueError("snapshot configs directory is required")
-    entries: list[SnapshotFile] = []
-    total = 0
-    for path in sorted(configs.rglob("*"), key=lambda item: item.as_posix()):
-        if path.is_symlink() or not path.is_file():
-            raise ValueError("snapshot contains a symlink or non-regular file")
-        relative = PurePosixPath(path.relative_to(configs).as_posix())
-        if any(part in {"", ".", ".."} for part in relative.parts):
-            raise ValueError("snapshot path is invalid")
-        size = path.stat().st_size
-        total += size
-        if len(entries) >= MAX_FILES or total > MAX_BYTES:
-            raise ValueError("snapshot exceeds bounded size limits")
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        entries.append(
-            SnapshotFile(
-                relative_path=relative.as_posix(),
-                sha256="sha256:" + digest,
-                size_bytes=size,
-            )
-        )
-    if not entries:
-        raise ValueError("snapshot config set is empty")
-    provisional = SnapshotManifest(files=tuple(entries), digest="sha256:" + "0" * 64)
-    return provisional.model_copy(update={"digest": provisional.calculated_digest()})
+def _normalize_parse(rows: object, nodes: tuple[str, ...], issues: int) -> ParseSummary:
+    seen: dict[str, str] = {}
+    for _, row in rows.iterrows():
+        name = PurePosixPath(str(row["File_Name"]).replace("\\", "/")).as_posix()
+        if name.startswith("configs/"):
+            name = name.removeprefix("configs/")
+        if name in seen:
+            raise AssuranceProviderError("duplicate Batfish parse result")
+        seen[name] = str(row["Status"])
+    return ParseSummary(
+        files=tuple(
+            ParseFileResult(relative_path=n, status=seen[n]) for n in sorted(seen)
+        ),
+        nodes=tuple(sorted(nodes)),
+        initialization_issue_count=issues,
+    )
 
 
 def evaluate_assurance(
@@ -177,44 +277,70 @@ def evaluate_assurance(
     candidate_manifest: SnapshotManifest,
     observation: AssuranceObservation,
 ) -> AssuranceEvidence:
-    """Apply assurance policy to normalized provider observations."""
-    invariants: list[InvariantResult] = []
     expected = tuple(sorted(intent.expected_nodes))
-    for label, summary in (
-        ("baseline", observation.baseline),
-        ("candidate", observation.candidate),
+    invariants: list[InvariantResult] = []
+    for label, summary, manifest in (
+        ("baseline", observation.baseline, baseline_manifest),
+        ("candidate", observation.candidate, candidate_manifest),
     ):
-        invariants.append(
-            InvariantResult(
-                name=f"{label}_parse_status",
-                passed=all(
-                    value == "PASSED" for value in summary.parse_status.values()
+        actual = set(summary.parse_status)
+        expected_files = {f.relative_path for f in manifest.files}
+        exact = actual == expected_files
+        invariants.extend(
+            (
+                InvariantResult(
+                    name=f"{label}_exact_parse_files",
+                    passed=exact,
+                    detail="parse results cover exactly manifest files",
                 ),
-                detail="every configuration parsed successfully",
+                InvariantResult(
+                    name=f"{label}_parse_status",
+                    passed=exact
+                    and all(s == "PASSED" for s in summary.parse_status.values()),
+                    detail="every configuration parsed successfully",
+                ),
+                InvariantResult(
+                    name=f"{label}_exact_nodes",
+                    passed=tuple(sorted(summary.nodes)) == expected,
+                    detail="parsed node set equals expected node set",
+                ),
+                InvariantResult(
+                    name=f"{label}_initialization_issues",
+                    passed=summary.initialization_issue_count == 0,
+                    detail="initialization issue count is zero",
+                ),
             )
         )
-        invariants.append(
-            InvariantResult(
-                name=f"{label}_exact_nodes",
-                passed=tuple(sorted(summary.nodes)) == expected,
-                detail="parsed node set equals expected node set",
-            )
-        )
-        invariants.append(
-            InvariantResult(
-                name=f"{label}_initialization_issues",
-                passed=summary.initialization_issue_count == 0,
-                detail="initialization issue count is zero",
-            )
-        )
-    invariants.extend(
+    requested = {
+        (f.source_node, f.source_ip, f.destination_ip) for f in intent.critical_flows
+    }
+    observed = {f.identity for f in observation.flows}
+    exact_flows = observed == requested and len(observed) == len(observation.flows)
+    invariants.append(
         InvariantResult(
-            name=f"critical_flow:{flow.source_node}:{flow.destination_ip}",
-            passed=flow.baseline_reachable and flow.candidate_reachable,
-            detail="critical flow is reachable in both snapshots",
+            name="exact_flow_observations",
+            passed=exact_flows,
+            detail="observations cover exactly requested critical flows",
         )
-        for flow in observation.flows
     )
+    for flow in intent.critical_flows:
+        result = next(
+            (
+                r
+                for r in observation.flows
+                if r.identity == (flow.source_node, flow.source_ip, flow.destination_ip)
+            ),
+            None,
+        )
+        invariants.append(
+            InvariantResult(
+                name=f"critical_flow:{flow.source_node}:{flow.destination_ip}",
+                passed=result is not None
+                and result.baseline_reachable
+                and result.candidate_reachable,
+                detail="critical flow is reachable in both snapshots",
+            )
+        )
     if intent.require_no_differential_reachability:
         invariants.append(
             InvariantResult(
@@ -225,21 +351,20 @@ def evaluate_assurance(
         )
     outcome = (
         AssuranceOutcome.PASSED
-        if all(item.passed for item in invariants)
+        if all(i.passed for i in invariants)
         else AssuranceOutcome.FAILED
     )
     return AssuranceEvidence(
         generated_at=datetime.now(UTC),
         subject_digest=intent.subject_digest,
         pybatfish_version=observation.pybatfish_version,
+        batfish_version=observation.batfish_version,
         service_identity=observation.service_identity,
         baseline_snapshot_digest=baseline_manifest.digest,
         candidate_snapshot_digest=candidate_manifest.digest,
         expected_nodes=expected,
         baseline_parse=observation.baseline,
         candidate_parse=observation.candidate,
-        baseline_initialization_issue_count=observation.baseline.initialization_issue_count,
-        candidate_initialization_issue_count=observation.candidate.initialization_issue_count,
         critical_flows=observation.flows,
         differential_changed_flow_count=observation.differential_changed_flow_count,
         invariants=tuple(invariants),
@@ -248,8 +373,6 @@ def evaluate_assurance(
 
 
 class BatfishAssuranceAdapter:
-    """Thin adapter; raw pybatfish objects never cross the provider boundary."""
-
     def __init__(self, host: str | None = None) -> None:
         self.host = host or os.environ.get("NCDP_BATFISH_HOST", "127.0.0.1")
 
@@ -258,94 +381,99 @@ class BatfishAssuranceAdapter:
     ) -> AssuranceObservation:
         try:
             from pybatfish.client.session import Session
-        except ImportError:
+
+            pybatfish_version = version("pybatfish")
+        except (ImportError, PackageNotFoundError):
             raise AssuranceProviderError(
                 "Batfish provider dependency unavailable"
             ) from None
-        try:
-            session = Session(host=self.host, port=9996)
-            baseline_name = "ncdp-6a-baseline"
-            candidate_name = "ncdp-6a-candidate"
-            session.init_snapshot(str(baseline), name=baseline_name, overwrite=True)
-            session.init_snapshot(str(candidate), name=candidate_name, overwrite=True)
-
-            def summary(snapshot_name: str) -> ParseSummary:
-                parse = (
-                    session.q.fileParseStatus().answer(snapshot=snapshot_name).frame()
-                )
-                statuses = {
-                    str(row["File_Name"]): str(row["Status"])
-                    for _, row in parse.iterrows()
-                }
-                nodes = frozenset(
-                    str(node)
-                    for node in session.q.nodeProperties()
-                    .answer(snapshot=snapshot_name)
-                    .frame()["Node"]
-                )
-                issues = session.q.initIssues().answer(snapshot=snapshot_name).frame()
-                return ParseSummary(
-                    parse_status=statuses,
-                    nodes=nodes,
-                    initialization_issue_count=len(issues),
-                )
-
-            def flow_query(question_name: str, snapshot_name: str, **kwargs):
-                question = getattr(session.q, question_name)(**kwargs)
-                return question.answer(snapshot=snapshot_name).frame()
-
-            baseline_summary = summary(baseline_name)
-            candidate_summary = summary(candidate_name)
-            flows: list[FlowResult] = []
-            for flow in intent.critical_flows:
-                kwargs = {
-                    "pathConstraints": {
-                        "startLocation": flow.source_node,
-                    },
-                    "headers": {
-                        "srcIps": flow.source_ip,
-                        "dstIps": flow.destination_ip,
-                    },
-                }
-                baseline_rows = flow_query("reachability", baseline_name, **kwargs)
-                candidate_rows = flow_query("reachability", candidate_name, **kwargs)
-                flows.append(
-                    FlowResult(
-                        source_node=flow.source_node,
-                        source_ip=flow.source_ip,
-                        destination_ip=flow.destination_ip,
-                        baseline_reachable=len(baseline_rows) > 0,
-                        candidate_reachable=len(candidate_rows) > 0,
-                    )
-                )
-
-            changed = 0
-            for flow in intent.critical_flows:
-                kwargs = {
-                    "pathConstraints": {
-                        "startLocation": flow.source_node,
-                    },
-                    "headers": {
-                        "srcIps": flow.source_ip,
-                        "dstIps": flow.destination_ip,
-                    },
-                }
-                differential = session.q.differentialReachability(**kwargs)
-                changed += len(
-                    differential.answer(
-                        snapshot=candidate_name, reference_snapshot=baseline_name
-                    ).frame()
-                )
-            version = str(session._get_bf_version())
-            return AssuranceObservation(
-                pybatfish_version=version,
-                service_identity=f"batfish:{version}",
-                baseline=baseline_summary,
-                candidate=candidate_summary,
-                flows=tuple(flows),
-                differential_changed_flow_count=changed,
+        with (
+            prepare_snapshot(baseline) as frozen_baseline,
+            prepare_snapshot(candidate) as frozen_candidate,
+        ):
+            namespace = "ncdp-6a-" + uuid.uuid4().hex
+            baseline_name, candidate_name = (
+                namespace + "-baseline",
+                namespace + "-candidate",
             )
-        except AssuranceProviderError:
-            raise
-        except Exception:
-            raise AssuranceProviderError("Batfish service unavailable") from None
+            try:
+                session = Session(host=self.host, port=9996)
+                session.init_snapshot(
+                    str(frozen_baseline.root), name=baseline_name, overwrite=False
+                )
+                session.init_snapshot(
+                    str(frozen_candidate.root), name=candidate_name, overwrite=False
+                )
+
+                def summary(name: str) -> ParseSummary:
+                    parse = session.q.fileParseStatus().answer(snapshot=name).frame()
+                    nodes = (
+                        session.q.nodeProperties().answer(snapshot=name).frame()["Node"]
+                    )
+                    issues = session.q.initIssues().answer(snapshot=name).frame()
+                    return _normalize_parse(
+                        parse, tuple(str(n) for n in nodes), len(issues)
+                    )
+
+                baseline_summary, candidate_summary = (
+                    summary(baseline_name),
+                    summary(candidate_name),
+                )
+                flows: list[FlowResult] = []
+                for flow in intent.critical_flows:
+                    kwargs = {
+                        "pathConstraints": {"startLocation": flow.source_node},
+                        "headers": {
+                            "srcIps": flow.source_ip,
+                            "dstIps": flow.destination_ip,
+                        },
+                    }
+                    b = (
+                        session.q.reachability(**kwargs)
+                        .answer(snapshot=baseline_name)
+                        .frame()
+                    )
+                    c = (
+                        session.q.reachability(**kwargs)
+                        .answer(snapshot=candidate_name)
+                        .frame()
+                    )
+                    flows.append(
+                        FlowResult(
+                            source_node=flow.source_node,
+                            source_ip=flow.source_ip,
+                            destination_ip=flow.destination_ip,
+                            baseline_reachable=len(b) > 0,
+                            candidate_reachable=len(c) > 0,
+                        )
+                    )
+                changed = 0
+                for flow in intent.critical_flows:
+                    kwargs = {
+                        "pathConstraints": {"startLocation": flow.source_node},
+                        "headers": {
+                            "srcIps": flow.source_ip,
+                            "dstIps": flow.destination_ip,
+                        },
+                    }
+                    changed += len(
+                        session.q.differentialReachability(**kwargs)
+                        .answer(
+                            snapshot=candidate_name, reference_snapshot=baseline_name
+                        )
+                        .frame()
+                    )
+                server_version = str(session._get_bf_version())
+                return AssuranceObservation(
+                    pybatfish_version=pybatfish_version,
+                    batfish_version=server_version,
+                    service_identity=f"batfish:{server_version}",
+                    baseline=baseline_summary,
+                    candidate=candidate_summary,
+                    flows=tuple(flows),
+                    differential_changed_flow_count=changed,
+                )
+            except AssuranceProviderError:
+                raise
+            except Exception:
+                raise AssuranceProviderError("Batfish service unavailable") from None

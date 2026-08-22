@@ -1,4 +1,4 @@
-# Junos interface-description plan-review acceptance — Increment 4
+# Junos interface-description live acceptance — Increment 4
 
 ## Scope and credential boundary
 
@@ -105,7 +105,44 @@ The stored canonical plan digest is
 An independent JSON canonicalization and SHA-256 calculation produced the exact
 same digest.
 
-The plan was not executed. `Config.load`, commit-check, commit,
-commit-confirmed, confirmation, rollback, and `ncdp deploy` were not invoked.
-Device configuration writes were exactly zero. The plan remains stopped for
-human review and separate exact-digest approval.
+At plan review, the plan was not executed and remained stopped for separate
+exact-digest approval.
+
+## Exact-digest live write acceptance
+
+The operator subsequently authorized one execution attempt at repository HEAD
+`112fc134d6e8889affb5eb27fdb274f23c517109` for the exact approved digest above.
+The working tree was clean and HEAD was verified before device contact. The
+existing ignored plan was loaded through `DeploymentPlan`; its stored digest,
+`verify_digest()`, independently canonicalized JSON digest, every inventory and
+transaction field, and deterministic XML artifact all matched the authorization.
+No plan was regenerated or modified.
+
+Before runtime, `NCDP_JUNOS_DEVICE_USERNAME`,
+`NCDP_JUNOS_DEVICE_PASSWORD`, `NCDP_DEVICE_USERNAME`, and
+`NCDP_DEVICE_PASSWORD` were proved absent. A fresh bounded SecretID for the
+existing AppRole was used by the normal NetBox to OpenBao to PyEZ chain. No
+policy, permission, device credential, or runtime identity was changed.
+
+The normal `ncdp deploy --netbox --openbao` path ran exactly once and produced
+a mode-0600 ignored ChangeRecord. Fresh preflight re-established the approved
+NetBox identities, endpoint, platform, credential reference, hostname,
+unprotected physical interface, and absent current description. The exclusive
+candidate was initially clean. The adapter loaded only the approved XML,
+commit-check passed, and semantic candidate-subtree and narrow diff validation
+passed. The bounded candidate diff digest was
+`sha256:bc6dce0af0b342ebb24b9103da5c0b0e6824e96be89d6e81af96d56aa6e226ff`;
+the raw diff was not retained.
+
+One `commit confirmed 5` attempt returned known success. A fresh independent
+NETCONF session then observed hostname `edge-junos-01`, physical interface
+`ge-0/0/1`, and exact description
+`managed-by-network-change-delivery-platform`. A separate fresh confirmation
+session made one confirmation attempt and returned known success. Final outcome
+was `SUCCEEDED`. There was no retry, ambiguity, rollback 0, rollback 1, or
+recovery action.
+
+One additional read-only `ncdp plan --netbox --openbao` idempotency check used
+the same intent. It reported `interface is already compliant; no deployable
+artifact produced`, wrote no plan artifact, and observed the desired description
+persisted. No second deployment was run.

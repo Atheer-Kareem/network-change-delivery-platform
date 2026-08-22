@@ -10,7 +10,9 @@ The disruptive candidate shuts the sole core-02 transit interface. Unit tests
 exercise manifests, frozen staging, intent validation, exact parse/flow
 coverage, policy, evidence secrecy, and report reservation using fakes. Real
 Batfish integration is an explicit `batfish_integration` marker and is not part
-of ordinary pytest.
+of ordinary pytest. Focused CLI tests cover PASSED, FAILED, BLOCKED, input
+rejection, exclusive reservation, and durable evidence semantics; model tests
+reject contradictory evidence and duplicate normalized identities.
 
 Increment 6A does not contact devices, NetBox, OpenBao, company systems, or
 deployment systems. Increment 6B will bind assurance to exact NCDP plans.

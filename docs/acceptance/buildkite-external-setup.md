@@ -8,6 +8,6 @@ GitHub reports the `buildkite/network-change-delivery-platform` status context.
 The validated PR path contains the pipeline upload, visible quality checks, and
 pipeline-contract validation.
 
-Main-branch acceptance remains pending. This does not yet establish main branch
-protection or acceptance of the main-only promotion, approval, or deployment
-gate path.
+GitHub `main` protection is now active. Main-branch Buildkite execution acceptance
+remains pending. This does not yet establish acceptance of the main-only promotion,
+approval, or deployment gate path.

@@ -49,5 +49,20 @@ cohorts. Complete preflight reduces exposure to a partially stale fleet but does
 not remove the need for just-in-time device verification or eliminate changes
 that occur after the full-fleet check.
 
-Increment 5A implements planning and read-only preflight only. It exposes no
-fleet execution method and authorizes no device write.
+Increment 5A implements planning and read-only preflight. Increment 5B adds one
+Python-owned sequential execution state machine for an already-approved exact
+fleet plan. The fleet digest authorizes its fully embedded child plans; each
+child is passed to the unchanged `deploy_plan` boundary with its own exact digest.
+
+Execution requires complete fleet preflight before the first child attempt, then
+uses the persisted canary tuple and persisted waves without recomputation. Only a
+child `SUCCEEDED` outcome permits further exposure. `RECOVERED`, ambiguity,
+staleness, validation failure, and every other outcome stop immediately. Earlier
+successes are not reverted, retried, or relabeled, and the fleet record reports
+`STOPPED` or `PARTIAL` honestly.
+
+After every deployable child succeeds, one fresh complete read-only validation
+checks the desired description on every frozen member. Its failure produces
+`FINAL_VALIDATION_FAILED` without rewriting successful child history or issuing
+another write. Increment 5B supplies code and offline evidence only; live
+mixed-vendor acceptance and process-local overlap admission remain Increment 5C.

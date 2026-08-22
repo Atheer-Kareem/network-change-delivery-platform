@@ -1,7 +1,8 @@
-"""Fleet planning and complete read-only preflight domain policy."""
+"""Fleet planning, complete preflight, and sequential rollout domain policy."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -10,9 +11,16 @@ from network_change_delivery.inventory import (
     FleetPreflightInventoryProvider,
 )
 from network_change_delivery.models import (
+    ChangeRecord,
+    FinalOutcome,
+    FleetChangeRecord,
+    FleetCohortType,
     FleetDeploymentPlan,
+    FleetDesiredStateValidationResult,
+    FleetFinalOutcome,
     FleetInterfaceDescriptionIntent,
     FleetMemberClassification,
+    FleetMemberExecution,
     FleetMemberPreflight,
     FleetPreflightResult,
     FrozenFleetMember,
@@ -21,11 +29,13 @@ from network_change_delivery.models import (
 )
 from network_change_delivery.secrets import CredentialReference, SecretProvider
 from network_change_delivery.workflow import (
+    ArtifactExecutor,
     PreflightError,
     StateCollector,
     _assert_safe_state,
     build_plan,
     collect_preflight_state,
+    deploy_plan,
 )
 
 
@@ -304,5 +314,245 @@ def preflight_fleet(
             "complete fleet read-only preflight succeeded"
             if complete
             else "complete fleet read-only preflight failed"
+        ),
+    )
+
+
+def validate_fleet_desired_state(
+    plan: FleetDeploymentPlan,
+    inventory: FleetPreflightInventoryProvider,
+    secrets: SecretProvider,
+    collector: StateCollector,
+) -> FleetDesiredStateValidationResult:
+    """Freshly verify exact membership and desired state after all child successes."""
+    try:
+        selected = inventory.resolve_fleet(plan.selector)
+    except (ValueError, OSError, RuntimeError):
+        return FleetDesiredStateValidationResult(
+            attempted=True,
+            succeeded=False,
+            members=(),
+            message="final fleet selector re-resolution failed",
+        )
+    frozen_membership = {
+        (member.inventory_object_id, member.inventory_interface_object_id)
+        for member in plan.members
+    }
+    current_membership = {
+        (device.inventory_object_id, device.inventory_interface_object_id)
+        for device, _interface in selected
+    }
+    if current_membership != frozen_membership or len(selected) != len(plan.members):
+        return FleetDesiredStateValidationResult(
+            attempted=True,
+            succeeded=False,
+            members=(),
+            message="final fleet selector membership has changed",
+        )
+    results: list[FleetMemberPreflight] = []
+    for member in plan.members:
+        succeeded = False
+        observed_description = None
+        message = "final desired-state validation blocked"
+        try:
+            snapshot = collect_preflight_state(member, inventory, secrets, collector)
+            observed_description = snapshot.state.description
+            succeeded = snapshot.state.description == plan.desired_description
+            message = (
+                "fresh member state matches fleet desired description"
+                if succeeded
+                else "fresh member state does not match fleet desired description"
+            )
+        except PreflightError:
+            pass
+        results.append(
+            FleetMemberPreflight(
+                inventory_object_id=member.inventory_object_id,
+                inventory_interface_object_id=member.inventory_interface_object_id,
+                target=member.target,
+                interface=member.interface,
+                classification=member.classification,
+                succeeded=succeeded,
+                observed_description=observed_description,
+                message=message,
+            )
+        )
+    complete = all(result.succeeded for result in results)
+    return FleetDesiredStateValidationResult(
+        attempted=True,
+        succeeded=complete,
+        members=tuple(results),
+        message=(
+            "final whole-fleet desired-state validation succeeded"
+            if complete
+            else "final whole-fleet desired-state validation failed"
+        ),
+    )
+
+
+def _cohort_binding(
+    plan: FleetDeploymentPlan, identity: str
+) -> tuple[FleetCohortType, int | None]:
+    if identity in plan.canaries:
+        return FleetCohortType.CANARY, None
+    for index, wave in enumerate(plan.waves, start=1):
+        if identity in wave:
+            return FleetCohortType.WAVE, index
+    return FleetCohortType.COMPLIANT, None
+
+
+def _execution_evidence(
+    plan: FleetDeploymentPlan,
+    records: dict[str, tuple[int, ChangeRecord]],
+    *,
+    stopped: bool,
+) -> tuple[FleetMemberExecution, ...]:
+    evidence: list[FleetMemberExecution] = []
+    for member in plan.members:
+        cohort, wave_index = _cohort_binding(plan, member.inventory_object_id)
+        attempted = member.inventory_object_id in records
+        sequence, child_record = records.get(member.inventory_object_id, (None, None))
+        child_digest = (
+            member.child_plan.digest if member.child_plan is not None else None
+        )
+        evidence.append(
+            FleetMemberExecution(
+                inventory_object_id=member.inventory_object_id,
+                inventory_interface_object_id=member.inventory_interface_object_id,
+                target=member.target,
+                interface=member.interface,
+                platform=member.platform,
+                classification=member.classification,
+                cohort=cohort,
+                wave_index=wave_index,
+                child_plan_digest=child_digest,
+                attempt_sequence=sequence,
+                attempted=attempted,
+                child_record=child_record,
+                message=(
+                    "compliant no-op; no child deployment required"
+                    if member.classification is FleetMemberClassification.COMPLIANT
+                    else "child deployment attempted"
+                    if attempted
+                    else "not attempted because fleet rollout stopped"
+                    if stopped
+                    else "not attempted because fleet rollout was blocked"
+                ),
+            )
+        )
+    return tuple(evidence)
+
+
+def deploy_fleet(
+    plan: FleetDeploymentPlan,
+    approval_digest: str,
+    inventory: FleetPreflightInventoryProvider,
+    secrets: SecretProvider,
+    collector: StateCollector,
+    executor: ArtifactExecutor,
+    *,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    child_deployer: Callable[..., ChangeRecord] = deploy_plan,
+) -> FleetChangeRecord:
+    """Execute exact persisted cohorts sequentially through ``deploy_plan`` once."""
+    preflight = preflight_fleet(
+        plan,
+        inventory,
+        secrets,
+        collector,
+        approval_digest=approval_digest,
+    )
+    not_attempted_validation = FleetDesiredStateValidationResult(
+        attempted=False,
+        succeeded=None,
+        members=(),
+        message="final fleet validation not attempted",
+    )
+    if not preflight.succeeded:
+        return FleetChangeRecord(
+            generated_at=now(),
+            change_id=plan.change_id,
+            fleet_plan_digest=plan.digest,
+            approval_digest=approval_digest,
+            selector=plan.selector,
+            rollout=plan.rollout,
+            canaries=plan.canaries,
+            waves=plan.waves,
+            preflight=preflight,
+            fleet_plan=plan,
+            members=_execution_evidence(plan, {}, stopped=False),
+            final_validation=not_attempted_validation,
+            final_outcome=FleetFinalOutcome.BLOCKED,
+        )
+
+    by_id = {member.inventory_object_id: member for member in plan.members}
+    order = [*plan.canaries, *(identity for wave in plan.waves for identity in wave)]
+    records: dict[str, tuple[int, ChangeRecord]] = {}
+    stop_identity = None
+    stop_outcome = None
+    for sequence, identity in enumerate(order, start=1):
+        member = by_id[identity]
+        child = member.child_plan
+        if child is None:  # FleetDeploymentPlan validation makes this unreachable.
+            break
+        record = child_deployer(
+            child,
+            child.digest,
+            inventory,
+            secrets,
+            collector,
+            executor,
+            now=now,
+        )
+        records[identity] = (sequence, record)
+        if record.final_outcome is not FinalOutcome.SUCCEEDED:
+            stop_identity = identity
+            stop_outcome = record.final_outcome
+            break
+    if stop_identity is not None:
+        prior_success = any(
+            record.final_outcome is FinalOutcome.SUCCEEDED
+            for _sequence, record in records.values()
+        )
+        return FleetChangeRecord(
+            generated_at=now(),
+            change_id=plan.change_id,
+            fleet_plan_digest=plan.digest,
+            approval_digest=approval_digest,
+            selector=plan.selector,
+            rollout=plan.rollout,
+            canaries=plan.canaries,
+            waves=plan.waves,
+            preflight=preflight,
+            fleet_plan=plan,
+            members=_execution_evidence(plan, records, stopped=True),
+            stop_member_identity=stop_identity,
+            stop_child_outcome=stop_outcome,
+            final_validation=not_attempted_validation,
+            final_outcome=(
+                FleetFinalOutcome.PARTIAL
+                if prior_success
+                else FleetFinalOutcome.STOPPED
+            ),
+        )
+
+    final_validation = validate_fleet_desired_state(plan, inventory, secrets, collector)
+    return FleetChangeRecord(
+        generated_at=now(),
+        change_id=plan.change_id,
+        fleet_plan_digest=plan.digest,
+        approval_digest=approval_digest,
+        selector=plan.selector,
+        rollout=plan.rollout,
+        canaries=plan.canaries,
+        waves=plan.waves,
+        preflight=preflight,
+        fleet_plan=plan,
+        members=_execution_evidence(plan, records, stopped=False),
+        final_validation=final_validation,
+        final_outcome=(
+            FleetFinalOutcome.SUCCEEDED
+            if final_validation.succeeded
+            else FleetFinalOutcome.FINAL_VALIDATION_FAILED
         ),
     )

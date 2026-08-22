@@ -1,4 +1,4 @@
-# Fleet rollout planning and read-only preflight
+# Fleet rollout planning and sequential execution
 
 ## Scope and authority
 
@@ -6,7 +6,8 @@ Increment 5A adds Python-owned fleet selection, immutable planning, deterministi
 cohorts, and reusable complete read-only preflight. NetBox owns device and
 interface targeting identity. Git-owned typed intent owns the desired interface
 description and rollout policy. The existing single-device `DeploymentPlan` and
-`deploy_plan` contracts remain authoritative for later device transactions.
+`deploy_plan` contracts remain authoritative for device transactions. Increment
+5B adds only the fleet-owned approval, sequencing, stop, and evidence layer.
 
 There is no `fleet-deploy` command in 5A and no execution provider is reachable
 from fleet preflight.
@@ -94,11 +95,41 @@ Compliant members must remain at desired state. All selected members are checked
 one failure makes the whole result fail. The boundary takes no executor and
 cannot perform a device write.
 
-Increment 5B may add sequential execution only after review. It must rerun this
-complete preflight before the first write, retain just-in-time child verification,
-gate later cohorts on canary success, stop after any non-`SUCCEEDED` attempted
-transaction, preserve vendor-native recovery semantics, and make no fleet
-atomicity or automatic rollback claim.
+Increment 5B implements the reviewed sequential state machine:
+
+```text
+approved frozen fleet
+  -> complete preflight of everyone
+  -> persisted canaries sequentially
+  -> persisted waves sequentially
+  -> stop immediately on any non-SUCCEEDED child
+  -> final whole-fleet desired-state validation
+  -> honest FleetChangeRecord
+```
+
+The fleet approval digest transitively authorizes every full embedded child plan.
+The orchestrator then passes each exact child plan and that child's exact digest
+to the existing `deploy_plan` workflow. Complete preflight at T0 never replaces
+the child's fresh just-in-time prewrite checks. The fleet layer owns who and when;
+the unchanged Cisco and Junos workflows own how.
+
+Canary and wave tuples are executed exactly as persisted, with no regrouping,
+sorting, parallelism, or retry. Only `SUCCEEDED` advances. In particular,
+`RECOVERED` proves Cisco device-level recovery but does not permit further fleet
+exposure. A first-child stop is `STOPPED`; a stop after earlier successes is
+`PARTIAL`. Remaining deployable members are explicit unattempted evidence.
+Earlier successful members are not automatically rolled back, and their child
+records are never rewritten.
+
+When all child transactions succeed, a fresh read-only final validation
+re-resolves exact membership and bindings and checks every frozen member,
+including compliant no-ops, for the desired description. Failure is
+`FINAL_VALIDATION_FAILED`; it causes no further write or rollback.
+
+`fleet-deploy` loads one existing plan, requires its explicit fleet approval
+digest and NetBox/OpenBao providers, and exclusively creates one mode-0600
+evidence file. Existing files and symlinks are rejected before provider
+construction. Exit status zero is reserved for fleet `SUCCEEDED`.
 
 Increment 5C retains rollout-level ownership of process-local same-target
 overlap admission and mixed-vendor live CML fleet acceptance. Increment 7 owns

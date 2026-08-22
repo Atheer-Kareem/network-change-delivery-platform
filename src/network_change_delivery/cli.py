@@ -12,7 +12,7 @@ import yaml
 from pydantic import ValidationError
 
 from network_change_delivery.ansible_adapter import ProviderError
-from network_change_delivery.fleet import FleetSafetyError, plan_fleet
+from network_change_delivery.fleet import FleetSafetyError, deploy_fleet, plan_fleet
 from network_change_delivery.inventory import (
     InventoryError,
     LocalYamlInventoryProvider,
@@ -20,6 +20,8 @@ from network_change_delivery.inventory import (
 )
 from network_change_delivery.models import (
     DeploymentPlan,
+    FleetDeploymentPlan,
+    FleetFinalOutcome,
     FleetInterfaceDescriptionIntent,
     FleetMemberClassification,
     InterfaceDescriptionIntent,
@@ -68,6 +70,10 @@ def _load_plan(path: Path) -> DeploymentPlan:
 def _load_fleet_change(path: Path) -> FleetInterfaceDescriptionIntent:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     return FleetInterfaceDescriptionIntent.model_validate(payload)
+
+
+def _load_fleet_plan(path: Path) -> FleetDeploymentPlan:
+    return FleetDeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def _inventory(arguments: argparse.Namespace):
@@ -194,6 +200,58 @@ def _run_fleet_plan(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_fleet_deploy(arguments: argparse.Namespace) -> int:
+    _require_unused_fleet_plan_path(arguments.report_json)
+    plan = _load_fleet_plan(arguments.plan)
+    inventory = NetBoxInventoryProvider()
+    secrets = OpenBaoSecretProvider()
+    adapter = MultiVendorAdapter()
+    record = deploy_fleet(
+        plan,
+        arguments.approve_digest,
+        inventory,
+        secrets,
+        adapter,
+        adapter,
+    )
+    _write_new_fleet_plan(
+        arguments.report_json, record.model_dump_json(indent=2) + "\n"
+    )
+    attempted = sum(member.attempted for member in record.members)
+    succeeded = sum(
+        member.child_record is not None
+        and member.child_record.final_outcome.value == "SUCCEEDED"
+        for member in record.members
+    )
+    compliant = sum(
+        member.classification is FleetMemberClassification.COMPLIANT
+        for member in record.members
+    )
+    validation = (
+        "not attempted"
+        if not record.final_validation.attempted
+        else "succeeded"
+        if record.final_validation.succeeded
+        else "failed"
+    )
+    print(f"Fleet digest: {record.fleet_plan_digest}")
+    print(f"Final outcome: {record.final_outcome}")
+    print(f"Full preflight: {'succeeded' if record.preflight.succeeded else 'failed'}")
+    print(f"Attempted members: {attempted}")
+    print(f"Succeeded members: {succeeded}")
+    print(f"Compliant no-ops: {compliant}")
+    if record.stop_member_identity is not None:
+        stopped = next(
+            member
+            for member in record.members
+            if member.inventory_object_id == record.stop_member_identity
+        )
+        print(f"Stopped at: {stopped.target} / {record.stop_child_outcome}")
+    print(f"Final fleet validation: {validation}")
+    print(f"Evidence: {arguments.report_json}")
+    return 0 if record.final_outcome is FleetFinalOutcome.SUCCEEDED else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     parser = argparse.ArgumentParser(
@@ -230,6 +288,17 @@ def build_parser() -> argparse.ArgumentParser:
     fleet_plan_parser.add_argument("--netbox", required=True, action="store_true")
     fleet_plan_parser.add_argument("--openbao", required=True, action="store_true")
     fleet_plan_parser.set_defaults(handler=_run_fleet_plan)
+
+    fleet_deploy_parser = subparsers.add_parser(
+        "fleet-deploy",
+        help="execute one explicitly digest-approved immutable fleet plan",
+    )
+    fleet_deploy_parser.add_argument("--plan", required=True, type=Path)
+    fleet_deploy_parser.add_argument("--approve-digest", required=True)
+    fleet_deploy_parser.add_argument("--netbox", required=True, action="store_true")
+    fleet_deploy_parser.add_argument("--openbao", required=True, action="store_true")
+    fleet_deploy_parser.add_argument("--report-json", required=True, type=Path)
+    fleet_deploy_parser.set_defaults(handler=_run_fleet_deploy)
 
     deploy_parser = subparsers.add_parser(
         "deploy",

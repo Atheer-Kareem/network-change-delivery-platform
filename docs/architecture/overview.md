@@ -78,5 +78,9 @@ and [Junos](junos-interface-description-vertical.md) vertical documents.
 Increment 5A adds [fleet rollout planning](fleet-rollout.md): narrow paginated
 NetBox selectors, exact frozen membership including no-ops, nested child plans,
 canonical fleet digests, deterministic representative canaries and waves, and
-complete read-only fleet preflight. Fleet device execution remains deferred to
-5B. Other named integrations remain future work.
+complete read-only fleet preflight. Increment 5B adds digest-approved sequential
+execution of those exact cohorts through the unchanged single-device workflow,
+strict `SUCCEEDED`-only continuation, honest stopped/partial evidence, and final
+whole-fleet read-only desired-state validation. Live mixed-vendor acceptance and
+process-local overlap admission remain Increment 5C. Other named integrations
+remain future work.

@@ -82,5 +82,7 @@ complete read-only fleet preflight. Increment 5B adds digest-approved sequential
 execution of those exact cohorts through the unchanged single-device workflow,
 strict `SUCCEEDED`-only continuation, honest stopped/partial evidence, and final
 whole-fleet read-only desired-state validation. Live mixed-vendor acceptance and
-process-local overlap admission remain Increment 5C. Other named integrations
-remain future work.
+process-local overlap admission are Increment 5C: a shared in-memory controller
+atomically reserves complete stable device-identity sets, including no-ops,
+across preflight, execution, and final validation. It is deliberately not a
+distributed lock. Other named integrations remain future work.

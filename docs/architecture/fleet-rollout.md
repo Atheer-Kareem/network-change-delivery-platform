@@ -131,8 +131,28 @@ digest and NetBox/OpenBao providers, and exclusively creates one mode-0600
 evidence file. Existing files and symlinks are rejected before provider
 construction. Exit status zero is reserved for fleet `SUCCEEDED`.
 
-Increment 5C retains rollout-level ownership of process-local same-target
-overlap admission and mixed-vendor live CML fleet acceptance. Increment 7 owns
+## Process-local device admission
+
+Increment 5C performs pure fleet digest/approval checks, then atomically reserves
+every frozen stable device identity before any NetBox, OpenBao, collection, or
+child deployment boundary. The key is `inventory_object_id`. Interface identity,
+hostname, and address are deliberately insufficient because two configuration
+transactions on different interfaces can still interfere through device-wide
+configuration state, candidate databases, transports, or validation.
+
+The reservation includes compliant no-op members. They remain part of complete
+preflight and final validation, so another local rollout cannot mutate them while
+the approved evidence is being established. Acquisition is all-or-nothing,
+thread-safe, immediate-fail, and held through final validation. Its lease releases
+idempotently after every typed outcome and unexpected exception.
+
+The normal runtime uses one shared process-level controller; tests may inject an
+isolated controller. Process-local admission is not a distributed lock and does
+not protect separate processes or runners. Increment 7 retains distributed and
+cross-run coordination.
+
+Increment 5C adds process-local same-device overlap admission and retains
+mixed-vendor live CML fleet acceptance. Increment 7 owns
 distributed and cross-run locks, Buildkite runner concurrency groups, and
 multi-worker coordination. Local rollout overlap safety and distributed runner
 coordination are separate layers; deferring the latter does not remove the former

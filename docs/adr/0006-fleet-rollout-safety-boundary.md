@@ -66,3 +66,17 @@ checks the desired description on every frozen member. Its failure produces
 `FINAL_VALIDATION_FAILED` without rewriting successful child history or issuing
 another write. Increment 5B supplies code and offline evidence only; live
 mixed-vendor acceptance and process-local overlap admission remain Increment 5C.
+
+Increment 5C admits the complete frozen device set through one shared in-memory,
+thread-safe process-local controller before fleet preflight. Admission keys are
+stable `inventory_object_id` device identities, not interfaces, hostnames, or IP
+addresses. Device granularity is required because transactions on different
+interfaces can still share configuration state, candidate databases, transports,
+and validation. Compliant members are reserved too because they remain part of
+preflight and final fleet evidence.
+
+Acquisition is atomic and all-or-nothing, does not wait, and holds the lease
+through preflight, every child attempt, and final validation. Conflict blocks
+before provider contact. Release is idempotent and guaranteed on every exit path.
+This is single-process admission only. It is not a filesystem or distributed
+lock; cross-process and multi-runner coordination remains Increment 7.

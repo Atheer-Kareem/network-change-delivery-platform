@@ -14,3 +14,8 @@ verified externally before Increment 7 completion.
 Approval values are block-step build meta-data, not environment variables.
 The repository-owned gate validates Buildkite context and compares the exact
 untrimmed values before reporting authorization readiness.
+
+The promotion service is serialized independently from deployment and has a
+bounded 60-second actual version-query readiness gate. Real Buildkite execution,
+queue existence, agent separation, and required GitHub status checks remain
+external setup; no live acceptance is claimed.

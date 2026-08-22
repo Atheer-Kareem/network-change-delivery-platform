@@ -18,7 +18,10 @@ steps:
     key: pipeline-contract
     depends_on: quality
     commands:
-      - UV_CACHE_DIR=/tmp/ncdp-uv-cache uv run pytest tests/test_promotion.py tests/test_buildkite_policy.py tests/test_buildkite_pipeline.py tests/test_cli_buildkite_gate.py -q
+      - >-
+        UV_CACHE_DIR=/tmp/ncdp-uv-cache uv run pytest tests/test_promotion.py
+        tests/test_buildkite_policy.py tests/test_buildkite_pipeline.py
+        tests/test_cli_buildkite_gate.py -q
       - buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run --format yaml --reject-secrets --reject-parse-warnings > /dev/null
     agents:
       queue: ncdp-validation
@@ -32,6 +35,8 @@ steps:
     command: .buildkite/scripts/promotion.sh
     agents:
       queue: ncdp-validation
+    concurrency: 1
+    concurrency_group: ncdp/batfish-promotion
 
   - block: ":lock: authorize exact promotion"
     key: deployment-approval

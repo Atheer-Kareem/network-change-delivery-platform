@@ -24,6 +24,7 @@ from network_change_delivery.plan_assurance import (
 
 GitSha = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
 Sha256 = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
+MAX_SOURCE_BYTES = 4 * 1024 * 1024
 
 
 class PromotionError(ValueError):
@@ -85,6 +86,17 @@ class DeploymentPromotionManifest(BaseModel):
         return self.digest == self.calculated_digest()
 
 
+def promotion_summary(manifest: DeploymentPromotionManifest) -> str:
+    return "\n".join(
+        (
+            f"Commit: {manifest.git_commit}",
+            f"Plan digest: {manifest.plan_digest}",
+            f"Assurance record digest: {manifest.assurance_record_digest}",
+            f"Promotion digest: {manifest.digest}",
+        )
+    )
+
+
 def _sha(path: Path) -> tuple[str, int]:
     if path.is_symlink() or not path.is_file():
         raise PromotionError("promotion artifact must be a regular file")
@@ -112,22 +124,47 @@ def _write_bytes(path: Path, data: bytes) -> None:
 
 
 def _load_plan_bytes(data: bytes) -> DeploymentPlan | FleetDeploymentPlan:
-    payload = json.loads(data)
-    plan = (
-        FleetDeploymentPlan.model_validate(payload)
-        if "members" in payload
-        else DeploymentPlan.model_validate(payload)
-    )
+    try:
+        payload = json.loads(data)
+        plan = (
+            FleetDeploymentPlan.model_validate(payload)
+            if "members" in payload
+            else DeploymentPlan.model_validate(payload)
+        )
+    except Exception as exc:
+        raise PromotionError("invalid promotion plan") from exc
     if not plan.verify_digest():
         raise PromotionError("promotion plan digest verification failed")
     return plan
 
 
-def _policy(path: Path) -> BatfishAssurancePolicy:
+def _read_source(path: Path) -> bytes:
     try:
-        return BatfishAssurancePolicy.model_validate(
-            yaml.safe_load(path.read_text(encoding="utf-8"))
-        )
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise PromotionError("promotion source must be a regular file")
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = os.read(fd, min(65536, MAX_SOURCE_BYTES - total))
+                if not chunk:
+                    return b"".join(chunks)
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > MAX_SOURCE_BYTES:
+                    raise PromotionError("promotion source exceeds bounded size")
+        finally:
+            os.close(fd)
+    except PromotionError:
+        raise
+    except OSError as exc:
+        raise PromotionError("unable to read promotion source") from exc
+
+
+def _policy_bytes(data: bytes) -> BatfishAssurancePolicy:
+    try:
+        return BatfishAssurancePolicy.model_validate(yaml.safe_load(data))
     except Exception as exc:
         raise PromotionError("invalid assurance policy") from exc
 
@@ -149,12 +186,12 @@ def create_promotion_bundle(
 ) -> DeploymentPromotionManifest:
     if destination.exists() or destination.is_symlink():
         raise PromotionError("promotion destination already exists")
-    plan_bytes = plan_path.read_bytes()
-    policy_bytes = policy_path.read_bytes()
-    assurance_bytes = assurance_path.read_bytes()
+    plan_bytes = _read_source(plan_path)
+    policy_bytes = _read_source(policy_path)
+    assurance_bytes = _read_source(assurance_path)
     plan = _load_plan_bytes(plan_bytes)
     try:
-        policy = BatfishAssurancePolicy.model_validate(yaml.safe_load(policy_bytes))
+        policy = _policy_bytes(policy_bytes)
     except Exception as exc:
         raise PromotionError("invalid assurance policy") from exc
     try:
@@ -266,7 +303,7 @@ def verify_promotion_bundle(
         if digest != artifact.sha256 or size != artifact.size_bytes:
             raise PromotionError("promotion artifact digest mismatch")
     plan = _load_plan_bytes((promotion / "plan.json").read_bytes())
-    policy = _policy(promotion / "policy.yaml")
+    policy = _policy_bytes(_read_source(promotion / "policy.yaml"))
     record = PlanAssuranceRecord.model_validate_json(
         (promotion / "assurance.json").read_text(encoding="utf-8")
     )

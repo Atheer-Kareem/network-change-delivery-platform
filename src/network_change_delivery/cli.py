@@ -53,6 +53,7 @@ from network_change_delivery.plan_assurance import (
 from network_change_delivery.promotion import (
     PromotionError,
     create_promotion_bundle,
+    promotion_summary,
     verify_promotion_bundle,
 )
 from network_change_delivery.secrets import (
@@ -240,7 +241,7 @@ def _run_promote(arguments: argparse.Namespace) -> int:
 
 def _run_verify_promotion(arguments: argparse.Namespace) -> int:
     manifest = verify_promotion_bundle(arguments.promotion, arguments.git_commit)
-    print(f"Promotion verified: {manifest.digest}")
+    print(promotion_summary(manifest))
     return 0
 
 
@@ -600,6 +601,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         PromotionError,
         SafetyError,
         SecretError,
+        ValueError,
         ValidationError,
         yaml.YAMLError,
     ) as error:

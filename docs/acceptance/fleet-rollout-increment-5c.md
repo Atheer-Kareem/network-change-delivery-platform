@@ -114,3 +114,34 @@ Increment 7. Successful earlier members are not automatically reverted if a
 later member fails.
 
 Increment 5C acceptance is complete.
+
+## Post-acceptance credential closeout
+
+The diagnostic exposure affected only the synthetic Junos device 2 credential.
+An intentionally simple synthetic personal-lab Junos credential appeared in
+diagnostic output. The operator accepted this lab-only risk. No production,
+company, or reused credential was involved. OpenBao and the device were
+re-synchronized and normal hardened read-only authentication was verified.
+
+The first automated rotation changed the device but failed to update OpenBao.
+The operator then reset the Junos password at the console to the original
+disposable lab credential. OpenBao device 2 was synchronized with a CAS-guarded
+write from KV version 2 to version 3. Fresh OpenBao-backed Junos discovery
+succeeded; hostname, Junos version, interface existence/protection, and the
+approved `ge-0/0/2` description remained correct. The temporary recovery
+plaintext file was removed after synchronization and verification, and direct
+password environment material was unset in the verification process. This
+security remediation was independent of the fleet transaction; no fleet
+selected interface was written and the fleet-deploy invocation count remained
+exactly two.
+
+## Exit-code evidence limitation
+
+A post-success process/command observation returned exit status 2 with
+FileExistsError referring to the already-created attempt-2 evidence path.
+Available execution evidence cannot establish the exact process boundary that
+produced this later error. The persisted fleet record is SUCCEEDED, final
+whole-fleet validation succeeded, subsequent read-only idempotency succeeded,
+and the normal fleet-deploy SUCCEEDED path returns 0 in the implementation and
+offline regression suite. No reproducible fleet-deploy defect was established,
+so production code was not changed and no live deployment was repeated.

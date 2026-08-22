@@ -23,6 +23,8 @@ def test_inventory_target_resolution(tmp_path: Path) -> None:
     resolved = LocalYamlInventoryProvider(inventory).resolve("router-1")
     assert resolved.host == "192.0.2.10"
     assert resolved.protected_interfaces == ("GigabitEthernet1",)
+    assert resolved.inventory_source == "local_yaml"
+    assert resolved.inventory_object_id is None
 
 
 def test_unknown_inventory_target_fails_closed(tmp_path: Path) -> None:

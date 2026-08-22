@@ -178,7 +178,33 @@ def test_inventory_binding_drift_is_stale_before_collection(
     assert record.final_outcome is FinalOutcome.STALE_PLAN
     assert expected_message in record.preflight.message
     assert collector.calls == 0
+
+
+def test_netbox_object_identity_drift_is_stale_before_device_collection() -> None:
+    netbox_device = FakeInventory().device.model_copy(
+        update={
+            "inventory_source": "netbox",
+            "inventory_object_id": "netbox:dcim.device:42",
+        }
+    )
+    approved = build_plan(intent(), netbox_device, state("old"))
+    replacement = netbox_device.model_copy(
+        update={"inventory_object_id": "netbox:dcim.device:99"}
+    )
+    collector = FakeCollector()
+    executor = FakeExecutor()
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(replacement),
+        FakeSecrets(),
+        collector,
+        executor,
+    )
+    assert record.final_outcome is FinalOutcome.STALE_PLAN
+    assert collector.calls == 0
     assert executor.artifacts == []
+    assert record.inventory_object_id == "netbox:dcim.device:42"
 
 
 def test_exact_artifact_is_executed_and_fresh_state_validated() -> None:

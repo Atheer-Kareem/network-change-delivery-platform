@@ -38,6 +38,7 @@ changes/local*.yaml
 plans/
 reports/
 .ansible/
+.local/
 
 # Terraform and local Buildkite agent state
 *.tfstate

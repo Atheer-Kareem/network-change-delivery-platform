@@ -136,6 +136,19 @@ def test_digest_changes_with_artifact_or_precondition() -> None:
     assert changed_precondition.calculated_digest() != plan.digest
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"inventory_source": "netbox"},
+        {"inventory_object_id": "netbox:dcim.device:42"},
+    ],
+)
+def test_digest_covers_inventory_provenance(changes: dict[str, object]) -> None:
+    approved = build_plan(intent(), device(), state())
+    changed = approved.model_copy(update=changes)
+    assert changed.calculated_digest() != approved.digest
+
+
 def test_preview_is_derived_from_exact_artifact() -> None:
     plan = build_plan(intent(), device(), state())
     assert plan.execution_artifact.cli_preview() == (

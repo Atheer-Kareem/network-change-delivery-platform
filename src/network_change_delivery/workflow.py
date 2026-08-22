@@ -125,6 +125,8 @@ def build_plan(
         change_id=intent.change_id,
         kind=intent.kind,
         target=intent.target,
+        inventory_source=device.inventory_source,
+        inventory_object_id=device.inventory_object_id,
         host=device.host,
         port=device.port,
         expected_hostname=device.expected_hostname,
@@ -205,6 +207,8 @@ def _record(
         change_id=plan.change_id,
         plan_digest=plan.digest,
         target=plan.target,
+        inventory_source=plan.inventory_source,
+        inventory_object_id=plan.inventory_object_id,
         host=plan.host,
         port=plan.port,
         expected_hostname=plan.expected_hostname,
@@ -264,7 +268,9 @@ def deploy_plan(
             now=now,
         )
     if (
-        device.name != plan.target
+        device.inventory_source != plan.inventory_source
+        or device.inventory_object_id != plan.inventory_object_id
+        or device.name != plan.target
         or device.host != plan.host
         or device.port != plan.port
         or device.platform != plan.platform

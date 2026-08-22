@@ -55,7 +55,7 @@ class InterfaceDescriptionIntent(BaseModel):
 
 
 class InventoryDevice(BaseModel):
-    """Temporary local inventory entry without credentials."""
+    """Resolved inventory identity and endpoint without credentials."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     name: CliBoundString
@@ -64,6 +64,8 @@ class InventoryDevice(BaseModel):
     platform: Literal["cisco_iosxe"]
     expected_hostname: NonEmptyString
     protected_interfaces: tuple[str, ...] = ()
+    inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
+    inventory_object_id: str | None = None
 
 
 class InventoryDocument(BaseModel):
@@ -125,6 +127,8 @@ class DeploymentPlan(BaseModel):
     change_id: CliBoundString
     kind: Literal["interface_description"]
     target: CliBoundString
+    inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
+    inventory_object_id: str | None = None
     host: NonEmptyString
     port: int = Field(ge=1, le=65535)
     expected_hostname: NonEmptyString
@@ -238,6 +242,8 @@ class ChangeRecord(BaseModel):
     change_id: str
     plan_digest: str
     target: str
+    inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
+    inventory_object_id: str | None = None
     host: str
     port: int
     expected_hostname: str

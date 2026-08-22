@@ -44,3 +44,18 @@ def test_module_invocation() -> None:
     )
     assert completed.returncode == 0
     assert completed.stdout == "ncdp 0.1.0\n"
+
+
+@pytest.mark.parametrize("command", ["plan", "deploy"])
+def test_cli_rejects_both_inventory_sources(command: str) -> None:
+    arguments = [command, "--inventory", "inventory.yaml", "--netbox"]
+    with pytest.raises(SystemExit) as exit_info:
+        main(arguments)
+    assert exit_info.value.code == 2
+
+
+@pytest.mark.parametrize("command", ["plan", "deploy"])
+def test_cli_requires_one_inventory_source(command: str) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main([command])
+    assert exit_info.value.code == 2

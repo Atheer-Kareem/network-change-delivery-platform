@@ -114,3 +114,48 @@ def test_assure_plan_provider_result_is_bound() -> None:
     )
     assert record.outcome is AssuranceOutcome.PASSED
     assert record.verify_digest()
+
+
+def test_verifier_rejects_changed_policy_without_provider() -> None:
+    pol = policy()
+
+    class FakeProvider:
+        def analyze(self, baseline: Path, candidate: Path, _intent):
+            from network_change_delivery.assurance import build_snapshot_manifest
+
+            def summary(root: Path) -> ParseSummary:
+                manifest = build_snapshot_manifest(root)
+                return ParseSummary(
+                    files=tuple(
+                        ParseFileResult(relative_path=f.relative_path, status="PASSED")
+                        for f in manifest.files
+                    ),
+                    nodes=tuple(sorted(pol.expected_nodes)),
+                    initialization_issue_count=0,
+                )
+
+            flow = FlowResult(
+                source_node="core-02",
+                source_ip="10.6.2.2",
+                destination_ip="10.6.3.3",
+                baseline_reachable=True,
+                candidate_reachable=True,
+            )
+            return AssuranceObservation(
+                pybatfish_version="2025.7.7.2423",
+                batfish_version="2026.07.20.3565",
+                baseline=summary(baseline),
+                candidate=summary(candidate),
+                flows=(flow,),
+                differential_changed_flow_count=0,
+            )
+
+    record = assure_plan(
+        plan(), pol, ROOT / "fixtures/batfish/baseline", FakeProvider()
+    )
+    changed = pol.model_copy(update={"require_no_differential_reachability": False})
+    from network_change_delivery.plan_assurance import verify_plan_assurance
+
+    assert not verify_plan_assurance(
+        plan(), changed, ROOT / "fixtures/batfish/baseline", record
+    )

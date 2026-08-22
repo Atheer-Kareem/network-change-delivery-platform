@@ -19,10 +19,12 @@ RUN uv sync --frozen --no-group dev \
       --requirements-file ansible/requirements.yml \
       --collections-path /opt/ansible/collections
 
-FROM application AS quality
+FROM application AS quality-base
 COPY . .
-RUN uv sync --frozen --all-groups \
-    && uv run ruff check . \
+RUN uv sync --frozen --all-groups
+
+FROM quality-base AS quality
+RUN uv run ruff check . \
     && uv run ruff format --check . \
     && uv run pytest \
     && uv run ansible-lint \

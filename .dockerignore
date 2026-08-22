@@ -1,6 +1,5 @@
 .git
 .github
-.buildkite
 .venv
 .ansible
 .local

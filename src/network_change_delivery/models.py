@@ -445,6 +445,8 @@ class FleetDeploymentPlan(BaseModel):
             for member in self.members
             if member.classification is FleetMemberClassification.DEPLOYABLE
         }
+        if not deployable:
+            raise ValueError("fleet plan requires at least one deployable member")
         compliant = set(by_id) - deployable
         if set(cohort_ids) != deployable:
             raise ValueError("fleet cohorts must cover every deployable member once")
@@ -532,6 +534,24 @@ class FleetPreflightResult(BaseModel):
         return self
 
 
+class FleetFinalOutcome(StrEnum):
+    """Honest whole-fleet outcomes without an atomicity claim."""
+
+    BLOCKED = "BLOCKED"
+    SUCCEEDED = "SUCCEEDED"
+    STOPPED = "STOPPED"
+    PARTIAL = "PARTIAL"
+    FINAL_VALIDATION_FAILED = "FINAL_VALIDATION_FAILED"
+
+
+class FleetCohortType(StrEnum):
+    """Frozen execution placement for one fleet member."""
+
+    COMPLIANT = "COMPLIANT"
+    CANARY = "CANARY"
+    WAVE = "WAVE"
+
+
 class ExecutionDisposition(StrEnum):
     """Bounded execution-adapter result classification."""
 
@@ -613,3 +633,329 @@ class ChangeRecord(BaseModel):
     confirmation: StageResult | None = None
     final_outcome: FinalOutcome
     provider: str
+
+
+class FleetMemberExecution(BaseModel):
+    """Secret-free execution evidence for every frozen fleet member."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    inventory_object_id: NonEmptyString
+    inventory_interface_object_id: NonEmptyString
+    target: CliBoundString
+    interface: CliBoundString
+    platform: Literal["cisco_iosxe", "junos"]
+    classification: FleetMemberClassification
+    cohort: FleetCohortType
+    wave_index: int | None = Field(default=None, ge=1)
+    child_plan_digest: Sha256Digest | None = None
+    attempt_sequence: int | None = Field(default=None, ge=1)
+    attempted: bool
+    child_record: ChangeRecord | None = None
+    message: NonEmptyString
+
+    @model_validator(mode="after")
+    def evidence_is_internally_consistent(self) -> FleetMemberExecution:
+        if self.classification is FleetMemberClassification.COMPLIANT:
+            if (
+                self.cohort is not FleetCohortType.COMPLIANT
+                or self.wave_index is not None
+                or self.child_plan_digest is not None
+                or self.attempted
+                or self.attempt_sequence is not None
+                or self.child_record is not None
+            ):
+                raise ValueError("compliant member execution evidence is invalid")
+            return self
+        if self.cohort is FleetCohortType.COMPLIANT:
+            raise ValueError("deployable member requires an execution cohort")
+        if (self.cohort is FleetCohortType.WAVE) != (self.wave_index is not None):
+            raise ValueError("fleet wave index is inconsistent with cohort")
+        if self.child_plan_digest is None:
+            raise ValueError("deployable member requires child plan digest")
+        if self.attempted:
+            if self.attempt_sequence is None or self.child_record is None:
+                raise ValueError("attempted member requires sequence and child record")
+            record = self.child_record
+            if (
+                record.target != self.target
+                or record.interface != self.interface
+                or record.inventory_object_id != self.inventory_object_id
+                or record.inventory_interface_object_id
+                != self.inventory_interface_object_id
+                or record.platform != self.platform
+                or record.plan_digest != self.child_plan_digest
+                or record.approval_digest != self.child_plan_digest
+            ):
+                raise ValueError("child ChangeRecord disagrees with fleet member")
+        elif self.attempt_sequence is not None or self.child_record is not None:
+            raise ValueError(
+                "unattempted member cannot contain child execution evidence"
+            )
+        return self
+
+
+class FleetDesiredStateValidationResult(BaseModel):
+    """Complete fresh read-only desired-state evidence after rollout."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    attempted: bool
+    succeeded: bool | None
+    members: tuple[FleetMemberPreflight, ...]
+    message: NonEmptyString
+
+    @model_validator(mode="after")
+    def outcome_matches_member_results(self) -> FleetDesiredStateValidationResult:
+        if not self.attempted:
+            if self.succeeded is not None or self.members:
+                raise ValueError("unattempted fleet validation cannot contain results")
+            return self
+        every_member_succeeded = bool(self.members) and all(
+            member.succeeded for member in self.members
+        )
+        if self.succeeded != every_member_succeeded:
+            raise ValueError("fleet validation outcome contradicts member results")
+        return self
+
+
+class FleetChangeRecord(BaseModel):
+    """Immutable secret-free evidence for one approved fleet rollout attempt."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: Literal["1"] = "1"
+    generated_at: datetime
+    change_id: CliBoundString
+    fleet_plan_digest: Sha256Digest
+    approval_digest: str
+    selector: NetBoxFleetSelector
+    rollout: FleetRolloutPolicy
+    canaries: tuple[NonEmptyString, ...]
+    waves: tuple[tuple[NonEmptyString, ...], ...]
+    preflight: FleetPreflightResult
+    fleet_plan: FleetDeploymentPlan
+    members: tuple[FleetMemberExecution, ...]
+    stop_member_identity: NonEmptyString | None = None
+    stop_child_outcome: FinalOutcome | None = None
+    final_validation: FleetDesiredStateValidationResult
+    final_outcome: FleetFinalOutcome
+
+    def _require_exact_frozen_results(
+        self,
+        results: tuple[FleetMemberPreflight, ...],
+        *,
+        boundary: str,
+    ) -> None:
+        """Bind member-level read-only evidence to this exact frozen population."""
+        if len(results) != len(self.fleet_plan.members):
+            raise ValueError(f"{boundary} evidence does not cover frozen fleet")
+        identities = [result.inventory_object_id for result in results]
+        if len(identities) != len(set(identities)):
+            raise ValueError(f"{boundary} evidence contains duplicate members")
+        for result, frozen in zip(results, self.fleet_plan.members, strict=True):
+            if (
+                result.inventory_object_id != frozen.inventory_object_id
+                or result.inventory_interface_object_id
+                != frozen.inventory_interface_object_id
+                or result.target != frozen.target
+                or result.interface != frozen.interface
+                or result.classification is not frozen.classification
+            ):
+                raise ValueError(f"{boundary} evidence disagrees with frozen member")
+
+    @model_validator(mode="after")
+    def evidence_matches_rollout_state_machine(self) -> FleetChangeRecord:
+        if (
+            self.fleet_plan.digest != self.fleet_plan_digest
+            or self.fleet_plan.change_id != self.change_id
+            or self.fleet_plan.selector != self.selector
+            or self.fleet_plan.rollout != self.rollout
+            or self.fleet_plan.canaries != self.canaries
+            or self.fleet_plan.waves != self.waves
+        ):
+            raise ValueError("fleet execution record disagrees with frozen plan")
+        if (
+            self.final_outcome is not FleetFinalOutcome.BLOCKED
+            and not self.fleet_plan.verify_digest()
+        ):
+            raise ValueError("executed fleet record contains an invalid fleet plan")
+        if self.preflight.fleet_digest != self.fleet_plan_digest:
+            raise ValueError("fleet preflight digest disagrees with execution record")
+        if self.preflight.members:
+            self._require_exact_frozen_results(
+                self.preflight.members, boundary="fleet preflight"
+            )
+        elif self.preflight.succeeded:
+            raise ValueError("successful fleet preflight requires complete evidence")
+        if self.final_validation.attempted:
+            if self.final_validation.members:
+                self._require_exact_frozen_results(
+                    self.final_validation.members, boundary="final fleet validation"
+                )
+            elif self.final_validation.succeeded:
+                raise ValueError(
+                    "successful final validation requires complete evidence"
+                )
+        identities = [member.inventory_object_id for member in self.members]
+        if len(identities) != len(set(identities)):
+            raise ValueError("fleet execution member identities must be unique")
+        by_id = {member.inventory_object_id: member for member in self.members}
+        frozen_by_id = {
+            member.inventory_object_id: member for member in self.fleet_plan.members
+        }
+        if set(by_id) != set(frozen_by_id) or len(frozen_by_id) != len(
+            self.fleet_plan.members
+        ):
+            raise ValueError("fleet execution evidence differs from frozen membership")
+        for identity, member in by_id.items():
+            frozen = frozen_by_id[identity]
+            expected_digest = (
+                frozen.child_plan.digest if frozen.child_plan is not None else None
+            )
+            if (
+                member.inventory_interface_object_id
+                != frozen.inventory_interface_object_id
+                or member.target != frozen.target
+                or member.interface != frozen.interface
+                or member.platform != frozen.platform
+                or member.classification is not frozen.classification
+                or member.child_plan_digest != expected_digest
+            ):
+                raise ValueError("fleet member execution disagrees with frozen member")
+            if member.attempted:
+                child = frozen.child_plan
+                record = member.child_record
+                if child is None or record is None:
+                    raise ValueError("attempted fleet member lacks child authorization")
+                expected_child_binding = (
+                    child.change_id,
+                    child.digest,
+                    child.digest,
+                    child.target,
+                    child.inventory_source,
+                    child.inventory_object_id,
+                    child.inventory_interface_object_id,
+                    child.credential_source,
+                    child.credential_reference,
+                    child.host,
+                    child.port,
+                    child.expected_hostname,
+                    child.platform,
+                    child.interface,
+                    child.current_description,
+                    child.desired_description,
+                    child.transaction_strategy,
+                )
+                actual_child_binding = (
+                    record.change_id,
+                    record.plan_digest,
+                    record.approval_digest,
+                    record.target,
+                    record.inventory_source,
+                    record.inventory_object_id,
+                    record.inventory_interface_object_id,
+                    record.credential_source,
+                    record.credential_reference,
+                    record.host,
+                    record.port,
+                    record.expected_hostname,
+                    record.platform,
+                    record.interface,
+                    record.previous_description,
+                    record.desired_description,
+                    record.transaction_strategy,
+                )
+                if actual_child_binding != expected_child_binding:
+                    raise ValueError(
+                        "child ChangeRecord disagrees with embedded child plan"
+                    )
+        planned = [*self.canaries, *(item for wave in self.waves for item in wave)]
+        if len(planned) != len(set(planned)) or any(
+            item not in by_id for item in planned
+        ):
+            raise ValueError("fleet execution cohorts are invalid")
+        deployable = [
+            member
+            for member in self.members
+            if member.classification is FleetMemberClassification.DEPLOYABLE
+        ]
+        if set(planned) != {member.inventory_object_id for member in deployable}:
+            raise ValueError("fleet execution cohorts do not cover deployable members")
+        wave_by_id = {
+            identity: index
+            for index, wave in enumerate(self.waves, start=1)
+            for identity in wave
+        }
+        for identity in self.canaries:
+            if by_id[identity].cohort is not FleetCohortType.CANARY:
+                raise ValueError("fleet canary evidence is inconsistent")
+        for identity, wave_index in wave_by_id.items():
+            member = by_id[identity]
+            if (
+                member.cohort is not FleetCohortType.WAVE
+                or member.wave_index != wave_index
+            ):
+                raise ValueError("fleet wave evidence is inconsistent")
+        attempted = [member for member in self.members if member.attempted]
+        attempted.sort(key=lambda member: member.attempt_sequence or 0)
+        sequences = [member.attempt_sequence for member in attempted]
+        if sequences != list(range(1, len(attempted) + 1)):
+            raise ValueError("fleet attempt sequence must be unique and contiguous")
+        expected_attempted = planned[: len(attempted)]
+        if [member.inventory_object_id for member in attempted] != expected_attempted:
+            raise ValueError("fleet attempt sequence differs from planned cohort order")
+        successful = [
+            member
+            for member in attempted
+            if member.child_record is not None
+            and member.child_record.final_outcome is FinalOutcome.SUCCEEDED
+        ]
+        failed = [
+            member
+            for member in attempted
+            if member.child_record is not None
+            and member.child_record.final_outcome is not FinalOutcome.SUCCEEDED
+        ]
+        if len(failed) > 1 or (failed and attempted[-1] is not failed[0]):
+            raise ValueError("fleet execution continued after a child stop outcome")
+        if self.final_outcome is FleetFinalOutcome.BLOCKED:
+            if attempted or self.preflight.succeeded or self.final_validation.attempted:
+                raise ValueError("blocked fleet record cannot contain child attempts")
+        elif not self.preflight.succeeded:
+            raise ValueError("attempted fleet rollout requires successful preflight")
+        if self.final_outcome is not FleetFinalOutcome.BLOCKED and (
+            self.approval_digest != self.fleet_plan_digest
+        ):
+            raise ValueError("executed fleet approval digest does not match plan")
+        if self.final_outcome is FleetFinalOutcome.STOPPED:
+            if len(failed) != 1 or successful:
+                raise ValueError("stopped fleet outcome evidence is invalid")
+        elif self.final_outcome is FleetFinalOutcome.PARTIAL:
+            if len(failed) != 1 or not successful:
+                raise ValueError(
+                    "partial fleet outcome requires prior success and stop"
+                )
+        elif self.final_outcome in {
+            FleetFinalOutcome.SUCCEEDED,
+            FleetFinalOutcome.FINAL_VALIDATION_FAILED,
+        }:
+            if failed or len(attempted) != len(deployable):
+                raise ValueError("completed fleet outcome requires all child successes")
+            expected_validation = self.final_outcome is FleetFinalOutcome.SUCCEEDED
+            if (
+                not self.final_validation.attempted
+                or self.final_validation.succeeded is not expected_validation
+            ):
+                raise ValueError("fleet final outcome contradicts final validation")
+        if self.final_outcome in {FleetFinalOutcome.STOPPED, FleetFinalOutcome.PARTIAL}:
+            failed_member = failed[0]
+            if (
+                self.stop_member_identity != failed_member.inventory_object_id
+                or self.stop_child_outcome
+                is not failed_member.child_record.final_outcome  # type: ignore[union-attr]
+                or self.final_validation.attempted
+            ):
+                raise ValueError("fleet stop evidence is inconsistent")
+        elif (
+            self.stop_member_identity is not None or self.stop_child_outcome is not None
+        ):
+            raise ValueError("non-stopped fleet record cannot contain stop evidence")
+        return self

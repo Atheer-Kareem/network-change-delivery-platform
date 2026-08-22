@@ -1,13 +1,18 @@
-"""Offline fleet-plan CLI tests; no fleet execution command exists."""
+"""Offline fleet planning and execution CLI tests."""
 
+import os
 import stat
 from pathlib import Path
 
 import pytest
+from test_fleet import make_plan
+from test_fleet_execution import execute
 
 from network_change_delivery import cli
 from network_change_delivery.models import (
+    FleetChangeRecord,
     FleetDeploymentPlan,
+    FleetFinalOutcome,
     InterfaceState,
     InventoryDevice,
 )
@@ -149,10 +154,145 @@ def test_all_compliant_fleet_cli_writes_no_artifact(
     assert "fleet is already compliant" in capsys.readouterr().out
 
 
-def test_fleet_deploy_command_does_not_exist() -> None:
+def test_fleet_deploy_requires_exact_runtime_arguments() -> None:
     with pytest.raises(SystemExit) as caught:
         cli.main(["fleet-deploy"])
     assert caught.value.code == 2
+
+
+def test_fleet_deploy_cli_writes_exclusive_secret_free_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plan = make_plan().plan
+    assert plan is not None
+    plan_path = tmp_path / "fleet-plan.json"
+    report = tmp_path / "fleet-record.json"
+    plan_path.write_text(plan.model_dump_json(), encoding="utf-8")
+    _plan, record, _deployer, _collector = execute()
+    contacts = {"inventory": 0, "secrets": 0, "adapter": 0}
+
+    def dependency(name: str):
+        contacts[name] += 1
+        return object()
+
+    monkeypatch.setattr(cli, "NetBoxInventoryProvider", lambda: dependency("inventory"))
+    monkeypatch.setattr(cli, "OpenBaoSecretProvider", lambda: dependency("secrets"))
+    monkeypatch.setattr(cli, "MultiVendorAdapter", lambda: dependency("adapter"))
+
+    def deployed(*_args):
+        return record
+
+    monkeypatch.setattr(cli, "deploy_fleet", deployed)
+    assert (
+        cli.main(
+            [
+                "fleet-deploy",
+                "--plan",
+                str(plan_path),
+                "--approve-digest",
+                plan.digest,
+                "--netbox",
+                "--openbao",
+                "--report-json",
+                str(report),
+            ]
+        )
+        == 0
+    )
+    assert contacts == {"inventory": 1, "secrets": 1, "adapter": 1}
+    assert stat.S_IMODE(report.stat().st_mode) == 0o600
+    serialized = report.read_text(encoding="utf-8")
+    assert "fleet-secret" not in serialized
+    rendered = capsys.readouterr().out
+    assert f"Fleet digest: {plan.digest}" in rendered
+    assert f"Final outcome: {FleetFinalOutcome.SUCCEEDED}" in rendered
+    assert "Final fleet validation: succeeded" in rendered
+
+
+@pytest.mark.parametrize("existing_kind", ["file", "symlink"])
+def test_existing_fleet_report_blocks_before_plan_or_provider_contact(
+    existing_kind: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = tmp_path / "fleet-record.json"
+    sentinel = tmp_path / "sentinel.json"
+    sentinel.write_text("sentinel-content", encoding="utf-8")
+    if existing_kind == "file":
+        report.write_text("sentinel-content", encoding="utf-8")
+    else:
+        report.symlink_to(sentinel)
+    contacts = 0
+
+    def contacted():
+        nonlocal contacts
+        contacts += 1
+        raise AssertionError("provider must not be constructed")
+
+    monkeypatch.setattr(cli, "NetBoxInventoryProvider", contacted)
+    with pytest.raises(SystemExit) as caught:
+        cli.main(
+            [
+                "fleet-deploy",
+                "--plan",
+                str(tmp_path / "missing-plan.json"),
+                "--approve-digest",
+                "sha256:" + "a" * 64,
+                "--netbox",
+                "--openbao",
+                "--report-json",
+                str(report),
+            ]
+        )
+    assert caught.value.code == 2
+    assert contacts == 0
+    assert sentinel.read_text(encoding="utf-8") == "sentinel-content"
+
+
+def test_fleet_report_is_reserved_before_deployment_and_cannot_be_stolen(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = make_plan().plan
+    assert plan is not None
+    plan_path = tmp_path / "fleet-plan.json"
+    report = tmp_path / "fleet-record.json"
+    plan_path.write_text(plan.model_dump_json(), encoding="utf-8")
+    _plan, record, _deployer, _collector = execute()
+    monkeypatch.setattr(cli, "NetBoxInventoryProvider", lambda: object())
+    monkeypatch.setattr(cli, "OpenBaoSecretProvider", lambda: object())
+    monkeypatch.setattr(cli, "MultiVendorAdapter", lambda: object())
+
+    def reserved_deploy(*_args):
+        assert report.exists()
+        assert stat.S_IMODE(report.stat().st_mode) == 0o600
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        with pytest.raises(FileExistsError):
+            descriptor = os.open(report, flags, 0o600)
+            os.close(descriptor)
+        return record
+
+    monkeypatch.setattr(cli, "deploy_fleet", reserved_deploy)
+    assert (
+        cli.main(
+            [
+                "fleet-deploy",
+                "--plan",
+                str(plan_path),
+                "--approve-digest",
+                plan.digest,
+                "--netbox",
+                "--openbao",
+                "--report-json",
+                str(report),
+            ]
+        )
+        == 0
+    )
+    persisted = FleetChangeRecord.model_validate_json(
+        report.read_text(encoding="utf-8")
+    )
+    assert persisted == record
 
 
 @pytest.mark.parametrize("existing_kind", ["file", "symlink"])

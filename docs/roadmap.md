@@ -26,8 +26,11 @@ Ordering may change when implementation evidence requires it.
 5. **Fleet rollout — in progress:** Increment 5A implements frozen narrow NetBox
    selectors, nested immutable child plans, first-class no-ops, canonical fleet
    digests, deterministic representative canaries and fixed waves, and complete
-   fleet-wide read-only preflight. Increment 5B will add sequential gated device
-   execution and honest partial outcomes. Increment 5C will add process-local
+   fleet-wide read-only preflight. Increment 5B implements digest-approved
+   sequential exact canary/wave execution through the existing device workflow,
+   strict stop gates, honest partial evidence, and final whole-fleet read-only
+   validation; it is pending review and has no live acceptance. Increment 5C will
+   add process-local
    same-target overlap admission and mixed-vendor live CML fleet acceptance.
    Distributed/cross-run locks, runner concurrency groups, and multi-worker
    coordination remain in the later Buildkite hardening increment; they do not

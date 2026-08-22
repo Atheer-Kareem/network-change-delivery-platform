@@ -88,6 +88,28 @@ def test_manifest_rejects_symlink_and_empty_snapshot(tmp_path: Path) -> None:
         build_snapshot_manifest(tmp_path / "links")
 
 
+def test_manifest_count_and_size_boundaries(tmp_path: Path) -> None:
+    root = tmp_path / "bounded" / "configs"
+    root.mkdir(parents=True)
+    for index in range(128):
+        (root / f"{index:03d}.cfg").write_text("x", encoding="utf-8")
+    assert len(build_snapshot_manifest(tmp_path / "bounded").files) == 128
+    (root / "128.cfg").write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="bounded"):
+        build_snapshot_manifest(tmp_path / "bounded")
+
+    sized = tmp_path / "sized" / "configs"
+    sized.mkdir(parents=True)
+    (sized / "exact.cfg").write_bytes(b"x" * (4 * 1024 * 1024))
+    assert (
+        build_snapshot_manifest(tmp_path / "sized").files[0].size_bytes
+        == 4 * 1024 * 1024
+    )
+    (sized / "over.cfg").write_bytes(b"x")
+    with pytest.raises(ValueError, match="bounded"):
+        build_snapshot_manifest(tmp_path / "sized")
+
+
 def test_policy_passes_good_candidate(tmp_path: Path) -> None:
     baseline, candidate = manifests(tmp_path)
     result = evaluate_assurance(intent(), baseline, candidate, observation())

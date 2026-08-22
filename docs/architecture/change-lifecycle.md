@@ -29,6 +29,9 @@ fleet, including no-op targets, before writes. Planning records canonical intent
 inventory identity, preconditions, vendor-aware operations, validation, and
 recovery expectations; its canonical digest binds the human preview to machine
 execution. Batfish evidence, risk, and optional CML evidence enrich that artifact.
+Increment 6B can bind Batfish evidence to an exact validated plan and derived
+candidate offline; it does not establish baseline freshness or replace the
+Increment 7 deployment gate.
 
 Immediately before execution, fresh checks confirm commit, plan, target identity,
 state, support, and still-required work. A stale, changed, missing, or unsupported

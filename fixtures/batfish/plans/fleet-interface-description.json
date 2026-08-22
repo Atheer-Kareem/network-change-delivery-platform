@@ -1,0 +1,196 @@
+{
+  "schema_version": "1",
+  "change_id": "increment-6b-synthetic",
+  "kind": "interface_description",
+  "selector": {
+    "device_tag": "synthetic-device-tag",
+    "interface_tag": "synthetic-interface-tag"
+  },
+  "desired_description": "reviewed-transit-description",
+  "rollout": {
+    "canaries_per_platform": 1,
+    "wave_size": 1
+  },
+  "members": [
+    {
+      "target": "core-02",
+      "inventory_source": "netbox",
+      "inventory_object_id": "netbox:dcim.device:101",
+      "inventory_interface_object_id": "netbox:dcim.interface:107",
+      "host": "198.51.100.2",
+      "port": 22,
+      "expected_hostname": "core-02",
+      "platform": "cisco_iosxe",
+      "interface": "GigabitEthernet1",
+      "credential_source": "openbao",
+      "credential_reference": "openbao:synthetic:netbox:dcim.device:101",
+      "classification": "DEPLOYABLE",
+      "current_description": "transit-to-edge",
+      "desired_description": "reviewed-transit-description",
+      "child_plan": {
+        "schema_version": "1",
+        "change_id": "increment-6b-synthetic",
+        "kind": "interface_description",
+        "target": "core-02",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:101",
+        "inventory_interface_object_id": "netbox:dcim.interface:107",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:synthetic:netbox:dcim.device:101",
+        "host": "198.51.100.2",
+        "port": 22,
+        "expected_hostname": "core-02",
+        "platform": "cisco_iosxe",
+        "interface": "GigabitEthernet1",
+        "current_description": "transit-to-edge",
+        "desired_description": "reviewed-transit-description",
+        "transaction_strategy": "cisco_targeted_inverse",
+        "confirmed_timeout_minutes": null,
+        "confirmation_operation": null,
+        "execution_artifact": {
+          "parent": "interface GigabitEthernet1",
+          "lines": [
+            "description reviewed-transit-description"
+          ]
+        },
+        "recovery_artifact": {
+          "parent": "interface GigabitEthernet1",
+          "lines": [
+            "description transit-to-edge"
+          ]
+        },
+        "preconditions": {
+          "observed_hostname": "core-02",
+          "interface_exists": true,
+          "interface_protected": false,
+          "current_description": "transit-to-edge"
+        },
+        "created_at": "2026-01-01T00:00:00Z",
+        "digest": "sha256:83d52e39c673063dce142ae79c878d2b874909ab1ce9c8de30d0be81e47983ec"
+      }
+    },
+    {
+      "target": "edge-junos-01",
+      "inventory_source": "netbox",
+      "inventory_object_id": "netbox:dcim.device:102",
+      "inventory_interface_object_id": "netbox:dcim.interface:108",
+      "host": "198.51.100.20",
+      "port": 830,
+      "expected_hostname": "edge-junos-01",
+      "platform": "junos",
+      "interface": "ge-0/0/0",
+      "credential_source": "openbao",
+      "credential_reference": "openbao:synthetic:netbox:dcim.device:102",
+      "classification": "DEPLOYABLE",
+      "current_description": "transit-to-core-02",
+      "desired_description": "reviewed-transit-description",
+      "child_plan": {
+        "schema_version": "1",
+        "change_id": "increment-6b-synthetic",
+        "kind": "interface_description",
+        "target": "edge-junos-01",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:102",
+        "inventory_interface_object_id": "netbox:dcim.interface:108",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:synthetic:netbox:dcim.device:102",
+        "host": "198.51.100.20",
+        "port": 830,
+        "expected_hostname": "edge-junos-01",
+        "platform": "junos",
+        "interface": "ge-0/0/0",
+        "current_description": "transit-to-core-02",
+        "desired_description": "reviewed-transit-description",
+        "transaction_strategy": "junos_commit_confirmed",
+        "confirmed_timeout_minutes": 5,
+        "confirmation_operation": "confirm_previous_commit",
+        "execution_artifact": {
+          "interface": "ge-0/0/0",
+          "description": "reviewed-transit-description",
+          "format": "xml",
+          "load_action": "merge",
+          "config_mode": "exclusive",
+          "xml": "<configuration><interfaces><interface><name>ge-0/0/0</name><description>reviewed-transit-description</description></interface></interfaces></configuration>"
+        },
+        "recovery_artifact": null,
+        "preconditions": {
+          "observed_hostname": "edge-junos-01",
+          "interface_exists": true,
+          "interface_protected": false,
+          "current_description": "transit-to-core-02"
+        },
+        "created_at": "2026-01-01T00:00:00Z",
+        "digest": "sha256:060db13dbe0a938ec80c8d0b66f74be0a8d4f8173223f5b0e9b5e6737fe1f5a0"
+      }
+    },
+    {
+      "target": "core-03",
+      "inventory_source": "netbox",
+      "inventory_object_id": "netbox:dcim.device:103",
+      "inventory_interface_object_id": "netbox:dcim.interface:106",
+      "host": "198.51.100.3",
+      "port": 22,
+      "expected_hostname": "core-03",
+      "platform": "cisco_iosxe",
+      "interface": "GigabitEthernet1",
+      "credential_source": "openbao",
+      "credential_reference": "openbao:synthetic:netbox:dcim.device:103",
+      "classification": "DEPLOYABLE",
+      "current_description": "transit-to-edge",
+      "desired_description": "reviewed-transit-description",
+      "child_plan": {
+        "schema_version": "1",
+        "change_id": "increment-6b-synthetic",
+        "kind": "interface_description",
+        "target": "core-03",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:103",
+        "inventory_interface_object_id": "netbox:dcim.interface:106",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:synthetic:netbox:dcim.device:103",
+        "host": "198.51.100.3",
+        "port": 22,
+        "expected_hostname": "core-03",
+        "platform": "cisco_iosxe",
+        "interface": "GigabitEthernet1",
+        "current_description": "transit-to-edge",
+        "desired_description": "reviewed-transit-description",
+        "transaction_strategy": "cisco_targeted_inverse",
+        "confirmed_timeout_minutes": null,
+        "confirmation_operation": null,
+        "execution_artifact": {
+          "parent": "interface GigabitEthernet1",
+          "lines": [
+            "description reviewed-transit-description"
+          ]
+        },
+        "recovery_artifact": {
+          "parent": "interface GigabitEthernet1",
+          "lines": [
+            "description transit-to-edge"
+          ]
+        },
+        "preconditions": {
+          "observed_hostname": "core-03",
+          "interface_exists": true,
+          "interface_protected": false,
+          "current_description": "transit-to-edge"
+        },
+        "created_at": "2026-01-01T00:00:00Z",
+        "digest": "sha256:cd9200fccf8fe5e0c37b03d3c89561b59c7d828fb2a330d8c4c844752365c467"
+      }
+    }
+  ],
+  "canaries": [
+    "netbox:dcim.device:101",
+    "netbox:dcim.device:102"
+  ],
+  "waves": [
+    [
+      "netbox:dcim.device:103"
+    ]
+  ],
+  "created_at": "2026-01-01T00:00:00Z",
+  "digest": "sha256:02a3bece7cc1f67ae77e4f3cd436d1366489fa63fddf7b3b442f7115866086f4"
+}
+

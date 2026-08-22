@@ -76,6 +76,7 @@ class NetBoxInventoryProvider:
                 timeout=httpx.Timeout(5.0, connect=3.0),
                 follow_redirects=False,
                 verify=True,
+                trust_env=False,
                 transport=transport,
             )
         except (TypeError, ValueError):

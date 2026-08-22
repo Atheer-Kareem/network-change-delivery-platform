@@ -12,7 +12,10 @@ from network_change_delivery.models import (
     InterfaceState,
     InventoryDevice,
 )
+from network_change_delivery.secrets import ENVIRONMENT_REFERENCE, CredentialReference
 from network_change_delivery.workflow import SafetyError, build_plan
+
+ENVIRONMENT_CREDENTIAL = CredentialReference("environment", ENVIRONMENT_REFERENCE)
 
 
 def intent(description: str = "managed-by-ncdp") -> InterfaceDescriptionIntent:
@@ -59,6 +62,11 @@ def test_valid_change_parsing() -> None:
     assert intent().kind == "interface_description"
 
 
+def test_build_plan_requires_explicit_credential_provenance() -> None:
+    with pytest.raises(TypeError, match="credential"):
+        build_plan(intent(), device(), state())
+
+
 @pytest.mark.parametrize("description", ["", "   "])
 def test_empty_description_rejected(description: str) -> None:
     with pytest.raises(ValidationError):
@@ -78,34 +86,68 @@ def test_control_characters_rejected(description: str) -> None:
 
 def test_protected_interface_rejected() -> None:
     with pytest.raises(SafetyError, match="protected"):
-        build_plan(intent(), device(protected=("GigabitEthernet2",)), state())
+        build_plan(
+            intent(),
+            device(protected=("GigabitEthernet2",)),
+            state(),
+            credential=ENVIRONMENT_CREDENTIAL,
+        )
 
 
 def test_management_interface_rejected() -> None:
     change = intent().model_copy(update={"interface": "GigabitEthernet1"})
     with pytest.raises(SafetyError, match="GigabitEthernet1"):
-        build_plan(change, device(), state(interface="GigabitEthernet1"))
+        build_plan(
+            change,
+            device(),
+            state(interface="GigabitEthernet1"),
+            credential=ENVIRONMENT_CREDENTIAL,
+        )
 
 
 def test_hostname_identity_mismatch_rejected() -> None:
     with pytest.raises(SafetyError, match="hostname"):
-        build_plan(intent(), device(), state(hostname="unexpected"))
+        build_plan(
+            intent(),
+            device(),
+            state(hostname="unexpected"),
+            credential=ENVIRONMENT_CREDENTIAL,
+        )
 
 
 def test_missing_interface_rejected() -> None:
     with pytest.raises(SafetyError, match="does not exist"):
-        build_plan(intent(), device(), state(exists=False))
+        build_plan(
+            intent(), device(), state(exists=False), credential=ENVIRONMENT_CREDENTIAL
+        )
 
 
 def test_interface_identity_mismatch_rejected() -> None:
     with pytest.raises(SafetyError, match="observed interface"):
-        build_plan(intent(), device(), state(interface="GigabitEthernet3"))
+        build_plan(
+            intent(),
+            device(),
+            state(interface="GigabitEthernet3"),
+            credential=ENVIRONMENT_CREDENTIAL,
+        )
 
 
 def test_plan_digest_is_deterministic() -> None:
     created = datetime(2026, 8, 22, tzinfo=UTC)
-    first = build_plan(intent(), device(), state(), created_at=created)
-    second = build_plan(intent(), device(), state(), created_at=created)
+    first = build_plan(
+        intent(),
+        device(),
+        state(),
+        credential=ENVIRONMENT_CREDENTIAL,
+        created_at=created,
+    )
+    second = build_plan(
+        intent(),
+        device(),
+        state(),
+        credential=ENVIRONMENT_CREDENTIAL,
+        created_at=created,
+    )
     assert first.digest == second.digest
     assert first.verify_digest()
 
@@ -115,6 +157,7 @@ def test_digest_changes_with_artifact_or_precondition() -> None:
         intent(),
         device(),
         state(),
+        credential=ENVIRONMENT_CREDENTIAL,
         created_at=datetime(2026, 8, 22, tzinfo=UTC),
     )
     changed_artifact = plan.model_copy(
@@ -145,7 +188,9 @@ def test_digest_changes_with_artifact_or_precondition() -> None:
     ],
 )
 def test_digest_covers_inventory_provenance(changes: dict[str, object]) -> None:
-    approved = build_plan(intent(), device(), state())
+    approved = build_plan(
+        intent(), device(), state(), credential=ENVIRONMENT_CREDENTIAL
+    )
     changed = approved.model_copy(update=changes)
     assert changed.calculated_digest() != approved.digest
 
@@ -158,7 +203,9 @@ def test_netbox_interface_identity_is_frozen_into_plan_and_digest() -> None:
             "inventory_interface_object_id": "netbox:dcim.interface:100",
         }
     )
-    approved = build_plan(intent(), netbox_device, state())
+    approved = build_plan(
+        intent(), netbox_device, state(), credential=ENVIRONMENT_CREDENTIAL
+    )
     assert approved.inventory_interface_object_id == "netbox:dcim.interface:100"
     changed = approved.model_copy(
         update={"inventory_interface_object_id": "netbox:dcim.interface:101"}
@@ -166,15 +213,50 @@ def test_netbox_interface_identity_is_frozen_into_plan_and_digest() -> None:
     assert changed.calculated_digest() != approved.digest
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"credential_source": "openbao"},
+        {"credential_reference": "openbao:kv-v2:ncdp/devices/1/ssh"},
+    ],
+)
+def test_digest_covers_non_secret_credential_provenance(
+    changes: dict[str, object],
+) -> None:
+    approved = build_plan(
+        intent(), device(), state(), credential=ENVIRONMENT_CREDENTIAL
+    )
+    changed = approved.model_copy(update=changes)
+    assert changed.calculated_digest() != approved.digest
+
+
+@pytest.mark.parametrize("field", ["credential_source", "credential_reference"])
+def test_deployment_plan_requires_credential_provenance(field: str) -> None:
+    approved = build_plan(
+        intent(), device(), state(), credential=ENVIRONMENT_CREDENTIAL
+    )
+    payload = approved.model_dump(mode="json")
+    del payload[field]
+    with pytest.raises(ValidationError):
+        type(approved).model_validate(payload)
+
+
+def test_explicit_openbao_provenance_is_preserved() -> None:
+    credential = CredentialReference("openbao", "openbao:kv-v2:ncdp/devices/1/ssh")
+    approved = build_plan(intent(), device(), state(), credential=credential)
+    assert approved.credential_source == "openbao"
+    assert approved.credential_reference == credential.reference
+
+
 def test_preview_is_derived_from_exact_artifact() -> None:
-    plan = build_plan(intent(), device(), state())
+    plan = build_plan(intent(), device(), state(), credential=ENVIRONMENT_CREDENTIAL)
     assert plan.execution_artifact.cli_preview() == (
         "interface GigabitEthernet2\n description managed-by-ncdp"
     )
 
 
 def test_loaded_plan_cannot_encode_control_bearing_commands() -> None:
-    plan = build_plan(intent(), device(), state())
+    plan = build_plan(intent(), device(), state(), credential=ENVIRONMENT_CREDENTIAL)
     payload = plan.model_dump(mode="json")
     payload["desired_description"] = "unsafe\ncommand"
     payload["execution_artifact"]["lines"] = ["description unsafe\ncommand"]
@@ -198,7 +280,9 @@ def test_cli_bound_identifiers_reject_control_characters(field: str) -> None:
 
 
 def test_unknown_plan_field_is_rejected() -> None:
-    approved = build_plan(intent(), device(), state())
+    approved = build_plan(
+        intent(), device(), state(), credential=ENVIRONMENT_CREDENTIAL
+    )
     payload = approved.model_dump(mode="json")
     payload["outside_digest"] = "unbound"
     with pytest.raises(ValidationError):
@@ -210,4 +294,9 @@ def test_unsafe_observed_description_cannot_form_recovery(
     description: str,
 ) -> None:
     with pytest.raises(SafetyError, match="unsafe for targeted recovery"):
-        build_plan(intent(), device(), state(description=description))
+        build_plan(
+            intent(),
+            device(),
+            state(description=description),
+            credential=ENVIRONMENT_CREDENTIAL,
+        )

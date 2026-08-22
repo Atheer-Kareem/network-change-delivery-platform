@@ -43,8 +43,10 @@ provider operation issues GET requests only.
 
 HTTPS certificate verification uses the HTTP client's normal trust validation.
 Authenticated redirects are not followed. Requests have explicit bounded
-timeouts and query parameters are encoded by the HTTP client. Plain HTTP is
-rejected unless the hostname is exactly `localhost`, `127.0.0.1`, or `::1`; a
+timeouts, ignore environment proxy routing, and encode query parameters through
+the HTTP client. Production proxy support requires an explicit reviewed design.
+Plain HTTP is rejected unless the hostname is exactly `localhost`, `127.0.0.1`,
+or `::1`; a
 local NetBox service should bind only to loopback. Configured URLs must have an
 empty or root path; reverse-proxy subpaths are not supported in this increment.
 

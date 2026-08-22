@@ -7,9 +7,24 @@ import json
 import httpx
 import pytest
 
+import network_change_delivery.inventory as inventory_module
 from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
 
 TOKEN = "opaque-test-token"
+
+
+def test_http_client_disables_environment_proxy_trust(monkeypatch) -> None:
+    options: dict[str, object] = {}
+
+    def client_spy(**kwargs: object) -> object:
+        options.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(inventory_module.httpx, "Client", client_spy)
+    NetBoxInventoryProvider("https://netbox.example", TOKEN)
+    assert options["trust_env"] is False
+    assert options["verify"] is True
+    assert options["follow_redirects"] is False
 
 
 def device(**changes: object) -> dict[str, object]:

@@ -31,8 +31,10 @@ deployment write credentials.
 
 ## Credential and data boundaries
 
-The mature identity chain is Buildkite OIDC to OpenBao JWT validation to a
-short-lived OpenBao token to narrowly scoped device credentials. Secrets and
+The personal-lab path uses bounded AppRole bootstrap credentials to obtain a
+short-lived, single-use, exact-path OpenBao token for a static device credential.
+The mature identity chain remains Buildkite OIDC to OpenBao JWT validation to a
+short-lived OpenBao token and stronger device authorization. Secrets and
 secret-bearing payloads never enter Git, application models, logs, artifacts, or
 evidence. Company data of any kind is forbidden; only synthetic personal-lab data
 may be used.

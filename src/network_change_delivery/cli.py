@@ -20,7 +20,11 @@ from network_change_delivery.inventory import (
     NetBoxInventoryProvider,
 )
 from network_change_delivery.models import DeploymentPlan, InterfaceDescriptionIntent
-from network_change_delivery.secrets import EnvironmentSecretProvider, SecretError
+from network_change_delivery.secrets import (
+    EnvironmentSecretProvider,
+    OpenBaoSecretProvider,
+    SecretError,
+)
 from network_change_delivery.workflow import SafetyError, deploy_plan, plan_change
 
 
@@ -46,16 +50,25 @@ def _inventory(arguments: argparse.Namespace):
     return LocalYamlInventoryProvider(arguments.inventory)
 
 
+def _secrets(arguments: argparse.Namespace):
+    if arguments.openbao:
+        return OpenBaoSecretProvider()
+    return EnvironmentSecretProvider()
+
+
 def _run_plan(arguments: argparse.Namespace) -> int:
     intent = _load_change(arguments.change)
     inventory = _inventory(arguments)
+    secrets = _secrets(arguments)
     adapter = AnsibleRunnerCiscoAdapter()
     result = plan_change(
         intent,
         inventory,
-        EnvironmentSecretProvider(),
+        secrets,
         adapter,
     )
+    print(f"Credential source: {result.credential.source}")
+    print(f"Credential reference: {result.credential.reference}")
     if result.plan is None:
         print(result.message)
         return 0
@@ -76,12 +89,13 @@ def _run_plan(arguments: argparse.Namespace) -> int:
 def _run_deploy(arguments: argparse.Namespace) -> int:
     plan = _load_plan(arguments.plan)
     inventory = _inventory(arguments)
+    secrets = _secrets(arguments)
     adapter = AnsibleRunnerCiscoAdapter()
     record = deploy_plan(
         plan,
         arguments.approve_digest,
         inventory,
-        EnvironmentSecretProvider(),
+        secrets,
         adapter,
         adapter,
     )
@@ -112,6 +126,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan_inventory = plan_parser.add_mutually_exclusive_group(required=True)
     plan_inventory.add_argument("--inventory", type=Path)
     plan_inventory.add_argument("--netbox", action="store_true")
+    plan_secrets = plan_parser.add_mutually_exclusive_group(required=True)
+    plan_secrets.add_argument("--openbao", action="store_true")
+    plan_secrets.add_argument("--environment-secrets", action="store_true")
     plan_parser.add_argument("--output", required=True, type=Path)
     plan_parser.set_defaults(handler=_run_plan)
 
@@ -123,6 +140,9 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_inventory = deploy_parser.add_mutually_exclusive_group(required=True)
     deploy_inventory.add_argument("--inventory", type=Path)
     deploy_inventory.add_argument("--netbox", action="store_true")
+    deploy_secrets = deploy_parser.add_mutually_exclusive_group(required=True)
+    deploy_secrets.add_argument("--openbao", action="store_true")
+    deploy_secrets.add_argument("--environment-secrets", action="store_true")
     deploy_parser.add_argument("--approve-digest", required=True)
     deploy_parser.add_argument("--report-json", required=True, type=Path)
     deploy_parser.set_defaults(handler=_run_deploy)

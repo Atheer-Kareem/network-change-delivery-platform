@@ -10,10 +10,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from network_change_delivery.ansible_adapter import (
-    AnsibleRunnerCiscoAdapter,
-    ProviderError,
-)
+from network_change_delivery.ansible_adapter import ProviderError
 from network_change_delivery.inventory import (
     InventoryError,
     LocalYamlInventoryProvider,
@@ -25,6 +22,7 @@ from network_change_delivery.secrets import (
     OpenBaoSecretProvider,
     SecretError,
 )
+from network_change_delivery.vendor_adapter import MultiVendorAdapter
 from network_change_delivery.workflow import SafetyError, deploy_plan, plan_change
 
 
@@ -60,7 +58,7 @@ def _run_plan(arguments: argparse.Namespace) -> int:
     intent = _load_change(arguments.change)
     inventory = _inventory(arguments)
     secrets = _secrets(arguments)
-    adapter = AnsibleRunnerCiscoAdapter()
+    adapter = MultiVendorAdapter()
     result = plan_change(
         intent,
         inventory,
@@ -80,8 +78,15 @@ def _run_plan(arguments: argparse.Namespace) -> int:
     print(f"Desired description: {result.plan.desired_description!r}")
     print("Execution artifact:")
     print(result.plan.execution_artifact.cli_preview())
-    print("Recovery artifact:")
-    print(result.plan.recovery_artifact.cli_preview())
+    print(f"Transaction strategy: {result.plan.transaction_strategy}")
+    if result.plan.confirmed_timeout_minutes is not None:
+        print(
+            f"Commit-confirmed timeout: {result.plan.confirmed_timeout_minutes} minutes"
+        )
+        print(f"Confirmation operation: {result.plan.confirmation_operation}")
+    if result.plan.recovery_artifact is not None:
+        print("Recovery artifact:")
+        print(result.plan.recovery_artifact.cli_preview())
     print(f"Plan digest: {result.plan.digest}")
     return 0
 
@@ -90,7 +95,7 @@ def _run_deploy(arguments: argparse.Namespace) -> int:
     plan = _load_plan(arguments.plan)
     inventory = _inventory(arguments)
     secrets = _secrets(arguments)
-    adapter = AnsibleRunnerCiscoAdapter()
+    adapter = MultiVendorAdapter()
     record = deploy_plan(
         plan,
         arguments.approve_digest,

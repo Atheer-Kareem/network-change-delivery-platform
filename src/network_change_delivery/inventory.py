@@ -160,8 +160,14 @@ class NetBoxInventoryProvider:
         ):
             raise InventoryError("NetBox target is missing ncdp-managed tag")
         platform = device.get("platform")
-        if not isinstance(platform, dict) or platform.get("slug") != "cisco-ios-xe":
+        slug = platform.get("slug") if isinstance(platform, dict) else None
+        platform_mapping = {
+            "cisco-ios-xe": ("cisco_iosxe", 22),
+            "juniper-junos": ("junos", 830),
+        }
+        if slug not in platform_mapping:
             raise InventoryError("NetBox target has unsupported or missing platform")
+        internal_platform, port = platform_mapping[slug]
         primary = device.get("primary_ip4")
         address = primary.get("address") if isinstance(primary, dict) else None
         if not isinstance(address, str):
@@ -216,8 +222,8 @@ class NetBoxInventoryProvider:
         return InventoryDevice(
             name=target,
             host=host,
-            port=22,
-            platform="cisco_iosxe",
+            port=port,
+            platform=internal_platform,
             expected_hostname=target,
             protected_interfaces=tuple(sorted(set(protected))),
             inventory_source="netbox",

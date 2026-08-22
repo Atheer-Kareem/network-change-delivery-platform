@@ -30,7 +30,7 @@ class StatefulFakeAdapter:
     ) -> InterfaceState:
         return InterfaceState(
             observed_hostname="lab-router",
-            ios_version="17.18.2",
+            software_version="17.18.2",
             interface=interface,
             exists=True,
             description=self.description,
@@ -80,7 +80,7 @@ desired:
         encoding="utf-8",
     )
     adapter = StatefulFakeAdapter()
-    monkeypatch.setattr(cli, "AnsibleRunnerCiscoAdapter", lambda: adapter)
+    monkeypatch.setattr(cli, "MultiVendorAdapter", lambda: adapter)
     monkeypatch.setenv("NCDP_DEVICE_USERNAME", "test-user")
     monkeypatch.setenv("NCDP_DEVICE_PASSWORD", "test-password")
     plan_path = tmp_path / "plan.json"

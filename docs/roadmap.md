@@ -17,8 +17,12 @@ Ordering may change when implementation evidence requires it.
    identity and OpenBao AppRole provides short-lived, least-privilege
    secret-manager access to the static lab device credential. Buildkite JWT/OIDC
    and stronger or dynamic device authorization remain later work.
-4. **Juniper vertical:** the same honest common intent with Junos-native candidate,
-   validation, and recovery semantics.
+4. **Juniper vertical — complete:** the common interface-description intent,
+   direct-PyEZ exclusive candidate validation, commit-confirmed lifecycle, and
+   bounded evidence are implemented. Real vJunos read-only discovery, immutable
+   plan review, exact-digest commit-confirmed execution, independent validation,
+   confirmation, and read-only idempotency acceptance are recorded in the
+   [Increment 4 acceptance report](acceptance/junos-interface-description-increment-4.md).
 5. **Fleet rollout:** frozen selectors, complete preflight, representative canaries,
    waves, overlap control, no-ops, and honest partial outcomes.
 6. **Batfish assurance:** offline parsing and behavioural invariant evidence.

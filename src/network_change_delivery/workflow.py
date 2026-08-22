@@ -1,8 +1,9 @@
-"""Policy and lifecycle orchestration for the first Cisco vertical."""
+"""Policy and vendor-native lifecycle orchestration for interface descriptions."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -19,6 +20,7 @@ from network_change_delivery.models import (
     InterfaceDescriptionIntent,
     InterfaceState,
     InventoryDevice,
+    JunosConfigArtifact,
     PlanPreconditions,
     StageResult,
 )
@@ -29,6 +31,7 @@ from network_change_delivery.secrets import (
 )
 
 MANAGEMENT_INTERFACE_NAMES = frozenset({"gigabitethernet1", "gi1"})
+JUNOS_MANAGEMENT_INTERFACE_NAMES = frozenset({"fxp0", "em0"})
 
 
 class SafetyError(ValueError):
@@ -59,6 +62,29 @@ class ArtifactExecutor(Protocol):
         """Apply exactly one approved artifact without retry."""
 
 
+class JunosTransactionHandle(Protocol):
+    close_failed: bool
+
+    def prepare(self) -> object: ...
+
+    def commit_confirmed(self, minutes: int) -> ExecutionResult: ...
+
+
+class JunosTransactionExecutor(Protocol):
+    """Boundary for the explicit Junos confirmed-commit phases."""
+
+    def transaction(
+        self,
+        device: InventoryDevice,
+        credentials: DeviceCredentials,
+        artifact: JunosConfigArtifact,
+    ) -> AbstractContextManager[JunosTransactionHandle]: ...
+
+    def confirm(
+        self, device: InventoryDevice, credentials: DeviceCredentials
+    ) -> ExecutionResult: ...
+
+
 @dataclass(frozen=True)
 class PlanningResult:
     """Either a deployable plan or an already-compliant result."""
@@ -81,7 +107,7 @@ def _assert_safe_state(
     expected_hostname = device.expected_hostname
     protected_interfaces = device.protected_interfaces
     platform = device.platform
-    if platform != "cisco_iosxe":
+    if platform not in {"cisco_iosxe", "junos"}:
         raise SafetyError("target platform is unsupported")
     if state.observed_hostname != expected_hostname:
         raise SafetyError("observed hostname does not match inventory identity")
@@ -93,8 +119,10 @@ def _assert_safe_state(
     protected = {_normalized_interface(name) for name in protected_interfaces}
     if state.protected or requested in protected:
         raise SafetyError("requested interface is protected by inventory policy")
-    if requested in MANAGEMENT_INTERFACE_NAMES:
+    if platform == "cisco_iosxe" and requested in MANAGEMENT_INTERFACE_NAMES:
         raise SafetyError("GigabitEthernet1 is protected for this lab target")
+    if platform == "junos" and requested in JUNOS_MANAGEMENT_INTERFACE_NAMES:
+        raise SafetyError(f"{intent.interface} is protected as Junos management")
 
 
 def build_plan(
@@ -121,17 +149,35 @@ def build_plan(
             ) from error
     if state.description == intent.desired.description:
         raise SafetyError("interface is already compliant")
-    parent = f"interface {intent.interface}"
-    execution = CiscoConfigArtifact(
-        parent=parent,
-        lines=(f"description {intent.desired.description}",),
-    )
-    recovery_line = (
-        f"description {state.description}"
-        if state.description is not None
-        else "no description"
-    )
-    recovery = CiscoConfigArtifact(parent=parent, lines=(recovery_line,))
+    if device.platform == "junos":
+        from network_change_delivery.models import render_junos_interface_description
+
+        execution: CiscoConfigArtifact | JunosConfigArtifact = JunosConfigArtifact(
+            interface=intent.interface,
+            description=intent.desired.description,
+            xml=render_junos_interface_description(
+                intent.interface, intent.desired.description
+            ),
+        )
+        recovery = None
+        strategy = "junos_commit_confirmed"
+        confirmed_timeout = 5
+        confirmation = "confirm_previous_commit"
+    else:
+        parent = f"interface {intent.interface}"
+        execution = CiscoConfigArtifact(
+            parent=parent,
+            lines=(f"description {intent.desired.description}",),
+        )
+        recovery_line = (
+            f"description {state.description}"
+            if state.description is not None
+            else "no description"
+        )
+        recovery = CiscoConfigArtifact(parent=parent, lines=(recovery_line,))
+        strategy = "cisco_targeted_inverse"
+        confirmed_timeout = None
+        confirmation = None
     plan = DeploymentPlan(
         change_id=intent.change_id,
         kind=intent.kind,
@@ -148,6 +194,9 @@ def build_plan(
         interface=intent.interface,
         current_description=state.description,
         desired_description=intent.desired.description,
+        transaction_strategy=strategy,
+        confirmed_timeout_minutes=confirmed_timeout,
+        confirmation_operation=confirmation,
         execution_artifact=execution,
         recovery_artifact=recovery,
         preconditions=PlanPreconditions(
@@ -228,6 +277,9 @@ def _record(
     execution: StageResult | None = None,
     post_validation: StageResult | None = None,
     recovery: StageResult | None = None,
+    candidate_validation: StageResult | None = None,
+    candidate_diff_digest: str | None = None,
+    confirmation: StageResult | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> ChangeRecord:
     return ChangeRecord(
@@ -252,8 +304,175 @@ def _record(
         execution=execution or _stage("execution not attempted"),
         post_validation=post_validation or _stage("post-validation not attempted"),
         recovery=recovery or _stage("recovery not attempted"),
+        transaction_strategy=plan.transaction_strategy,
+        candidate_validation=candidate_validation,
+        candidate_diff_digest=candidate_diff_digest,
+        confirmation=confirmation,
         final_outcome=outcome,
-        provider="ansible-runner/cisco.ios",
+        provider=(
+            "pyez/netconf-exclusive"
+            if plan.platform == "junos"
+            else "ansible-runner/cisco.ios"
+        ),
+    )
+
+
+def _deploy_junos(
+    plan: DeploymentPlan,
+    approval_digest: str,
+    device: InventoryDevice,
+    credentials: DeviceCredentials,
+    collector: StateCollector,
+    executor: JunosTransactionExecutor,
+    preflight: StageResult,
+    *,
+    now: Callable[[], datetime],
+) -> ChangeRecord:
+    """Execute the bounded Junos confirmed-commit lifecycle without retries."""
+    artifact = plan.execution_artifact
+    if not isinstance(artifact, JunosConfigArtifact):
+        return _record(
+            plan, approval_digest, FinalOutcome.BLOCKED, preflight=preflight, now=now
+        )
+    transaction = None
+    prepared = None
+    committed = None
+    try:
+        with executor.transaction(device, credentials, artifact) as transaction:
+            prepared = transaction.prepare()
+            candidate = _stage(
+                "candidate initially clean; commit check and semantic validation "
+                "passed",
+                attempted=True,
+                succeeded=True,
+                changed=True,
+            )
+            committed = transaction.commit_confirmed(
+                plan.confirmed_timeout_minutes or 0
+            )
+    except (ValueError, OSError, RuntimeError):
+        candidate = _stage(
+            "candidate preparation blocked before active configuration change",
+            attempted=True,
+            succeeded=False,
+        )
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.BLOCKED,
+            preflight=preflight,
+            candidate_validation=candidate,
+            now=now,
+        )
+    candidate_diff_digest = getattr(prepared, "diff_sha256", None)
+    if committed is None:
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.BLOCKED,
+            preflight=preflight,
+            candidate_validation=candidate,
+            candidate_diff_digest=candidate_diff_digest,
+            now=now,
+        )
+    execution = _stage(
+        committed.message,
+        attempted=True,
+        succeeded=committed.disposition is ExecutionDisposition.SUCCEEDED,
+        changed=committed.changed,
+    )
+    if committed.disposition is not ExecutionDisposition.SUCCEEDED:
+        outcome = (
+            FinalOutcome.AMBIGUOUS
+            if committed.disposition is ExecutionDisposition.AMBIGUOUS
+            else FinalOutcome.EXECUTION_FAILED
+        )
+        return _record(
+            plan,
+            approval_digest,
+            outcome,
+            preflight=preflight,
+            candidate_validation=candidate,
+            candidate_diff_digest=candidate_diff_digest,
+            execution=execution,
+            now=now,
+        )
+    if transaction is not None and getattr(transaction, "close_failed", False):
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.AUTO_ROLLBACK_PENDING,
+            preflight=preflight,
+            candidate_validation=candidate,
+            candidate_diff_digest=candidate_diff_digest,
+            execution=execution,
+            post_validation=_stage(
+                "temporary commit deliberately left unconfirmed after session "
+                "close failure; automatic rollback expected",
+                succeeded=False,
+            ),
+            now=now,
+        )
+    try:
+        observed = collector.collect(device, credentials, plan.interface)
+        valid = (
+            observed.observed_hostname == plan.expected_hostname
+            and observed.interface == plan.interface
+            and observed.exists
+            and observed.description == plan.desired_description
+        )
+    except (ValueError, OSError, RuntimeError):
+        observed = None
+        valid = False
+    if not valid:
+        post = _stage(
+            "temporary commit deliberately left unconfirmed; "
+            "automatic rollback expected",
+            attempted=True,
+            succeeded=False,
+            observed_description=(observed.description if observed else None),
+        )
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.AUTO_ROLLBACK_PENDING,
+            preflight=preflight,
+            candidate_validation=candidate,
+            candidate_diff_digest=candidate_diff_digest,
+            execution=execution,
+            post_validation=post,
+            now=now,
+        )
+    post = _stage(
+        "fresh independent state matches desired configuration",
+        attempted=True,
+        succeeded=True,
+        observed_description=observed.description,
+    )
+    confirmed = executor.confirm(device, credentials)
+    confirmation = _stage(
+        confirmed.message,
+        attempted=True,
+        succeeded=confirmed.disposition is ExecutionDisposition.SUCCEEDED,
+        changed=confirmed.changed,
+    )
+    if confirmed.disposition is ExecutionDisposition.AMBIGUOUS:
+        outcome = FinalOutcome.CONFIRMATION_AMBIGUOUS
+    elif confirmed.disposition is ExecutionDisposition.FAILED:
+        outcome = FinalOutcome.CONFIRMATION_FAILED
+    else:
+        outcome = FinalOutcome.SUCCEEDED
+    return _record(
+        plan,
+        approval_digest,
+        outcome,
+        preflight=preflight,
+        candidate_validation=candidate,
+        candidate_diff_digest=candidate_diff_digest,
+        execution=execution,
+        post_validation=post,
+        confirmation=confirmation,
+        now=now,
     )
 
 
@@ -388,6 +607,17 @@ def deploy_plan(
         succeeded=True,
         observed_description=state.description,
     )
+    if plan.platform == "junos":
+        return _deploy_junos(
+            plan,
+            approval_digest,
+            device,
+            credentials,
+            collector,
+            executor,  # type: ignore[arg-type]
+            preflight,
+            now=now,
+        )
     result = executor.execute(device, credentials, plan.execution_artifact)
     execution = _stage(
         result.message,

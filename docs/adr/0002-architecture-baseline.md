@@ -33,6 +33,11 @@ execution, validation, history, and recovery evidence.
 
 Selection does not mean implementation in PR #1.
 
+ADR-0005 supersedes the Junos transactional execution detail: implementation
+evidence requires a narrow direct-PyEZ adapter to keep one exclusive candidate
+session open across policy approval and commit-confirmed. Cisco remains on
+Ansible Runner.
+
 ## Rationale
 
 Function-based planes keep policy authoritative while allowing tools to evolve.

@@ -3,6 +3,7 @@
 .buildkite
 .venv
 .ansible
+.local
 .pytest_cache
 .ruff_cache
 __pycache__

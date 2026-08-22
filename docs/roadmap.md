@@ -13,8 +13,9 @@ Ordering may change when implementation evidence requires it.
    place, although successful live validation did not require recovery. See the
    [live acceptance report](acceptance/cisco-interface-description-increment-2.md).
    Terraform-managed CML topology and lifecycle remain increment 8.
-3. **NetBox and OpenBao:** authoritative target metadata and short-lived,
-   narrowly scoped credential acquisition behind explicit interfaces.
+3. **NetBox and OpenBao — in progress:** the read-only NetBox inventory provider
+   and personal-lab acceptance are implemented. Short-lived, narrowly scoped
+   credential acquisition through OpenBao remains pending.
 4. **Juniper vertical:** the same honest common intent with Junos-native candidate,
    validation, and recovery semantics.
 5. **Fleet rollout:** frozen selectors, complete preflight, representative canaries,

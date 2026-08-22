@@ -14,7 +14,11 @@ from network_change_delivery.ansible_adapter import (
     AnsibleRunnerCiscoAdapter,
     ProviderError,
 )
-from network_change_delivery.inventory import InventoryError, LocalYamlInventoryProvider
+from network_change_delivery.inventory import (
+    InventoryError,
+    LocalYamlInventoryProvider,
+    NetBoxInventoryProvider,
+)
 from network_change_delivery.models import DeploymentPlan, InterfaceDescriptionIntent
 from network_change_delivery.secrets import EnvironmentSecretProvider, SecretError
 from network_change_delivery.workflow import SafetyError, deploy_plan, plan_change
@@ -36,9 +40,15 @@ def _load_plan(path: Path) -> DeploymentPlan:
     return DeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
 
 
+def _inventory(arguments: argparse.Namespace):
+    if arguments.netbox:
+        return NetBoxInventoryProvider()
+    return LocalYamlInventoryProvider(arguments.inventory)
+
+
 def _run_plan(arguments: argparse.Namespace) -> int:
     intent = _load_change(arguments.change)
-    inventory = LocalYamlInventoryProvider(arguments.inventory)
+    inventory = _inventory(arguments)
     adapter = AnsibleRunnerCiscoAdapter()
     result = plan_change(
         intent,
@@ -65,7 +75,7 @@ def _run_plan(arguments: argparse.Namespace) -> int:
 
 def _run_deploy(arguments: argparse.Namespace) -> int:
     plan = _load_plan(arguments.plan)
-    inventory = LocalYamlInventoryProvider(arguments.inventory)
+    inventory = _inventory(arguments)
     adapter = AnsibleRunnerCiscoAdapter()
     record = deploy_plan(
         plan,
@@ -99,7 +109,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="collect live state and create an immutable plan",
     )
     plan_parser.add_argument("--change", required=True, type=Path)
-    plan_parser.add_argument("--inventory", required=True, type=Path)
+    plan_inventory = plan_parser.add_mutually_exclusive_group(required=True)
+    plan_inventory.add_argument("--inventory", type=Path)
+    plan_inventory.add_argument("--netbox", action="store_true")
     plan_parser.add_argument("--output", required=True, type=Path)
     plan_parser.set_defaults(handler=_run_plan)
 
@@ -108,7 +120,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="execute one explicitly digest-approved immutable plan",
     )
     deploy_parser.add_argument("--plan", required=True, type=Path)
-    deploy_parser.add_argument("--inventory", required=True, type=Path)
+    deploy_inventory = deploy_parser.add_mutually_exclusive_group(required=True)
+    deploy_inventory.add_argument("--inventory", type=Path)
+    deploy_inventory.add_argument("--netbox", action="store_true")
     deploy_parser.add_argument("--approve-digest", required=True)
     deploy_parser.add_argument("--report-json", required=True, type=Path)
     deploy_parser.set_defaults(handler=_run_deploy)

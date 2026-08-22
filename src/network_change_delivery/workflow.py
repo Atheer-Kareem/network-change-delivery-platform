@@ -101,6 +101,11 @@ def build_plan(
 ) -> DeploymentPlan:
     """Build and digest the exact immutable artifact from fresh safe state."""
     _assert_safe_state(intent, device, state)
+    if (
+        device.inventory_source == "netbox"
+        and device.inventory_interface_object_id is None
+    ):
+        raise SafetyError("NetBox requested interface identity is missing")
     if state.description is not None:
         try:
             DesiredDescription(description=state.description)
@@ -125,6 +130,9 @@ def build_plan(
         change_id=intent.change_id,
         kind=intent.kind,
         target=intent.target,
+        inventory_source=device.inventory_source,
+        inventory_object_id=device.inventory_object_id,
+        inventory_interface_object_id=device.inventory_interface_object_id,
         host=device.host,
         port=device.port,
         expected_hostname=device.expected_hostname,
@@ -155,7 +163,12 @@ def plan_change(
     created_at: datetime | None = None,
 ) -> PlanningResult:
     """Resolve, collect, preflight, and plan one explicit target."""
-    device = inventory.resolve(intent.target)
+    device = inventory.resolve(intent.target, intent.interface)
+    if (
+        device.inventory_source == "netbox"
+        and device.inventory_interface_object_id is None
+    ):
+        raise SafetyError("NetBox requested interface identity is missing")
     credentials = secrets.load()
     state = collector.collect(device, credentials, intent.interface)
     _assert_safe_state(intent, device, state)
@@ -205,6 +218,9 @@ def _record(
         change_id=plan.change_id,
         plan_digest=plan.digest,
         target=plan.target,
+        inventory_source=plan.inventory_source,
+        inventory_object_id=plan.inventory_object_id,
+        inventory_interface_object_id=plan.inventory_interface_object_id,
         host=plan.host,
         port=plan.port,
         expected_hostname=plan.expected_hostname,
@@ -254,7 +270,7 @@ def deploy_plan(
         )
 
     try:
-        device = inventory.resolve(plan.target)
+        device = inventory.resolve(plan.target, plan.interface)
     except (ValueError, OSError, RuntimeError):
         return _record(
             plan,
@@ -264,7 +280,10 @@ def deploy_plan(
             now=now,
         )
     if (
-        device.name != plan.target
+        device.inventory_source != plan.inventory_source
+        or device.inventory_object_id != plan.inventory_object_id
+        or device.inventory_interface_object_id != plan.inventory_interface_object_id
+        or device.name != plan.target
         or device.host != plan.host
         or device.port != plan.port
         or device.platform != plan.platform

@@ -33,7 +33,7 @@ flowchart LR
   isolated supporting services.
 - **Control/application:** Python 3.12 owns domain policy, target resolution,
   planning, risk, rollout, evidence, recovery decisions, and composition.
-- **Source of truth:** future NetBox owns infrastructure identity, topology/IPAM
+- **Source of truth:** NetBox owns infrastructure identity, topology/IPAM
   relationships, platform, role, tags, targeting, and inventory metadata. Git
   owns managed device-configuration intent. A managed property has exactly one
   authority, explicitly assigned before overlapping NetBox/native fields are
@@ -62,10 +62,10 @@ policy, and external observations must be normalized before policy consumes them
 
 ## Implemented now
 
-Architecture Baseline 1 implements repository structure, product documentation,
-the Python CLI shell, Docker foundation, and a Buildkite quality definition.
-Increment 2 is implementing the first narrow Cisco IOS XE interface-description
-vertical; its exact boundaries are documented in the
+Architecture Baseline 1 and the first narrow Cisco IOS XE interface-description
+vertical are implemented. Increment 3 adds the primary read-only NetBox inventory
+path while retaining local YAML for isolated and offline work; its provider
+contract is documented in the [NetBox inventory provider](netbox-inventory-provider.md).
+The vertical's exact boundaries are documented in the
 [Cisco interface-description vertical](cisco-interface-description-vertical.md).
-It remains in progress until live CML write and recovery acceptance completes.
 All other named integrations remain future work.

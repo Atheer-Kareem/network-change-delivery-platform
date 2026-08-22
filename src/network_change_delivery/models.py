@@ -55,7 +55,7 @@ class InterfaceDescriptionIntent(BaseModel):
 
 
 class InventoryDevice(BaseModel):
-    """Temporary local inventory entry without credentials."""
+    """Resolved inventory identity and endpoint without credentials."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     name: CliBoundString
@@ -64,6 +64,9 @@ class InventoryDevice(BaseModel):
     platform: Literal["cisco_iosxe"]
     expected_hostname: NonEmptyString
     protected_interfaces: tuple[str, ...] = ()
+    inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
+    inventory_object_id: str | None = None
+    inventory_interface_object_id: str | None = None
 
 
 class InventoryDocument(BaseModel):
@@ -125,6 +128,9 @@ class DeploymentPlan(BaseModel):
     change_id: CliBoundString
     kind: Literal["interface_description"]
     target: CliBoundString
+    inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
+    inventory_object_id: str | None = None
+    inventory_interface_object_id: str | None = None
     host: NonEmptyString
     port: int = Field(ge=1, le=65535)
     expected_hostname: NonEmptyString
@@ -141,6 +147,11 @@ class DeploymentPlan(BaseModel):
     @model_validator(mode="after")
     def artifact_matches_supported_operation(self) -> DeploymentPlan:
         """Prevent a valid digest from approving a broader or divergent command."""
+        if self.inventory_source == "netbox" and (
+            self.inventory_object_id is None
+            or self.inventory_interface_object_id is None
+        ):
+            raise ValueError("NetBox plan inventory identity is incomplete")
         DesiredDescription(description=self.desired_description)
         if self.current_description is not None:
             validate_ios_description(self.current_description)
@@ -238,6 +249,9 @@ class ChangeRecord(BaseModel):
     change_id: str
     plan_digest: str
     target: str
+    inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
+    inventory_object_id: str | None = None
+    inventory_interface_object_id: str | None = None
     host: str
     port: int
     expected_hostname: str

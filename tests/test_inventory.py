@@ -23,6 +23,28 @@ def test_inventory_target_resolution(tmp_path: Path) -> None:
     resolved = LocalYamlInventoryProvider(inventory).resolve("router-1")
     assert resolved.host == "192.0.2.10"
     assert resolved.protected_interfaces == ("GigabitEthernet1",)
+    assert resolved.inventory_source == "local_yaml"
+    assert resolved.inventory_object_id is None
+    assert resolved.inventory_interface_object_id is None
+
+
+def test_local_inventory_accepts_optional_interface_identity(
+    tmp_path: Path,
+) -> None:
+    inventory = tmp_path / "inventory.yaml"
+    inventory.write_text(
+        """devices:
+  - name: router-1
+    host: 192.0.2.10
+    platform: cisco_iosxe
+    expected_hostname: lab-router
+""",
+        encoding="utf-8",
+    )
+    resolved = LocalYamlInventoryProvider(inventory).resolve(
+        "router-1", "GigabitEthernet2"
+    )
+    assert resolved.inventory_interface_object_id is None
 
 
 def test_unknown_inventory_target_fails_closed(tmp_path: Path) -> None:

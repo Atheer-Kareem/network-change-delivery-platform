@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.1,<0.29",
     "junos-eznc>=2.8.2,<2.9",
     "pydantic>=2,<3",
+    "pybatfish>=2025.7.7.2423,<2025.8",
     "pyyaml>=6,<7",
 ]
 

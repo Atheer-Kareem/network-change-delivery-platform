@@ -36,7 +36,10 @@ Ordering may change when implementation evidence requires it.
    Distributed/cross-run locks, runner concurrency groups, and multi-worker
    coordination remain in the later Buildkite hardening increment; they do not
    replace local rollout overlap safety.
-6. **Batfish assurance:** offline parsing and behavioural invariant evidence.
+6. **Batfish assurance — in progress:** Increment 6A establishes offline
+   snapshot manifests, a typed Batfish provider boundary, parser/init evidence,
+   critical-flow and differential-reachability policy, and synthetic mixed-
+   vendor fixtures. Increment 6B will bind assurance to exact NCDP plans.
 7. **Buildkite approval and hardened deployment:** protected commit/plan binding,
    isolated queues, OIDC, concurrency, artifact promotion, and approval gates.
 8. **Terraform/CML infrastructure as code:** reproducible twin lifecycle and reset,

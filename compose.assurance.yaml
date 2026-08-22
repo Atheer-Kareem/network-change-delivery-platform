@@ -1,0 +1,5 @@
+services:
+  batfish:
+    image: docker.io/batfish/batfish:test-2026.07.20.3565@sha256:0c2ea3fc2f90cac6b9339936da435ac9916d0ad3308bebbe5df13b1a0cf49819
+    ports:
+      - "127.0.0.1:9996:9996"

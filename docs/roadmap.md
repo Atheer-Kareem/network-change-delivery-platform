@@ -23,8 +23,15 @@ Ordering may change when implementation evidence requires it.
    plan review, exact-digest commit-confirmed execution, independent validation,
    confirmation, and read-only idempotency acceptance are recorded in the
    [Increment 4 acceptance report](acceptance/junos-interface-description-increment-4.md).
-5. **Fleet rollout:** frozen selectors, complete preflight, representative canaries,
-   waves, overlap control, no-ops, and honest partial outcomes.
+5. **Fleet rollout — in progress:** Increment 5A implements frozen narrow NetBox
+   selectors, nested immutable child plans, first-class no-ops, canonical fleet
+   digests, deterministic representative canaries and fixed waves, and complete
+   fleet-wide read-only preflight. Increment 5B will add sequential gated device
+   execution and honest partial outcomes. Increment 5C will add process-local
+   same-target overlap admission and mixed-vendor live CML fleet acceptance.
+   Distributed/cross-run locks, runner concurrency groups, and multi-worker
+   coordination remain in the later Buildkite hardening increment; they do not
+   replace local rollout overlap safety.
 6. **Batfish assurance:** offline parsing and behavioural invariant evidence.
 7. **Buildkite approval and hardened deployment:** protected commit/plan binding,
    isolated queues, OIDC, concurrency, artifact promotion, and approval gates.

@@ -9,8 +9,12 @@ import pytest
 
 import network_change_delivery.inventory as inventory_module
 from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
+from network_change_delivery.models import NetBoxFleetSelector
 
 TOKEN = "opaque-test-token"
+FLEET_SELECTOR = NetBoxFleetSelector(
+    device_tag="fleet-edge", interface_tag="fleet-uplink"
+)
 
 
 def test_http_client_disables_environment_proxy_trust(monkeypatch) -> None:
@@ -297,3 +301,143 @@ def test_unexpected_status_does_not_include_response_body() -> None:
         provider(handler=handler).resolve("core-02")
     assert str(caught.value) == "NetBox returned unexpected HTTP status 500"
     assert TOKEN not in repr(caught.value)
+
+
+def fleet_device(object_id: int, **changes: object) -> dict[str, object]:
+    value = device(
+        id=object_id,
+        name=f"router-{object_id}",
+        tags=[{"slug": "ncdp-managed"}, {"slug": "fleet-edge"}],
+        primary_ip4={"address": f"192.0.2.{object_id}/24"},
+    )
+    value.update(changes)
+    return value
+
+
+def fleet_interface(object_id: int, name: str = "GigabitEthernet2"):
+    return {
+        "id": object_id + 100,
+        "name": name,
+        "tags": [{"slug": "fleet-uplink"}],
+    }
+
+
+def test_fleet_selector_paginates_and_returns_stable_identity_order() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/api/dcim/devices/":
+            offset = int(request.url.params["offset"])
+            results = [fleet_device(20)] if offset == 0 else [fleet_device(10)]
+            return httpx.Response(
+                200,
+                json=page(
+                    results,
+                    count=2,
+                    next_=("https://netbox.example/next" if offset == 0 else None),
+                ),
+            )
+        object_id = int(request.url.params["device_id"])
+        return httpx.Response(200, json=page([fleet_interface(object_id)]))
+
+    resolved = provider(handler=handler).resolve_fleet(FLEET_SELECTOR)
+    assert [item[0].inventory_object_id for item in resolved] == [
+        "netbox:dcim.device:10",
+        "netbox:dcim.device:20",
+    ]
+    assert all(item[0].inventory_interface_object_id for item in resolved)
+    assert requests[0].url.params["tag"] == "fleet-edge"
+    assert requests[0].url.params["status"] == "active"
+    assert requests[0].url.params["ordering"] == "id"
+    assert requests[1].url.params["offset"] == "1"
+    assert all(request.url.params["ordering"] == "id" for request in requests)
+
+
+@pytest.mark.parametrize(
+    ("platform_slug", "expected_platform", "expected_port"),
+    [
+        ("cisco-ios-xe", "cisco_iosxe", 22),
+        ("juniper-junos", "junos", 830),
+    ],
+)
+def test_fleet_selector_maps_only_exact_supported_platforms(
+    platform_slug: str, expected_platform: str, expected_port: int
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            return httpx.Response(
+                200,
+                json=page([fleet_device(10, platform={"slug": platform_slug})]),
+            )
+        return httpx.Response(200, json=page([fleet_interface(10)]))
+
+    resolved = provider(handler=handler).resolve_fleet(FLEET_SELECTOR)[0][0]
+    assert resolved.platform == expected_platform
+    assert resolved.port == expected_port
+
+
+@pytest.mark.parametrize(
+    ("interfaces", "message"),
+    [
+        ([], "matched zero"),
+        ([fleet_interface(10), fleet_interface(11)], "not exact"),
+        (
+            [
+                {
+                    **fleet_interface(10),
+                    "tags": [
+                        {"slug": "fleet-uplink"},
+                        {"slug": "ncdp-protected"},
+                    ],
+                }
+            ],
+            "protected",
+        ),
+    ],
+)
+def test_fleet_selector_requires_one_unprotected_interface(
+    interfaces: list[dict[str, object]], message: str
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            return httpx.Response(200, json=page([fleet_device(10)]))
+        return httpx.Response(200, json=page(interfaces))
+
+    with pytest.raises(InventoryError, match=message):
+        provider(handler=handler).resolve_fleet(FLEET_SELECTOR)
+
+
+def test_fleet_selector_rejects_duplicate_stable_device_identity() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            return httpx.Response(
+                200,
+                json=page([fleet_device(10), fleet_device(10, name="duplicate-name")]),
+            )
+        return httpx.Response(200, json=page([fleet_interface(10)]))
+
+    with pytest.raises(InventoryError, match="duplicate device identity"):
+        provider(handler=handler).resolve_fleet(FLEET_SELECTOR)
+
+
+@pytest.mark.parametrize(
+    ("devices", "message"),
+    [
+        ([], "zero devices"),
+        ([fleet_device(10, platform={"slug": "unsupported"})], "unsupported"),
+        ([fleet_device(10, primary_ip4=None)], "missing primary"),
+        ([fleet_device(10, id="missing")], "identity is invalid"),
+        ([fleet_device(10, tags=[{"slug": "fleet-edge"}])], "required tags"),
+    ],
+)
+def test_fleet_selector_rejects_ineligible_devices(
+    devices: list[dict[str, object]], message: str
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            return httpx.Response(200, json=page(devices))
+        return httpx.Response(200, json=page([fleet_interface(10)]))
+
+    with pytest.raises(InventoryError, match=message):
+        provider(handler=handler).resolve_fleet(FLEET_SELECTOR)

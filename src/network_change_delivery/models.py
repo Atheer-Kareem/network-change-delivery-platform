@@ -19,6 +19,15 @@ CliBoundString = Annotated[
     ),
 ]
 Sha256Digest = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
+NetBoxTagSlug = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    ),
+]
 
 
 def validate_ios_description(value: str, *, require_nonempty: bool = True) -> str:
@@ -54,6 +63,33 @@ class InterfaceDescriptionIntent(BaseModel):
     target: CliBoundString
     interface: CliBoundString
     desired: DesiredDescription
+
+
+class NetBoxFleetSelector(BaseModel):
+    """Intentionally narrow device/interface tag selector."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    device_tag: NetBoxTagSlug
+    interface_tag: NetBoxTagSlug
+
+
+class FleetRolloutPolicy(BaseModel):
+    """Increment 5 v1 deterministic sequential cohort policy."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    canaries_per_platform: Literal[1] = 1
+    wave_size: int = Field(ge=1, le=100)
+
+
+class FleetInterfaceDescriptionIntent(BaseModel):
+    """One desired description applied to a frozen NetBox-selected fleet."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    change_id: CliBoundString
+    kind: Literal["interface_description"]
+    selector: NetBoxFleetSelector
+    desired: DesiredDescription
+    rollout: FleetRolloutPolicy
 
 
 class InventoryDevice(BaseModel):
@@ -268,6 +304,232 @@ class DeploymentPlan(BaseModel):
     def verify_digest(self) -> bool:
         """Verify that the stored digest matches the canonical plan content."""
         return self.digest == self.calculated_digest()
+
+
+class FleetMemberClassification(StrEnum):
+    """Planning disposition for every frozen selected fleet member."""
+
+    DEPLOYABLE = "DEPLOYABLE"
+    COMPLIANT = "COMPLIANT"
+
+
+class FrozenFleetMember(BaseModel):
+    """Exact immutable inventory, credential, and child-plan binding."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    target: CliBoundString
+    inventory_source: Literal["netbox"] = "netbox"
+    inventory_object_id: NonEmptyString
+    inventory_interface_object_id: NonEmptyString
+    host: NonEmptyString
+    port: int = Field(ge=1, le=65535)
+    expected_hostname: NonEmptyString
+    platform: Literal["cisco_iosxe", "junos"]
+    interface: CliBoundString
+    credential_source: Literal["environment", "openbao"]
+    credential_reference: NonEmptyString
+    classification: FleetMemberClassification
+    current_description: str | None
+    desired_description: str
+    child_plan: DeploymentPlan | None = None
+
+    @model_validator(mode="after")
+    def child_plan_matches_frozen_binding(self) -> FrozenFleetMember:
+        """Reject divergent duplicated fields and invalid no-op claims."""
+        if self.classification is FleetMemberClassification.COMPLIANT:
+            if self.child_plan is not None:
+                raise ValueError("compliant fleet member cannot contain a child plan")
+            return self
+        plan = self.child_plan
+        if plan is None or not plan.verify_digest():
+            raise ValueError("deployable fleet member requires a valid child plan")
+        expected = (
+            self.target,
+            self.inventory_source,
+            self.inventory_object_id,
+            self.inventory_interface_object_id,
+            self.host,
+            self.port,
+            self.expected_hostname,
+            self.platform,
+            self.interface,
+            self.credential_source,
+            self.credential_reference,
+            self.current_description,
+            self.desired_description,
+        )
+        actual = (
+            plan.target,
+            plan.inventory_source,
+            plan.inventory_object_id,
+            plan.inventory_interface_object_id,
+            plan.host,
+            plan.port,
+            plan.expected_hostname,
+            plan.platform,
+            plan.interface,
+            plan.credential_source,
+            plan.credential_reference,
+            plan.current_description,
+            plan.desired_description,
+        )
+        if actual != expected:
+            raise ValueError("child plan disagrees with frozen fleet member")
+        return self
+
+
+class FleetDeploymentPlan(BaseModel):
+    """Digest-bound exact fleet membership and deterministic rollout cohorts."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: Literal["1"] = "1"
+    change_id: CliBoundString
+    kind: Literal["interface_description"]
+    selector: NetBoxFleetSelector
+    desired_description: str
+    rollout: FleetRolloutPolicy
+    members: tuple[FrozenFleetMember, ...]
+    canaries: tuple[NonEmptyString, ...]
+    waves: tuple[tuple[NonEmptyString, ...], ...]
+    created_at: datetime
+    digest: Sha256Digest
+
+    @model_validator(mode="after")
+    def exact_membership_and_cohorts(self) -> FleetDeploymentPlan:
+        DesiredDescription(description=self.desired_description)
+        targets = [member.target for member in self.members]
+        devices = [member.inventory_object_id for member in self.members]
+        interfaces = [member.inventory_interface_object_id for member in self.members]
+        if not self.members:
+            raise ValueError("fleet plan requires members")
+        if len(targets) != len(set(targets)):
+            raise ValueError("fleet member targets must be unique")
+        if len(devices) != len(set(devices)):
+            raise ValueError("fleet device identities must be unique")
+        if len(interfaces) != len(set(interfaces)):
+            raise ValueError("fleet interface identities must be unique")
+        member_order = sorted(
+            self.members,
+            key=lambda member: (
+                member.inventory_object_id,
+                member.target,
+                member.inventory_interface_object_id,
+            ),
+        )
+        if list(self.members) != member_order:
+            raise ValueError("fleet member order is invalid")
+        by_id = {member.inventory_object_id: member for member in self.members}
+        for member in self.members:
+            if member.classification is FleetMemberClassification.COMPLIANT:
+                if (
+                    member.current_description != self.desired_description
+                    or member.desired_description != self.desired_description
+                ):
+                    raise ValueError(
+                        "compliant fleet member does not prove desired state"
+                    )
+            elif (
+                member.child_plan is None
+                or member.child_plan.desired_description != self.desired_description
+                or member.child_plan.change_id != self.change_id
+                or member.desired_description != self.desired_description
+            ):
+                raise ValueError("fleet child plan disagrees with fleet intent")
+        cohort_ids = [*self.canaries, *(item for wave in self.waves for item in wave)]
+        if len(cohort_ids) != len(set(cohort_ids)):
+            raise ValueError("fleet member appears in multiple cohorts")
+        if any(identity not in by_id for identity in cohort_ids):
+            raise ValueError("fleet cohort references an unknown member")
+        deployable = {
+            member.inventory_object_id
+            for member in self.members
+            if member.classification is FleetMemberClassification.DEPLOYABLE
+        }
+        compliant = set(by_id) - deployable
+        if set(cohort_ids) != deployable:
+            raise ValueError("fleet cohorts must cover every deployable member once")
+        if compliant.intersection(cohort_ids):
+            raise ValueError("compliant member cannot appear in a fleet cohort")
+        if deployable and not self.canaries:
+            raise ValueError("deployable fleet requires representative canaries")
+        represented = {by_id[identity].platform for identity in deployable}
+        canary_platforms = [by_id[identity].platform for identity in self.canaries]
+        if set(canary_platforms) != represented or len(canary_platforms) != len(
+            represented
+        ):
+            raise ValueError("fleet requires exactly one canary per platform")
+        if any(not wave or len(wave) > self.rollout.wave_size for wave in self.waves):
+            raise ValueError("fleet wave size is invalid")
+
+        def stable_key(identity: str) -> tuple[str, str, str]:
+            member = by_id[identity]
+            return (
+                member.inventory_object_id,
+                member.target,
+                member.inventory_interface_object_id,
+            )
+
+        expected_canaries = tuple(
+            min(
+                (identity for identity in deployable if by_id[identity].platform == p),
+                key=stable_key,
+            )
+            for p in sorted(represented)
+        )
+        if self.canaries != expected_canaries:
+            raise ValueError("fleet canary order or assignment is invalid")
+        remaining = sorted(deployable - set(self.canaries), key=stable_key)
+        expected_waves = tuple(
+            tuple(remaining[index : index + self.rollout.wave_size])
+            for index in range(0, len(remaining), self.rollout.wave_size)
+        )
+        if self.waves != expected_waves:
+            raise ValueError("fleet wave order or assignment is invalid")
+        return self
+
+    def digest_input(self) -> bytes:
+        value = self.model_dump(mode="json", exclude={"digest"})
+        return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+    def calculated_digest(self) -> str:
+        return f"sha256:{hashlib.sha256(self.digest_input()).hexdigest()}"
+
+    def verify_digest(self) -> bool:
+        return self.digest == self.calculated_digest()
+
+
+class FleetMemberPreflight(BaseModel):
+    """Bounded secret-free read-only result for one frozen member."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    inventory_object_id: NonEmptyString
+    inventory_interface_object_id: NonEmptyString
+    target: CliBoundString
+    interface: CliBoundString
+    classification: FleetMemberClassification
+    succeeded: bool
+    observed_description: str | None
+    message: NonEmptyString
+
+
+class FleetPreflightResult(BaseModel):
+    """Whole-fleet read-only preflight evidence; never authorizes execution."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    fleet_digest: Sha256Digest
+    succeeded: bool
+    members: tuple[FleetMemberPreflight, ...]
+    message: NonEmptyString
+
+    @model_validator(mode="after")
+    def outcome_matches_member_results(self) -> FleetPreflightResult:
+        """Prevent contradictory whole-fleet safety evidence."""
+        every_member_succeeded = bool(self.members) and all(
+            member.succeeded for member in self.members
+        )
+        if self.succeeded != every_member_succeeded:
+            raise ValueError("fleet preflight outcome contradicts member results")
+        return self
 
 
 class ExecutionDisposition(StrEnum):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
@@ -11,12 +12,18 @@ import yaml
 from pydantic import ValidationError
 
 from network_change_delivery.ansible_adapter import ProviderError
+from network_change_delivery.fleet import FleetSafetyError, plan_fleet
 from network_change_delivery.inventory import (
     InventoryError,
     LocalYamlInventoryProvider,
     NetBoxInventoryProvider,
 )
-from network_change_delivery.models import DeploymentPlan, InterfaceDescriptionIntent
+from network_change_delivery.models import (
+    DeploymentPlan,
+    FleetInterfaceDescriptionIntent,
+    FleetMemberClassification,
+    InterfaceDescriptionIntent,
+)
 from network_change_delivery.secrets import (
     EnvironmentSecretProvider,
     OpenBaoSecretProvider,
@@ -33,6 +40,22 @@ def _write_json(path: Path, value: str) -> None:
     path.chmod(0o600)
 
 
+def _require_unused_fleet_plan_path(path: Path) -> None:
+    """Fail before provider construction for files and even broken symlinks."""
+    if path.exists() or path.is_symlink():
+        raise OSError("fleet plan output already exists")
+
+
+def _write_new_fleet_plan(path: Path, value: str) -> None:
+    """Create one new mode-0600 fleet artifact without an overwrite race."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(value)
+    path.chmod(0o600)
+
+
 def _load_change(path: Path) -> InterfaceDescriptionIntent:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     return InterfaceDescriptionIntent.model_validate(payload)
@@ -40,6 +63,11 @@ def _load_change(path: Path) -> InterfaceDescriptionIntent:
 
 def _load_plan(path: Path) -> DeploymentPlan:
     return DeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _load_fleet_change(path: Path) -> FleetInterfaceDescriptionIntent:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return FleetInterfaceDescriptionIntent.model_validate(payload)
 
 
 def _inventory(arguments: argparse.Namespace):
@@ -110,6 +138,62 @@ def _run_deploy(arguments: argparse.Namespace) -> int:
     return 0 if record.final_outcome.value in {"SUCCEEDED", "RECOVERED"} else 2
 
 
+def _run_fleet_plan(arguments: argparse.Namespace) -> int:
+    _require_unused_fleet_plan_path(arguments.plan_out)
+    intent = _load_fleet_change(arguments.change)
+    inventory = NetBoxInventoryProvider()
+    secrets = OpenBaoSecretProvider()
+    result = plan_fleet(intent, inventory, secrets, MultiVendorAdapter())
+    deployable = sum(
+        member.classification is FleetMemberClassification.DEPLOYABLE
+        for member in result.members
+    )
+    compliant = len(result.members) - deployable
+    platform_counts = {
+        platform: sum(member.platform == platform for member in result.members)
+        for platform in sorted({member.platform for member in result.members})
+    }
+    print(
+        "Selector: "
+        f"device_tag={intent.selector.device_tag}, "
+        f"interface_tag={intent.selector.interface_tag}"
+    )
+    print(f"Selected members: {len(result.members)}")
+    print(f"Deployable members: {deployable}")
+    print(f"Compliant members: {compliant}")
+    print(
+        "Platform counts: "
+        + ", ".join(
+            f"{platform}={count}" for platform, count in platform_counts.items()
+        )
+    )
+    if result.plan is None:
+        print(result.message)
+        return 0
+    _write_new_fleet_plan(
+        arguments.plan_out, result.plan.model_dump_json(indent=2) + "\n"
+    )
+    by_id = {
+        member.inventory_object_id: member.target for member in result.plan.members
+    }
+    print(
+        "Canaries: "
+        + ", ".join(
+            f"{identity} ({by_id[identity]})" for identity in result.plan.canaries
+        )
+    )
+    for index, wave in enumerate(result.plan.waves, start=1):
+        print(
+            f"Wave {index}: "
+            + ", ".join(f"{identity} ({by_id[identity]})" for identity in wave)
+        )
+    for member in result.plan.members:
+        if member.child_plan is not None:
+            print(f"Child plan {member.target}: {member.child_plan.digest}")
+    print(f"Fleet plan digest: {result.plan.digest}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     parser = argparse.ArgumentParser(
@@ -136,6 +220,16 @@ def build_parser() -> argparse.ArgumentParser:
     plan_secrets.add_argument("--environment-secrets", action="store_true")
     plan_parser.add_argument("--output", required=True, type=Path)
     plan_parser.set_defaults(handler=_run_plan)
+
+    fleet_plan_parser = subparsers.add_parser(
+        "fleet-plan",
+        help="resolve and read-only preflight one NetBox-selected fleet",
+    )
+    fleet_plan_parser.add_argument("--change", required=True, type=Path)
+    fleet_plan_parser.add_argument("--plan-out", required=True, type=Path)
+    fleet_plan_parser.add_argument("--netbox", required=True, action="store_true")
+    fleet_plan_parser.add_argument("--openbao", required=True, action="store_true")
+    fleet_plan_parser.set_defaults(handler=_run_fleet_plan)
 
     deploy_parser = subparsers.add_parser(
         "deploy",
@@ -175,6 +269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(parsed.handler(parsed))
     except (
         InventoryError,
+        FleetSafetyError,
         OSError,
         ProviderError,
         SafetyError,

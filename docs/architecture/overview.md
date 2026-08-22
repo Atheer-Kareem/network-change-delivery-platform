@@ -41,7 +41,9 @@ flowchart LR
 - **Secrets:** OpenBao AppRole issues short-lived, single-use, exact-path tokens
   for the static personal-lab device credential. Future Buildkite OIDC replaces
   AppRole bootstrap; application models never embed secret values.
-- **Assurance:** future Batfish performs offline multi-vendor behavioural checks.
+- **Assurance:** Batfish performs offline multi-vendor behavioral checks; the
+  plan-bound 6B path derives candidates from validated plans and remains a
+  verification primitive until Increment 7 workflow enforcement.
 - **Digital twin:** future Terraform with CiscoDevNet CML2 owns CML lifecycle,
   never production device configuration.
 - **Execution:** Ansible Runner with `cisco.ios` remains the Cisco provider.

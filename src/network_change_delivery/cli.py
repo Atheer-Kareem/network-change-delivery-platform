@@ -38,6 +38,14 @@ from network_change_delivery.models import (
     FleetMemberClassification,
     InterfaceDescriptionIntent,
 )
+from network_change_delivery.plan_assurance import (
+    BatfishAssurancePolicy,
+    PlanAssuranceError,
+    PlanAssuranceRecord,
+    assure_prepared_plan,
+    load_plan,
+    verify_plan_assurance,
+)
 from network_change_delivery.secrets import (
     EnvironmentSecretProvider,
     OpenBaoSecretProvider,
@@ -168,6 +176,44 @@ def _run_assure(arguments: argparse.Namespace) -> int:
     print(f"Final assurance outcome: {result.outcome}")
     print(f"Evidence: {arguments.report_json}")
     return 0 if result.outcome is AssuranceOutcome.PASSED else 2
+
+
+def _load_policy(path: Path) -> BatfishAssurancePolicy:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return BatfishAssurancePolicy.model_validate(payload)
+
+
+def _run_assure_plan(arguments: argparse.Namespace) -> int:
+    plan = load_plan(arguments.plan)
+    policy = _load_policy(arguments.policy)
+    if arguments.report_json.exists() or arguments.report_json.is_symlink():
+        raise OSError("assurance evidence path already exists")
+    with (
+        prepare_snapshot(arguments.baseline) as prepared_baseline,
+        _reserve_assurance_evidence(arguments.report_json) as evidence,
+    ):
+        record = assure_prepared_plan(plan, policy, prepared_baseline)
+        evidence.write(record.model_dump_json(indent=2) + "\n")
+        evidence.flush()
+        os.fsync(evidence.fileno())
+    print(f"Plan digest: {record.subject.plan_digest}")
+    print(f"Policy digest: {record.policy_digest}")
+    print(f"Baseline snapshot digest: {record.baseline_snapshot_digest}")
+    print(f"Candidate snapshot digest: {record.candidate_snapshot_digest}")
+    print(f"Final assurance outcome: {record.outcome}")
+    print(f"Evidence: {arguments.report_json}")
+    return 0 if record.outcome is AssuranceOutcome.PASSED else 2
+
+
+def _run_verify_assurance(arguments: argparse.Namespace) -> int:
+    plan = load_plan(arguments.plan)
+    policy = _load_policy(arguments.policy)
+    record = PlanAssuranceRecord.model_validate_json(
+        arguments.evidence.read_text(encoding="utf-8")
+    )
+    verified = verify_plan_assurance(plan, policy, arguments.baseline, record)
+    print(f"Plan assurance verified: {verified}")
+    return 0 if verified else 2
 
 
 def _inventory(arguments: argparse.Namespace):
@@ -405,6 +451,25 @@ def build_parser() -> argparse.ArgumentParser:
     assure_parser.add_argument("--batfish", required=True, action="store_true")
     assure_parser.set_defaults(handler=_run_assure)
 
+    assure_plan_parser = subparsers.add_parser(
+        "assure-plan", help="run exact plan-bound offline Batfish assurance"
+    )
+    assure_plan_parser.add_argument("--plan", required=True, type=Path)
+    assure_plan_parser.add_argument("--policy", required=True, type=Path)
+    assure_plan_parser.add_argument("--baseline", required=True, type=Path)
+    assure_plan_parser.add_argument("--report-json", required=True, type=Path)
+    assure_plan_parser.add_argument("--batfish", required=True, action="store_true")
+    assure_plan_parser.set_defaults(handler=_run_assure_plan)
+
+    verify_parser = subparsers.add_parser(
+        "verify-assurance", help="verify an exact plan-bound assurance record"
+    )
+    verify_parser.add_argument("--plan", required=True, type=Path)
+    verify_parser.add_argument("--policy", required=True, type=Path)
+    verify_parser.add_argument("--baseline", required=True, type=Path)
+    verify_parser.add_argument("--evidence", required=True, type=Path)
+    verify_parser.set_defaults(handler=_run_verify_assurance)
+
     deploy_parser = subparsers.add_parser(
         "deploy",
         help="execute one explicitly digest-approved immutable plan",
@@ -446,6 +511,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         FleetSafetyError,
         OSError,
         ProviderError,
+        PlanAssuranceError,
         SafetyError,
         SecretError,
         ValidationError,

@@ -129,24 +129,59 @@ def prepare_snapshot(root: Path) -> PreparedSnapshot:
         total += len(content)
         if len(source) > MAX_FILES or total > MAX_BYTES:
             raise ValueError("snapshot exceeds bounded size limits")
+    return prepare_snapshot_from_bytes(source)
+
+
+def prepare_snapshot_from_bytes(
+    source: Iterable[tuple[str, bytes]],
+) -> PreparedSnapshot:
+    """Stage an already-frozen byte representation exactly once."""
+    source = tuple(source)
+    if not source:
+        raise ValueError("snapshot config set is empty")
+    if len(source) > MAX_FILES:
+        raise ValueError("snapshot exceeds bounded file limits")
+    paths = [path for path, _ in source]
+    if len(paths) != len(set(paths)):
+        raise ValueError("snapshot paths must be unique")
+    if sum(len(content) for _, content in source) > MAX_BYTES:
+        raise ValueError("snapshot exceeds bounded size limits")
+    for path in paths:
+        relative = PurePosixPath(path)
+        if (
+            relative.is_absolute()
+            or relative.as_posix() != path
+            or not path
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise ValueError("snapshot path must be canonical relative POSIX")
     manifest = _manifest_from_bytes(source)
     staging = Path(tempfile.mkdtemp(prefix="ncdp-batfish-"))
-    staging.chmod(0o700)
-    (staging / "configs").mkdir(mode=0o700)
-    for relative, content in source:
-        target = staging / "configs" / relative
-        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        fd = os.open(
-            target,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-            0o600,
-        )
-        try:
-            os.write(fd, content)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-    return PreparedSnapshot(staging, manifest)
+    try:
+        staging.chmod(0o700)
+        (staging / "configs").mkdir(mode=0o700)
+        for relative, content in source:
+            target = staging / "configs" / relative
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            fd = os.open(
+                target,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            try:
+                offset = 0
+                while offset < len(content):
+                    written = os.write(fd, content[offset:])
+                    if written <= 0:
+                        raise OSError("snapshot staging write made no progress")
+                    offset += written
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        return PreparedSnapshot(staging, manifest)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
 
 def build_snapshot_manifest(root: Path) -> SnapshotManifest:

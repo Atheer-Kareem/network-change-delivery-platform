@@ -101,6 +101,19 @@ def test_pr_and_main_conditions() -> None:
         assert "build.pull_request.id == null" in steps[key]["if"]
 
 
+def test_promotion_container_contract() -> None:
+    compose = yaml.safe_load((ROOT / "compose.assurance.yaml").read_text())
+    promotion = compose["services"]["promotion"]
+    assert promotion["image"] == "ncdp-promotion:${NCDP_PROMOTION_IMAGE_TAG:-local}"
+    assert promotion["build"] == {"context": ".", "target": "promotion"}
+    assert promotion["environment"] == {"NCDP_BATFISH_HOST": "batfish"}
+
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    assert "FROM application AS promotion" in dockerfile
+    assert "COPY fixtures/batfish ./fixtures/batfish" in dockerfile
+    assert "COPY . ." not in dockerfile.split("FROM application AS promotion", 1)[1]
+
+
 def test_scripts_static_contract() -> None:
     gate = (ROOT / "scripts/buildkite/deployment_gate.sh").read_text()
     promotion = (ROOT / ".buildkite/scripts/promotion.sh").read_text()
@@ -113,3 +126,14 @@ def test_scripts_static_contract() -> None:
     assert "verify_commit.sh" in promotion
     assert promotion.index("verify_commit.sh") < promotion.index("assure-plan")
     assert 'promotion="$tmpdir/promotion"' in promotion
+    assert "uv run" not in promotion
+    assert "docker compose --project-name ncdp-promotion" in promotion
+    assert 'NCDP_PROMOTION_IMAGE_TAG="$BUILDKITE_BUILD_NUMBER"' in promotion
+    assert '"${compose[@]}" build promotion' in promotion
+    assert (
+        '"${promotion_run[@]}" python scripts/buildkite/batfish_ready.py' in promotion
+    )
+    assert promotion.count('"${promotion_run[@]}" ncdp ') == 3
+    assert '--volume "$tmpdir:/output"' in promotion
+    assert '[[ -f "$promotion/manifest.json" ]]' in promotion
+    assert "buildkite-agent artifact upload 'promotion/**'" in promotion

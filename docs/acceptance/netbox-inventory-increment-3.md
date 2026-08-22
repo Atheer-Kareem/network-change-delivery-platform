@@ -21,14 +21,17 @@ interfaces. Secret and service credential values were not retained in evidence.
 - Provider source: `netbox`
 - Device: `core-02`, active and tagged `ncdp-managed`
 - Stable object identity: `netbox:dcim.device:1` (local synthetic object)
+- Requested interface identity: `netbox:dcim.interface:2` for `GigabitEthernet2`
 - Platform mapping: NetBox `cisco-ios-xe` to internal `cisco_iosxe`
 - Primary IPv4: `192.168.4.14/24`, normalized endpoint `192.168.4.14:22`
 - `GigabitEthernet1`: tagged `ncdp-protected` and returned in normalized protection metadata
 - `GigabitEthernet2`: present without the `ncdp-protected` tag
 - NetBox interface descriptions: empty and not consumed as desired configuration
 
-The production adapter resolved this data over the loopback HTTP exception using
-Bearer authentication. No production provider call issued a non-GET request.
+The production adapter resolved the exact device and requested interface object
+identities, then the complete protection metadata, over the loopback HTTP
+exception using Bearer authentication. No production provider call issued a
+non-GET request.
 
 ## Live read-only result
 
@@ -38,11 +41,12 @@ XE version `17.18.02`, and current `GigabitEthernet2` description
 `managed-by-network-change-delivery-platform`. Identity and interface safety
 validation passed; the interface was not protected.
 
-`ncdp plan --netbox` returned `interface is already compliant; no deployable
-artifact produced`. No plan file was produced. The deploy command was not run,
-the execution adapter was never invoked, and no `ios_config`, configuration
-write, startup-config save, or NetBox mutation occurred during normal NCDP
-execution. Device writes: zero.
+`ncdp plan --netbox` bound `netbox:dcim.device:1` and
+`netbox:dcim.interface:2`, then returned `interface is already compliant; no
+deployable artifact produced`. No plan file was produced. The deploy command was
+not run, the execution adapter was never invoked, and no `ios_config`,
+configuration write, startup-config save, or NetBox mutation occurred during
+normal NCDP execution. Device writes: zero.
 
 ## Limitations
 

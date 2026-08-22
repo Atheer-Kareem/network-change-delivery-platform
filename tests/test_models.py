@@ -141,11 +141,28 @@ def test_digest_changes_with_artifact_or_precondition() -> None:
     [
         {"inventory_source": "netbox"},
         {"inventory_object_id": "netbox:dcim.device:42"},
+        {"inventory_interface_object_id": "netbox:dcim.interface:100"},
     ],
 )
 def test_digest_covers_inventory_provenance(changes: dict[str, object]) -> None:
     approved = build_plan(intent(), device(), state())
     changed = approved.model_copy(update=changes)
+    assert changed.calculated_digest() != approved.digest
+
+
+def test_netbox_interface_identity_is_frozen_into_plan_and_digest() -> None:
+    netbox_device = device().model_copy(
+        update={
+            "inventory_source": "netbox",
+            "inventory_object_id": "netbox:dcim.device:42",
+            "inventory_interface_object_id": "netbox:dcim.interface:100",
+        }
+    )
+    approved = build_plan(intent(), netbox_device, state())
+    assert approved.inventory_interface_object_id == "netbox:dcim.interface:100"
+    changed = approved.model_copy(
+        update={"inventory_interface_object_id": "netbox:dcim.interface:101"}
+    )
     assert changed.calculated_digest() != approved.digest
 
 

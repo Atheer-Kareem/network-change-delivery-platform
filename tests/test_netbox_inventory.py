@@ -37,6 +37,7 @@ def provider(
     device_payload: dict[str, object] | None = None,
     interface_payload: dict[str, object] | None = None,
     *,
+    requested_interface_payload: dict[str, object] | None = None,
     handler=None,
     url: str = "https://netbox.example",
 ) -> NetBoxInventoryProvider:
@@ -45,6 +46,12 @@ def provider(
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/api/dcim/devices/":
                 return httpx.Response(200, json=device_payload or page([device()]))
+            if "name" in request.url.params:
+                return httpx.Response(
+                    200,
+                    json=requested_interface_payload
+                    or page([{"id": 100, "name": "GigabitEthernet2"}]),
+                )
             return httpx.Response(
                 200,
                 json=interface_payload or page([{"name": " GigabitEthernet1 "}]),
@@ -61,7 +68,49 @@ def test_exact_active_managed_device_resolves_with_provenance() -> None:
     assert resolved.expected_hostname == "core-02"
     assert resolved.inventory_source == "netbox"
     assert resolved.inventory_object_id == "netbox:dcim.device:42"
+    assert resolved.inventory_interface_object_id is None
     assert resolved.protected_interfaces == ("GigabitEthernet1",)
+
+
+def test_exact_requested_interface_resolves_with_stable_identity() -> None:
+    resolved = provider().resolve("core-02", "GigabitEthernet2")
+    assert resolved.inventory_interface_object_id == "netbox:dcim.interface:100"
+    assert resolved.protected_interfaces == ("GigabitEthernet1",)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (page([]), "interface not found"),
+        (
+            page(
+                [
+                    {"id": 100, "name": "GigabitEthernet2"},
+                    {"id": 101, "name": "GigabitEthernet2"},
+                ],
+                count=2,
+            ),
+            "interface is ambiguous",
+        ),
+        (page([{"id": "bad", "name": "GigabitEthernet2"}]), "identity is invalid"),
+        (page([{"name": "GigabitEthernet2"}]), "identity is invalid"),
+    ],
+)
+def test_requested_interface_identity_fails_closed(
+    payload: dict[str, object], message: str
+) -> None:
+    with pytest.raises(InventoryError, match=message):
+        provider(requested_interface_payload=payload).resolve(
+            "core-02", "GigabitEthernet2"
+        )
+
+
+def test_requested_protected_interface_remains_protected() -> None:
+    protected = page([{"name": "GigabitEthernet2"}])
+    resolved = provider(interface_payload=protected).resolve(
+        "core-02", "GigabitEthernet2"
+    )
+    assert resolved.protected_interfaces == ("GigabitEthernet2",)
 
 
 @pytest.mark.parametrize(
@@ -116,16 +165,24 @@ def test_v2_bearer_auth_and_query_parameter_apis_are_used() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        payload = page([device()]) if "devices" in request.url.path else page([])
+        if "devices" in request.url.path:
+            payload = page([device()])
+        elif "name" in request.url.params:
+            payload = page([{"id": 100, "name": "GigabitEthernet2"}])
+        else:
+            payload = page([])
         return httpx.Response(200, json=payload)
 
-    provider(handler=handler).resolve("core-02")
+    provider(handler=handler).resolve("core-02", "GigabitEthernet2")
     assert all(
         request.headers["Authorization"] == f"Bearer {TOKEN}" for request in requests
     )
     assert requests[0].url.params["name"] == "core-02"
     assert requests[1].url.params["device_id"] == "42"
-    assert requests[1].url.params["tag"] == "ncdp-protected"
+    assert requests[1].url.params["name"] == "GigabitEthernet2"
+    assert requests[1].url.params["limit"] == "2"
+    assert requests[2].url.params["device_id"] == "42"
+    assert requests[2].url.params["tag"] == "ncdp-protected"
 
 
 @pytest.mark.parametrize("status", [401, 403])
@@ -183,7 +240,14 @@ def test_redirects_are_not_followed_with_authentication() -> None:
 
 
 @pytest.mark.parametrize(
-    "url", ["http://netbox.example", "ftp://localhost", "https://user:pass@localhost"]
+    "url",
+    [
+        "http://netbox.example",
+        "ftp://localhost",
+        "https://user:pass@localhost",
+        "https://netbox.example/netbox",
+        "http://localhost:8000/netbox",
+    ],
 )
 def test_unsafe_netbox_url_is_rejected(url: str) -> None:
     with pytest.raises(InventoryError, match="URL rejected"):

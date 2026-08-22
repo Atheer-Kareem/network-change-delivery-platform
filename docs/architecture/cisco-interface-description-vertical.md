@@ -48,9 +48,9 @@ The plan records the exact `cisco.ios.ios_config` parent and lines used for the
 write and targeted recovery. Deterministic compact, sorted-key UTF-8 JSON—without
 the digest field—is hashed with SHA-256. The CLI preview renders directly from
 that same artifact. Deployment requires an exact `--approve-digest` match, then
-re-resolves and compares inventory source, stable inventory object identity,
-name, host, port, platform, and expected hostname before any live collection.
-Deployment performs fresh identity and
+re-resolves and compares inventory source, stable device and requested-interface
+object identities, name, host, port, platform, and expected hostname before any
+live collection. Deployment performs fresh identity and
 interface collection immediately before writing. Changed,
 missing, already-compliant, or otherwise stale preconditions block execution.
 

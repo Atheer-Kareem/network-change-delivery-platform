@@ -42,7 +42,7 @@ from network_change_delivery.plan_assurance import (
     BatfishAssurancePolicy,
     PlanAssuranceError,
     PlanAssuranceRecord,
-    assure_plan,
+    assure_prepared_plan,
     load_plan,
     verify_plan_assurance,
 )
@@ -186,11 +186,13 @@ def _load_policy(path: Path) -> BatfishAssurancePolicy:
 def _run_assure_plan(arguments: argparse.Namespace) -> int:
     plan = load_plan(arguments.plan)
     policy = _load_policy(arguments.policy)
-    # Validate the source and reserve only after all input validation succeeds.
-    with prepare_snapshot(arguments.baseline):
-        pass
-    with _reserve_assurance_evidence(arguments.report_json) as evidence:
-        record = assure_plan(plan, policy, arguments.baseline)
+    if arguments.report_json.exists() or arguments.report_json.is_symlink():
+        raise OSError("assurance evidence path already exists")
+    with (
+        prepare_snapshot(arguments.baseline) as prepared_baseline,
+        _reserve_assurance_evidence(arguments.report_json) as evidence,
+    ):
+        record = assure_prepared_plan(plan, policy, prepared_baseline)
         evidence.write(record.model_dump_json(indent=2) + "\n")
         evidence.flush()
         os.fsync(evidence.fileno())

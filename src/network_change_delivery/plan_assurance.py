@@ -367,18 +367,22 @@ def materialize_candidate(
                         "compliant platform does not match baseline grammar"
                     )
                 if item.platform == "cisco_iosxe":
-                    _transform_cisco(
+                    transformed, _ = _transform_cisco(
                         config.text,
                         item.interface,
                         item.desired_description,
                         item.desired_description,
                     )
                 else:
-                    _transform_junos(
+                    transformed, _ = _transform_junos(
                         config.text,
                         item.interface,
                         item.desired_description,
                         item.desired_description,
+                    )
+                if transformed.encode() != config.text.encode():
+                    raise PlanAssuranceError(
+                        "compliant baseline is not already desired"
                     )
                 records.append(
                     PlanSnapshotMutation(
@@ -451,61 +455,73 @@ def assure_plan(
 ) -> PlanAssuranceRecord:
     if not plan.verify_digest():
         raise PlanAssuranceError("assurance plan digest verification failed")
+    with prepare_snapshot(baseline) as frozen:
+        return assure_prepared_plan(plan, policy, frozen, provider)
+
+
+def assure_prepared_plan(
+    plan: DeploymentPlan | FleetDeploymentPlan,
+    policy: BatfishAssurancePolicy,
+    prepared_baseline: PreparedSnapshot,
+    provider: BatfishAssuranceAdapter | None = None,
+) -> PlanAssuranceRecord:
+    if not plan.verify_digest():
+        raise PlanAssuranceError("assurance plan digest verification failed")
     subject = subject_from_plan(plan)
     policy_digest = policy.calculated_digest()
-    with prepare_snapshot(baseline) as frozen:
-        try:
-            candidate, derivation = materialize_candidate(frozen, plan)
-        except PlanAssuranceError as exc:
-            return _finalize_record(
-                PlanAssuranceRecord(
-                    generated_at=datetime.now(UTC),
-                    subject=subject,
-                    policy=policy,
-                    policy_digest=policy_digest,
-                    baseline_snapshot_digest=frozen.manifest.digest,
-                    failure_reason=str(exc),
-                    outcome=AssuranceOutcome.BLOCKED,
-                    digest="sha256:" + "0" * 64,
-                )
+    frozen = prepared_baseline
+    try:
+        candidate, derivation = materialize_candidate(frozen, plan)
+    except PlanAssuranceError as exc:
+        return _finalize_record(
+            PlanAssuranceRecord(
+                generated_at=datetime.now(UTC),
+                subject=subject,
+                policy=policy,
+                policy_digest=policy_digest,
+                baseline_snapshot_digest=frozen.manifest.digest,
+                failure_reason=str(exc),
+                outcome=AssuranceOutcome.BLOCKED,
+                digest="sha256:" + "0" * 64,
             )
-        with candidate:
-            try:
-                observation = (provider or BatfishAssuranceAdapter()).analyze(
-                    frozen.root, candidate.root, policy_to_intent(policy, subject)
-                )
-                evidence = evaluate_assurance(
-                    policy_to_intent(policy, subject),
-                    frozen.manifest,
-                    candidate.manifest,
-                    observation,
-                )
-                record = PlanAssuranceRecord(
-                    generated_at=datetime.now(UTC),
-                    subject=subject,
-                    policy=policy,
-                    policy_digest=policy_digest,
-                    baseline_snapshot_digest=frozen.manifest.digest,
-                    candidate_snapshot_digest=candidate.manifest.digest,
-                    candidate_derivation=derivation,
-                    assurance=evidence,
-                    outcome=evidence.outcome,
-                    digest="sha256:" + "0" * 64,
-                )
-            except AssuranceProviderError as exc:
-                record = PlanAssuranceRecord(
-                    generated_at=datetime.now(UTC),
-                    subject=subject,
-                    policy=policy,
-                    policy_digest=policy_digest,
-                    baseline_snapshot_digest=frozen.manifest.digest,
-                    candidate_snapshot_digest=candidate.manifest.digest,
-                    candidate_derivation=derivation,
-                    failure_reason=str(exc),
-                    outcome=AssuranceOutcome.BLOCKED,
-                    digest="sha256:" + "0" * 64,
-                )
-            return _finalize_record(record)
+        )
+    with candidate:
+        try:
+            observation = (provider or BatfishAssuranceAdapter()).analyze(
+                frozen.root, candidate.root, policy_to_intent(policy, subject)
+            )
+            evidence = evaluate_assurance(
+                policy_to_intent(policy, subject),
+                frozen.manifest,
+                candidate.manifest,
+                observation,
+            )
+            record = PlanAssuranceRecord(
+                generated_at=datetime.now(UTC),
+                subject=subject,
+                policy=policy,
+                policy_digest=policy_digest,
+                baseline_snapshot_digest=frozen.manifest.digest,
+                candidate_snapshot_digest=candidate.manifest.digest,
+                candidate_derivation=derivation,
+                assurance=evidence,
+                outcome=evidence.outcome,
+                digest="sha256:" + "0" * 64,
+            )
+        except AssuranceProviderError as exc:
+            record = PlanAssuranceRecord(
+                generated_at=datetime.now(UTC),
+                subject=subject,
+                policy=policy,
+                policy_digest=policy_digest,
+                baseline_snapshot_digest=frozen.manifest.digest,
+                candidate_snapshot_digest=candidate.manifest.digest,
+                candidate_derivation=derivation,
+                failure_reason=str(exc),
+                outcome=AssuranceOutcome.BLOCKED,
+                digest="sha256:" + "0" * 64,
+            )
+        return _finalize_record(record)
 
 
 def verify_plan_assurance(

@@ -243,3 +243,48 @@ def test_short_reads_are_assembled(
     assert build_snapshot_manifest(tmp_path / "snap").files[0].size_bytes == len(
         payload
     )
+
+
+def test_short_writes_are_assembled(monkeypatch: pytest.MonkeyPatch) -> None:
+    import network_change_delivery.assurance as assurance
+
+    original = assurance.os.write
+
+    def short_write(fd: int, data: bytes) -> int:
+        return original(fd, data[:2])
+
+    monkeypatch.setattr(assurance.os, "write", short_write)
+    with assurance.prepare_snapshot_from_bytes(
+        (("node.cfg", b"hostname node\n"),)
+    ) as prepared:
+        assert (prepared.root / "configs/node.cfg").read_bytes() == b"hostname node\n"
+
+
+def test_zero_progress_write_fails_and_cleans(monkeypatch: pytest.MonkeyPatch) -> None:
+    import network_change_delivery.assurance as assurance
+
+    monkeypatch.setattr(assurance.os, "write", lambda _fd, _data: 0)
+    with pytest.raises(OSError, match="no progress"):
+        assurance.prepare_snapshot_from_bytes((("node.cfg", b"hostname node\n"),))
+
+
+def test_write_failure_cleans_staging(monkeypatch: pytest.MonkeyPatch) -> None:
+    import network_change_delivery.assurance as assurance
+
+    created: list[Path] = []
+    original_mkdtemp = assurance.tempfile.mkdtemp
+
+    def capture(*args: object, **kwargs: object) -> str:
+        path = original_mkdtemp(*args, **kwargs)
+        created.append(Path(path))
+        return path
+
+    monkeypatch.setattr(assurance.tempfile, "mkdtemp", capture)
+
+    def fail_write(_fd: int, _data: bytes) -> int:
+        raise OSError("write failed")
+
+    monkeypatch.setattr(assurance.os, "write", fail_write)
+    with pytest.raises(OSError, match="write failed"):
+        assurance.prepare_snapshot_from_bytes((("node.cfg", b"hostname node\n"),))
+    assert created and not created[0].exists()

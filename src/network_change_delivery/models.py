@@ -1,4 +1,4 @@
-"""Typed contracts for the Cisco interface-description vertical."""
+"""Typed contracts for the multi-vendor interface-description vertical."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
+from xml.etree import ElementTree
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -61,7 +62,7 @@ class InventoryDevice(BaseModel):
     name: CliBoundString
     host: NonEmptyString
     port: int = Field(default=22, ge=1, le=65535)
-    platform: Literal["cisco_iosxe"]
+    platform: Literal["cisco_iosxe", "junos"]
     expected_hostname: NonEmptyString
     protected_interfaces: tuple[str, ...] = ()
     inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
@@ -89,7 +90,7 @@ class InterfaceState(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     observed_hostname: str
-    ios_version: str | None = None
+    software_version: str | None = None
     interface: str
     exists: bool
     description: str | None = None
@@ -108,6 +109,40 @@ class CiscoConfigArtifact(BaseModel):
     def cli_preview(self) -> str:
         """Render the human preview from the machine artifact itself."""
         return "\n".join((self.parent, *(f" {line}" for line in self.lines)))
+
+
+def render_junos_interface_description(interface: str, description: str) -> str:
+    """Render the one supported Junos XML merge artifact deterministically."""
+    root = ElementTree.Element("configuration")
+    interfaces = ElementTree.SubElement(root, "interfaces")
+    item = ElementTree.SubElement(interfaces, "interface")
+    ElementTree.SubElement(item, "name").text = interface
+    ElementTree.SubElement(item, "description").text = description
+    return ElementTree.tostring(root, encoding="unicode", short_empty_elements=True)
+
+
+class JunosConfigArtifact(BaseModel):
+    """Exact immutable Junos XML merge and confirmed-commit contract."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    interface: CliBoundString
+    description: str
+    format: Literal["xml"] = "xml"
+    load_action: Literal["merge"] = "merge"
+    config_mode: Literal["exclusive"] = "exclusive"
+    xml: NonEmptyString
+
+    @model_validator(mode="after")
+    def exact_supported_xml(self) -> JunosConfigArtifact:
+        DesiredDescription(description=self.description)
+        expected = render_junos_interface_description(self.interface, self.description)
+        if self.xml != expected:
+            raise ValueError("Junos artifact does not match supported intent")
+        return self
+
+    def cli_preview(self) -> str:
+        """Return the safe machine artifact as its human preview."""
+        return self.xml
 
 
 class PlanPreconditions(BaseModel):
@@ -136,12 +171,17 @@ class DeploymentPlan(BaseModel):
     host: NonEmptyString
     port: int = Field(ge=1, le=65535)
     expected_hostname: NonEmptyString
-    platform: Literal["cisco_iosxe"]
+    platform: Literal["cisco_iosxe", "junos"]
     interface: CliBoundString
     current_description: str | None
     desired_description: str
-    execution_artifact: CiscoConfigArtifact
-    recovery_artifact: CiscoConfigArtifact
+    transaction_strategy: Literal[
+        "cisco_targeted_inverse", "junos_commit_confirmed"
+    ] = "cisco_targeted_inverse"
+    confirmed_timeout_minutes: Literal[5] | None = None
+    confirmation_operation: Literal["confirm_previous_commit"] | None = None
+    execution_artifact: CiscoConfigArtifact | JunosConfigArtifact
+    recovery_artifact: CiscoConfigArtifact | None
     preconditions: PlanPreconditions
     created_at: datetime
     digest: str
@@ -157,6 +197,33 @@ class DeploymentPlan(BaseModel):
         DesiredDescription(description=self.desired_description)
         if self.current_description is not None:
             validate_ios_description(self.current_description)
+        if self.platform == "junos":
+            if self.port != 830:
+                raise ValueError("Junos plans require NETCONF port 830")
+            expected = JunosConfigArtifact(
+                interface=self.interface,
+                description=self.desired_description,
+                xml=render_junos_interface_description(
+                    self.interface, self.desired_description
+                ),
+            )
+            if (
+                self.transaction_strategy != "junos_commit_confirmed"
+                or self.confirmed_timeout_minutes != 5
+                or self.confirmation_operation != "confirm_previous_commit"
+                or self.execution_artifact != expected
+                or self.recovery_artifact is not None
+            ):
+                raise ValueError("Junos plan transaction contract is invalid")
+            return self._validate_preconditions()
+        if (
+            self.transaction_strategy != "cisco_targeted_inverse"
+            or self.confirmed_timeout_minutes is not None
+            or self.confirmation_operation is not None
+            or not isinstance(self.execution_artifact, CiscoConfigArtifact)
+            or not isinstance(self.recovery_artifact, CiscoConfigArtifact)
+        ):
+            raise ValueError("Cisco plan transaction contract is invalid")
         parent = f"interface {self.interface}"
         expected_execution = (f"description {self.desired_description}",)
         recovery_line = (
@@ -175,6 +242,9 @@ class DeploymentPlan(BaseModel):
             lines=expected_recovery,
         ):
             raise ValueError("recovery artifact does not match observed state")
+        return self._validate_preconditions()
+
+    def _validate_preconditions(self) -> DeploymentPlan:
         if (
             self.preconditions.observed_hostname != self.expected_hostname
             or not self.preconditions.interface_exists
@@ -229,6 +299,9 @@ class FinalOutcome(StrEnum):
     RECOVERED = "RECOVERED"
     RECOVERY_FAILED = "RECOVERY_FAILED"
     RECOVERY_AMBIGUOUS = "RECOVERY_AMBIGUOUS"
+    AUTO_ROLLBACK_PENDING = "AUTO_ROLLBACK_PENDING"
+    CONFIRMATION_FAILED = "CONFIRMATION_FAILED"
+    CONFIRMATION_AMBIGUOUS = "CONFIRMATION_AMBIGUOUS"
 
 
 class StageResult(BaseModel):
@@ -268,5 +341,10 @@ class ChangeRecord(BaseModel):
     execution: StageResult
     post_validation: StageResult
     recovery: StageResult
+    transaction_strategy: Literal[
+        "cisco_targeted_inverse", "junos_commit_confirmed"
+    ] = "cisco_targeted_inverse"
+    candidate_validation: StageResult | None = None
+    confirmation: StageResult | None = None
     final_outcome: FinalOutcome
     provider: str

@@ -214,7 +214,7 @@ class AnsibleRunnerCiscoAdapter:
         return tuple(
             InterfaceState(
                 observed_hostname=hostname,
-                ios_version=version,
+                software_version=version,
                 interface=str(item["name"]),
                 exists=True,
                 description=item.get("description"),
@@ -239,10 +239,10 @@ class AnsibleRunnerCiscoAdapter:
         if len(matches) == 1:
             return matches[0]
         hostname = states[0].observed_hostname if states else ""
-        version = states[0].ios_version if states else None
+        version = states[0].software_version if states else None
         return InterfaceState(
             observed_hostname=hostname,
-            ios_version=version,
+            software_version=version,
             interface=interface,
             exists=False,
             protected=False,

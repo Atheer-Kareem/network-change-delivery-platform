@@ -9,6 +9,7 @@ dependencies = [
     "ansible-pylibssh>=1.4.0,<2",
     "ansible-runner>=2.4.3,<2.5",
     "httpx>=0.28.1,<0.29",
+    "junos-eznc>=2.8.2,<2.9",
     "pydantic>=2,<3",
     "pyyaml>=6,<7",
 ]

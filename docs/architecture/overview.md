@@ -44,9 +44,10 @@ flowchart LR
 - **Assurance:** future Batfish performs offline multi-vendor behavioural checks.
 - **Digital twin:** future Terraform with CiscoDevNet CML2 owns CML lifecycle,
   never production device configuration.
-- **Execution:** future Ansible Core is the initial provider using `cisco.ios`
-  and `juniper.device`/PyEZ/NETCONF paths. Python decides what and why; adapters
-  implement how without flattening vendor safety semantics.
+- **Execution:** Ansible Runner with `cisco.ios` remains the Cisco provider.
+  Direct PyEZ/NETCONF preserves one Junos exclusive candidate session across
+  pre-commit policy approval. Python decides what and why; adapters implement
+  how without flattening vendor safety semantics.
 - **Live validation:** future pyATS/Genie for Cisco and JSNAPy/PyEZ for Junos
   normalize into platform-owned results.
 - **Audit/evidence:** a future typed `ChangeRecord` correlates every approved
@@ -69,6 +70,9 @@ path while retaining local YAML for isolated and offline work. OpenBao is the
 primary credential path, with AppRole and exact KV-v2 retrieval behind the secret
 boundary. See the [NetBox inventory provider](netbox-inventory-provider.md) and
 [OpenBao secret provider](openbao-secret-provider.md).
-The vertical's exact boundaries are documented in the
-[Cisco interface-description vertical](cisco-interface-description-vertical.md).
-All other named integrations remain future work.
+Increment 4 adds the first Junos planning and transaction implementation. Cisco
+configuration remains on Ansible Runner; implementation evidence required Junos
+candidate transactions to use direct PyEZ so Python can approve the same locked
+candidate before commit-confirmed. See the [Cisco](cisco-interface-description-vertical.md)
+and [Junos](junos-interface-description-vertical.md) vertical documents. Other
+named integrations remain future work.

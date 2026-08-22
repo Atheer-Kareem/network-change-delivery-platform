@@ -2,12 +2,12 @@ steps:
   - label: ":docker: quality"
     key: quality
     commands:
-      - docker build --target quality --tag ncdp-quality:${BUILDKITE_BUILD_NUMBER} .
+      - docker build --target quality --tag ncdp-quality:$${BUILDKITE_BUILD_NUMBER} .
       - |
-        BASE_BRANCH="${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
-        git fetch --no-tags origin "${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
-        if [[ -n "${BUILDKITE_PULL_REQUEST:-}" && "${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
-          git diff --check "$(git merge-base HEAD "origin/${BASE_BRANCH}")..HEAD"
+        BASE_BRANCH="$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
+        git fetch --no-tags origin "$${BASE_BRANCH}:refs/remotes/origin/$${BASE_BRANCH}"
+        if [[ -n "$${BUILDKITE_PULL_REQUEST:-}" && "${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
+          git diff --check "$(git merge-base HEAD "origin/$${BASE_BRANCH}")..HEAD"
         else
           git diff --check HEAD^..HEAD
         fi

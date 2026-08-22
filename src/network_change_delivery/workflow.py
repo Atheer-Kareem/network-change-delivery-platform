@@ -17,6 +17,7 @@ from network_change_delivery.models import (
     ExecutionDisposition,
     ExecutionResult,
     FinalOutcome,
+    FrozenFleetMember,
     InterfaceDescriptionIntent,
     InterfaceState,
     InventoryDevice,
@@ -36,6 +37,20 @@ JUNOS_MANAGEMENT_INTERFACE_NAMES = frozenset({"fxp0", "em0"})
 
 class SafetyError(ValueError):
     """Raised when the supported change cannot proceed safely."""
+
+
+class PreflightError(SafetyError):
+    """Typed internal failure from the shared read-only prewrite boundary."""
+
+    def __init__(
+        self,
+        outcome: FinalOutcome,
+        message: str,
+        state: InterfaceState | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.outcome = outcome
+        self.state = state
 
 
 class StateCollector(Protocol):
@@ -95,6 +110,15 @@ class PlanningResult:
     message: str
 
 
+@dataclass(frozen=True)
+class PreflightSnapshot:
+    """Ephemeral verified state and credential material, never evidence."""
+
+    device: InventoryDevice
+    credentials: DeviceCredentials
+    state: InterfaceState
+
+
 def _normalized_interface(name: str) -> str:
     return "".join(name.split()).casefold()
 
@@ -123,6 +147,67 @@ def _assert_safe_state(
         raise SafetyError("GigabitEthernet1 is protected for this lab target")
     if platform == "junos" and requested in JUNOS_MANAGEMENT_INTERFACE_NAMES:
         raise SafetyError(f"{intent.interface} is protected as Junos management")
+
+
+def collect_preflight_state(
+    binding: DeploymentPlan | FrozenFleetMember,
+    inventory: InventoryProvider,
+    secrets: SecretProvider,
+    collector: StateCollector,
+) -> PreflightSnapshot:
+    """Apply the shared identity, credential, and live safety policy read-only."""
+    try:
+        device = inventory.resolve(binding.target, binding.interface)
+    except (ValueError, OSError, RuntimeError):
+        raise PreflightError(
+            FinalOutcome.BLOCKED, "pre-write verification blocked"
+        ) from None
+    inventory_source = getattr(binding, "inventory_source", "netbox")
+    if (
+        device.inventory_source != inventory_source
+        or device.inventory_object_id != binding.inventory_object_id
+        or device.inventory_interface_object_id != binding.inventory_interface_object_id
+        or device.name != binding.target
+        or device.host != binding.host
+        or device.port != binding.port
+        or device.platform != binding.platform
+        or device.expected_hostname != binding.expected_hostname
+    ):
+        raise PreflightError(
+            FinalOutcome.STALE_PLAN,
+            "approved inventory endpoint binding has changed",
+        )
+    try:
+        current_credential = secrets.reference(device)
+    except (ValueError, OSError, RuntimeError):
+        raise PreflightError(
+            FinalOutcome.BLOCKED, "pre-write verification blocked"
+        ) from None
+    if (
+        current_credential.source != binding.credential_source
+        or current_credential.reference != binding.credential_reference
+    ):
+        raise PreflightError(
+            FinalOutcome.STALE_PLAN, "approved credential binding has changed"
+        )
+    try:
+        credentials = secrets.load(device)
+        state = collector.collect(device, credentials, binding.interface)
+        intent = InterfaceDescriptionIntent.model_validate(
+            {
+                "change_id": getattr(binding, "change_id", "fleet-preflight"),
+                "kind": "interface_description",
+                "target": binding.target,
+                "interface": binding.interface,
+                "desired": {"description": binding.desired_description},
+            }
+        )
+        _assert_safe_state(intent, device, state)
+    except (ValueError, OSError, RuntimeError):
+        raise PreflightError(
+            FinalOutcome.BLOCKED, "pre-write verification blocked"
+        ) from None
+    return PreflightSnapshot(device=device, credentials=credentials, state=state)
 
 
 def build_plan(
@@ -508,80 +593,18 @@ def deploy_plan(
         )
 
     try:
-        device = inventory.resolve(plan.target, plan.interface)
-    except (ValueError, OSError, RuntimeError):
+        snapshot = collect_preflight_state(plan, inventory, secrets, collector)
+    except PreflightError as error:
         return _record(
             plan,
             approval_digest,
-            FinalOutcome.BLOCKED,
-            preflight=blocked,
+            error.outcome,
+            preflight=blocked.model_copy(update={"message": str(error)}),
             now=now,
         )
-    if (
-        device.inventory_source != plan.inventory_source
-        or device.inventory_object_id != plan.inventory_object_id
-        or device.inventory_interface_object_id != plan.inventory_interface_object_id
-        or device.name != plan.target
-        or device.host != plan.host
-        or device.port != plan.port
-        or device.platform != plan.platform
-        or device.expected_hostname != plan.expected_hostname
-    ):
-        return _record(
-            plan,
-            approval_digest,
-            FinalOutcome.STALE_PLAN,
-            preflight=blocked.model_copy(
-                update={"message": "approved inventory endpoint binding has changed"}
-            ),
-            now=now,
-        )
-
-    try:
-        current_credential = secrets.reference(device)
-    except (ValueError, OSError, RuntimeError):
-        return _record(
-            plan,
-            approval_digest,
-            FinalOutcome.BLOCKED,
-            preflight=blocked,
-            now=now,
-        )
-    if (
-        current_credential.source != plan.credential_source
-        or current_credential.reference != plan.credential_reference
-    ):
-        return _record(
-            plan,
-            approval_digest,
-            FinalOutcome.STALE_PLAN,
-            preflight=blocked.model_copy(
-                update={"message": "approved credential binding has changed"}
-            ),
-            now=now,
-        )
-
-    try:
-        credentials = secrets.load(device)
-        state = collector.collect(device, credentials, plan.interface)
-        intent = InterfaceDescriptionIntent.model_validate(
-            {
-                "change_id": plan.change_id,
-                "kind": plan.kind,
-                "target": plan.target,
-                "interface": plan.interface,
-                "desired": {"description": plan.desired_description},
-            }
-        )
-        _assert_safe_state(intent, device, state)
-    except (ValueError, OSError, RuntimeError):
-        return _record(
-            plan,
-            approval_digest,
-            FinalOutcome.BLOCKED,
-            preflight=blocked,
-            now=now,
-        )
+    device = snapshot.device
+    credentials = snapshot.credentials
+    state = snapshot.state
 
     if (
         state.description != plan.current_description

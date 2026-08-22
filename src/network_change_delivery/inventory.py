@@ -5,13 +5,17 @@ from __future__ import annotations
 import ipaddress
 import os
 from pathlib import Path
-from typing import Protocol
+from typing import ClassVar, Protocol
 from urllib.parse import urlparse
 
 import httpx
 import yaml
 
-from network_change_delivery.models import InventoryDevice, InventoryDocument
+from network_change_delivery.models import (
+    InventoryDevice,
+    InventoryDocument,
+    NetBoxFleetSelector,
+)
 
 
 class InventoryError(ValueError):
@@ -23,6 +27,21 @@ class InventoryProvider(Protocol):
 
     def resolve(self, target: str, interface: str | None = None) -> InventoryDevice:
         """Resolve one explicit logical target and optional interface identity."""
+
+
+class FleetInventoryProvider(Protocol):
+    """Boundary for exact deterministic fleet selection."""
+
+    def resolve_fleet(
+        self, selector: NetBoxFleetSelector
+    ) -> tuple[tuple[InventoryDevice, str], ...]:
+        """Resolve every selected device and exactly one tagged interface."""
+
+
+class FleetPreflightInventoryProvider(
+    InventoryProvider, FleetInventoryProvider, Protocol
+):
+    """Inventory boundary supporting selection and exact member re-resolution."""
 
 
 class LocalYamlInventoryProvider:
@@ -56,6 +75,10 @@ class NetBoxInventoryProvider:
 
     _DEVICE_PATH = "/api/dcim/devices/"
     _INTERFACE_PATH = "/api/dcim/interfaces/"
+    _PLATFORM_MAPPING: ClassVar[dict[str, tuple[str, int]]] = {
+        "cisco-ios-xe": ("cisco_iosxe", 22),
+        "juniper-junos": ("junos", 830),
+    }
 
     def __init__(
         self,
@@ -129,6 +152,40 @@ class NetBoxInventoryProvider:
             raise InventoryError("NetBox returned invalid JSON or schema")
         return payload
 
+    def _get_all(
+        self, path: str, *, params: dict[str, object]
+    ) -> list[dict[str, object]]:
+        """Read a bounded NetBox result set across validated offset pages."""
+        limit = 100
+        offset = 0
+        expected_count: int | None = None
+        results: list[dict[str, object]] = []
+        while True:
+            payload = self._get(
+                path, params={**params, "limit": limit, "offset": offset}
+            )
+            page = self._results(payload)
+            count = payload.get("count")
+            if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+                raise InventoryError("NetBox returned invalid JSON or schema")
+            if expected_count is None:
+                expected_count = count
+                if expected_count > 10_000:
+                    raise InventoryError("NetBox selected population is too large")
+            elif count != expected_count:
+                raise InventoryError("NetBox pagination changed during resolution")
+            results.extend(page)
+            next_page = payload.get("next")
+            if next_page is None:
+                if len(results) != expected_count:
+                    raise InventoryError("NetBox pagination is incomplete")
+                return results
+            if not isinstance(next_page, str) or not next_page or not page:
+                raise InventoryError("NetBox pagination is invalid")
+            offset += len(page)
+            if offset >= expected_count:
+                raise InventoryError("NetBox pagination is invalid")
+
     @staticmethod
     def _results(payload: dict[str, object]) -> list[dict[str, object]]:
         results = payload.get("results")
@@ -161,13 +218,9 @@ class NetBoxInventoryProvider:
             raise InventoryError("NetBox target is missing ncdp-managed tag")
         platform = device.get("platform")
         slug = platform.get("slug") if isinstance(platform, dict) else None
-        platform_mapping = {
-            "cisco-ios-xe": ("cisco_iosxe", 22),
-            "juniper-junos": ("junos", 830),
-        }
-        if slug not in platform_mapping:
+        if slug not in self._PLATFORM_MAPPING:
             raise InventoryError("NetBox target has unsupported or missing platform")
-        internal_platform, port = platform_mapping[slug]
+        internal_platform, port = self._PLATFORM_MAPPING[slug]
         primary = device.get("primary_ip4")
         address = primary.get("address") if isinstance(primary, dict) else None
         if not isinstance(address, str):
@@ -229,4 +282,118 @@ class NetBoxInventoryProvider:
             inventory_source="netbox",
             inventory_object_id=f"netbox:dcim.device:{object_id}",
             inventory_interface_object_id=interface_object_id,
+        )
+
+    @staticmethod
+    def _tag_slugs(value: object) -> set[str]:
+        if not isinstance(value, list) or any(
+            not isinstance(tag, dict) for tag in value
+        ):
+            raise InventoryError("NetBox returned invalid JSON or schema")
+        slugs: set[str] = set()
+        for tag in value:
+            slug = tag.get("slug")
+            if not isinstance(slug, str) or not slug:
+                raise InventoryError("NetBox returned invalid JSON or schema")
+            slugs.add(slug)
+        return slugs
+
+    def resolve_fleet(
+        self, selector: NetBoxFleetSelector
+    ) -> tuple[tuple[InventoryDevice, str], ...]:
+        """Resolve a narrow tag-selected active NetBox fleet exactly once."""
+        device_payloads = self._get_all(
+            self._DEVICE_PATH,
+            params={"tag": selector.device_tag, "status": "active"},
+        )
+        if not device_payloads:
+            raise InventoryError("NetBox fleet selector matched zero devices")
+        resolved: list[tuple[InventoryDevice, str]] = []
+        names: set[str] = set()
+        identities: set[str] = set()
+        interface_identities: set[str] = set()
+        for payload in device_payloads:
+            name = payload.get("name")
+            object_id = payload.get("id")
+            status = payload.get("status")
+            if not isinstance(name, str) or not name.strip():
+                raise InventoryError("NetBox fleet device identity is invalid")
+            name = name.strip()
+            if not isinstance(object_id, int) or isinstance(object_id, bool):
+                raise InventoryError("NetBox fleet device identity is invalid")
+            identity = f"netbox:dcim.device:{object_id}"
+            if name in names or identity in identities:
+                raise InventoryError("NetBox fleet contains duplicate device identity")
+            names.add(name)
+            identities.add(identity)
+            if not isinstance(status, dict) or status.get("value") != "active":
+                raise InventoryError("NetBox fleet target is inactive")
+            tags = self._tag_slugs(payload.get("tags"))
+            if "ncdp-managed" not in tags or selector.device_tag not in tags:
+                raise InventoryError("NetBox fleet target is missing required tags")
+            platform = payload.get("platform")
+            slug = platform.get("slug") if isinstance(platform, dict) else None
+            if slug not in self._PLATFORM_MAPPING:
+                raise InventoryError("NetBox fleet target has unsupported platform")
+            internal_platform, port = self._PLATFORM_MAPPING[slug]
+            primary = payload.get("primary_ip4")
+            address = primary.get("address") if isinstance(primary, dict) else None
+            if not isinstance(address, str):
+                raise InventoryError("NetBox fleet target has missing primary IPv4")
+            try:
+                host = str(ipaddress.IPv4Interface(address).ip)
+            except ValueError:
+                raise InventoryError(
+                    "NetBox fleet target has missing primary IPv4"
+                ) from None
+            interfaces = self._get_all(
+                self._INTERFACE_PATH,
+                params={"device_id": object_id, "tag": selector.interface_tag},
+            )
+            if not interfaces:
+                raise InventoryError("NetBox fleet interface selector matched zero")
+            if len(interfaces) != 1:
+                raise InventoryError(
+                    "NetBox fleet interface selector is not exact for one device"
+                )
+            interface = interfaces[0]
+            interface_name = interface.get("name")
+            interface_id = interface.get("id")
+            if not isinstance(interface_name, str) or not interface_name.strip():
+                raise InventoryError("NetBox fleet interface identity is invalid")
+            if not isinstance(interface_id, int) or isinstance(interface_id, bool):
+                raise InventoryError("NetBox fleet interface identity is invalid")
+            interface_name = interface_name.strip()
+            interface_identity = f"netbox:dcim.interface:{interface_id}"
+            if interface_identity in interface_identities:
+                raise InventoryError(
+                    "NetBox fleet contains duplicate interface identity"
+                )
+            interface_identities.add(interface_identity)
+            interface_tags = self._tag_slugs(interface.get("tags"))
+            if selector.interface_tag not in interface_tags:
+                raise InventoryError("NetBox fleet interface is missing selector tag")
+            if "ncdp-protected" in interface_tags:
+                raise InventoryError("NetBox fleet target interface is protected")
+            device = InventoryDevice(
+                name=name,
+                host=host,
+                port=port,
+                platform=internal_platform,
+                expected_hostname=name,
+                protected_interfaces=(),
+                inventory_source="netbox",
+                inventory_object_id=identity,
+                inventory_interface_object_id=interface_identity,
+            )
+            resolved.append((device, interface_name))
+        return tuple(
+            sorted(
+                resolved,
+                key=lambda item: (
+                    item[0].inventory_object_id or "",
+                    item[0].name,
+                    item[0].inventory_interface_object_id or "",
+                ),
+            )
         )

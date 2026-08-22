@@ -74,5 +74,9 @@ Increment 4 adds the first Junos planning and transaction implementation. Cisco
 configuration remains on Ansible Runner; implementation evidence required Junos
 candidate transactions to use direct PyEZ so Python can approve the same locked
 candidate before commit-confirmed. See the [Cisco](cisco-interface-description-vertical.md)
-and [Junos](junos-interface-description-vertical.md) vertical documents. Other
-named integrations remain future work.
+and [Junos](junos-interface-description-vertical.md) vertical documents.
+Increment 5A adds [fleet rollout planning](fleet-rollout.md): narrow paginated
+NetBox selectors, exact frozen membership including no-ops, nested child plans,
+canonical fleet digests, deterministic representative canaries and waves, and
+complete read-only fleet preflight. Fleet device execution remains deferred to
+5B. Other named integrations remain future work.

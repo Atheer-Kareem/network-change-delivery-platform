@@ -159,3 +159,26 @@ def test_verifier_rejects_changed_policy_without_provider() -> None:
     assert not verify_plan_assurance(
         plan(), changed, ROOT / "fixtures/batfish/baseline", record
     )
+
+
+def test_compliant_member_drift_blocks_derivation() -> None:
+    payload = plan().model_dump(mode="json")
+    member = payload["members"][2]
+    member.update(
+        classification="COMPLIANT",
+        current_description="reviewed-transit-description",
+        desired_description="reviewed-transit-description",
+        child_plan=None,
+    )
+    payload["waves"] = []
+    from network_change_delivery.models import FleetDeploymentPlan
+
+    fleet = FleetDeploymentPlan.model_validate(
+        {**payload, "digest": "sha256:" + "0" * 64}
+    ).model_copy(update={"digest": "sha256:" + "0" * 64})
+    fleet = fleet.model_copy(update={"digest": fleet.calculated_digest()})
+    with (
+        prepare_snapshot(ROOT / "fixtures/batfish/baseline") as baseline,
+        pytest.raises(PlanAssuranceError),
+    ):
+        materialize_candidate(baseline, fleet)

@@ -129,6 +129,14 @@ def prepare_snapshot(root: Path) -> PreparedSnapshot:
         total += len(content)
         if len(source) > MAX_FILES or total > MAX_BYTES:
             raise ValueError("snapshot exceeds bounded size limits")
+    return prepare_snapshot_from_bytes(source)
+
+
+def prepare_snapshot_from_bytes(
+    source: Iterable[tuple[str, bytes]],
+) -> PreparedSnapshot:
+    """Stage an already-frozen byte representation exactly once."""
+    source = tuple(source)
     manifest = _manifest_from_bytes(source)
     staging = Path(tempfile.mkdtemp(prefix="ncdp-batfish-"))
     staging.chmod(0o700)

@@ -5,8 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import shutil
-import tempfile
+import shlex
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -15,14 +14,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from network_change_delivery.assurance import (
     AssuranceEvidence,
+    AssuranceObservation,
     AssuranceOutcome,
     AssuranceProviderError,
     BatfishAssuranceAdapter,
     BatfishAssuranceIntent,
     CriticalFlow,
     PreparedSnapshot,
+    Sha256,
     evaluate_assurance,
     prepare_snapshot,
+    prepare_snapshot_from_bytes,
 )
 from network_change_delivery.models import (
     DeploymentPlan,
@@ -39,8 +41,8 @@ class PlanAssuranceSubject(BaseModel):
     plan_type: Literal["deployment_plan", "fleet_deployment_plan"]
     schema_version: Literal["1"]
     change_id: str
-    plan_digest: str
-    deployable_child_digests: tuple[str, ...] = ()
+    plan_digest: Sha256
+    deployable_child_digests: tuple[Sha256, ...] = ()
 
 
 class BatfishAssurancePolicy(BaseModel):
@@ -88,8 +90,16 @@ class PlanSnapshotMutation(BaseModel):
     classification: str
     current_description: str | None
     desired_description: str
-    child_plan_digest: str | None = None
+    child_plan_digest: Sha256 | None = None
     changed: bool
+
+
+class BaselineConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    hostname: str
+    platform: Literal["cisco_iosxe", "junos"]
+    relative_path: str
+    text: str
 
 
 class PlanAssuranceRecord(BaseModel):
@@ -98,21 +108,21 @@ class PlanAssuranceRecord(BaseModel):
     generated_at: datetime
     subject: PlanAssuranceSubject
     policy: BatfishAssurancePolicy
-    policy_digest: str
-    baseline_snapshot_digest: str | None = None
-    candidate_snapshot_digest: str | None = None
+    policy_digest: Sha256
+    baseline_snapshot_digest: Sha256 | None = None
+    candidate_snapshot_digest: Sha256 | None = None
     candidate_derivation: tuple[PlanSnapshotMutation, ...] = ()
     assurance: AssuranceEvidence | None = None
     failure_reason: str | None = None
     outcome: AssuranceOutcome
-    digest: str
+    digest: Sha256
 
     @model_validator(mode="after")
     def validate_record(self) -> PlanAssuranceRecord:
         if self.policy_digest != self.policy.calculated_digest():
             raise ValueError("policy digest mismatch")
         if self.outcome is AssuranceOutcome.BLOCKED:
-            if not self.failure_reason:
+            if not self.failure_reason or self.assurance is not None:
                 raise ValueError("blocked record requires failure reason")
             return self
         if (
@@ -120,6 +130,7 @@ class PlanAssuranceRecord(BaseModel):
             or self.assurance is None
             or not self.baseline_snapshot_digest
             or not self.candidate_snapshot_digest
+            or not self.candidate_derivation
         ):
             raise ValueError("completed record is incomplete")
         if self.assurance.outcome is not self.outcome:
@@ -211,18 +222,27 @@ def policy_to_intent(
     )
 
 
-def _hostname_index(root: Path) -> dict[str, tuple[Path, str]]:
-    result: dict[str, tuple[Path, str]] = {}
+def _hostname_index(root: Path) -> dict[str, BaselineConfig]:
+    result: dict[str, BaselineConfig] = {}
     for path in sorted((root / "configs").rglob("*"), key=lambda p: p.as_posix()):
         if not path.is_file() or path.is_symlink():
             continue
         text = path.read_text(encoding="utf-8")
-        matches = re.findall(r"^hostname\s+(\S+)\s*$", text, re.MULTILINE) + re.findall(
-            r"^set system host-name\s+(\S+)\s*$", text, re.MULTILINE
-        )
-        if len(matches) != 1 or matches[0] in result:
+        cisco = re.findall(r"^hostname\s+(\S+)\s*$", text, re.MULTILINE)
+        junos = re.findall(r"^set system host-name\s+(\S+)\s*$", text, re.MULTILINE)
+        if (len(cisco) == 1 and junos) or (len(cisco) != 1 and len(junos) != 1):
             raise PlanAssuranceError("baseline hostname identity is ambiguous")
-        result[matches[0]] = (path, text)
+        hostname, platform = (
+            (cisco[0], "cisco_iosxe") if len(cisco) == 1 else (junos[0], "junos")
+        )
+        if hostname in result:
+            raise PlanAssuranceError("duplicate baseline hostname")
+        result[hostname] = BaselineConfig(
+            hostname=hostname,
+            platform=platform,
+            relative_path=path.relative_to(root / "configs").as_posix(),
+            text=text,
+        )
     return result
 
 
@@ -270,16 +290,43 @@ def _transform_junos(
 ) -> tuple[str, bool]:
     lines = text.splitlines(keepends=True)
     prefix = f"set interfaces {interface} description "
-    indexes = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+    interface_lines = [
+        line
+        for line in lines
+        if line.startswith(f"set interfaces {interface} ")
+        or line.strip() == f"set interfaces {interface}"
+    ]
+    if not interface_lines:
+        raise PlanAssuranceError("Junos target interface is absent")
+    indexes: list[int] = []
+    parsed_descriptions: list[str] = []
+    for i, line in enumerate(lines):
+        if not line.startswith(prefix):
+            continue
+        try:
+            tokens = shlex.split(line.strip())
+        except ValueError as exc:
+            raise PlanAssuranceError(
+                "Junos description encoding is unsupported"
+            ) from exc
+        if len(tokens) < 5 or tokens[:4] != [
+            "set",
+            "interfaces",
+            interface,
+            "description",
+        ]:
+            continue
+        indexes.append(i)
+        parsed_descriptions.append(" ".join(tokens[4:]))
     if len(indexes) > 1:
         raise PlanAssuranceError("Junos description is ambiguous")
     if current is None and indexes:
         raise PlanAssuranceError("Junos baseline description mismatch")
-    if current is not None and (
-        not indexes or lines[indexes[0]].strip() != prefix + current
-    ):
+    if current is not None and (not indexes or parsed_descriptions[0] != current):
         raise PlanAssuranceError("Junos baseline description mismatch")
-    value = desired if " " not in desired else json.dumps(desired)
+    value = (
+        desired if re.fullmatch(r"[A-Za-z0-9_.:/-]+", desired) else json.dumps(desired)
+    )
     line = prefix + value + "\n"
     if indexes:
         lines[indexes[0]] = line
@@ -298,19 +345,47 @@ def materialize_candidate(
         else tuple(member.child_plan or member for member in plan.members)
     )
     records: list[PlanSnapshotMutation] = []
-    replacements: dict[Path, str] = {}
+    replacements = {
+        item.relative_path: (
+            prepared.root / "configs" / item.relative_path
+        ).read_bytes()
+        for item in prepared.manifest.files
+    }
     for item in members:
         if isinstance(item, DeploymentPlan):
             child, classification = item, "DEPLOYABLE"
         else:
             child, classification = item.child_plan, item.classification.value
             if child is None:
+                if item.expected_hostname not in index:
+                    raise PlanAssuranceError(
+                        "compliant hostname is absent from baseline"
+                    )
+                config = index[item.expected_hostname]
+                if config.platform != item.platform:
+                    raise PlanAssuranceError(
+                        "compliant platform does not match baseline grammar"
+                    )
+                if item.platform == "cisco_iosxe":
+                    _transform_cisco(
+                        config.text,
+                        item.interface,
+                        item.desired_description,
+                        item.desired_description,
+                    )
+                else:
+                    _transform_junos(
+                        config.text,
+                        item.interface,
+                        item.desired_description,
+                        item.desired_description,
+                    )
                 records.append(
                     PlanSnapshotMutation(
                         target=item.target,
                         platform=item.platform,
                         interface=item.interface,
-                        config_relative_path="",
+                        config_relative_path=config.relative_path,
                         classification=classification,
                         current_description=item.current_description,
                         desired_description=item.desired_description,
@@ -320,7 +395,10 @@ def materialize_candidate(
                 continue
         if child.expected_hostname not in index:
             raise PlanAssuranceError("plan hostname is absent from baseline")
-        path, text = index[child.expected_hostname]
+        config = index[child.expected_hostname]
+        if config.platform != child.platform:
+            raise PlanAssuranceError("plan platform does not match baseline grammar")
+        text = config.text
         if child.platform == "cisco_iosxe":
             transformed, changed = _transform_cisco(
                 text,
@@ -337,15 +415,16 @@ def materialize_candidate(
             )
         else:
             raise PlanAssuranceError("unsupported plan platform")
-        replacements[path] = transformed
+        transformed_bytes = transformed.encode()
+        if changed and transformed_bytes == replacements[config.relative_path]:
+            raise PlanAssuranceError("deployable transformation made no byte change")
+        replacements[config.relative_path] = transformed_bytes
         records.append(
             PlanSnapshotMutation(
                 target=child.target,
                 platform=child.platform,
                 interface=child.interface,
-                config_relative_path=path.relative_to(
-                    prepared.root / "configs"
-                ).as_posix(),
+                config_relative_path=config.relative_path,
                 classification=classification,
                 current_description=child.current_description,
                 desired_description=child.desired_description,
@@ -355,13 +434,13 @@ def materialize_candidate(
                 changed=changed,
             )
         )
-    staging = Path(tempfile.mkdtemp(prefix="ncdp-plan-candidate-"))
-    shutil.copytree(prepared.root / "configs", staging / "configs")
-    for path, text in replacements.items():
-        (staging / "configs" / path.relative_to(prepared.root / "configs")).write_text(
-            text, encoding="utf-8"
-        )
-    return prepare_snapshot(staging), tuple(records)
+    return prepare_snapshot_from_bytes(tuple(sorted(replacements.items()))), tuple(
+        records
+    )
+
+
+def _finalize_record(record: PlanAssuranceRecord) -> PlanAssuranceRecord:
+    return record.model_copy(update={"digest": record.calculated_digest()})
 
 
 def assure_plan(
@@ -378,16 +457,18 @@ def assure_plan(
         try:
             candidate, derivation = materialize_candidate(frozen, plan)
         except PlanAssuranceError as exc:
-            return PlanAssuranceRecord(
-                generated_at=datetime.now(UTC),
-                subject=subject,
-                policy=policy,
-                policy_digest=policy_digest,
-                baseline_snapshot_digest=frozen.manifest.digest,
-                failure_reason=str(exc),
-                outcome=AssuranceOutcome.BLOCKED,
-                digest="sha256:" + "0" * 64,
-            ).model_copy(update={"digest": "sha256:" + "0" * 64})
+            return _finalize_record(
+                PlanAssuranceRecord(
+                    generated_at=datetime.now(UTC),
+                    subject=subject,
+                    policy=policy,
+                    policy_digest=policy_digest,
+                    baseline_snapshot_digest=frozen.manifest.digest,
+                    failure_reason=str(exc),
+                    outcome=AssuranceOutcome.BLOCKED,
+                    digest="sha256:" + "0" * 64,
+                )
+            )
         with candidate:
             try:
                 observation = (provider or BatfishAssuranceAdapter()).analyze(
@@ -424,7 +505,7 @@ def assure_plan(
                     outcome=AssuranceOutcome.BLOCKED,
                     digest="sha256:" + "0" * 64,
                 )
-            return record.model_copy(update={"digest": record.calculated_digest()})
+            return _finalize_record(record)
 
 
 def verify_plan_assurance(
@@ -439,14 +520,53 @@ def verify_plan_assurance(
         or record.outcome is not AssuranceOutcome.PASSED
     ):
         return False
-    expected = assure_plan(plan, policy, baseline, provider=_NoContactProvider())
-    return (
-        expected.subject == record.subject
-        and expected.policy_digest == record.policy_digest
-        and expected.baseline_snapshot_digest == record.baseline_snapshot_digest
-        and expected.candidate_snapshot_digest == record.candidate_snapshot_digest
-        and expected.candidate_derivation == record.candidate_derivation
-    )
+    subject = subject_from_plan(plan)
+    if (
+        record.subject != subject
+        or record.policy != policy
+        or record.policy_digest != policy.calculated_digest()
+        or record.assurance is None
+    ):
+        return False
+    with prepare_snapshot(baseline) as frozen:
+        try:
+            candidate, derivation = materialize_candidate(frozen, plan)
+        except PlanAssuranceError:
+            return False
+        with candidate:
+            if (
+                frozen.manifest.digest != record.baseline_snapshot_digest
+                or candidate.manifest.digest != record.candidate_snapshot_digest
+                or derivation != record.candidate_derivation
+            ):
+                return False
+            inner = record.assurance
+            if (
+                inner.subject_digest != subject.plan_digest
+                or inner.baseline_snapshot_digest != frozen.manifest.digest
+                or inner.candidate_snapshot_digest != candidate.manifest.digest
+            ):
+                return False
+            observation = AssuranceObservation(
+                pybatfish_version=inner.pybatfish_version or "",
+                batfish_version=inner.batfish_version or "",
+                service_identity=inner.service_identity,
+                baseline=inner.baseline_parse,
+                candidate=inner.candidate_parse,
+                flows=inner.critical_flows,
+                differential_changed_flow_count=inner.differential_changed_flow_count,
+            )
+            recomputed = evaluate_assurance(
+                policy_to_intent(policy, subject),
+                frozen.manifest,
+                candidate.manifest,
+                observation,
+            )
+            return (
+                recomputed.outcome is AssuranceOutcome.PASSED
+                and recomputed.model_dump(mode="json", exclude={"generated_at"})
+                == inner.model_dump(mode="json", exclude={"generated_at"})
+            )
 
 
 class _NoContactProvider:

@@ -16,6 +16,8 @@ differential reachability changes. `verify-assurance` re-derived and verified
 the record offline. Wrong plan, policy, or baseline inputs fail closed.
 
 The generic 6A command remains provider-level diagnostic assurance and is not a
-deployment authorization. 6B does not establish baseline freshness,
+deployment authorization. Offline verification explicitly rejects a different
+valid recomputed plan, a modified policy, and a changed baseline; it performs
+zero Batfish/provider contact for those negative cases. 6B does not establish baseline freshness,
 provenance, signer identity, protected-branch approval, or device state at
 deployment time. Deployment integration is deferred to Increment 7.

@@ -23,7 +23,6 @@ from network_change_delivery.models import (
     StageResult,
 )
 from network_change_delivery.secrets import (
-    ENVIRONMENT_REFERENCE,
     CredentialReference,
     DeviceCredentials,
     SecretProvider,
@@ -103,8 +102,8 @@ def build_plan(
     device: InventoryDevice,
     state: InterfaceState,
     *,
+    credential: CredentialReference,
     created_at: datetime | None = None,
-    credential: CredentialReference | None = None,
 ) -> DeploymentPlan:
     """Build and digest the exact immutable artifact from fresh safe state."""
     _assert_safe_state(intent, device, state)
@@ -133,9 +132,6 @@ def build_plan(
         else "no description"
     )
     recovery = CiscoConfigArtifact(parent=parent, lines=(recovery_line,))
-    approved_credential = credential or CredentialReference(
-        "environment", ENVIRONMENT_REFERENCE
-    )
     plan = DeploymentPlan(
         change_id=intent.change_id,
         kind=intent.kind,
@@ -143,8 +139,8 @@ def build_plan(
         inventory_source=device.inventory_source,
         inventory_object_id=device.inventory_object_id,
         inventory_interface_object_id=device.inventory_interface_object_id,
-        credential_source=approved_credential.source,
-        credential_reference=approved_credential.reference,
+        credential_source=credential.source,
+        credential_reference=credential.reference,
         host=device.host,
         port=device.port,
         expected_hostname=device.expected_hostname,

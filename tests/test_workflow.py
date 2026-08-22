@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError
 
 from network_change_delivery.models import (
     DesiredDescription,
@@ -120,6 +121,7 @@ def plan(previous: str | None = "old"):
         intent(),
         FakeInventory().device,
         state(previous),
+        credential=CredentialReference("environment", ENVIRONMENT_REFERENCE),
         created_at=datetime(2026, 8, 22, tzinfo=UTC),
     )
 
@@ -212,7 +214,12 @@ def test_netbox_object_identity_drift_is_stale_before_device_collection() -> Non
             "inventory_interface_object_id": "netbox:dcim.interface:100",
         }
     )
-    approved = build_plan(intent(), netbox_device, state("old"))
+    approved = build_plan(
+        intent(),
+        netbox_device,
+        state("old"),
+        credential=CredentialReference("environment", ENVIRONMENT_REFERENCE),
+    )
     replacement = netbox_device.model_copy(
         update={"inventory_object_id": "netbox:dcim.device:99"}
     )
@@ -240,7 +247,12 @@ def test_netbox_interface_identity_drift_is_stale_before_device_collection() -> 
             "inventory_interface_object_id": "netbox:dcim.interface:100",
         }
     )
-    approved = build_plan(intent(), netbox_device, state("old"))
+    approved = build_plan(
+        intent(),
+        netbox_device,
+        state("old"),
+        credential=CredentialReference("environment", ENVIRONMENT_REFERENCE),
+    )
     replacement = netbox_device.model_copy(
         update={"inventory_interface_object_id": "netbox:dcim.interface:101"}
     )
@@ -292,6 +304,11 @@ def test_credential_provenance_enters_plan_and_change_record() -> None:
     serialized = record.model_dump(mode="json")
     assert "username" not in serialized
     assert "password" not in serialized
+    for field in ("credential_source", "credential_reference"):
+        incomplete = dict(serialized)
+        del incomplete[field]
+        with pytest.raises(ValidationError):
+            type(record).model_validate(incomplete)
 
 
 @pytest.mark.parametrize(

@@ -48,7 +48,9 @@ same approved reference does not invalidate network configuration intent.
 HTTPS uses normal system trust verification. Plain HTTP is permitted only for
 exact loopback hostnames (`localhost`, `127.0.0.1`, or `::1`). Userinfo, query,
 fragment, and non-root URL paths are rejected. Requests have bounded timeouts,
-do not follow redirects, and have no retry layer or response-body error exposure.
+do not follow redirects, do not inherit environment proxy routing, and have no
+retry layer or response-body error exposure. Production proxy support would
+require an explicit reviewed design.
 
 OpenBao access is short-lived and least privilege, but the underlying IOS XE
 username/password stored in KV-v2 is static. This increment does not provide

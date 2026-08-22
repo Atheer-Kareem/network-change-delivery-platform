@@ -7,6 +7,7 @@ import json
 import httpx
 import pytest
 
+import network_change_delivery.secrets as secrets_module
 from network_change_delivery.models import InventoryDevice
 from network_change_delivery.secrets import (
     ENVIRONMENT_REFERENCE,
@@ -20,6 +21,20 @@ SECRET_ID = "sensitive-secret-id"
 CLIENT_TOKEN = "sensitive-client-token"
 USERNAME = "sensitive-username"
 PASSWORD = "sensitive-password"
+
+
+def test_http_client_disables_environment_proxy_trust(monkeypatch) -> None:
+    options: dict[str, object] = {}
+
+    def client_spy(**kwargs: object) -> object:
+        options.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(secrets_module.httpx, "Client", client_spy)
+    OpenBaoSecretProvider("https://openbao.example", ROLE_ID, SECRET_ID)
+    assert options["trust_env"] is False
+    assert options["verify"] is True
+    assert options["follow_redirects"] is False
 
 
 def netbox_device(**changes: object) -> InventoryDevice:

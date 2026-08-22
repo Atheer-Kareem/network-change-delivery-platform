@@ -349,7 +349,9 @@ def test_fleet_selector_paginates_and_returns_stable_identity_order() -> None:
     assert all(item[0].inventory_interface_object_id for item in resolved)
     assert requests[0].url.params["tag"] == "fleet-edge"
     assert requests[0].url.params["status"] == "active"
+    assert requests[0].url.params["ordering"] == "id"
     assert requests[1].url.params["offset"] == "1"
+    assert all(request.url.params["ordering"] == "id" for request in requests)
 
 
 @pytest.mark.parametrize(

@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
-from network_change_delivery.fleet import plan_fleet, preflight_fleet
+from network_change_delivery.fleet import FleetSafetyError, plan_fleet, preflight_fleet
 from network_change_delivery.models import (
+    DeploymentPlan,
     DesiredDescription,
     FleetDeploymentPlan,
     FleetInterfaceDescriptionIntent,
     FleetMemberClassification,
+    FleetMemberPreflight,
+    FleetPreflightResult,
     FleetRolloutPolicy,
     InterfaceState,
     InventoryDevice,
@@ -302,6 +307,25 @@ def test_loaded_plan_rejects_duplicate_identity_and_invalid_cohorts() -> None:
         FleetDeploymentPlan.model_validate(payload)
 
 
+def test_fleet_rejects_valid_local_yaml_child_plan_before_preflight() -> None:
+    plan = make_plan().plan
+    assert plan is not None
+    payload = plan.model_dump(mode="json")
+    child = payload["members"][0]["child_plan"]
+    assert isinstance(child, dict)
+    child["inventory_source"] = "local_yaml"
+    canonical_child = {key: value for key, value in child.items() if key != "digest"}
+    child["digest"] = (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(canonical_child, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    )
+    assert DeploymentPlan.model_validate(child).verify_digest()
+    with pytest.raises(ValidationError, match="child plan disagrees"):
+        FleetDeploymentPlan.model_validate(payload)
+
+
 def test_complete_fleet_preflight_succeeds_for_deployable_and_compliant() -> None:
     descriptions = {item[0].name: "old" for item in selected_four()}
     descriptions["router-13"] = DESIRED
@@ -420,3 +444,72 @@ def test_preflight_errors_and_evidence_are_secret_safe() -> None:
     assert not result.succeeded
     assert "fleet-secret" not in serialized
     assert "fleet-test-user" not in serialized
+
+
+@pytest.mark.parametrize("boundary", ["selector", "collector"])
+def test_fleet_planning_errors_drop_secret_bearing_exception_chain(
+    boundary: str,
+) -> None:
+    secret = "raw-provider-secret"
+
+    class FailingInventory(FleetInventory):
+        def resolve_fleet(self, selector: NetBoxFleetSelector):
+            if boundary == "selector":
+                raise RuntimeError(secret)
+            return super().resolve_fleet(selector)
+
+    class FailingCollector(FleetCollector):
+        def collect(self, device, credentials, interface):
+            if boundary == "collector":
+                raise RuntimeError(secret)
+            return super().collect(device, credentials, interface)
+
+    selected = selected_four()
+    with pytest.raises(FleetSafetyError) as caught:
+        plan_fleet(
+            fleet_intent(),
+            FailingInventory(selected),
+            FleetSecrets(),
+            FailingCollector({item[0].name: "old" for item in selected}),
+        )
+    assert str(caught.value) in {
+        "fleet selector resolution failed",
+        "complete fleet planning preflight failed",
+    }
+    assert secret not in str(caught.value)
+    assert secret not in repr(caught.value)
+    assert caught.value.__cause__ is None
+
+
+def test_fleet_preflight_result_rejects_contradictory_evidence() -> None:
+    valid_member = FleetMemberPreflight(
+        inventory_object_id="netbox:dcim.device:1",
+        inventory_interface_object_id="netbox:dcim.interface:1",
+        target="router-1",
+        interface="GigabitEthernet2",
+        classification=FleetMemberClassification.DEPLOYABLE,
+        succeeded=True,
+        observed_description="old",
+        message="verified",
+    )
+    failed_member = valid_member.model_copy(update={"succeeded": False})
+    digest = "sha256:" + "a" * 64
+    for succeeded, members in (
+        (True, ()),
+        (True, (failed_member,)),
+        (False, (valid_member,)),
+    ):
+        with pytest.raises(ValidationError, match="contradicts"):
+            FleetPreflightResult(
+                fleet_digest=digest,
+                succeeded=succeeded,
+                members=members,
+                message="invalid",
+            )
+    global_failure = FleetPreflightResult(
+        fleet_digest=digest,
+        succeeded=False,
+        members=(),
+        message="selector failed",
+    )
+    assert not global_failure.succeeded

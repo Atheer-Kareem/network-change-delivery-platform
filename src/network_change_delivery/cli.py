@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
@@ -36,6 +37,22 @@ def _write_json(path: Path, value: str) -> None:
     """Write a local artifact atomically enough with restrictive permissions."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.write_text(value, encoding="utf-8")
+    path.chmod(0o600)
+
+
+def _require_unused_fleet_plan_path(path: Path) -> None:
+    """Fail before provider construction for files and even broken symlinks."""
+    if path.exists() or path.is_symlink():
+        raise OSError("fleet plan output already exists")
+
+
+def _write_new_fleet_plan(path: Path, value: str) -> None:
+    """Create one new mode-0600 fleet artifact without an overwrite race."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(value)
     path.chmod(0o600)
 
 
@@ -122,6 +139,7 @@ def _run_deploy(arguments: argparse.Namespace) -> int:
 
 
 def _run_fleet_plan(arguments: argparse.Namespace) -> int:
+    _require_unused_fleet_plan_path(arguments.plan_out)
     intent = _load_fleet_change(arguments.change)
     inventory = NetBoxInventoryProvider()
     secrets = OpenBaoSecretProvider()
@@ -152,7 +170,9 @@ def _run_fleet_plan(arguments: argparse.Namespace) -> int:
     if result.plan is None:
         print(result.message)
         return 0
-    _write_json(arguments.plan_out, result.plan.model_dump_json(indent=2) + "\n")
+    _write_new_fleet_plan(
+        arguments.plan_out, result.plan.model_dump_json(indent=2) + "\n"
+    )
     by_id = {
         member.inventory_object_id: member.target for member in result.plan.members
     }

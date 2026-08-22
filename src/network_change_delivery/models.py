@@ -318,6 +318,7 @@ class FrozenFleetMember(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     target: CliBoundString
+    inventory_source: Literal["netbox"] = "netbox"
     inventory_object_id: NonEmptyString
     inventory_interface_object_id: NonEmptyString
     host: NonEmptyString
@@ -344,6 +345,7 @@ class FrozenFleetMember(BaseModel):
             raise ValueError("deployable fleet member requires a valid child plan")
         expected = (
             self.target,
+            self.inventory_source,
             self.inventory_object_id,
             self.inventory_interface_object_id,
             self.host,
@@ -358,6 +360,7 @@ class FrozenFleetMember(BaseModel):
         )
         actual = (
             plan.target,
+            plan.inventory_source,
             plan.inventory_object_id,
             plan.inventory_interface_object_id,
             plan.host,
@@ -517,6 +520,16 @@ class FleetPreflightResult(BaseModel):
     succeeded: bool
     members: tuple[FleetMemberPreflight, ...]
     message: NonEmptyString
+
+    @model_validator(mode="after")
+    def outcome_matches_member_results(self) -> FleetPreflightResult:
+        """Prevent contradictory whole-fleet safety evidence."""
+        every_member_succeeded = bool(self.members) and all(
+            member.succeeded for member in self.members
+        )
+        if self.succeeded != every_member_succeeded:
+            raise ValueError("fleet preflight outcome contradicts member results")
+        return self
 
 
 class ExecutionDisposition(StrEnum):

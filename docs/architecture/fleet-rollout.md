@@ -25,7 +25,9 @@ zero/multiple interface matches, zero devices, duplicates, unsupported platforms
 or incomplete pagination blocks the whole resolution.
 
 API return order is never policy. Frozen members are ordered by stable NetBox
-device identity, then target name and stable interface identity.
+device identity, then target name and stable interface identity. NetBox device
+and tagged-interface pagination requests explicitly use `ordering=id` so offset
+pagination itself is stable before the domain layer applies its local sort.
 
 ## Frozen plan and no-ops
 
@@ -36,6 +38,10 @@ Every selected member is retained as either:
   description is already present.
 
 Validators prevent duplicated member fields from disagreeing with child plans.
+Every frozen member explicitly records `inventory_source: netbox`; a deployable
+child using any other inventory authority is invalid even if its own digest is
+internally valid.
+
 The canonical fleet SHA-256 digest binds the selector, desired state, rollout
 policy, full member population, nested child plans and their digests, compliant
 members, exact canaries, exact waves, and cohort order. Filenames and external
@@ -45,6 +51,12 @@ An entirely compliant fleet returns complete observations and
 `fleet is already compliant; no deployable artifact produced`. A partially
 compliant fleet retains no-op members in the artifact but never places them in a
 write cohort.
+
+`fleet-plan --plan-out` refuses an existing file or symlink before provider
+construction. A deployable artifact is created once through an exclusive
+mode-0600 create boundary and is never silently overwritten. An all-compliant
+result creates no file, so an older artifact cannot remain ambiguously associated
+with a later no-op invocation at the same output path.
 
 ## Deterministic exposure cohorts
 
@@ -86,5 +98,11 @@ Increment 5B may add sequential execution only after review. It must rerun this
 complete preflight before the first write, retain just-in-time child verification,
 gate later cohorts on canary success, stop after any non-`SUCCEEDED` attempted
 transaction, preserve vendor-native recovery semantics, and make no fleet
-atomicity or automatic rollback claim. Distributed overlap protection and
-parallel runner coordination remain deferred to Buildkite hardening.
+atomicity or automatic rollback claim.
+
+Increment 5C retains rollout-level ownership of process-local same-target
+overlap admission and mixed-vendor live CML fleet acceptance. Increment 7 owns
+distributed and cross-run locks, Buildkite runner concurrency groups, and
+multi-worker coordination. Local rollout overlap safety and distributed runner
+coordination are separate layers; deferring the latter does not remove the former
+from Increment 5.

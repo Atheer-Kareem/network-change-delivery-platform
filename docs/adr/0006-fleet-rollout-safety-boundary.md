@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 
-**Date:** 2026-08-23
+**Date:** 2026-08-22
 
 ## Context
 
@@ -29,12 +29,15 @@ sorts and partitions remaining deployable members into fixed-size waves. Any
 attempted child transaction whose final outcome is not `SUCCEEDED` stops all
 later exposure. There are no retries.
 
-Fleet execution will be sequential in Increment 5 v1. Distributed runners,
-concurrency groups, overlap locks, and parallel coordination belong to the later
-Buildkite hardening increment. Cisco targeted recovery and Junos
-commit-confirmed semantics remain the authoritative unchanged device-native
-contracts. Prior successful members are not automatically reverted when a later
-member fails.
+Fleet execution will be sequential in Increment 5 v1. Increment 5B adds the
+canary/wave execution state machine and honest partial outcomes. Increment 5C
+adds process-local same-target overlap admission and mixed-vendor live CML fleet
+acceptance. Distributed or cross-run locks, runner concurrency groups, and
+multi-worker coordination belong to the later Buildkite hardening increment.
+Local rollout overlap safety is distinct from distributed runner coordination.
+Cisco targeted recovery and Junos commit-confirmed semantics remain the
+authoritative unchanged device-native contracts. Prior successful members are
+not automatically reverted when a later member fails.
 
 There is no fleet atomicity claim. Partial outcomes must be reported honestly.
 

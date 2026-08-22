@@ -90,6 +90,7 @@ def _freeze_member(
         raise FleetSafetyError("fleet member stable inventory identity is missing")
     return FrozenFleetMember(
         target=device.name,
+        inventory_source="netbox",
         inventory_object_id=device.inventory_object_id,
         inventory_interface_object_id=device.inventory_interface_object_id,
         host=device.host,
@@ -122,8 +123,8 @@ def plan_fleet(
     created = created_at or datetime.now(UTC)
     try:
         selected = inventory.resolve_fleet(intent.selector)
-    except (ValueError, OSError, RuntimeError) as error:
-        raise FleetSafetyError("fleet selector resolution failed") from error
+    except (ValueError, OSError, RuntimeError):
+        raise FleetSafetyError("fleet selector resolution failed") from None
     members: list[FrozenFleetMember] = []
     try:
         for device, interface in selected:
@@ -140,8 +141,8 @@ def plan_fleet(
                     created_at=created,
                 )
             )
-    except (ValueError, OSError, RuntimeError) as error:
-        raise FleetSafetyError("complete fleet planning preflight failed") from error
+    except (ValueError, OSError, RuntimeError):
+        raise FleetSafetyError("complete fleet planning preflight failed") from None
     frozen = tuple(sorted(members, key=_member_key))
     deployable = tuple(
         member

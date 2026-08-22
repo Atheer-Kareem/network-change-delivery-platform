@@ -162,9 +162,8 @@ def collect_preflight_state(
         raise PreflightError(
             FinalOutcome.BLOCKED, "pre-write verification blocked"
         ) from None
-    inventory_source = getattr(binding, "inventory_source", "netbox")
     if (
-        device.inventory_source != inventory_source
+        device.inventory_source != binding.inventory_source
         or device.inventory_object_id != binding.inventory_object_id
         or device.inventory_interface_object_id != binding.inventory_interface_object_id
         or device.name != binding.target

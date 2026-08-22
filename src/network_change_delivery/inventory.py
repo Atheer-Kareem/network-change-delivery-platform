@@ -304,7 +304,11 @@ class NetBoxInventoryProvider:
         """Resolve a narrow tag-selected active NetBox fleet exactly once."""
         device_payloads = self._get_all(
             self._DEVICE_PATH,
-            params={"tag": selector.device_tag, "status": "active"},
+            params={
+                "tag": selector.device_tag,
+                "status": "active",
+                "ordering": "id",
+            },
         )
         if not device_payloads:
             raise InventoryError("NetBox fleet selector matched zero devices")
@@ -348,7 +352,11 @@ class NetBoxInventoryProvider:
                 ) from None
             interfaces = self._get_all(
                 self._INTERFACE_PATH,
-                params={"device_id": object_id, "tag": selector.interface_tag},
+                params={
+                    "device_id": object_id,
+                    "tag": selector.interface_tag,
+                    "ordering": "id",
+                },
             )
             if not interfaces:
                 raise InventoryError("NetBox fleet interface selector matched zero")

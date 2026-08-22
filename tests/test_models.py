@@ -166,6 +166,21 @@ def test_netbox_interface_identity_is_frozen_into_plan_and_digest() -> None:
     assert changed.calculated_digest() != approved.digest
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"credential_source": "openbao"},
+        {"credential_reference": "openbao:kv-v2:ncdp/devices/1/ssh"},
+    ],
+)
+def test_digest_covers_non_secret_credential_provenance(
+    changes: dict[str, object],
+) -> None:
+    approved = build_plan(intent(), device(), state())
+    changed = approved.model_copy(update=changes)
+    assert changed.calculated_digest() != approved.digest
+
+
 def test_preview_is_derived_from_exact_artifact() -> None:
     plan = build_plan(intent(), device(), state())
     assert plan.execution_artifact.cli_preview() == (

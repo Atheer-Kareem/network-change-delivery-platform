@@ -13,7 +13,11 @@ from network_change_delivery.models import (
     InterfaceState,
     InventoryDevice,
 )
-from network_change_delivery.secrets import DeviceCredentials
+from network_change_delivery.secrets import (
+    ENVIRONMENT_REFERENCE,
+    CredentialReference,
+    DeviceCredentials,
+)
 from network_change_delivery.workflow import build_plan, deploy_plan, plan_change
 
 
@@ -39,7 +43,24 @@ class FakeInventory:
 class FakeSecrets:
     """Return ephemeral test credentials."""
 
-    def load(self) -> DeviceCredentials:
+    def __init__(
+        self,
+        credential: CredentialReference | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.credential = credential or CredentialReference(
+            "environment", ENVIRONMENT_REFERENCE
+        )
+        self.error = error
+        self.loads = 0
+
+    def reference(self, _device: InventoryDevice) -> CredentialReference:
+        return self.credential
+
+    def load(self, _device: InventoryDevice) -> DeviceCredentials:
+        self.loads += 1
+        if self.error is not None:
+            raise self.error
         return DeviceCredentials(username="test-user", password="test-password")
 
 
@@ -112,13 +133,15 @@ def result(disposition: ExecutionDisposition, changed: bool = False) -> Executio
 
 
 def test_noop_planning_produces_no_artifact() -> None:
+    credential = CredentialReference("openbao", "openbao:kv-v2:ncdp/devices/1/ssh")
     planned = plan_change(
         intent(),
         FakeInventory(),
-        FakeSecrets(),
+        FakeSecrets(credential),
         FakeCollector(state("managed-by-ncdp")),
     )
     assert planned.plan is None
+    assert planned.credential == credential
     assert "no deployable artifact" in planned.message
 
 
@@ -235,6 +258,87 @@ def test_netbox_interface_identity_drift_is_stale_before_device_collection() -> 
     assert collector.calls == 0
     assert executor.artifacts == []
     assert record.inventory_interface_object_id == "netbox:dcim.interface:100"
+
+
+def test_credential_provenance_enters_plan_and_change_record() -> None:
+    approved_credential = CredentialReference(
+        "openbao", "openbao:kv-v2:ncdp/devices/1/ssh"
+    )
+    netbox_device = FakeInventory().device.model_copy(
+        update={
+            "inventory_source": "netbox",
+            "inventory_object_id": "netbox:dcim.device:1",
+            "inventory_interface_object_id": "netbox:dcim.interface:2",
+        }
+    )
+    approved = build_plan(
+        intent(),
+        netbox_device,
+        state("old"),
+        credential=approved_credential,
+    )
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(netbox_device),
+        FakeSecrets(approved_credential),
+        FakeCollector(state("old"), state("managed-by-ncdp")),
+        FakeExecutor(result(ExecutionDisposition.SUCCEEDED, changed=True)),
+    )
+    assert approved.credential_source == "openbao"
+    assert approved.credential_reference == approved_credential.reference
+    assert record.credential_source == "openbao"
+    assert record.credential_reference == approved_credential.reference
+    serialized = record.model_dump(mode="json")
+    assert "username" not in serialized
+    assert "password" not in serialized
+
+
+@pytest.mark.parametrize(
+    "credential",
+    [
+        CredentialReference("openbao", "openbao:kv-v2:ncdp/devices/1/ssh"),
+        CredentialReference("environment", "environment:changed-reference"),
+    ],
+)
+def test_credential_binding_drift_is_stale_before_secret_load_or_collection(
+    credential: CredentialReference,
+) -> None:
+    approved = plan()
+    secrets = FakeSecrets(credential)
+    collector = FakeCollector()
+    executor = FakeExecutor()
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(),
+        secrets,
+        collector,
+        executor,
+    )
+    assert record.final_outcome is FinalOutcome.STALE_PLAN
+    assert secrets.loads == 0
+    assert collector.calls == 0
+    assert executor.artifacts == []
+
+
+def test_secret_load_failure_blocks_before_device_collection() -> None:
+    approved = plan()
+    secrets = FakeSecrets(error=RuntimeError("bounded load failure"))
+    collector = FakeCollector()
+    executor = FakeExecutor()
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(),
+        secrets,
+        collector,
+        executor,
+    )
+    assert record.final_outcome is FinalOutcome.BLOCKED
+    assert secrets.loads == 1
+    assert collector.calls == 0
+    assert executor.artifacts == []
 
 
 def test_exact_artifact_is_executed_and_fresh_state_validated() -> None:

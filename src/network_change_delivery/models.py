@@ -131,6 +131,10 @@ class DeploymentPlan(BaseModel):
     inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
     inventory_object_id: str | None = None
     inventory_interface_object_id: str | None = None
+    credential_source: Literal["environment", "openbao"] = "environment"
+    credential_reference: NonEmptyString = (
+        "environment:NCDP_DEVICE_USERNAME+NCDP_DEVICE_PASSWORD"
+    )
     host: NonEmptyString
     port: int = Field(ge=1, le=65535)
     expected_hostname: NonEmptyString
@@ -252,6 +256,10 @@ class ChangeRecord(BaseModel):
     inventory_source: Literal["local_yaml", "netbox"] = "local_yaml"
     inventory_object_id: str | None = None
     inventory_interface_object_id: str | None = None
+    credential_source: Literal["environment", "openbao"] = "environment"
+    credential_reference: NonEmptyString = (
+        "environment:NCDP_DEVICE_USERNAME+NCDP_DEVICE_PASSWORD"
+    )
     host: str
     port: int
     expected_hostname: str

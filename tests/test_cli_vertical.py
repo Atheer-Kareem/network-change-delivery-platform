@@ -94,6 +94,7 @@ desired:
                 str(change),
                 "--inventory",
                 str(inventory),
+                "--environment-secrets",
                 "--output",
                 str(plan_path),
             ]
@@ -111,6 +112,7 @@ desired:
                 str(plan_path),
                 "--inventory",
                 str(inventory),
+                "--environment-secrets",
                 "--approve-digest",
                 digest,
                 "--report-json",

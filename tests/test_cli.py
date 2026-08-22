@@ -59,3 +59,17 @@ def test_cli_requires_one_inventory_source(command: str) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main([command])
     assert exit_info.value.code == 2
+
+
+@pytest.mark.parametrize("command", ["plan", "deploy"])
+def test_cli_rejects_both_secret_sources(command: str) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main([command, "--openbao", "--environment-secrets"])
+    assert exit_info.value.code == 2
+
+
+@pytest.mark.parametrize("command", ["plan", "deploy"])
+def test_cli_requires_one_secret_source(command: str) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main([command, "--inventory", "inventory.yaml"])
+    assert exit_info.value.code == 2

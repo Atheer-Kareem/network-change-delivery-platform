@@ -38,8 +38,9 @@ flowchart LR
   owns managed device-configuration intent. A managed property has exactly one
   authority, explicitly assigned before overlapping NetBox/native fields are
   consumed; devices provide observed state.
-- **Secrets:** future OpenBao validates Buildkite OIDC and issues short-lived,
-  narrowly scoped credentials; application models never embed static secrets.
+- **Secrets:** OpenBao AppRole issues short-lived, single-use, exact-path tokens
+  for the static personal-lab device credential. Future Buildkite OIDC replaces
+  AppRole bootstrap; application models never embed secret values.
 - **Assurance:** future Batfish performs offline multi-vendor behavioural checks.
 - **Digital twin:** future Terraform with CiscoDevNet CML2 owns CML lifecycle,
   never production device configuration.
@@ -64,8 +65,10 @@ policy, and external observations must be normalized before policy consumes them
 
 Architecture Baseline 1 and the first narrow Cisco IOS XE interface-description
 vertical are implemented. Increment 3 adds the primary read-only NetBox inventory
-path while retaining local YAML for isolated and offline work; its provider
-contract is documented in the [NetBox inventory provider](netbox-inventory-provider.md).
+path while retaining local YAML for isolated and offline work. OpenBao is the
+primary credential path, with AppRole and exact KV-v2 retrieval behind the secret
+boundary. See the [NetBox inventory provider](netbox-inventory-provider.md) and
+[OpenBao secret provider](openbao-secret-provider.md).
 The vertical's exact boundaries are documented in the
 [Cisco interface-description vertical](cisco-interface-description-vertical.md).
 All other named integrations remain future work.

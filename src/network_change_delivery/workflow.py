@@ -22,7 +22,12 @@ from network_change_delivery.models import (
     PlanPreconditions,
     StageResult,
 )
-from network_change_delivery.secrets import DeviceCredentials, SecretProvider
+from network_change_delivery.secrets import (
+    ENVIRONMENT_REFERENCE,
+    CredentialReference,
+    DeviceCredentials,
+    SecretProvider,
+)
 
 MANAGEMENT_INTERFACE_NAMES = frozenset({"gigabitethernet1", "gi1"})
 
@@ -61,6 +66,7 @@ class PlanningResult:
 
     plan: DeploymentPlan | None
     state: InterfaceState
+    credential: CredentialReference
     message: str
 
 
@@ -98,6 +104,7 @@ def build_plan(
     state: InterfaceState,
     *,
     created_at: datetime | None = None,
+    credential: CredentialReference | None = None,
 ) -> DeploymentPlan:
     """Build and digest the exact immutable artifact from fresh safe state."""
     _assert_safe_state(intent, device, state)
@@ -126,6 +133,9 @@ def build_plan(
         else "no description"
     )
     recovery = CiscoConfigArtifact(parent=parent, lines=(recovery_line,))
+    approved_credential = credential or CredentialReference(
+        "environment", ENVIRONMENT_REFERENCE
+    )
     plan = DeploymentPlan(
         change_id=intent.change_id,
         kind=intent.kind,
@@ -133,6 +143,8 @@ def build_plan(
         inventory_source=device.inventory_source,
         inventory_object_id=device.inventory_object_id,
         inventory_interface_object_id=device.inventory_interface_object_id,
+        credential_source=approved_credential.source,
+        credential_reference=approved_credential.reference,
         host=device.host,
         port=device.port,
         expected_hostname=device.expected_hostname,
@@ -169,18 +181,27 @@ def plan_change(
         and device.inventory_interface_object_id is None
     ):
         raise SafetyError("NetBox requested interface identity is missing")
-    credentials = secrets.load()
+    credential = secrets.reference(device)
+    credentials = secrets.load(device)
     state = collector.collect(device, credentials, intent.interface)
     _assert_safe_state(intent, device, state)
     if state.description == intent.desired.description:
         return PlanningResult(
             plan=None,
             state=state,
+            credential=credential,
             message="interface is already compliant; no deployable artifact produced",
         )
     return PlanningResult(
-        plan=build_plan(intent, device, state, created_at=created_at),
+        plan=build_plan(
+            intent,
+            device,
+            state,
+            created_at=created_at,
+            credential=credential,
+        ),
         state=state,
+        credential=credential,
         message="deployable immutable plan created",
     )
 
@@ -221,6 +242,8 @@ def _record(
         inventory_source=plan.inventory_source,
         inventory_object_id=plan.inventory_object_id,
         inventory_interface_object_id=plan.inventory_interface_object_id,
+        credential_source=plan.credential_source,
+        credential_reference=plan.credential_reference,
         host=plan.host,
         port=plan.port,
         expected_hostname=plan.expected_hostname,
@@ -300,7 +323,31 @@ def deploy_plan(
         )
 
     try:
-        credentials = secrets.load()
+        current_credential = secrets.reference(device)
+    except (ValueError, OSError, RuntimeError):
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.BLOCKED,
+            preflight=blocked,
+            now=now,
+        )
+    if (
+        current_credential.source != plan.credential_source
+        or current_credential.reference != plan.credential_reference
+    ):
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.STALE_PLAN,
+            preflight=blocked.model_copy(
+                update={"message": "approved credential binding has changed"}
+            ),
+            now=now,
+        )
+
+    try:
+        credentials = secrets.load(device)
         state = collector.collect(device, credentials, plan.interface)
         intent = InterfaceDescriptionIntent.model_validate(
             {

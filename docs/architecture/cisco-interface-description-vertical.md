@@ -19,10 +19,11 @@ platform, eligibility, interface identity, and protection tags. A local YAML
 provider remains for isolated tests and offline development. Neither contains
 credentials or performs dynamic selection.
 
-`EnvironmentSecretProvider` reads only `NCDP_DEVICE_USERNAME` and
-`NCDP_DEVICE_PASSWORD`. Values are never accepted as CLI arguments or placed in
-inventory, plans, evidence, logs, exceptions, or retained Runner artifacts. This
-boundary is intended to be replaced by OpenBao.
+OpenBao is the primary personal-lab credential path. AppRole obtains a
+short-lived single-use OpenBao token, then reads the exact static IOS XE
+credential selected by stable NetBox device identity. The plan binds only the
+non-secret provider source/reference. `EnvironmentSecretProvider` remains an
+explicit test/offline option; there is no automatic fallback.
 
 ## Trusted collection and preflight
 
@@ -50,7 +51,8 @@ the digest field—is hashed with SHA-256. The CLI preview renders directly from
 that same artifact. Deployment requires an exact `--approve-digest` match, then
 re-resolves and compares inventory source, stable device and requested-interface
 object identities, name, host, port, platform, and expected hostname before any
-live collection. Deployment performs fresh identity and
+live collection. It then compares the current non-secret credential source and
+reference before retrieving credentials. Deployment performs fresh identity and
 interface collection immediately before writing. Changed,
 missing, already-compliant, or otherwise stale preconditions block execution.
 

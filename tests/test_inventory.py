@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from network_change_delivery.inventory import InventoryError, LocalYamlInventoryProvider
+from network_change_delivery.models import InventoryDevice
 from network_change_delivery.secrets import EnvironmentSecretProvider, SecretError
 
 
@@ -72,8 +73,14 @@ def test_inventory_rejects_credential_fields(tmp_path: Path, field: str) -> None
 
 
 def test_missing_secret_error_lists_names_only() -> None:
+    device = InventoryDevice(
+        name="router-1",
+        host="192.0.2.10",
+        platform="cisco_iosxe",
+        expected_hostname="router-1",
+    )
     with pytest.raises(SecretError) as error:
-        EnvironmentSecretProvider({}).load()
+        EnvironmentSecretProvider({}).load(device)
     assert str(error.value) == (
         "missing required environment variables: "
         "NCDP_DEVICE_USERNAME, NCDP_DEVICE_PASSWORD"

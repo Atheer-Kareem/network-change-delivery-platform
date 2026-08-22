@@ -46,6 +46,11 @@ from network_change_delivery.plan_assurance import (
     load_plan,
     verify_plan_assurance,
 )
+from network_change_delivery.promotion import (
+    PromotionError,
+    create_promotion_bundle,
+    verify_promotion_bundle,
+)
 from network_change_delivery.secrets import (
     EnvironmentSecretProvider,
     OpenBaoSecretProvider,
@@ -214,6 +219,25 @@ def _run_verify_assurance(arguments: argparse.Namespace) -> int:
     verified = verify_plan_assurance(plan, policy, arguments.baseline, record)
     print(f"Plan assurance verified: {verified}")
     return 0 if verified else 2
+
+
+def _run_promote(arguments: argparse.Namespace) -> int:
+    manifest = create_promotion_bundle(
+        arguments.plan,
+        arguments.policy,
+        arguments.baseline,
+        arguments.assurance,
+        arguments.git_commit,
+        arguments.output,
+    )
+    print(f"Promotion digest: {manifest.digest}")
+    return 0
+
+
+def _run_verify_promotion(arguments: argparse.Namespace) -> int:
+    manifest = verify_promotion_bundle(arguments.promotion, arguments.git_commit)
+    print(f"Promotion verified: {manifest.digest}")
+    return 0
 
 
 def _inventory(arguments: argparse.Namespace):
@@ -470,6 +494,24 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--evidence", required=True, type=Path)
     verify_parser.set_defaults(handler=_run_verify_assurance)
 
+    promote_parser = subparsers.add_parser(
+        "promote", help="create an offline immutable Buildkite promotion bundle"
+    )
+    promote_parser.add_argument("--plan", required=True, type=Path)
+    promote_parser.add_argument("--policy", required=True, type=Path)
+    promote_parser.add_argument("--baseline", required=True, type=Path)
+    promote_parser.add_argument("--assurance", required=True, type=Path)
+    promote_parser.add_argument("--git-commit", required=True)
+    promote_parser.add_argument("--output", required=True, type=Path)
+    promote_parser.set_defaults(handler=_run_promote)
+
+    verify_promotion_parser = subparsers.add_parser(
+        "verify-promotion", help="verify an offline promotion bundle"
+    )
+    verify_promotion_parser.add_argument("--promotion", required=True, type=Path)
+    verify_promotion_parser.add_argument("--git-commit", required=True)
+    verify_promotion_parser.set_defaults(handler=_run_verify_promotion)
+
     deploy_parser = subparsers.add_parser(
         "deploy",
         help="execute one explicitly digest-approved immutable plan",
@@ -512,6 +554,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         OSError,
         ProviderError,
         PlanAssuranceError,
+        PromotionError,
         SafetyError,
         SecretError,
         ValidationError,

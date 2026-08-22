@@ -40,3 +40,8 @@ The personal lab may place logical zones on one MacBook and a CML mini-PC. This
 does not reproduce production network segmentation, hardware roots of trust,
 high availability, enterprise identity governance, scale, or operational staffing.
 The reference implementation must not be promoted to production unchanged.
+## Buildkite 7A residual risks
+
+7A does not establish GitHub main protection or cryptographic Buildkite job
+identity. OIDC, OpenBao JWT federation, and live deployment authorization are
+explicit 7B/7C controls; promotion artifacts contain no credentials.

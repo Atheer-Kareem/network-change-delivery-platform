@@ -6,6 +6,7 @@ import argparse
 import os
 from collections.abc import Sequence
 from importlib.metadata import version
+from io import TextIOWrapper
 from pathlib import Path
 
 import yaml
@@ -56,6 +57,14 @@ def _write_new_fleet_plan(path: Path, value: str) -> None:
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         stream.write(value)
     path.chmod(0o600)
+
+
+def _reserve_fleet_evidence(path: Path) -> TextIOWrapper:
+    """Exclusively reserve the final evidence inode before any device operation."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    return os.fdopen(descriptor, "w", encoding="utf-8")
 
 
 def _load_change(path: Path) -> InterfaceDescriptionIntent:
@@ -201,22 +210,22 @@ def _run_fleet_plan(arguments: argparse.Namespace) -> int:
 
 
 def _run_fleet_deploy(arguments: argparse.Namespace) -> int:
-    _require_unused_fleet_plan_path(arguments.report_json)
-    plan = _load_fleet_plan(arguments.plan)
-    inventory = NetBoxInventoryProvider()
-    secrets = OpenBaoSecretProvider()
-    adapter = MultiVendorAdapter()
-    record = deploy_fleet(
-        plan,
-        arguments.approve_digest,
-        inventory,
-        secrets,
-        adapter,
-        adapter,
-    )
-    _write_new_fleet_plan(
-        arguments.report_json, record.model_dump_json(indent=2) + "\n"
-    )
+    with _reserve_fleet_evidence(arguments.report_json) as evidence:
+        plan = _load_fleet_plan(arguments.plan)
+        inventory = NetBoxInventoryProvider()
+        secrets = OpenBaoSecretProvider()
+        adapter = MultiVendorAdapter()
+        record = deploy_fleet(
+            plan,
+            arguments.approve_digest,
+            inventory,
+            secrets,
+            adapter,
+            adapter,
+        )
+        evidence.write(record.model_dump_json(indent=2) + "\n")
+        evidence.flush()
+        os.fsync(evidence.fileno())
     attempted = sum(member.attempted for member in record.members)
     succeeded = sum(
         member.child_record is not None

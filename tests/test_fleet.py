@@ -245,6 +245,21 @@ def test_all_compliant_fleet_has_observations_but_no_artifact() -> None:
     )
 
 
+def test_fleet_deployment_plan_rejects_crafted_all_compliant_artifact() -> None:
+    plan = make_plan().plan
+    assert plan is not None
+    payload = plan.model_dump(mode="json")
+    for member in payload["members"]:
+        member["classification"] = "COMPLIANT"
+        member["current_description"] = DESIRED
+        member["desired_description"] = DESIRED
+        member["child_plan"] = None
+    payload["canaries"] = []
+    payload["waves"] = []
+    with pytest.raises(ValidationError, match="at least one deployable"):
+        FleetDeploymentPlan.model_validate(payload)
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

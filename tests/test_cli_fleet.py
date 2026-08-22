@@ -1,5 +1,6 @@
 """Offline fleet planning and execution CLI tests."""
 
+import os
 import stat
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from test_fleet_execution import execute
 
 from network_change_delivery import cli
 from network_change_delivery.models import (
+    FleetChangeRecord,
     FleetDeploymentPlan,
     FleetFinalOutcome,
     InterfaceState,
@@ -247,7 +249,7 @@ def test_existing_fleet_report_blocks_before_plan_or_provider_contact(
     assert sentinel.read_text(encoding="utf-8") == "sentinel-content"
 
 
-def test_fleet_report_exclusive_create_loses_race_without_overwrite(
+def test_fleet_report_is_reserved_before_deployment_and_cannot_be_stolen(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -261,12 +263,17 @@ def test_fleet_report_exclusive_create_loses_race_without_overwrite(
     monkeypatch.setattr(cli, "OpenBaoSecretProvider", lambda: object())
     monkeypatch.setattr(cli, "MultiVendorAdapter", lambda: object())
 
-    def raced_deploy(*_args):
-        report.write_text("racing-sentinel", encoding="utf-8")
+    def reserved_deploy(*_args):
+        assert report.exists()
+        assert stat.S_IMODE(report.stat().st_mode) == 0o600
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        with pytest.raises(FileExistsError):
+            descriptor = os.open(report, flags, 0o600)
+            os.close(descriptor)
         return record
 
-    monkeypatch.setattr(cli, "deploy_fleet", raced_deploy)
-    with pytest.raises(SystemExit) as caught:
+    monkeypatch.setattr(cli, "deploy_fleet", reserved_deploy)
+    assert (
         cli.main(
             [
                 "fleet-deploy",
@@ -280,8 +287,12 @@ def test_fleet_report_exclusive_create_loses_race_without_overwrite(
                 str(report),
             ]
         )
-    assert caught.value.code == 2
-    assert report.read_text(encoding="utf-8") == "racing-sentinel"
+        == 0
+    )
+    persisted = FleetChangeRecord.model_validate_json(
+        report.read_text(encoding="utf-8")
+    )
+    assert persisted == record
 
 
 @pytest.mark.parametrize("existing_kind", ["file", "symlink"])

@@ -498,3 +498,130 @@ def test_fleet_change_record_rejects_tampered_evidence(mutation: str) -> None:
         }
     with pytest.raises(ValidationError):
         FleetChangeRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_preflight",
+        "duplicate_preflight",
+        "wrong_preflight_target",
+        "wrong_preflight_identity",
+        "wrong_preflight_classification",
+        "reordered_preflight",
+        "missing_final",
+        "duplicate_final",
+        "wrong_final_identity",
+        "wrong_final_classification",
+        "reordered_final",
+        "one_member_final",
+    ],
+)
+def test_fleet_record_binds_read_only_evidence_to_complete_frozen_plan(
+    mutation: str,
+) -> None:
+    _plan, record, _deployer, _collector = execute()
+    payload = record.model_dump(mode="json")
+    if mutation == "missing_preflight":
+        payload["preflight"]["members"].pop()
+    elif mutation == "duplicate_preflight":
+        payload["preflight"]["members"][-1] = payload["preflight"]["members"][0]
+    elif mutation == "wrong_preflight_target":
+        payload["preflight"]["members"][0]["target"] = "wrong-target"
+    elif mutation == "wrong_preflight_identity":
+        payload["preflight"]["members"][0]["inventory_object_id"] = (
+            "netbox:dcim.device:999"
+        )
+    elif mutation == "wrong_preflight_classification":
+        payload["preflight"]["members"][0]["classification"] = "COMPLIANT"
+    elif mutation == "reordered_preflight":
+        payload["preflight"]["members"].reverse()
+    elif mutation == "missing_final":
+        payload["final_validation"]["members"].pop()
+    elif mutation == "duplicate_final":
+        payload["final_validation"]["members"][-1] = payload["final_validation"][
+            "members"
+        ][0]
+    elif mutation == "wrong_final_identity":
+        payload["final_validation"]["members"][0]["inventory_interface_object_id"] = (
+            "netbox:dcim.interface:999"
+        )
+    elif mutation == "wrong_final_classification":
+        payload["final_validation"]["members"][0]["classification"] = "COMPLIANT"
+    elif mutation == "reordered_final":
+        payload["final_validation"]["members"].reverse()
+    else:
+        payload["final_validation"]["members"] = payload["final_validation"]["members"][
+            :1
+        ]
+    with pytest.raises(ValidationError):
+        FleetChangeRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "tampered"),
+    [
+        ("change_id", "CHG-WRONG"),
+        ("plan_digest", "sha256:" + "f" * 64),
+        ("approval_digest", "sha256:" + "f" * 64),
+        ("target", "wrong-target"),
+        ("inventory_source", "local_yaml"),
+        ("inventory_object_id", "netbox:dcim.device:999"),
+        ("inventory_interface_object_id", "netbox:dcim.interface:999"),
+        ("credential_source", "environment"),
+        ("credential_reference", "environment:NCDP_DEVICE_USERNAME/PASSWORD"),
+        ("host", "192.0.2.250"),
+        ("port", 2222),
+        ("expected_hostname", "wrong-hostname"),
+        ("platform", "junos"),
+        ("interface", "wrong-interface"),
+        ("previous_description", "wrong-previous"),
+        ("desired_description", "wrong-desired"),
+        ("transaction_strategy", "junos_commit_confirmed"),
+    ],
+)
+def test_fleet_record_binds_every_child_authorization_field(
+    field: str,
+    tampered: object,
+) -> None:
+    _plan, record, _deployer, _collector = execute()
+    payload = record.model_dump(mode="json")
+    attempted = next(member for member in payload["members"] if member["attempted"])
+    attempted["child_record"][field] = tampered
+    with pytest.raises(ValidationError):
+        FleetChangeRecord.model_validate(payload)
+
+
+def test_failed_member_preflight_cannot_omit_frozen_members() -> None:
+    plan = make_plan().plan
+    assert plan is not None
+    descriptions = {item[0].name: "old" for item in selected_four()}
+    descriptions["router-13"] = "changed-after-approval"
+    record = deploy_fleet(
+        plan,
+        plan.digest,
+        FleetInventory(selected_four()),
+        FleetSecrets(),
+        FleetCollector(descriptions),
+        object(),
+        child_deployer=RecordingDeployer(),
+    )
+    assert record.final_outcome is FleetFinalOutcome.BLOCKED
+    assert len(record.preflight.members) == len(plan.members)
+    payload = record.model_dump(mode="json")
+    payload["preflight"]["members"].pop(0)
+    with pytest.raises(ValidationError, match="does not cover frozen fleet"):
+        FleetChangeRecord.model_validate(payload)
+
+
+def test_failed_member_final_validation_cannot_omit_frozen_members() -> None:
+    _plan, record, _deployer, _collector = execute()
+    payload = record.model_dump(mode="json")
+    payload["final_outcome"] = "FINAL_VALIDATION_FAILED"
+    payload["final_validation"]["succeeded"] = False
+    payload["final_validation"]["members"][0]["succeeded"] = False
+    valid_failure = FleetChangeRecord.model_validate(payload)
+    assert valid_failure.final_outcome is FleetFinalOutcome.FINAL_VALIDATION_FAILED
+    payload["final_validation"]["members"].pop()
+    with pytest.raises(ValidationError, match="does not cover frozen fleet"):
+        FleetChangeRecord.model_validate(payload)

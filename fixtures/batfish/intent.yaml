@@ -1,0 +1,10 @@
+subject_digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+expected_nodes:
+  - core-02
+  - edge-junos-01
+  - core-03
+critical_flows:
+  - source_node: core-02
+    source_ip: 10.6.2.2
+    destination_ip: 10.6.3.3
+require_no_differential_reachability: true

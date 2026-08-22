@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from importlib.metadata import version
 from io import TextIOWrapper
 from pathlib import Path
@@ -13,6 +14,16 @@ import yaml
 from pydantic import ValidationError
 
 from network_change_delivery.ansible_adapter import ProviderError
+from network_change_delivery.assurance import (
+    AssuranceEvidence,
+    AssuranceOutcome,
+    AssuranceProviderError,
+    BatfishAssuranceAdapter,
+    BatfishAssuranceIntent,
+    InvariantResult,
+    evaluate_assurance,
+    prepare_snapshot,
+)
 from network_change_delivery.fleet import FleetSafetyError, deploy_fleet, plan_fleet
 from network_change_delivery.inventory import (
     InventoryError,
@@ -83,6 +94,80 @@ def _load_fleet_change(path: Path) -> FleetInterfaceDescriptionIntent:
 
 def _load_fleet_plan(path: Path) -> FleetDeploymentPlan:
     return FleetDeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _reserve_assurance_evidence(path: Path) -> TextIOWrapper:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    return os.fdopen(descriptor, "w", encoding="utf-8")
+
+
+def _load_assurance_intent(path: Path) -> BatfishAssuranceIntent:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return BatfishAssuranceIntent.model_validate(payload)
+
+
+def _blocked_assurance_evidence(
+    intent: BatfishAssuranceIntent,
+    baseline_digest: str,
+    candidate_digest: str,
+    message: str,
+) -> AssuranceEvidence:
+    return AssuranceEvidence(
+        generated_at=datetime.now(UTC),
+        subject_digest=intent.subject_digest,
+        pybatfish_version="unknown",
+        baseline_snapshot_digest=baseline_digest,
+        candidate_snapshot_digest=candidate_digest,
+        expected_nodes=tuple(sorted(intent.expected_nodes)),
+        baseline_parse=None,
+        candidate_parse=None,
+        critical_flows=(),
+        invariants=(InvariantResult(name="provider", passed=False, detail=message),),
+        failure_reason=message,
+        outcome=AssuranceOutcome.BLOCKED,
+    )
+
+
+def _run_assure(arguments: argparse.Namespace) -> int:
+    # Input errors are reported without reserving an evidence artifact.
+    intent = _load_assurance_intent(arguments.intent)
+    with (
+        prepare_snapshot(arguments.baseline) as prepared_baseline,
+        prepare_snapshot(arguments.candidate) as prepared_candidate,
+    ):
+        baseline = prepared_baseline.manifest
+        candidate = prepared_candidate.manifest
+        with _reserve_assurance_evidence(arguments.report_json) as evidence:
+            try:
+                observation = BatfishAssuranceAdapter().analyze(
+                    prepared_baseline.root, prepared_candidate.root, intent
+                )
+                result = evaluate_assurance(intent, baseline, candidate, observation)
+            except (OSError, ValueError, AssuranceProviderError) as error:
+                result = _blocked_assurance_evidence(
+                    intent, baseline.digest, candidate.digest, str(error)
+                )
+            evidence.write(result.model_dump_json(indent=2) + "\n")
+            evidence.flush()
+            os.fsync(evidence.fileno())
+    print(f"Subject digest: {result.subject_digest}")
+    print(f"Baseline snapshot digest: {result.baseline_snapshot_digest}")
+    print(f"Candidate snapshot digest: {result.candidate_snapshot_digest}")
+    parsed_nodes = len(result.candidate_parse.nodes) if result.candidate_parse else 0
+    print(f"Parsed node count: {parsed_nodes}")
+    issue_count = sum(
+        summary.initialization_issue_count
+        for summary in (result.baseline_parse, result.candidate_parse)
+        if summary is not None
+    )
+    print(f"Initialization issues: {issue_count}")
+    print(f"Critical flows: {len(result.critical_flows)}")
+    print(f"Differential changed-flow count: {result.differential_changed_flow_count}")
+    print(f"Final assurance outcome: {result.outcome}")
+    print(f"Evidence: {arguments.report_json}")
+    return 0 if result.outcome is AssuranceOutcome.PASSED else 2
 
 
 def _inventory(arguments: argparse.Namespace):
@@ -308,6 +393,17 @@ def build_parser() -> argparse.ArgumentParser:
     fleet_deploy_parser.add_argument("--openbao", required=True, action="store_true")
     fleet_deploy_parser.add_argument("--report-json", required=True, type=Path)
     fleet_deploy_parser.set_defaults(handler=_run_fleet_deploy)
+
+    assure_parser = subparsers.add_parser(
+        "assure",
+        help="run offline Batfish assurance over two snapshots",
+    )
+    assure_parser.add_argument("--intent", required=True, type=Path)
+    assure_parser.add_argument("--baseline", required=True, type=Path)
+    assure_parser.add_argument("--candidate", required=True, type=Path)
+    assure_parser.add_argument("--report-json", required=True, type=Path)
+    assure_parser.add_argument("--batfish", required=True, action="store_true")
+    assure_parser.set_defaults(handler=_run_assure)
 
     deploy_parser = subparsers.add_parser(
         "deploy",

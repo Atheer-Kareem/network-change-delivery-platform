@@ -5,9 +5,64 @@ steps:
       - docker build --target quality --tag ncdp-quality:${BUILDKITE_BUILD_NUMBER} .
       - |
         BASE_BRANCH="${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
-        git fetch --no-tags origin \
-          "${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
-        git diff --check \
-          "$(git merge-base HEAD "origin/${BASE_BRANCH}")..HEAD"
+        git fetch --no-tags origin "${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
+        if [[ -n "${BUILDKITE_PULL_REQUEST:-}" && "${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
+          git diff --check "$(git merge-base HEAD "origin/${BASE_BRANCH}")..HEAD"
+        else
+          git diff --check HEAD^..HEAD
+        fi
     agents:
-      queue: default
+      queue: ncdp-validation
+
+  - label: ":white_check_mark: pipeline contract"
+    key: pipeline-contract
+    depends_on: quality
+    commands:
+      - >-
+        UV_CACHE_DIR=/tmp/ncdp-uv-cache uv run pytest tests/test_promotion.py
+        tests/test_buildkite_policy.py tests/test_buildkite_pipeline.py
+        tests/test_cli_buildkite_gate.py -q
+      - buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run --format yaml --reject-secrets --reject-parse-warnings > /dev/null
+    agents:
+      queue: ncdp-validation
+
+  - label: ":package: promotion"
+    key: promotion
+    depends_on:
+      - quality
+      - pipeline-contract
+    if: build.branch == "main" && build.pull_request.id == null
+    command: .buildkite/scripts/promotion.sh
+    agents:
+      queue: ncdp-validation
+    concurrency: 1
+    concurrency_group: ncdp/batfish-promotion
+
+  - block: ":lock: authorize exact promotion"
+    key: deployment-approval
+    depends_on: promotion
+    if: build.branch == "main" && build.pull_request.id == null
+    prompt: "Approve this exact immutable plan, assurance record, and promotion digest."
+    fields:
+      - text: "Approved plan digest"
+        key: approved-plan-digest
+        required: true
+        format: "sha256:[0-9a-f]{64}"
+      - text: "Approved assurance digest"
+        key: approved-assurance-digest
+        required: true
+        format: "sha256:[0-9a-f]{64}"
+      - text: "Approved promotion digest"
+        key: approved-promotion-digest
+        required: true
+        format: "sha256:[0-9a-f]{64}"
+
+  - label: ":lock: deployment gate"
+    key: deploy-gate
+    depends_on: deployment-approval
+    if: build.branch == "main" && build.pull_request.id == null
+    command: scripts/buildkite/deployment_gate.sh
+    agents:
+      queue: ncdp-deploy
+    concurrency: 1
+    concurrency_group: ncdp/network-change-deployment

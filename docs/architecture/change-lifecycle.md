@@ -46,3 +46,9 @@ pre-change state and plan, subsequent approved changes, current desired state,
 and live state, then produces a safe inverse or blocks on conflict. Git revert is
 history manipulation, not device-change authorization. Monitoring continues
 independently after pipeline completion.
+## Promotion before deployment
+
+The 7A promotion stage packages verified immutable artifacts and requires human
+approval of their exact digests. The serialized deployment-gate verifies the
+bundle and stops before any device operation. Live enforcement is deferred to
+Increment 7C.

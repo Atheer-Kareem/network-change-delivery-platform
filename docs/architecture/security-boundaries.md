@@ -42,3 +42,8 @@ may be used.
 The three zones may share physical hardware in the personal lab. Containers and
 services on one MacBook provide logical separation only; they are not equivalent
 to production host, network, identity, or administrative isolation.
+## Buildkite promotion boundary
+
+Increment 7A promotion bundles bind exact commit, plan, policy, baseline, and
+PASSED assurance bytes. The deployment gate performs offline verification only.
+Environment variables are not Buildkite identity proof; OIDC federation is 7B.

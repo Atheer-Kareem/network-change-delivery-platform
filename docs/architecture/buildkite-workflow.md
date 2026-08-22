@@ -1,8 +1,11 @@
 # Buildkite workflow
 
 The 7A DAG is `quality` → `pipeline-contract` → `promotion` →
-`deployment-approval` → serialized `deploy-gate`. Validation uses
-`ncdp-validation`; the gate uses `ncdp-deploy` with concurrency group
+`deployment-approval` → serialized `deploy-gate`. `quality` is a visible group:
+one step builds a frozen `quality-base` Docker environment, then separate steps
+run the committed-diff, Ruff, pytest, ansible-lint, and package checks. The five
+tool checks reuse that exact build image. Validation uses `ncdp-validation`; the
+gate uses `ncdp-deploy` with concurrency group
 `ncdp/network-change-deployment` and limit one.
 
 Pull requests run only the shared validation steps. Promotion and approval are

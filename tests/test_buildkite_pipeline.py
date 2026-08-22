@@ -15,7 +15,52 @@ def test_pipeline_contract() -> None:
         "deployment-approval",
         "deploy-gate",
     }
-    assert steps["quality"]["agents"]["queue"] == "ncdp-validation"
+    quality = steps["quality"]
+    assert quality["group"] == ":white_check_mark: quality"
+    assert quality["key"] == "quality"
+    quality_steps = {step["key"]: step for step in quality["steps"]}
+    assert set(quality_steps) == {
+        "quality-env",
+        "quality-committed-diff",
+        "quality-ruff-lint",
+        "quality-ruff-format",
+        "quality-pytest",
+        "quality-ansible-lint",
+        "quality-package-build",
+    }
+    assert all(
+        step["agents"]["queue"] == "ncdp-validation" for step in quality_steps.values()
+    )
+
+    environment = quality_steps["quality-env"]["command"]
+    assert environment == (
+        "docker build --target quality-base --tag "
+        "ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} ."
+    )
+
+    checks = {
+        "quality-ruff-lint": "uv run ruff check .",
+        "quality-ruff-format": "uv run ruff format --check .",
+        "quality-pytest": "uv run pytest",
+        "quality-ansible-lint": "uv run ansible-lint",
+        "quality-package-build": "uv build",
+    }
+    for key, validation_command in checks.items():
+        step = quality_steps[key]
+        assert step["depends_on"] == "quality-env"
+        assert step["command"] == (
+            "docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
+            f"{validation_command}"
+        )
+
+    committed_diff = quality_steps["quality-committed-diff"]["command"]
+    assert committed_diff.count("git --no-pager diff --check") == 2
+    assert "git diff --check" not in committed_diff
+    assert committed_diff.count("$${BUILDKITE_PULL_REQUEST") == 3
+    assert "${BUILDKITE_PULL_REQUEST" not in committed_diff.replace(
+        "$${BUILDKITE_PULL_REQUEST", ""
+    )
+
     assert steps["pipeline-contract"]["agents"]["queue"] == "ncdp-validation"
     assert steps["promotion"]["agents"]["queue"] == "ncdp-validation"
     assert steps["promotion"]["concurrency"] == 1
@@ -35,12 +80,12 @@ def test_pipeline_contract() -> None:
     assert steps["promotion"]["depends_on"] == ["quality", "pipeline-contract"]
     assert steps["deployment-approval"]["depends_on"] == "promotion"
     assert steps["deploy-gate"]["depends_on"] == "deployment-approval"
-    quality = "\n".join(steps["quality"]["commands"])
-    assert quality.count("git --no-pager diff --check") == 2
-    assert "git diff --check" not in quality
-
     assert len(steps["pipeline-contract"]["commands"]) == 1
     contract = " ".join(steps["pipeline-contract"]["commands"])
+    assert contract == (
+        "buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run "
+        "--format yaml --reject-secrets --reject-parse-warnings > /dev/null"
+    )
     assert "uv run" not in contract
     assert "--dry-run" in contract
     assert "--format yaml" in contract

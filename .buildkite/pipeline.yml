@@ -1,18 +1,63 @@
 steps:
-  - label: ":docker: quality"
+  - group: ":white_check_mark: quality"
     key: quality
-    commands:
-      - docker build --target quality --tag ncdp-quality:$${BUILDKITE_BUILD_NUMBER} .
-      - |
-        BASE_BRANCH="$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
-        git fetch --no-tags origin "$${BASE_BRANCH}:refs/remotes/origin/$${BASE_BRANCH}"
-        if [[ -n "$${BUILDKITE_PULL_REQUEST:-}" && "${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
-          git --no-pager diff --check "$(git merge-base HEAD "origin/$${BASE_BRANCH}")..HEAD"
-        else
-          git --no-pager diff --check HEAD^..HEAD
-        fi
-    agents:
-      queue: ncdp-validation
+    steps:
+      - label: ":docker: build quality environment"
+        key: quality-env
+        command: docker build --target quality-base --tag ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} .
+        agents:
+          queue: ncdp-validation
+
+      - label: ":git: committed diff"
+        key: quality-committed-diff
+        command: |
+          BASE_BRANCH="$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
+          git fetch --no-tags origin \
+            "$${BASE_BRANCH}:refs/remotes/origin/$${BASE_BRANCH}"
+          if [[ -n "$${BUILDKITE_PULL_REQUEST:-}" \
+             && "$${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
+            git --no-pager diff --check \
+              "$(git merge-base HEAD "origin/$${BASE_BRANCH}")..HEAD"
+          else
+            git --no-pager diff --check HEAD^..HEAD
+          fi
+        agents:
+          queue: ncdp-validation
+
+      - label: ":mag: Ruff lint"
+        key: quality-ruff-lint
+        depends_on: quality-env
+        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff check .
+        agents:
+          queue: ncdp-validation
+
+      - label: ":art: Ruff format"
+        key: quality-ruff-format
+        depends_on: quality-env
+        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff format --check .
+        agents:
+          queue: ncdp-validation
+
+      - label: ":pytest: pytest"
+        key: quality-pytest
+        depends_on: quality-env
+        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run pytest
+        agents:
+          queue: ncdp-validation
+
+      - label: ":ansible: ansible-lint"
+        key: quality-ansible-lint
+        depends_on: quality-env
+        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ansible-lint
+        agents:
+          queue: ncdp-validation
+
+      - label: ":package: package build"
+        key: quality-package-build
+        depends_on: quality-env
+        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv build
+        agents:
+          queue: ncdp-validation
 
   - label: ":white_check_mark: pipeline contract"
     key: pipeline-contract

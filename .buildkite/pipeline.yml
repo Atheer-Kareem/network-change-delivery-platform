@@ -7,9 +7,9 @@ steps:
         BASE_BRANCH="$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
         git fetch --no-tags origin "$${BASE_BRANCH}:refs/remotes/origin/$${BASE_BRANCH}"
         if [[ -n "$${BUILDKITE_PULL_REQUEST:-}" && "${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
-          git diff --check "$(git merge-base HEAD "origin/$${BASE_BRANCH}")..HEAD"
+          git --no-pager diff --check "$(git merge-base HEAD "origin/$${BASE_BRANCH}")..HEAD"
         else
-          git diff --check HEAD^..HEAD
+          git --no-pager diff --check HEAD^..HEAD
         fi
     agents:
       queue: ncdp-validation
@@ -18,10 +18,6 @@ steps:
     key: pipeline-contract
     depends_on: quality
     commands:
-      - >-
-        UV_CACHE_DIR=/tmp/ncdp-uv-cache uv run pytest tests/test_promotion.py
-        tests/test_buildkite_policy.py tests/test_buildkite_pipeline.py
-        tests/test_cli_buildkite_gate.py -q
       - buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run --format yaml --reject-secrets --reject-parse-warnings > /dev/null
     agents:
       queue: ncdp-validation

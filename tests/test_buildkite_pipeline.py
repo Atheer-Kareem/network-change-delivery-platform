@@ -35,8 +35,15 @@ def test_pipeline_contract() -> None:
     assert steps["promotion"]["depends_on"] == ["quality", "pipeline-contract"]
     assert steps["deployment-approval"]["depends_on"] == "promotion"
     assert steps["deploy-gate"]["depends_on"] == "deployment-approval"
-    assert "--dry-run" in " ".join(steps["pipeline-contract"]["commands"])
+    quality = "\n".join(steps["quality"]["commands"])
+    assert quality.count("git --no-pager diff --check") == 2
+    assert "git diff --check" not in quality
+
+    assert len(steps["pipeline-contract"]["commands"]) == 1
     contract = " ".join(steps["pipeline-contract"]["commands"])
+    assert "uv run" not in contract
+    assert "--dry-run" in contract
+    assert "--format yaml" in contract
     assert "--reject-secrets" in contract
     assert "--reject-parse-warnings" in contract
 

@@ -134,6 +134,16 @@ class JunosTransaction:
         self._commit_result: ExecutionResult | None = None
         self.close_failed = False
 
+    @property
+    def commit_result(self) -> ExecutionResult | None:
+        """Return the bounded result once a commit-confirmed attempt is classified."""
+        return self._commit_result
+
+    @property
+    def commit_attempted(self) -> bool:
+        """Return whether the commit-confirmed RPC boundary was crossed."""
+        return self._commit_attempted
+
     def __enter__(self) -> JunosTransaction:
         try:
             self._config.__enter__()
@@ -165,7 +175,7 @@ class JunosTransaction:
         try:
             self._config.__exit__(exc_type, exc, traceback)
         except Exception:
-            if self._commit_result is not None:
+            if self._commit_attempted and self._commit_result is not None:
                 self.close_failed = True
                 return
             raise ProviderError("Junos candidate cleanup or unlock failed") from None
@@ -319,11 +329,24 @@ class JunosPyEZAdapter:
         credentials: DeviceCredentials,
         artifact: JunosConfigArtifact,
     ) -> Any:
-        with (
-            self._session(device, credentials) as connection,
-            JunosTransaction(connection, self._config_factory, artifact) as transaction,
-        ):
-            yield transaction
+        transaction: JunosTransaction | None = None
+        try:
+            with (
+                self._session(device, credentials) as connection,
+                JunosTransaction(
+                    connection, self._config_factory, artifact
+                ) as transaction,
+            ):
+                yield transaction
+        except ProviderError:
+            if (
+                transaction is not None
+                and transaction.commit_attempted
+                and transaction.commit_result is not None
+            ):
+                transaction.close_failed = True
+                return
+            raise
 
     def discover(
         self, device: InventoryDevice, credentials: DeviceCredentials
@@ -419,32 +442,78 @@ class JunosPyEZAdapter:
     def confirm(
         self, device: InventoryDevice, credentials: DeviceCredentials
     ) -> ExecutionResult:
+        result: ExecutionResult | None = None
+        attempted = False
+        cleanup_failed = False
         try:
-            with (
-                self._session(device, credentials) as connection,
-                self._config_factory(connection, mode="exclusive") as config,
-            ):
-                confirmed = config.commit_check()
-        except (ConnectClosedError, ConnectError, RpcTimeoutError):
-            return ExecutionResult(
-                disposition=ExecutionDisposition.AMBIGUOUS,
-                message="confirmation result is ambiguous; final persistence uncertain",
-                provider="pyez/config-exclusive",
+            with self._session(device, credentials) as connection:
+                config = None
+                entered = False
+                try:
+                    config = self._config_factory(connection, mode="exclusive")
+                    config.__enter__()
+                    entered = True
+                except Exception:
+                    result = _confirmation_failed()
+                if entered:
+                    attempted = True
+                    try:
+                        confirmed = config.commit_check()
+                    except (ConnectClosedError, ConnectError, RpcTimeoutError):
+                        result = _confirmation_ambiguous()
+                    except (CommitError, RpcError):
+                        result = _confirmation_failed()
+                    except Exception:
+                        result = _confirmation_ambiguous()
+                    else:
+                        result = (
+                            _confirmation_succeeded()
+                            if confirmed is True
+                            else _confirmation_failed()
+                        )
+                    try:
+                        config.__exit__(None, None, None)
+                    except Exception:
+                        cleanup_failed = True
+        except ProviderError:
+            cleanup_failed = True
+            if result is None:
+                result = (
+                    _confirmation_ambiguous() if attempted else _confirmation_failed()
+                )
+        if result is None:
+            return _confirmation_failed()
+        if cleanup_failed and result.disposition is ExecutionDisposition.SUCCEEDED:
+            return result.model_copy(
+                update={
+                    "message": (
+                        "pending commit confirmed with known success; "
+                        "session cleanup warning"
+                    )
+                }
             )
-        except (ProviderError, RpcError):
-            return ExecutionResult(
-                disposition=ExecutionDisposition.FAILED,
-                message="confirmation failed; automatic rollback remains expected",
-                provider="pyez/config-exclusive",
-            )
-        if confirmed is not True:
-            return ExecutionResult(
-                disposition=ExecutionDisposition.FAILED,
-                message="confirmation did not report known success",
-                provider="pyez/config-exclusive",
-            )
-        return ExecutionResult(
-            disposition=ExecutionDisposition.SUCCEEDED,
-            message="pending commit confirmed with known success",
-            provider="pyez/config-exclusive",
-        )
+        return result
+
+
+def _confirmation_failed() -> ExecutionResult:
+    return ExecutionResult(
+        disposition=ExecutionDisposition.FAILED,
+        message="confirmation failed; automatic rollback remains expected",
+        provider="pyez/config-exclusive",
+    )
+
+
+def _confirmation_ambiguous() -> ExecutionResult:
+    return ExecutionResult(
+        disposition=ExecutionDisposition.AMBIGUOUS,
+        message="confirmation result is ambiguous; final persistence uncertain",
+        provider="pyez/config-exclusive",
+    )
+
+
+def _confirmation_succeeded() -> ExecutionResult:
+    return ExecutionResult(
+        disposition=ExecutionDisposition.SUCCEEDED,
+        message="pending commit confirmed with known success",
+        provider="pyez/config-exclusive",
+    )

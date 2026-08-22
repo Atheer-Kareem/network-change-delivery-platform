@@ -9,7 +9,7 @@ from xml.etree import ElementTree
 
 import httpx
 import pytest
-from jnpr.junos.exception import RpcTimeoutError
+from jnpr.junos.exception import RpcError, RpcTimeoutError
 from pydantic import ValidationError
 
 import network_change_delivery.junos_adapter as junos_module
@@ -212,7 +212,10 @@ class FakeConnection:
         self,
         reply: ElementTree.Element | None = None,
         operational: ElementTree.Element | None = None,
+        exit_error: Exception | None = None,
     ) -> None:
+        self.exit_error = exit_error
+        self.exit_calls = 0
         self.facts = {"hostname": "edge-junos-01", "version": "23.2R1"}
         self.rpc = SimpleNamespace(
             get_interface_information=lambda **_kwargs: (
@@ -238,6 +241,9 @@ class FakeConnection:
         return self
 
     def __exit__(self, *_args: object) -> None:
+        self.exit_calls += 1
+        if self.exit_error is not None:
+            raise self.exit_error
         return None
 
 
@@ -308,9 +314,13 @@ class FakeConfig:
         self.check_result = True
         self.diff_calls = 0
         self.exit_error: Exception | None = None
+        self.enter_error: Exception | None = None
+        self.check_calls = 0
 
     def __enter__(self):
         self.calls.append("enter")
+        if self.enter_error is not None:
+            raise self.enter_error
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -333,6 +343,9 @@ class FakeConfig:
 
     def commit_check(self) -> bool:
         self.calls.append("commit_check")
+        self.check_calls += 1
+        if isinstance(self.check_result, Exception):
+            raise self.check_result
         return self.check_result
 
     def commit(self, **kwargs: object):
@@ -564,6 +577,107 @@ def test_post_attempt_unlock_failure_is_suppressed_and_phase_recorded(
     assert config.rollback_calls == []
 
 
+def test_precommit_device_close_failure_is_bounded(monkeypatch) -> None:
+    raw = "user=secret password=secret raw device close"
+    connection = FakeConnection(exit_error=RuntimeError(raw))
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    adapter = JunosPyEZAdapter(device_factory=lambda **_kwargs: connection)
+    with (
+        pytest.raises(ProviderError) as caught,
+        adapter.transaction(
+            device(),
+            DeviceCredentials(username="u", password="p"),
+            plan().execution_artifact,
+        ),
+    ):
+        pass
+    assert raw not in str(caught.value)
+    assert raw not in repr(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("commit_result", "disposition"),
+    [
+        (False, ExecutionDisposition.FAILED),
+        (RpcTimeoutError(None, "commit", 30), ExecutionDisposition.AMBIGUOUS),
+        (True, ExecutionDisposition.SUCCEEDED),
+    ],
+)
+def test_device_close_failure_preserves_commit_result(
+    monkeypatch, commit_result: object, disposition: ExecutionDisposition
+) -> None:
+    raw = "username=secret password=secret raw NETCONF close"
+    connection = FakeConnection(candidate_reply(), exit_error=RuntimeError(raw))
+    config = FakeConfig(connection, "exclusive")
+    config.commit_result = commit_result
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    adapter = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: connection,
+        config_factory=lambda *_args, **_kwargs: config,
+    )
+    with adapter.transaction(
+        device(),
+        DeviceCredentials(username="u", password="p"),
+        plan().execution_artifact,
+    ) as transaction:
+        transaction.prepare()
+        result = transaction.commit_confirmed(5)
+    assert result.disposition is disposition
+    assert transaction.commit_result is result
+    assert transaction.close_failed is True
+    assert raw not in result.message
+    assert (
+        len(
+            [
+                call
+                for call in config.calls
+                if isinstance(call, tuple) and call[0] == "commit"
+            ]
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        ("enter", ExecutionDisposition.FAILED),
+        ("rpc", ExecutionDisposition.FAILED),
+        ("transport", ExecutionDisposition.AMBIGUOUS),
+        ("unlock_after_success", ExecutionDisposition.SUCCEEDED),
+        ("device_close_after_success", ExecutionDisposition.SUCCEEDED),
+    ],
+)
+def test_confirmation_is_phase_aware_and_never_retried(
+    monkeypatch, failure: str, expected: ExecutionDisposition
+) -> None:
+    raw = "user=secret password=secret raw confirmation RPC"
+    connection = FakeConnection(
+        exit_error=(
+            RuntimeError(raw) if failure == "device_close_after_success" else None
+        )
+    )
+    config = FakeConfig(connection, "exclusive")
+    if failure == "enter":
+        config.enter_error = RuntimeError(raw)
+    elif failure == "rpc":
+        config.check_result = RpcError(cmd=raw)
+    elif failure == "transport":
+        config.check_result = RpcTimeoutError(None, raw, 30)
+    elif failure == "unlock_after_success":
+        config.exit_error = RuntimeError(raw)
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    adapter = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: connection,
+        config_factory=lambda *_args, **_kwargs: config,
+    )
+    result = adapter.confirm(device(), DeviceCredentials(username="u", password="p"))
+    assert result.disposition is expected
+    assert config.check_calls == (0 if failure == "enter" else 1)
+    assert raw not in result.message
+    assert raw not in repr(result)
+
+
 class FakeInventory:
     def resolve(self, _target: str, _interface: str | None = None) -> InventoryDevice:
         return device()
@@ -588,6 +702,71 @@ class FakeCollector:
         if isinstance(value, Exception):
             raise value
         return value
+
+
+def test_precommit_device_close_failure_yields_bounded_blocked_record(
+    monkeypatch,
+) -> None:
+    raw = "user=secret password=secret raw precommit device close"
+    connection = FakeConnection(candidate_reply("wrong"), exit_error=RuntimeError(raw))
+    config = FakeConfig(connection, "exclusive")
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    adapter = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: connection,
+        config_factory=lambda *_args, **_kwargs: config,
+    )
+    approved = plan()
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(),
+        FakeSecrets(),
+        FakeCollector(state()),
+        adapter,
+    )
+    assert record.final_outcome is FinalOutcome.BLOCKED
+    assert raw not in record.model_dump_json()
+    assert not any(
+        isinstance(call, tuple) and call[0] == "commit" for call in config.calls
+    )
+
+
+@pytest.mark.parametrize(
+    ("commit_result", "outcome"),
+    [
+        (False, FinalOutcome.EXECUTION_FAILED),
+        (RpcTimeoutError(None, "commit", 30), FinalOutcome.AMBIGUOUS),
+        (True, FinalOutcome.AUTO_ROLLBACK_PENDING),
+    ],
+)
+def test_device_close_failure_maps_to_honest_workflow_outcome(
+    monkeypatch, commit_result: object, outcome: FinalOutcome
+) -> None:
+    raw = "user=secret password=secret raw postcommit device close"
+    connection = FakeConnection(candidate_reply(), exit_error=RuntimeError(raw))
+    config = FakeConfig(connection, "exclusive")
+    config.commit_result = commit_result
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    adapter = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: connection,
+        config_factory=lambda *_args, **_kwargs: config,
+    )
+    approved = plan()
+    collector = FakeCollector(
+        state(), state("managed-by-network-change-delivery-platform")
+    )
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(),
+        FakeSecrets(),
+        collector,
+        adapter,
+    )
+    assert record.final_outcome is outcome
+    assert collector.calls == 1
+    assert config.check_calls == 1
+    assert raw not in record.model_dump_json()
 
 
 class FakeTransaction:

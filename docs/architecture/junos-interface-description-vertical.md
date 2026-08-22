@@ -56,18 +56,22 @@ interface identity/existence, and exact desired description. A failure is
 claim recovery before later independent observation.
 
 Transaction cleanup is phase-aware. Before a commit-confirmed attempt, cleanup
-or unlock failure blocks with a bounded error. After an attempt, session-close
-failure cannot replace a known failed or ambiguous disposition. If the temporary
-commit was known successful but close/unlock fails, NCDP does not validate or
-confirm it and reports `AUTO_ROLLBACK_PENDING` so the confirmed-commit timer is
-the safety mechanism.
+or unlock failure blocks with a bounded error. After an attempt, neither Config
+unlock nor the enclosing Device/NETCONF session close can replace a known failed
+or ambiguous disposition. If the temporary commit was known successful but
+either close fails, NCDP does not validate or confirm it and reports
+`AUTO_ROLLBACK_PENDING` so the confirmed-commit timer is the safety mechanism.
 
 Successful validation opens another fresh session and confirms the pending
 commit without loading configuration. Known confirmation failure is
 `CONFIRMATION_FAILED`; uncertain confirmation is `CONFIRMATION_AMBIGUOUS`.
-Neither is retried. An ambiguous commit-confirmed result is not retried,
-confirmed, or manually rolled back; if it became active, the confirmation timer
-should restore the prior committed configuration.
+Neither is retried. Confirmation is phase-aware: failure before the RPC or a
+known RPC rejection is failed, transport uncertainty during the RPC is
+ambiguous, and a known successful response remains successful even if later
+Config unlock or Device close reports a bounded cleanup warning. An ambiguous
+commit-confirmed result is not retried, confirmed, or manually rolled back; if
+it became active, the confirmation timer should restore the prior committed
+configuration.
 
 Evidence records bounded phase results and never raw NETCONF replies, full
 configuration, candidate diff, or credentials. The first real Junos write still

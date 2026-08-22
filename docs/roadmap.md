@@ -19,8 +19,11 @@ Ordering may change when implementation evidence requires it.
    and stronger or dynamic device authorization remain later work.
 4. **Juniper vertical — in progress:** the common interface-description intent,
    direct-PyEZ exclusive candidate validation, commit-confirmed lifecycle, and
-   bounded evidence are implemented. Real vJunos digest-reviewed write acceptance
-   remains required before completion.
+   bounded evidence are implemented. Real vJunos read-only discovery and immutable
+   plan-review acceptance are recorded in the
+   [Increment 4 acceptance report](acceptance/junos-interface-description-increment-4.md).
+   Exact-digest write acceptance remains separately gated and required before
+   completion.
 5. **Fleet rollout:** frozen selectors, complete preflight, representative canaries,
    waves, overlap control, no-ops, and honest partial outcomes.
 6. **Batfish assurance:** offline parsing and behavioural invariant evidence.

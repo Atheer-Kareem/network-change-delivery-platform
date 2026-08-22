@@ -46,13 +46,13 @@ def _child_text(element: Any, name: str) -> str | None:
     return None
 
 
-def _interface_filter(interface: str | None = None) -> ElementTree.Element:
+def _interface_filter(interface: str | None = None) -> str:
     root = ElementTree.Element("configuration")
     interfaces = ElementTree.SubElement(root, "interfaces")
     if interface is not None:
         item = ElementTree.SubElement(interfaces, "interface")
         ElementTree.SubElement(item, "name").text = interface
-    return root
+    return ElementTree.tostring(root, encoding="unicode")
 
 
 def _configured_ipv4_addresses(interface: Any) -> tuple[str, ...]:

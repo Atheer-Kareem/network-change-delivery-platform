@@ -15,7 +15,11 @@ from pydantic import ValidationError
 import network_change_delivery.junos_adapter as junos_module
 from network_change_delivery.ansible_adapter import ProviderError
 from network_change_delivery.inventory import NetBoxInventoryProvider
-from network_change_delivery.junos_adapter import JunosPyEZAdapter, JunosTransaction
+from network_change_delivery.junos_adapter import (
+    JunosPyEZAdapter,
+    JunosTransaction,
+    _interface_filter,
+)
 from network_change_delivery.models import (
     DesiredDescription,
     ExecutionDisposition,
@@ -112,6 +116,16 @@ def test_arbitrary_or_control_bearing_junos_xml_is_rejected() -> None:
         )
     with pytest.raises(ValidationError):
         intent("line\nbreak")
+
+
+def test_pyez_interface_filter_is_serialized_xml() -> None:
+    assert _interface_filter() == "<configuration><interfaces /></configuration>"
+    assert (
+        ElementTree.fromstring(_interface_filter("ge-0/0/1")).findtext(
+            "./interfaces/interface/name"
+        )
+        == "ge-0/0/1"
+    )
 
 
 def test_junos_plan_binds_native_transaction_and_digest() -> None:

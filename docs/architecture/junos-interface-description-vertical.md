@@ -13,6 +13,16 @@ the exact operator-established `[host]:830` entry in the current user's standard
 `known_hosts`, verifies host keys, supplies the OpenBao username/password, and
 disables SSH key, agent, proxy-command, and user SSH-config routing fallback.
 
+Read-only discovery uses structured `get-interface-information` operational data
+as the authority for physical-interface existence and admin/oper state. Committed
+interface configuration is retrieved separately and overlays only configured
+description, family-inet addresses, and explicit disable state. An unconfigured
+physical port therefore still exists, while a configuration-only or logical-unit
+name cannot establish physical existence. `fxp0` and `em0` are independently
+protected as management interfaces in Python in addition to NetBox protection
+tags. PyEZ and ncclient failures are normalized at the adapter boundary; raw
+RPC replies and third-party exception details never enter workflow evidence.
+
 ## Candidate transaction
 
 Transactional configuration uses direct PyEZ under Python policy, as decided in
@@ -31,6 +41,12 @@ commit attempt, rollback 0 discards only NCDP's uncommitted candidate. Rollback 
 is never used. The immutable plan binds the XML artifact, transaction strategy,
 fixed five-minute timeout, and confirmation contract.
 
+The bounded diff validator recognizes only the known-safe representation of a
+description change under an existing interface or creation of the one typed
+interface stanza containing that description. Any other representation fails
+closed and must be validated against the lab before a first write. Evidence
+retains only the candidate diff SHA-256, never the raw diff or candidate.
+
 ## Validation, confirmation, and honest outcomes
 
 Known commit-confirmed success closes the transaction session. Independent
@@ -38,6 +54,13 @@ post-validation opens a fresh PyEZ/NETCONF session and verifies hostname,
 interface identity/existence, and exact desired description. A failure is
 `AUTO_ROLLBACK_PENDING`: NCDP sends no confirmation or other write and does not
 claim recovery before later independent observation.
+
+Transaction cleanup is phase-aware. Before a commit-confirmed attempt, cleanup
+or unlock failure blocks with a bounded error. After an attempt, session-close
+failure cannot replace a known failed or ambiguous disposition. If the temporary
+commit was known successful but close/unlock fails, NCDP does not validate or
+confirm it and reports `AUTO_ROLLBACK_PENDING` so the confirmed-commit timer is
+the safety mechanism.
 
 Successful validation opens another fresh session and confirms the pending
 commit without loading configuration. Known confirmation failure is

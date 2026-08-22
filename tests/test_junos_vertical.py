@@ -136,6 +136,21 @@ def test_junos_plan_binds_native_transaction_and_digest() -> None:
         assert approved.model_copy(update=change).calculated_digest() != approved.digest
 
 
+@pytest.mark.parametrize("management_interface", ["fxp0", "em0"])
+def test_junos_management_interfaces_are_independently_protected(
+    management_interface: str,
+) -> None:
+    protected_intent = intent().model_copy(update={"interface": management_interface})
+    protected_state = state().model_copy(update={"interface": management_interface})
+    with pytest.raises(ValueError, match="protected as Junos management"):
+        build_plan(
+            protected_intent,
+            device(),
+            protected_state,
+            credential=credential(),
+        )
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -193,16 +208,30 @@ def test_netbox_maps_juniper_platform_to_port_830_and_preserves_ids() -> None:
 
 
 class FakeConnection:
-    def __init__(self, reply: ElementTree.Element | None = None) -> None:
+    def __init__(
+        self,
+        reply: ElementTree.Element | None = None,
+        operational: ElementTree.Element | None = None,
+    ) -> None:
         self.facts = {"hostname": "edge-junos-01", "version": "23.2R1"}
         self.rpc = SimpleNamespace(
+            get_interface_information=lambda **_kwargs: (
+                operational
+                if operational is not None
+                else ElementTree.fromstring(
+                    "<interface-information><physical-interface>"
+                    "<name>ge-0/0/1</name><admin-status>up</admin-status>"
+                    "<oper-status>up</oper-status></physical-interface>"
+                    "</interface-information>"
+                )
+            ),
             get_config=lambda **_kwargs: (
                 reply
                 if reply is not None
                 else ElementTree.fromstring(
                     "<configuration><interfaces /></configuration>"
                 )
-            )
+            ),
         )
 
     def __enter__(self):
@@ -235,7 +264,9 @@ def test_junos_collection_normalizes_committed_interface_state(monkeypatch) -> N
     reply = ElementTree.fromstring(
         "<configuration><interfaces><interface><name>ge-0/0/1</name>"
         "<description>connected</description><disable/><unit><family><inet>"
-        "<address><name>192.0.2.1/31</name></address></inet></family></unit>"
+        "<address><name>192.0.2.1/31</name></address></inet>"
+        "<inet6><address><name>2001:db8::1/64</name></address></inet6>"
+        "</family></unit>"
         "</interface></interfaces></configuration>"
     )
     monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
@@ -249,13 +280,17 @@ def test_junos_collection_normalizes_committed_interface_state(monkeypatch) -> N
     assert observed.software_version == "23.2R1"
     assert observed.description == "connected"
     assert observed.enabled is False
+    assert observed.operational_status == "up"
     assert observed.ipv4_addresses == ("192.0.2.1/31",)
     assert observed.protected is True
 
 
 def test_junos_collection_marks_missing_exact_interface(monkeypatch) -> None:
     monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
-    adapter = JunosPyEZAdapter(device_factory=lambda **_kwargs: FakeConnection())
+    operational = ElementTree.fromstring("<interface-information />")
+    adapter = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: FakeConnection(operational=operational)
+    )
     observed = adapter.collect(
         device(), DeviceCredentials(username="u", password="p"), "ge-0/0/9"
     )
@@ -272,6 +307,7 @@ class FakeConfig:
         self.commit_result: object = True
         self.check_result = True
         self.diff_calls = 0
+        self.exit_error: Exception | None = None
 
     def __enter__(self):
         self.calls.append("enter")
@@ -279,6 +315,8 @@ class FakeConfig:
 
     def __exit__(self, *_args: object) -> None:
         self.calls.append("exit")
+        if self.exit_error is not None:
+            raise self.exit_error
 
     def diff(self):
         self.calls.append("diff")
@@ -379,6 +417,101 @@ def test_commit_check_failure_discards_candidate_without_active_write() -> None:
     )
 
 
+def test_new_interface_stanza_diff_is_narrowly_accepted() -> None:
+    connection = FakeConnection(candidate_reply())
+    config = FakeConfig(connection, "exclusive")
+
+    def diff():
+        config.diff_calls += 1
+        if config.diff_calls == 1:
+            return None
+        return (
+            "[edit interfaces]\n"
+            "+   ge-0/0/1 {\n"
+            "+       description managed-by-network-change-delivery-platform;\n"
+            "+   }"
+        )
+
+    config.diff = diff
+    with JunosTransaction(
+        connection, lambda *_a, **_k: config, plan().execution_artifact
+    ) as transaction:
+        prepared = transaction.prepare()
+    assert prepared.diff_sha256.startswith("sha256:")
+
+
+def test_operational_interface_without_config_still_exists(monkeypatch) -> None:
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    observed = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: FakeConnection()
+    ).collect(device(), DeviceCredentials(username="u", password="p"), "ge-0/0/1")
+    assert observed.exists is True
+    assert observed.description is None
+    assert observed.ipv4_addresses == ()
+    assert observed.enabled is True
+
+
+def test_config_only_interface_does_not_establish_physical_existence(
+    monkeypatch,
+) -> None:
+    configured = ElementTree.fromstring(
+        "<configuration><interfaces><interface><name>ge-0/0/9</name>"
+        "<description>configured-only</description></interface></interfaces>"
+        "</configuration>"
+    )
+    operational = ElementTree.fromstring("<interface-information />")
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    observed = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: FakeConnection(configured, operational)
+    ).collect(device(), DeviceCredentials(username="u", password="p"), "ge-0/0/9")
+    assert observed.exists is False
+    assert observed.description is None
+
+
+def test_namespaced_operational_state_normalizes_whitespace_and_admin_down(
+    monkeypatch,
+) -> None:
+    operational = ElementTree.fromstring(
+        '<rpc-reply xmlns="urn:junos"><interface-information>'
+        "<physical-interface><name>  ge-0/0/1  </name>"
+        "<admin-status> down </admin-status><oper-status> down </oper-status>"
+        "</physical-interface><logical-interface><name>ge-0/0/1.0</name>"
+        "</logical-interface></interface-information></rpc-reply>"
+    )
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    observed = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: FakeConnection(operational=operational)
+    ).collect(device(), DeviceCredentials(username="u", password="p"), "ge-0/0/1")
+    assert observed.enabled is False
+    assert observed.operational_status == "down"
+
+
+@pytest.mark.parametrize("failure_point", ["connect", "rpc"])
+def test_pyez_errors_are_bounded_without_secret_text(
+    monkeypatch, failure_point
+) -> None:
+    secret_text = "user=lab-secret password=super-secret raw-rpc=<rpc-error/>"
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lambda _d: "ok")
+    if failure_point == "connect":
+
+        def factory(**_kwargs):
+            raise RuntimeError(secret_text)
+    else:
+
+        def factory(**_kwargs):
+            connection = FakeConnection()
+            connection.rpc.get_interface_information = lambda **_k: (
+                _ for _ in ()
+            ).throw(RuntimeError(secret_text))
+            return connection
+
+    adapter = JunosPyEZAdapter(device_factory=factory)
+    with pytest.raises(ProviderError) as caught:
+        adapter.discover(device(), DeviceCredentials(username="u", password="p"))
+    assert secret_text not in str(caught.value)
+    assert secret_text not in repr(caught.value)
+
+
 @pytest.mark.parametrize(
     ("commit_result", "disposition"),
     [
@@ -402,6 +535,32 @@ def test_commit_confirmed_failure_or_ambiguity_never_retries_or_rolls_back(
     assert [
         call for call in config.calls if isinstance(call, tuple) and call[0] == "commit"
     ] == [("commit", {"confirm": 5})]
+    assert config.rollback_calls == []
+
+
+@pytest.mark.parametrize(
+    "commit_result",
+    [False, RpcTimeoutError(None, "commit", 30), True],
+)
+def test_post_attempt_unlock_failure_is_suppressed_and_phase_recorded(
+    commit_result: object,
+) -> None:
+    connection = FakeConnection(candidate_reply())
+    config = FakeConfig(connection, "exclusive")
+    config.commit_result = commit_result
+    config.exit_error = RuntimeError("username=secret raw unlock RPC")
+    transaction = JunosTransaction(
+        connection, lambda *_a, **_k: config, plan().execution_artifact
+    )
+    with transaction as active:
+        active.prepare()
+        result = active.commit_confirmed(5)
+    assert transaction.close_failed is True
+    assert result.disposition in {
+        ExecutionDisposition.FAILED,
+        ExecutionDisposition.AMBIGUOUS,
+        ExecutionDisposition.SUCCEEDED,
+    }
     assert config.rollback_calls == []
 
 
@@ -432,8 +591,9 @@ class FakeCollector:
 
 
 class FakeTransaction:
-    def __init__(self, commit: ExecutionResult) -> None:
+    def __init__(self, commit: ExecutionResult, *, close_failed: bool = False) -> None:
         self.commit = commit
+        self.close_failed = close_failed
         self.prepares = 0
         self.commits = 0
 
@@ -445,7 +605,7 @@ class FakeTransaction:
 
     def prepare(self) -> object:
         self.prepares += 1
-        return object()
+        return SimpleNamespace(diff_sha256="sha256:" + "a" * 64)
 
     def commit_confirmed(self, minutes: int) -> ExecutionResult:
         assert minutes == 5
@@ -454,8 +614,14 @@ class FakeTransaction:
 
 
 class FakeJunosProvider:
-    def __init__(self, commit: ExecutionResult, confirmation: ExecutionResult) -> None:
-        self.tx = FakeTransaction(commit)
+    def __init__(
+        self,
+        commit: ExecutionResult,
+        confirmation: ExecutionResult,
+        *,
+        close_failed: bool = False,
+    ) -> None:
+        self.tx = FakeTransaction(commit, close_failed=close_failed)
         self.confirmation = confirmation
         self.confirmations = 0
 
@@ -476,8 +642,13 @@ def run_deploy(
     *,
     commit: ExecutionDisposition = ExecutionDisposition.SUCCEEDED,
     confirmation: ExecutionDisposition = ExecutionDisposition.SUCCEEDED,
+    close_failed: bool = False,
 ):
-    provider = FakeJunosProvider(outcome_result(commit), outcome_result(confirmation))
+    provider = FakeJunosProvider(
+        outcome_result(commit),
+        outcome_result(confirmation),
+        close_failed=close_failed,
+    )
     collector = FakeCollector(state(), post)
     approved = plan()
     record = deploy_plan(
@@ -498,6 +669,12 @@ def test_successful_fresh_validation_confirms_once() -> None:
     assert record.final_outcome is FinalOutcome.SUCCEEDED
     assert collector.calls == 2
     assert provider.confirmations == 1
+    assert record.candidate_diff_digest == "sha256:" + "a" * 64
+    assert "[edit interfaces" not in record.model_dump_json()
+    invalid_record = record.model_dump(mode="json")
+    invalid_record["candidate_diff_digest"] = "raw candidate diff"
+    with pytest.raises(ValidationError):
+        type(record).model_validate(invalid_record)
 
 
 @pytest.mark.parametrize(
@@ -523,6 +700,41 @@ def test_ambiguous_commit_is_not_confirmed_or_retried() -> None:
     assert provider.tx.commits == 1
     assert provider.confirmations == 0
     assert collector.calls == 1
+
+
+@pytest.mark.parametrize(
+    ("commit", "expected"),
+    [
+        (ExecutionDisposition.FAILED, FinalOutcome.EXECUTION_FAILED),
+        (ExecutionDisposition.AMBIGUOUS, FinalOutcome.AMBIGUOUS),
+        (ExecutionDisposition.SUCCEEDED, FinalOutcome.AUTO_ROLLBACK_PENDING),
+    ],
+)
+def test_transaction_close_failure_preserves_known_commit_disposition(
+    commit: ExecutionDisposition, expected: FinalOutcome
+) -> None:
+    record, provider, collector = run_deploy(
+        state("managed-by-network-change-delivery-platform"),
+        commit=commit,
+        close_failed=True,
+    )
+    assert record.final_outcome is expected
+    assert provider.tx.commits == 1
+    assert provider.confirmations == 0
+    assert collector.calls == 1
+
+
+def test_precommit_exit_failure_is_bounded() -> None:
+    connection = FakeConnection(candidate_reply("wrong"))
+    config = FakeConfig(connection, "exclusive")
+    config.exit_error = RuntimeError("password=secret raw unlock reply")
+    transaction = JunosTransaction(
+        connection, lambda *_a, **_k: config, plan().execution_artifact
+    )
+    with pytest.raises(ProviderError) as caught, transaction as active:
+        active.prepare()
+    assert "secret" not in str(caught.value)
+    assert "secret" not in repr(caught.value)
 
 
 @pytest.mark.parametrize(

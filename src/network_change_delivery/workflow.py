@@ -31,6 +31,7 @@ from network_change_delivery.secrets import (
 )
 
 MANAGEMENT_INTERFACE_NAMES = frozenset({"gigabitethernet1", "gi1"})
+JUNOS_MANAGEMENT_INTERFACE_NAMES = frozenset({"fxp0", "em0"})
 
 
 class SafetyError(ValueError):
@@ -62,6 +63,8 @@ class ArtifactExecutor(Protocol):
 
 
 class JunosTransactionHandle(Protocol):
+    close_failed: bool
+
     def prepare(self) -> object: ...
 
     def commit_confirmed(self, minutes: int) -> ExecutionResult: ...
@@ -118,8 +121,8 @@ def _assert_safe_state(
         raise SafetyError("requested interface is protected by inventory policy")
     if platform == "cisco_iosxe" and requested in MANAGEMENT_INTERFACE_NAMES:
         raise SafetyError("GigabitEthernet1 is protected for this lab target")
-    if platform == "junos" and requested == "fxp0":
-        raise SafetyError("fxp0 is protected as Junos management")
+    if platform == "junos" and requested in JUNOS_MANAGEMENT_INTERFACE_NAMES:
+        raise SafetyError(f"{intent.interface} is protected as Junos management")
 
 
 def build_plan(
@@ -275,6 +278,7 @@ def _record(
     post_validation: StageResult | None = None,
     recovery: StageResult | None = None,
     candidate_validation: StageResult | None = None,
+    candidate_diff_digest: str | None = None,
     confirmation: StageResult | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> ChangeRecord:
@@ -302,6 +306,7 @@ def _record(
         recovery=recovery or _stage("recovery not attempted"),
         transaction_strategy=plan.transaction_strategy,
         candidate_validation=candidate_validation,
+        candidate_diff_digest=candidate_diff_digest,
         confirmation=confirmation,
         final_outcome=outcome,
         provider=(
@@ -329,9 +334,12 @@ def _deploy_junos(
         return _record(
             plan, approval_digest, FinalOutcome.BLOCKED, preflight=preflight, now=now
         )
+    transaction = None
+    prepared = None
+    committed = None
     try:
         with executor.transaction(device, credentials, artifact) as transaction:
-            transaction.prepare()
+            prepared = transaction.prepare()
             candidate = _stage(
                 "candidate initially clean; commit check and semantic validation "
                 "passed",
@@ -356,6 +364,17 @@ def _deploy_junos(
             candidate_validation=candidate,
             now=now,
         )
+    candidate_diff_digest = getattr(prepared, "diff_sha256", None)
+    if committed is None:
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.BLOCKED,
+            preflight=preflight,
+            candidate_validation=candidate,
+            candidate_diff_digest=candidate_diff_digest,
+            now=now,
+        )
     execution = _stage(
         committed.message,
         attempted=True,
@@ -374,7 +393,24 @@ def _deploy_junos(
             outcome,
             preflight=preflight,
             candidate_validation=candidate,
+            candidate_diff_digest=candidate_diff_digest,
             execution=execution,
+            now=now,
+        )
+    if transaction is not None and getattr(transaction, "close_failed", False):
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.AUTO_ROLLBACK_PENDING,
+            preflight=preflight,
+            candidate_validation=candidate,
+            candidate_diff_digest=candidate_diff_digest,
+            execution=execution,
+            post_validation=_stage(
+                "temporary commit deliberately left unconfirmed after session "
+                "close failure; automatic rollback expected",
+                succeeded=False,
+            ),
             now=now,
         )
     try:
@@ -402,6 +438,7 @@ def _deploy_junos(
             FinalOutcome.AUTO_ROLLBACK_PENDING,
             preflight=preflight,
             candidate_validation=candidate,
+            candidate_diff_digest=candidate_diff_digest,
             execution=execution,
             post_validation=post,
             now=now,
@@ -431,6 +468,7 @@ def _deploy_junos(
         outcome,
         preflight=preflight,
         candidate_validation=candidate,
+        candidate_diff_digest=candidate_diff_digest,
         execution=execution,
         post_validation=post,
         confirmation=confirmation,

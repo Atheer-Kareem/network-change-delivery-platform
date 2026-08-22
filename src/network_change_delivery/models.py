@@ -18,6 +18,7 @@ CliBoundString = Annotated[
         strip_whitespace=True, min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$"
     ),
 ]
+Sha256Digest = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 
 
 def validate_ios_description(value: str, *, require_nonempty: bool = True) -> str:
@@ -96,6 +97,7 @@ class InterfaceState(BaseModel):
     description: str | None = None
     protected: bool
     enabled: bool | None = None
+    operational_status: Literal["up", "down"] | None = None
     ipv4_addresses: tuple[str, ...] = ()
 
 
@@ -345,6 +347,7 @@ class ChangeRecord(BaseModel):
         "cisco_targeted_inverse", "junos_commit_confirmed"
     ] = "cisco_targeted_inverse"
     candidate_validation: StageResult | None = None
+    candidate_diff_digest: Sha256Digest | None = None
     confirmation: StageResult | None = None
     final_outcome: FinalOutcome
     provider: str

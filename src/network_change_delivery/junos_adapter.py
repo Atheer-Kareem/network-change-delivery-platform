@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -55,13 +55,34 @@ def _interface_filter(interface: str | None = None) -> ElementTree.Element:
     return root
 
 
+def _configured_ipv4_addresses(interface: Any) -> tuple[str, ...]:
+    addresses: set[str] = set()
+    for family in interface.iter():
+        if _local_name(str(family.tag)) != "family":
+            continue
+        for inet in family:
+            if _local_name(str(inet.tag)) != "inet":
+                continue
+            for address in inet.iter():
+                if _local_name(str(address.tag)) == "address" and (
+                    value := _child_text(address, "name")
+                ):
+                    addresses.add(value)
+    return tuple(sorted(addresses))
+
+
+def _normalized_status(value: str | None) -> str | None:
+    normalized = (value or "").strip().casefold()
+    return normalized if normalized in {"up", "down"} else None
+
+
 def _diff_is_scoped(diff: str, artifact: JunosConfigArtifact) -> bool:
     header = f"[edit interfaces {artifact.interface}]"
     headers = [
         line.strip() for line in diff.splitlines() if line.strip().startswith("[edit ")
     ]
     changed = [
-        line.strip()
+        f"{line.lstrip()[0]} {' '.join(line.lstrip()[1:].split())}"
         for line in diff.splitlines()
         if line.lstrip().startswith(("+", "-"))
     ]
@@ -70,13 +91,22 @@ def _diff_is_scoped(diff: str, artifact: JunosConfigArtifact) -> bool:
         for line in changed
         if line.startswith("+ description ") and line.endswith(";")
     ]
-    return (
+    existing_interface_change = (
         headers == [header]
         and len(additions) == 1
         and all(
             line in additions or line.startswith("- description ") for line in changed
         )
     )
+    created_interface_change = (
+        headers == ["[edit interfaces]"]
+        and len(changed) == 3
+        and changed[0] == f"+ {artifact.interface} {{"
+        and changed[1].startswith("+ description ")
+        and changed[1].endswith(";")
+        and changed[2] == "+ }"
+    )
+    return existing_interface_change or created_interface_change
 
 
 @dataclass(frozen=True)
@@ -101,16 +131,27 @@ class JunosTransaction:
         self._artifact = artifact
         self._loaded = False
         self._commit_attempted = False
+        self._commit_result: ExecutionResult | None = None
+        self.close_failed = False
 
     def __enter__(self) -> JunosTransaction:
-        self._config.__enter__()
+        try:
+            self._config.__enter__()
+        except Exception:
+            raise ProviderError("unable to acquire exclusive Junos candidate") from None
         try:
             existing = self._config.diff()
         except Exception:
-            self._config.__exit__(None, None, None)
+            with suppress(Exception):
+                self._config.__exit__(None, None, None)
             raise ProviderError("unable to verify clean Junos candidate") from None
         if existing not in {None, ""}:
-            self._config.__exit__(None, None, None)
+            try:
+                self._config.__exit__(None, None, None)
+            except Exception:
+                raise ProviderError(
+                    "unable to release exclusive Junos candidate"
+                ) from None
             raise ProviderError("Junos candidate contains pre-existing changes")
         return self
 
@@ -121,8 +162,14 @@ class JunosTransaction:
                 self._config.rollback(0)
             except Exception:
                 cleanup_failed = True
-        self._config.__exit__(exc_type, exc, traceback)
-        if cleanup_failed:
+        try:
+            self._config.__exit__(exc_type, exc, traceback)
+        except Exception:
+            if self._commit_result is not None:
+                self.close_failed = True
+                return
+            raise ProviderError("Junos candidate cleanup or unlock failed") from None
+        if cleanup_failed and self._commit_result is None:
             raise ProviderError("Junos uncommitted candidate cleanup failed") from None
 
     def prepare(self) -> PreparedCandidate:
@@ -162,48 +209,60 @@ class JunosTransaction:
     def commit_confirmed(self, minutes: int) -> ExecutionResult:
         """Issue the first active write once, as commit confirmed 5."""
         if minutes != 5:
-            return ExecutionResult(
+            result = ExecutionResult(
                 disposition=ExecutionDisposition.FAILED,
                 message="Junos confirmed-commit timeout contract is invalid",
                 provider="pyez/config-exclusive",
             )
+            self._commit_result = result
+            return result
         self._commit_attempted = True
         try:
             committed = self._config.commit(confirm=5)
         except (ConnectClosedError, ConnectError, RpcTimeoutError):
-            return ExecutionResult(
+            result = ExecutionResult(
                 disposition=ExecutionDisposition.AMBIGUOUS,
                 message=(
                     "commit-confirmed result is ambiguous; no retry or confirmation"
                 ),
                 provider="pyez/config-exclusive",
             )
+            self._commit_result = result
+            return result
         except (CommitError, RpcError):
-            return ExecutionResult(
+            result = ExecutionResult(
                 disposition=ExecutionDisposition.FAILED,
                 message="commit-confirmed failed with known failure",
                 provider="pyez/config-exclusive",
             )
+            self._commit_result = result
+            return result
         except Exception:
-            return ExecutionResult(
+            result = ExecutionResult(
                 disposition=ExecutionDisposition.AMBIGUOUS,
                 message=(
                     "commit-confirmed result is ambiguous; no retry or confirmation"
                 ),
                 provider="pyez/config-exclusive",
             )
+            self._commit_result = result
+            return result
         if committed is not True:
-            return ExecutionResult(
+            result = ExecutionResult(
                 disposition=ExecutionDisposition.FAILED,
                 message="commit-confirmed did not report known success",
                 provider="pyez/config-exclusive",
             )
-        return ExecutionResult(
+            self._commit_result = result
+            return result
+        result = ExecutionResult(
             disposition=ExecutionDisposition.SUCCEEDED,
             changed=True,
             message="temporary commit confirmed 5 is active",
             provider="pyez/config-exclusive",
         )
+        self._commit_result = result
+        return result
 
 
 class JunosPyEZAdapter:
@@ -248,8 +307,6 @@ class JunosPyEZAdapter:
                     yield connection
             except ProviderError:
                 raise
-            except (ConnectClosedError, ConnectError, RpcError, RpcTimeoutError):
-                raise
             except Exception:
                 raise ProviderError(
                     "trusted authenticated Junos NETCONF session failed"
@@ -274,45 +331,68 @@ class JunosPyEZAdapter:
         with self._session(device, credentials) as connection:
             hostname = str(connection.facts.get("hostname") or "")
             version = str(connection.facts.get("version") or "") or None
-            reply = connection.rpc.get_config(
-                filter_xml=_interface_filter(), options={"database": "committed"}
-            )
-        if not hostname or reply is None:
+            try:
+                operational_reply = connection.rpc.get_interface_information(terse=True)
+                config_reply = connection.rpc.get_config(
+                    filter_xml=_interface_filter(), options={"database": "committed"}
+                )
+            except Exception:
+                raise ProviderError("Junos read-only provider request failed") from None
+        if not hostname or operational_reply is None or config_reply is None:
             raise ProviderError("Junos read-only provider result was incomplete")
         protected = {
             "".join(name.split()).casefold() for name in device.protected_interfaces
         }
-        states: list[InterfaceState] = []
         try:
-            for element in reply.iter():
+            configured: dict[str, tuple[str | None, bool, tuple[str, ...]]] = {}
+            for element in config_reply.iter():
                 if _local_name(str(element.tag)) != "interface":
                     continue
                 name = _child_text(element, "name")
-                if not name:
+                if not name or "." in name:
                     continue
-                addresses = tuple(
-                    value
-                    for descendant in element.iter()
-                    if _local_name(str(descendant.tag)) == "address"
-                    and (value := _child_text(descendant, "name")) is not None
-                )
+                addresses = _configured_ipv4_addresses(element)
                 disabled = any(
                     _local_name(str(descendant.tag)) == "disable"
                     for descendant in element.iter()
                 )
+                configured[name] = (
+                    _child_text(element, "description"),
+                    disabled,
+                    tuple(sorted(set(addresses))),
+                )
+            states: list[InterfaceState] = []
+            seen: set[str] = set()
+            for element in operational_reply.iter():
+                if _local_name(str(element.tag)) != "physical-interface":
+                    continue
+                name = _child_text(element, "name")
+                if not name or "." in name or name in seen:
+                    continue
+                seen.add(name)
+                description, disabled, addresses = configured.get(
+                    name, (None, False, ())
+                )
+                admin = _normalized_status(_child_text(element, "admin-status"))
+                enabled = True if admin == "up" else False if admin == "down" else None
+                if disabled:
+                    enabled = False
                 states.append(
                     InterfaceState(
                         observed_hostname=hostname,
                         software_version=version,
                         interface=name,
                         exists=True,
-                        description=_child_text(element, "description"),
+                        description=description,
                         protected="".join(name.split()).casefold() in protected,
-                        enabled=not disabled,
-                        ipv4_addresses=tuple(sorted(set(addresses))),
+                        enabled=enabled,
+                        operational_status=_normalized_status(
+                            _child_text(element, "oper-status")
+                        ),
+                        ipv4_addresses=addresses,
                     )
                 )
-        except (AttributeError, TypeError):
+        except Exception:
             raise ProviderError(
                 "Junos read-only provider result was incomplete"
             ) from None

@@ -76,9 +76,22 @@ class PreparedSnapshot:
 def _read_regular(path: Path) -> bytes:
     fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
+        size = os.fstat(fd).st_size
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise ValueError("snapshot contains a non-regular file")
-        return os.read(fd, os.fstat(fd).st_size)
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(65536, max(1, size - total)))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_BYTES:
+                raise ValueError("snapshot exceeds bounded size limits")
+        if total != size:
+            raise ValueError("snapshot file changed during read")
+        return b"".join(chunks)
     finally:
         os.close(fd)
 
@@ -191,6 +204,15 @@ class ParseSummary(BaseModel):
     nodes: tuple[str, ...]
     initialization_issue_count: int = Field(ge=0)
 
+    @model_validator(mode="after")
+    def validate_unique_identities(self) -> ParseSummary:
+        paths = [item.relative_path for item in self.files]
+        if len(paths) != len(set(paths)):
+            raise ValueError("parse file identities must be unique")
+        if len(self.nodes) != len(set(self.nodes)):
+            raise ValueError("node identities must be unique")
+        return self
+
     @property
     def parse_status(self) -> dict[str, str]:
         return {f.relative_path: f.status for f in self.files}
@@ -245,6 +267,36 @@ class AssuranceEvidence(BaseModel):
     invariants: tuple[InvariantResult, ...]
     failure_reason: str | None = None
     outcome: AssuranceOutcome
+
+    @model_validator(mode="after")
+    def validate_semantics(self) -> AssuranceEvidence:
+        if self.outcome is AssuranceOutcome.BLOCKED:
+            if not self.failure_reason or not any(
+                not item.passed for item in self.invariants
+            ):
+                raise ValueError("BLOCKED evidence requires a bounded failure reason")
+            return self
+        required = (
+            self.baseline_snapshot_digest,
+            self.candidate_snapshot_digest,
+            self.pybatfish_version,
+            self.batfish_version,
+            self.baseline_parse,
+            self.candidate_parse,
+            self.differential_changed_flow_count,
+        )
+        if any(value is None or value == "unknown" for value in required):
+            raise ValueError("analyzed evidence is missing required observations")
+        if self.failure_reason is not None or not self.invariants:
+            raise ValueError("analyzed evidence has invalid failure semantics")
+        if self.outcome is AssuranceOutcome.PASSED:
+            if not self.critical_flows or not all(
+                item.passed for item in self.invariants
+            ):
+                raise ValueError("PASSED evidence requires all invariants and flows")
+        elif not any(not item.passed for item in self.invariants):
+            raise ValueError("FAILED evidence requires a failed invariant")
+        return self
 
 
 class NetworkAssuranceProvider(Protocol):

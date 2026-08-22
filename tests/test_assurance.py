@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from network_change_delivery.assurance import (
+    AssuranceEvidence,
     AssuranceObservation,
     AssuranceOutcome,
     BatfishAssuranceIntent,
@@ -187,3 +188,58 @@ def test_policy_rejects_missing_flow_observation(tmp_path: Path) -> None:
     observed = observation().model_copy(update={"flows": ()})
     result = evaluate_assurance(intent(), baseline, candidate, observed)
     assert result.outcome is AssuranceOutcome.FAILED
+
+
+def test_parse_summary_rejects_duplicate_identities() -> None:
+    with pytest.raises(ValidationError, match="parse file identities"):
+        ParseSummary(
+            files=(
+                ParseFileResult(relative_path="a.cfg", status="PASSED"),
+                ParseFileResult(relative_path="a.cfg", status="PASSED"),
+            ),
+            nodes=("core-02",),
+            initialization_issue_count=0,
+        )
+    with pytest.raises(ValidationError, match="node identities"):
+        ParseSummary(
+            files=(ParseFileResult(relative_path="a.cfg", status="PASSED"),),
+            nodes=("core-02", "core-02"),
+            initialization_issue_count=0,
+        )
+
+
+def test_evidence_semantics_reject_contradictory_outcomes(tmp_path: Path) -> None:
+    baseline, candidate = manifests(tmp_path)
+    good = evaluate_assurance(intent(), baseline, candidate, observation())
+    with pytest.raises(ValidationError):
+        AssuranceEvidence.model_validate(
+            good.model_copy(
+                update={"outcome": AssuranceOutcome.PASSED, "invariants": ()}
+            ).model_dump()
+        )
+    with pytest.raises(ValidationError):
+        AssuranceEvidence.model_validate(
+            good.model_copy(
+                update={"outcome": AssuranceOutcome.BLOCKED, "failure_reason": None}
+            ).model_dump()
+        )
+
+
+def test_short_reads_are_assembled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import network_change_delivery.assurance as assurance
+
+    root = tmp_path / "snap" / "configs"
+    root.mkdir(parents=True)
+    payload = b"hostname short-read\n"
+    (root / "node.cfg").write_bytes(payload)
+    original = assurance.os.read
+
+    def short_read(fd: int, count: int) -> bytes:
+        return original(fd, min(count, 2))
+
+    monkeypatch.setattr(assurance.os, "read", short_read)
+    assert build_snapshot_manifest(tmp_path / "snap").files[0].size_bytes == len(
+        payload
+    )

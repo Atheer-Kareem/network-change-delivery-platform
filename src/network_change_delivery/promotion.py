@@ -147,7 +147,12 @@ def _read_source(path: Path) -> bytes:
             chunks: list[bytes] = []
             total = 0
             while True:
-                chunk = os.read(fd, min(65536, MAX_SOURCE_BYTES - total))
+                remaining = MAX_SOURCE_BYTES - total
+                if remaining == 0:
+                    if os.read(fd, 1):
+                        raise PromotionError("promotion source exceeds bounded size")
+                    return b"".join(chunks)
+                chunk = os.read(fd, min(65536, remaining))
                 if not chunk:
                     return b"".join(chunks)
                 chunks.append(chunk)

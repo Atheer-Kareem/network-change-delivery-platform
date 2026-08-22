@@ -12,7 +12,9 @@ from network_change_delivery.assurance import (
 )
 from network_change_delivery.plan_assurance import assure_plan, load_plan
 from network_change_delivery.promotion import (
+    MAX_SOURCE_BYTES,
     PromotionError,
+    _read_source,
     create_promotion_bundle,
     verify_promotion_bundle,
 )
@@ -101,3 +103,32 @@ def test_existing_destination_rejected(tmp_path: Path) -> None:
         create_promotion_bundle(
             PLAN, POLICY, BASELINE, assurance, "a" * 40, destination
         )
+
+
+@pytest.mark.parametrize("name", ["plan.json", "policy.yaml", "assurance.json"])
+def test_source_symlink_rejected(tmp_path: Path, name: str) -> None:
+    target = tmp_path / "target"
+    target.write_bytes(b"{}")
+    link = tmp_path / name
+    link.symlink_to(target)
+    with pytest.raises(PromotionError):
+        _read_source(link)
+
+
+def test_source_size_limit_and_overflow(tmp_path: Path) -> None:
+    exact = tmp_path / "exact"
+    exact.write_bytes(b"x" * MAX_SOURCE_BYTES)
+    assert len(_read_source(exact)) == MAX_SOURCE_BYTES
+    over = tmp_path / "over"
+    over.write_bytes(b"x" * (MAX_SOURCE_BYTES + 1))
+    with pytest.raises(PromotionError, match="exceeds bounded"):
+        _read_source(over)
+
+
+def test_malformed_plan_is_bounded_error(tmp_path: Path) -> None:
+    bad = tmp_path / "bad-plan.json"
+    bad.write_text("not-json", encoding="utf-8")
+    from network_change_delivery.promotion import _load_plan_bytes
+
+    with pytest.raises(PromotionError, match="invalid promotion plan"):
+        _load_plan_bytes(_read_source(bad))

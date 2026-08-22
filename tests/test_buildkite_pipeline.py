@@ -18,6 +18,8 @@ def test_pipeline_contract() -> None:
     assert steps["quality"]["agents"]["queue"] == "ncdp-validation"
     assert steps["pipeline-contract"]["agents"]["queue"] == "ncdp-validation"
     assert steps["promotion"]["agents"]["queue"] == "ncdp-validation"
+    assert steps["promotion"]["concurrency"] == 1
+    assert steps["promotion"]["concurrency_group"] == "ncdp/batfish-promotion"
     assert steps["deploy-gate"]["agents"]["queue"] == "ncdp-deploy"
     assert steps["deploy-gate"]["concurrency"] == 1
     assert steps["deploy-gate"]["concurrency_group"] == "ncdp/network-change-deployment"
@@ -26,7 +28,25 @@ def test_pipeline_contract() -> None:
         "approved-assurance-digest",
         "approved-promotion-digest",
     }
+    assert all(
+        field["format"] == "sha256:[0-9a-f]{64}"
+        for field in steps["deployment-approval"]["fields"]
+    )
+    assert steps["promotion"]["depends_on"] == ["quality", "pipeline-contract"]
+    assert steps["deployment-approval"]["depends_on"] == "promotion"
+    assert steps["deploy-gate"]["depends_on"] == "deployment-approval"
     assert "--dry-run" in " ".join(steps["pipeline-contract"]["commands"])
+    contract = " ".join(steps["pipeline-contract"]["commands"])
+    assert "--reject-secrets" in contract
+    assert "--reject-parse-warnings" in contract
+
+
+def test_pr_and_main_conditions() -> None:
+    pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
+    steps = {step["key"]: step for step in pipeline["steps"]}
+    for key in ("promotion", "deployment-approval", "deploy-gate"):
+        assert 'build.branch == "main"' in steps[key]["if"]
+        assert "build.pull_request.id == null" in steps[key]["if"]
 
 
 def test_scripts_static_contract() -> None:

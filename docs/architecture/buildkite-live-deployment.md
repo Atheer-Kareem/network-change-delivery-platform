@@ -86,9 +86,11 @@ As defense in depth, `deployment_gate.sh` accepts only
 `BUILDKITE_RETRY_COUNT=0` (with absence treated as zero for local compatibility)
 and rejects every retried or malformed value before commit verification, either
 OIDC request, promotion authorization, runtime verification, or any
-NetBox/OpenBao/device boundary. Another intentional attempt requires a fresh
-Buildkite authorization context created by an explicit commit-bound retry
-marker.
+NetBox/OpenBao/device boundary. This prohibits same-build `deploy-gate` replay.
+Another Buildkite build is a distinct authorization context and requires another
+human approval; normal NCDP operating procedure also requires an explicit
+commit-bound retry marker for an intentional retry. Pipeline-wide Buildkite
+Rebuild disablement is not part of the accepted 7C step-level control.
 
 Increment 7C is complete. Protected-main build #46 produced `SUCCEEDED` typed
 evidence for the exact single-device plan, and independent read-only verification

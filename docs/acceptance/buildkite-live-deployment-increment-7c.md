@@ -117,14 +117,20 @@ On build #46 the runtime guard passed, but the first deployment-gate job was
 interrupted by the local macOS Local Network permission boundary during device
 state collection. Its typed evidence remained `BLOCKED`, execution was not
 attempted, and no write occurred. After the operator granted that host
-permission, retrying the same job produced the accepted successful result.
+permission, retrying the failed `deploy-gate` within the same already-approved
+build created another deployment-job attempt and produced the accepted
+successful result.
 
 That success exposed that an already-human-approved build could obtain another
 deployment-job attempt through Buildkite retry. The durable single-attempt
 control now disables automatic and manual retry on `deploy-gate` and rejects
 every `BUILDKITE_RETRY_COUNT != 0` or malformed value before commit verification
-or either OIDC request. Another intentional attempt requires a fresh
-commit-bound authorization and fresh human approval.
+or either OIDC request. The hardened control prohibits a second `deploy-gate`
+attempt within the same human-approved Buildkite build. Another attempt requires
+a new Buildkite build and fresh human approval. NCDP operating procedure also
+requires an explicit fresh commit-bound retry marker for intentional retries;
+Increment 7C does not claim to disable Buildkite's separate pipeline-level
+full-build Rebuild capability.
 
 The hardening merged as commit
 `577cad91da18d146ac27763e28de5e25585fae6c`. Protected-main build #48 succeeded
@@ -169,6 +175,9 @@ protected-main pipeline, and the successful external no-request/no-write build.
 ## Scope boundaries and non-claims
 
 - Buildkite fleet deployment remains unsupported.
+- Pipeline-level full-build Rebuild prohibition is not claimed. A rebuilt build
+  is a distinct Buildkite authorization context and still requires fresh human
+  approval.
 - No fleet-wide atomicity is claimed.
 - Personal-lab host isolation is not production infrastructure.
 - Terraform/CML lifecycle remains Increment 8.

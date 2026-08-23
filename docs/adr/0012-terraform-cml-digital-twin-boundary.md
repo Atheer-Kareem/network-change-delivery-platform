@@ -54,18 +54,23 @@ Terraform state is sensitive operational data and must not be committed.
 Increment 8B will commit `.terraform.lock.hcl`, ignore `.terraform/`,
 `*.tfstate`, and `*.tfstate.*`, keep live local state outside the repository,
 and use an operator-configurable path or backend rather than a user-specific
-absolute path. A controlled encrypted local backend is acceptable for this
-single-operator lab unless later evidence requires shared remote state. Saved
-plans containing sensitive inputs are prohibited unless explicitly protected
-and required.
+absolute path. Terraform's local backend writes plaintext state and backup files;
+it does not provide state-at-rest encryption. It is acceptable initially for
+this single-operator lab only when those files have restrictive OS permissions
+and the underlying host or storage encryption is independently verified. If
+independently encrypted local storage cannot be established, an encrypted remote
+backend is required before live state is created. Saved plans containing
+sensitive inputs are prohibited unless explicitly protected and required.
 
 Provider authentication uses ephemeral `CML2_ADDRESS`, `CML2_TOKEN`, and
 `CML2_CACERT` environment inputs. The JWT must not enter Terraform source,
 variable files, state, outputs, Git, saved logs, or Buildkite metadata. TLS
 verification is mandatory; `skip_verify = true` and
 `CML2_SKIP_VERIFY=true` are prohibited. Before live Terraform access, the
-operator must provide a trusted PEM for the exact self-signed controller through
-`CML2_CACERT`. Private key material is never committed.
+operator must supply PEM-encoded trusted CA or controller certificate content
+for the exact self-signed controller through `CML2_CACERT`, according to the
+provider contract. `CML2_CACERT` is not assumed to be a filesystem path.
+Private key material is never committed.
 
 The connector must be selected with the `cml2_connector` data source by the
 unique label `System Bridge`, then configured using its returned
@@ -74,13 +79,23 @@ guessed or hard-coded.
 
 Terraform must not manage credential-bearing device startup configuration
 through `cml2_node.configuration`, `cml2_node.configurations`,
-`cml2_lifecycle.configs`, `cml2_lifecycle.named_configs`, or topology payloads.
-Terraform sensitivity markings do not keep values out of state. Reset/cutover
-acceptance therefore requires a later state-free bootstrap boundary that reads
-identity and addressing from NetBox, credentials from OpenBao, and explicit
-non-secret policy from Git/NCDP; renders only in memory; writes directly to the
-Terraform-owned CML node; and discards credentials and rendered content.
-Increment 8A does not implement that boundary.
+`cml2_lifecycle.configs`, `cml2_lifecycle.named_configs`, topology-embedded
+configuration, or an equivalent out-of-band CML API write to the same stored or
+day-zero configuration fields. Terraform sensitivity markings do not keep
+values out of state, and merely omitting these attributes from HCL is
+insufficient: provider `Read()` refreshes the CML node and its Optional +
+Computed `configuration` and `configurations` values can be persisted into
+Terraform state.
+
+Increment 8D must identify and prove a runtime bootstrap channel that does not
+populate provider-readable CML stored configuration. CML console or serial
+interaction with a booted device is a candidate, but is neither selected nor
+accepted until feasibility is demonstrated. Acceptance must prove that
+credentials and rendered secret material are absent from CML stored
+configuration and Terraform plans/state, and that a Terraform refresh after
+bootstrap cannot recover secret-bearing data into state. If no such boundary is
+proven, 8D stops and revisits the architecture rather than weakening state
+secrecy. Increment 8A does not implement this boundary.
 
 ## Consequences
 

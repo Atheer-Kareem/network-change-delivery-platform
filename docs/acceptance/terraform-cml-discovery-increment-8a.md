@@ -14,8 +14,9 @@ Buildkite runtime systems, and network devices were not accessed.
 
 The controller uses a self-signed certificate. Discovery established encrypted
 reachability to the exact supplied endpoint, but future Terraform access must
-use an operator-controlled trusted PEM through `CML2_CACERT`; disabling
-verification is not accepted.
+use operator-controlled PEM-encoded trusted CA or controller certificate content
+through `CML2_CACERT`, according to the provider contract; the variable is not
+assumed to be a filesystem path. Disabling verification is not accepted.
 
 ## Controller and capacity evidence
 
@@ -131,6 +132,9 @@ Stored configurations were hashed in memory without reproducing their contents:
 The configurations use placeholder hostnames, are not authoritative runtime
 identity or bootstrap sources, and are not imported into the twin. Absence of a
 recognized pattern does not prove arbitrary configuration is non-sensitive.
+Credential-bearing configuration must not be written to these stored fields
+through either Terraform or an out-of-band CML API call: provider refresh can
+read Optional + Computed configuration attributes back into Terraform state.
 
 ## Accepted architecture outcome
 
@@ -139,9 +143,11 @@ recognized pattern does not prove arbitrary configuration is non-sensitive.
 - Adoption: separate Terraform-owned twin; no import of the accepted lab.
 - State: sensitive, ignored and kept outside the repository.
 - Authentication: ephemeral provider-native environment inputs.
-- TLS: verified with an operator-controlled controller PEM; no skip-verify.
-- Bootstrap: credential-bearing payloads excluded from Terraform state;
-  state-free bootstrap deferred to 8D.
+- TLS: verified with operator-controlled PEM-encoded trusted CA or controller
+  certificate content through `CML2_CACERT`; no skip-verify.
+- Bootstrap: credential-bearing payloads are prohibited from provider-visible
+  CML stored/day-zero configuration as well as Terraform plans/state. A proven
+  runtime channel and post-bootstrap refresh leakage test are deferred to 8D.
 - Cutover: deferred; stable management endpoints cannot coexist on both running
   labs.
 

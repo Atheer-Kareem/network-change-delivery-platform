@@ -92,9 +92,14 @@ Terraform state is sensitive operational data even when no device credential is
 intentionally present. Live local state stays outside the repository under an
 operator-configurable location or backend. The repository ignores `.terraform/`,
 `*.tfstate`, and `*.tfstate.*`; no user-specific absolute state path is
-hard-coded. An encrypted and access-controlled local backend is acceptable for
-the single-operator personal lab. Saved plans with sensitive inputs are avoided
-unless a later explicit contract protects and requires them.
+hard-coded. Terraform's local backend stores state and backup files as plaintext
+and does not itself provide encryption. It is acceptable initially for the
+single-operator personal lab only if those files have restrictive OS
+permissions and the underlying host or storage encryption is independently
+verified. If independently encrypted local storage cannot be established, an
+encrypted remote backend must be selected before live state is created. Saved
+plans with sensitive inputs are avoided unless a later explicit contract
+protects and requires them.
 
 Provider access uses only these ephemeral environment inputs:
 
@@ -105,18 +110,28 @@ Provider access uses only these ephemeral environment inputs:
 The JWT never enters HCL, `.tfvars`, state, outputs, Git, logs, artifacts, or
 Buildkite metadata. TLS verification is required. Neither `skip_verify = true`
 nor `CML2_SKIP_VERIFY=true` is permitted. Because the controller certificate is
-self-signed, the operator must establish a trusted PEM for that exact controller
-and pass it with `CML2_CACERT` before 8B performs live read-only provider access.
-Private key material is not committed.
+self-signed, the operator must supply PEM-encoded trusted CA or controller
+certificate content for that exact controller through `CML2_CACERT`, according
+to the provider contract, before 8B performs live read-only provider access.
+`CML2_CACERT` is not assumed to be a filesystem path. Private key material is
+not committed.
 
 ## State-free bootstrap and cutover
 
-Credential-bearing startup configuration cannot pass through Terraform node,
-lifecycle, or topology configuration fields because the payload can persist in
-state even when marked sensitive. Existing stored CML configurations are also
-unsuitable as an adoption source: their hostnames are placeholders, they are not
-authoritative runtime identity, and a negative secret-pattern scan cannot prove
-arbitrary configuration non-sensitive.
+Credential-bearing startup configuration cannot pass through
+`cml2_node.configuration`, `cml2_node.configurations`,
+`cml2_lifecycle.configs`, `cml2_lifecycle.named_configs`, topology-embedded
+configuration, or an equivalent out-of-band CML API write to those same stored
+or day-zero fields. The payload can persist in state even when marked sensitive.
+Merely omitting the fields from HCL is insufficient: provider `Read()` fetches
+the CML node, and its Optional + Computed `configuration` and `configurations`
+attributes can bring out-of-band stored configuration back into Terraform state
+on refresh.
+
+Existing stored CML configurations are also unsuitable as an adoption source:
+their hostnames are placeholders, they are not authoritative runtime identity,
+and a negative secret-pattern scan cannot prove arbitrary configuration
+non-sensitive.
 
 Increment 8D must introduce a separate state-free boundary:
 
@@ -131,13 +146,30 @@ Git/NCDP non-secret bootstrap policy
 Python/operator in-memory rendering
           |
           v
-direct write to Terraform-owned CML node
+proven runtime channel that does not populate
+provider-readable CML stored configuration
           |
           v
 discard credentials and rendered payload
 ```
 
-Terraform retains lifecycle ownership but never owns the secret-bearing payload.
+Console or serial interaction with a booted CML device is a candidate runtime
+channel, but Increment 8 does not select or claim it until feasibility is
+demonstrated. Terraform retains lifecycle ownership but never owns the
+secret-bearing payload.
+
+Increment 8D acceptance must prove all of these properties:
+
+1. Credentials and rendered secret material are never persisted in CML stored
+   configuration.
+2. Credentials and rendered secret material are never present in Terraform
+   plans or state.
+3. A Terraform refresh after bootstrap does not recover secret-bearing data
+   into state.
+
+If no runtime bootstrap boundary can satisfy all three properties, 8D must stop
+and revisit the architecture rather than weakening state secrecy.
+
 The accepted legacy lab remains active until it cannot conflict with stable
 NetBox-owned management endpoints. After state-free bootstrap and Terraform
 startup, NCDP freshly verifies NetBox identity, OpenBao provenance, SSH host
@@ -170,5 +202,6 @@ run both heavy labs simultaneously.
 
 Implement state-free bootstrap, controlled management cutover, destroy/recreate
 and reset acceptance, deterministic lifecycle reconciliation, explicit safe SSH
-host-trust re-establishment, and fresh NetBox/OpenBao/NCDP compatibility checks.
-Prove that Terraform controls CML lifecycle only, never production configuration.
+host-trust re-establishment, provider-refresh state-secrecy proof, and fresh
+NetBox/OpenBao/NCDP compatibility checks. Prove that Terraform controls CML
+lifecycle only, never production configuration.

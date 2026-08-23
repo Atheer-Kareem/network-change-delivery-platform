@@ -59,6 +59,25 @@ steps:
         agents:
           queue: ncdp-validation
 
+      - label: ":terraform: Terraform CML static validation"
+        key: quality-terraform-cml
+        command: |
+          docker run --rm \
+            --volume "$${PWD}:/workspace:ro" \
+            --workdir /workspace \
+            --tmpfs /tmp:exec,mode=1777 \
+            --env TF_DATA_DIR=/tmp/terraform-data \
+            --entrypoint /bin/sh \
+            hashicorp/terraform:1.15.8@sha256:7ae513256f7ce67879e218ae8593d6fbe216ec9e123abe6c94e4e10704857963 \
+            -ec '
+              terraform version
+              terraform -chdir=infrastructure/cml fmt -check -recursive
+              terraform -chdir=infrastructure/cml init -backend=false -input=false -lockfile=readonly
+              terraform -chdir=infrastructure/cml validate
+            '
+        agents:
+          queue: ncdp-validation
+
   - label: ":white_check_mark: pipeline contract"
     key: pipeline-contract
     depends_on: quality

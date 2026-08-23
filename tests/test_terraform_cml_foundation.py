@@ -1,0 +1,96 @@
+import re
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).parents[1]
+TF_ROOT = ROOT / "infrastructure/cml"
+
+
+def terraform_text() -> str:
+    return "\n".join(path.read_text() for path in sorted(TF_ROOT.glob("*.tf")))
+
+
+def test_exact_toolchain_and_backend_contract() -> None:
+    versions = (TF_ROOT / "versions.tf").read_text()
+    assert 'required_version = "= 1.15.8"' in versions
+    assert 'source  = "CiscoDevNet/cml2"' in versions
+    assert 'version = "= 0.9.3-beta1"' in versions
+    backend = re.search(r'backend\s+"local"\s*\{([^}]*)\}', versions, re.DOTALL)
+    assert backend is not None
+    assert "path" not in backend.group(1)
+
+
+def test_read_only_configuration_and_provider_security() -> None:
+    text = terraform_text()
+    assert not list(TF_ROOT.rglob("*.tfvars"))
+    for block in ("resource", "module", "import", "moved", "removed"):
+        assert re.search(rf"(?m)^\s*{block}\s+", text) is None
+
+    provider = (TF_ROOT / "provider.tf").read_text()
+    for credential in (
+        "address",
+        "token",
+        "username",
+        "password",
+        "cacert",
+        "request_headers",
+        "token_cache_file",
+    ):
+        assert re.search(rf"(?m)^\s*{credential}\s*=", provider) is None
+    assert re.search(r"(?m)^\s*skip_verify\s*=\s*false$", provider)
+    assert re.search(r"(?m)^\s*token_cache\s*=\s*false$", provider)
+    assert "use_cache" not in provider
+
+
+def test_data_source_and_fail_closed_selection_contract() -> None:
+    data = (TF_ROOT / "data.tf").read_text()
+    outputs = (TF_ROOT / "outputs.tf").read_text()
+    assert 'data "cml2_system" "controller"' in data
+    assert 'data "cml2_connector" "system_bridge"' in data
+    assert 'label = "System Bridge"' in data
+    assert data.count('data "cml2_images"') == 2
+    assert 'nodedefinition = "cat8000v"' in data
+    assert 'nodedefinition = "vjunos-router"' in data
+    assert 'image.id == "cat8000v-17-18-02"' in data
+    assert 'image.id == "vjunos-router-23-2r1-15"' in data
+    assert "bridge0" not in terraform_text()
+    assert "virbr0" not in terraform_text()
+    assert outputs.count("precondition {") == 3
+    assert "length(local.system_bridge_matches) == 1" in outputs
+    assert "length(local.accepted_cat8000v_images) == 1" in outputs
+    assert "length(local.accepted_vjunos_images) == 1" in outputs
+
+
+def test_lock_and_ignore_contract() -> None:
+    lock = (TF_ROOT / ".terraform.lock.hcl").read_text()
+    assert 'version     = "0.9.3-beta1"' in lock
+    assert 'constraints = "0.9.3-beta1"' in lock
+    assert lock.count('provider "registry.terraform.io/ciscodevnet/cml2"') == 1
+    gitignore = (ROOT / ".gitignore").read_text()
+    assert ".terraform.lock.hcl" not in gitignore
+    dockerignore = (ROOT / ".dockerignore").read_text()
+    assert "**/.terraform" in dockerignore
+
+
+def test_buildkite_terraform_contract_and_existing_gates() -> None:
+    pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
+    steps = {step["key"]: step for step in pipeline["steps"]}
+    quality = {step["key"]: step for step in steps["quality"]["steps"]}
+    terraform = quality["quality-terraform-cml"]
+    command = terraform["command"]
+    assert (
+        "hashicorp/terraform:1.15.8@"
+        "sha256:7ae513256f7ce67879e218ae8593d6fbe216ec9e123abe6c94e4e10704857963"
+        in command
+    )
+    assert terraform["agents"]["queue"] == "ncdp-validation"
+    assert "${PWD}:/workspace:ro" in command
+    assert "-backend=false" in command
+    assert "-lockfile=readonly" in command
+    assert "CML2_" not in command
+    assert not re.search(r"terraform[^\n]*(plan|apply|import|destroy)", command)
+    for key in ("promotion", "deployment-approval", "deploy-gate"):
+        assert 'build.branch == "main"' in steps[key]["if"]
+        assert "build.pull_request.id == null" in steps[key]["if"]
+    assert steps["deploy-gate"]["agents"]["queue"] == "ncdp-deploy"

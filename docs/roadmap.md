@@ -51,12 +51,12 @@ Ordering may change when implementation evidence requires it.
    no-write path. See the
    [Increment 7C acceptance report](acceptance/buildkite-live-deployment-increment-7c.md).
 8. **Terraform/CML infrastructure as code — in progress:** Increment 8A read-only
-   discovery and architecture are complete after merge. The accepted contract
-   selects an independently created Terraform-owned twin, exact Terraform and
-   CML2 provider versions, verified TLS, sensitive state handling, and a deferred
-   state-free bootstrap boundary. Terraform implementation, CML lifecycle, and
-   reset acceptance remain 8B through 8D; Terraform never manages production
-   device configuration. See the
+   discovery and architecture are complete. The 8B foundation and read-only
+   plan are accepted after merge: exact toolchain and lock pins, credential-free
+   CI validation, provider data-source discovery, external state handling, and
+   zero CML mutation. Increment 8C is next for the separately owned topology and
+   lifecycle; reset and state-free bootstrap remain 8D. Terraform never manages
+   production device configuration. See the
    [Terraform/CML digital-twin architecture](architecture/terraform-cml-digital-twin.md).
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.

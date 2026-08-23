@@ -38,6 +38,7 @@ resource "cml2_node" "core_02" {
   lab_id         = cml2_lab.twin.id
   label          = "core-02"
   nodedefinition = "cat8000v"
+  configuration  = ""
   imagedefinition = one(
     local.accepted_cat8000v_images
   ).id
@@ -59,6 +60,7 @@ resource "cml2_node" "edge_junos_01" {
   lab_id         = cml2_lab.twin.id
   label          = "edge-junos-01"
   nodedefinition = "vjunos-router"
+  configuration  = ""
   imagedefinition = one(
     local.accepted_vjunos_images
   ).id
@@ -80,6 +82,7 @@ resource "cml2_node" "core_03" {
   lab_id         = cml2_lab.twin.id
   label          = "core-03"
   nodedefinition = "cat8000v"
+  configuration  = ""
   imagedefinition = one(
     local.accepted_cat8000v_images
   ).id

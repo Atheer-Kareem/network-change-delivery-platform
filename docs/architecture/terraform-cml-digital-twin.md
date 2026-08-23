@@ -181,6 +181,18 @@ the CML node, and its Optional + Computed `configuration` and `configurations`
 attributes can bring out-of-band stored configuration back into Terraform state
 on refresh.
 
+For the three Terraform-owned routers, Increment 8C explicitly sets
+`configuration = ""`. This is a state-secrecy control, not managed network
+intent: provider `0.9.3-beta1` can otherwise read CML node-definition default or
+bootstrap configuration into Terraform state when the attribute is null. The
+router field must never contain a credential-bearing or functional network
+bootstrap configuration. No implicit CML bootstrap-generation action, including
+CML **Bootstrap Lab** or an equivalent default-configuration generator, is part
+of the accepted Terraform workflow. Runtime state-free bootstrap remains an 8D
+responsibility. An empty stored configuration does not prove that a router will
+later boot successfully; operational boot behavior requires separate
+acceptance.
+
 Existing stored CML configurations are also unsuitable as an adoption source:
 their hostnames are placeholders, they are not authoritative runtime identity,
 and a negative secret-pattern scan cannot prove arbitrary configuration

@@ -18,6 +18,14 @@ management switch at `(-150, -200)`, `core-02` at `(100, -400)`,
 `edge-junos-01` at `(400, -200)`, and `core-03` at `(700, -400)`. Tags control
 only CML lifecycle staging; they are not NCDP targeting metadata.
 
+Each router explicitly uses `configuration = ""` so provider/CML default
+bootstrap content cannot be returned for a null attribute and persisted into
+Terraform state. The empty value is a state-secrecy control, not managed network
+intent or proof of successful future boot. Never place credentials or functional
+network bootstrap in this field, and do not use CML **Bootstrap Lab** or an
+equivalent default-configuration generator in the accepted Terraform workflow.
+Runtime state-free bootstrap remains deferred to Increment 8D.
+
 Live local state belongs outside the repository on encrypted operator storage.
 Supply its path only while initializing the backend, for example through the
 operator-controlled `NCDP_CML_TF_STATE_PATH` environment variable. An 8C-1

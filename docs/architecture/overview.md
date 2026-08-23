@@ -44,8 +44,10 @@ flowchart LR
 - **Assurance:** Batfish performs offline multi-vendor behavioral checks; the
   plan-bound 6B path derives candidates from validated plans and remains a
   verification primitive until Increment 7 workflow enforcement.
-- **Digital twin:** future Terraform with CiscoDevNet CML2 owns CML lifecycle,
-  never production device configuration.
+- **Digital twin:** Increment 8 uses Terraform with CiscoDevNet CML2 to own a
+  separate personal-CML twin's infrastructure lifecycle, never production
+  device configuration. See the
+  [Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).
 - **Execution:** Ansible Runner with `cisco.ios` remains the Cisco provider.
   Direct PyEZ/NETCONF preserves one Junos exclusive candidate session across
   pre-commit policy approval. Python decides what and why; adapters implement
@@ -89,9 +91,12 @@ atomically reserves complete stable device-identity sets, including no-ops,
 across preflight, execution, and final validation. It is deliberately not a
 distributed lock. Other named integrations remain future work.
 
-Increment 7A and 7B establish externally accepted promotion and zero-policy
-Buildkite/OpenBao workload identity. Increment 7C-A adds the protected,
-commit-bound single-device deployment composition boundary, separate
-device-specific OpenBao read roles, and typed evidence reuse without activating
-a live request or claiming external device-write acceptance. See the
+Increment 7 is complete: protected promotion, Buildkite/OpenBao workload
+identity, commit-bound least-privilege deployment, real personal-CML device
+acceptance, independent validation, and same-build deployment retry hardening
+are externally accepted. See the
 [Buildkite live-deployment boundary](buildkite-live-deployment.md).
+Increment 8 is beginning with the completed 8A read-only CML discovery and
+architecture contract. No Terraform implementation or Terraform-managed CML
+resource is claimed yet; implementation begins in 8B. See the
+[Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).

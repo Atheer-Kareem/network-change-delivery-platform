@@ -1,0 +1,5 @@
+schema_version: "1"
+action: deploy
+change_id: CHG-BUILDKITE-7C-001
+plan_digest: sha256:088ce8012958f3eb6fd8165d2a65b9d090d7a9a41e00386c9c914dfc29fc19eb
+inventory_object_id: netbox:dcim.device:1

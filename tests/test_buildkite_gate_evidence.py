@@ -24,18 +24,23 @@ def run_gate(
     evidence: bool,
     outcome: str,
     upload_status: int = 0,
+    live_request: bool = True,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     (tmp_path / "scripts/buildkite").mkdir(parents=True)
     executable(tmp_path / "scripts/buildkite/verify_commit.sh", "#!/bin/sh\nexit 0\n")
     binaries = tmp_path / "bin"
     binaries.mkdir()
     upload_log = tmp_path / "uploads"
+    command_log = tmp_path / "commands"
     executable(
         binaries / "buildkite-agent",
         """#!/usr/bin/env bash
 set -eu
 case "$1 $2" in
-  "oidc request-token") printf '%s\\n' 'bounded-jwt' ;;
+  "oidc request-token")
+    printf '%s\\n' oidc >> "$COMMAND_LOG"
+    printf '%s\\n' 'bounded-jwt'
+    ;;
   "artifact download") mkdir -p "$4/promotion"; : > "$4/promotion/manifest.json" ;;
   "artifact upload") printf '%s\\n' "$3" >> "$UPLOAD_LOG"; exit "$UPLOAD_STATUS" ;;
   "meta-data get")
@@ -52,10 +57,15 @@ esac
         """#!/usr/bin/env bash
 set -eu
 command="$3"
+printf '%s\\n' "$command" >> "$COMMAND_LOG"
 case "$command" in
   verify-buildkite-openbao-identity) read -r jwt; [[ "$jwt" == bounded-jwt ]] ;;
   verify-buildkite-gate|verify-buildkite-live-request) exit 0 ;;
-  buildkite-live-request-status) exit 0 ;;
+  buildkite-live-request-status)
+    if [[ "$LIVE_REQUEST" == 1 ]]; then exit 0; fi
+    printf '%s\\n' 'live deployment requested: NO' 'device write executed: NO'
+    exit 3
+    ;;
   deploy-buildkite-promotion)
     read -r jwt
     [[ "$jwt" == bounded-jwt ]]
@@ -81,10 +91,12 @@ esac
         "BUILDKITE_STEP_KEY": "deploy-gate",
         "BUILDKITE_AGENT_META_DATA_QUEUE": "ncdp-deploy",
         "UPLOAD_LOG": str(upload_log),
+        "COMMAND_LOG": str(command_log),
         "UPLOAD_STATUS": str(upload_status),
         "DEPLOY_STATUS": str(deployment_status),
         "DEPLOY_OUTCOME": outcome,
         "CREATE_EVIDENCE": "1" if evidence else "0",
+        "LIVE_REQUEST": "1" if live_request else "0",
     }
     for prohibited in (
         "NCDP_OPENBAO_ROLE_ID",
@@ -102,6 +114,25 @@ esac
         text=True,
     )
     return result, upload_log
+
+
+def test_absent_request_stops_before_second_jwt_and_provider_construction(
+    tmp_path: Path,
+) -> None:
+    result, uploads = run_gate(
+        tmp_path,
+        deployment_status=90,
+        evidence=False,
+        outcome="forbidden",
+        live_request=False,
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 0
+    assert commands.count("oidc") == 1
+    assert "deploy-buildkite-promotion" not in commands
+    assert not uploads.exists()
+    assert "live deployment requested: NO" in result.stdout
+    assert "device write executed: NO" in result.stdout
 
 
 @pytest.mark.parametrize("outcome", ["SUCCEEDED", "RECOVERED"])

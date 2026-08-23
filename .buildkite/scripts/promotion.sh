@@ -22,9 +22,9 @@ until "${promotion_run[@]}" python scripts/buildkite/batfish_ready.py; do
   fi
   sleep 2
 done
-"${promotion_run[@]}" ncdp assure-plan --plan fixtures/batfish/plans/fleet-interface-description.json --policy fixtures/batfish/policy.yaml --baseline fixtures/batfish/baseline --report-json /output/assurance.json --batfish
+"${promotion_run[@]}" ncdp assure-plan --plan deployments/live/promotion/plan.json --policy deployments/live/promotion/policy.yaml --baseline deployments/live/promotion/baseline --report-json /output/assurance.json --batfish
 promotion="$tmpdir/promotion"
-"${promotion_run[@]}" ncdp promote --plan fixtures/batfish/plans/fleet-interface-description.json --policy fixtures/batfish/policy.yaml --baseline fixtures/batfish/baseline --assurance /output/assurance.json --git-commit "$BUILDKITE_COMMIT" --output /output/promotion
+"${promotion_run[@]}" ncdp promote --plan deployments/live/promotion/plan.json --policy deployments/live/promotion/policy.yaml --baseline deployments/live/promotion/baseline --assurance /output/assurance.json --git-commit "$BUILDKITE_COMMIT" --output /output/promotion
 "${promotion_run[@]}" ncdp verify-promotion --promotion /output/promotion --git-commit "$BUILDKITE_COMMIT"
 [[ -f "$promotion/manifest.json" ]]
 (

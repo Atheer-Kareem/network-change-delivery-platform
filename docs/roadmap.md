@@ -50,6 +50,9 @@ Ordering may change when implementation evidence requires it.
    acceptance. Increment 7 remains in progress. 7C-A implements the commit-bound,
    single-device, least-privilege live-deployment foundation without an active
    request or live write. External 7C live CML acceptance remains pending.
+   Increment 7C-B1 prepares a repository-owned, read-only-discovered
+   single-device promotion and sanitized plan-bound assurance input while
+   deliberately retaining the no-request/no-write protected-main path.
 8. **Terraform/CML infrastructure as code:** reproducible twin lifecycle and reset,
    without Terraform-managed production configuration.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,

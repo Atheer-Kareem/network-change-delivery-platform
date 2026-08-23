@@ -1,4 +1,4 @@
-# retry-authorization: 2
+# retry-authorization: 3
 schema_version: "1"
 action: deploy
 change_id: CHG-BUILDKITE-7C-001

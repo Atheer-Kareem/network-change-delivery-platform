@@ -18,6 +18,19 @@ no deployment or device write and did not reach deployment approval.
 The correction moves Batfish readiness and NCDP assurance, promotion, and
 verification into the pinned project container, connected to Batfish through an
 explicit Compose service network. The host retains Git verification, Docker
-orchestration, and artifact upload only. This does not yet establish successful
-main-path 7A acceptance: a later protected-main run must complete promotion,
-reach human approval, and pass the no-write deployment gate.
+orchestration, and artifact upload only.
+
+The second protected-main attempt passed shared validation and created the
+containerized promotion runner. It then failed before readiness because the
+arbitrary non-root promotion UID could not read the root-owned readiness path
+copied from the restrictive Buildkite checkout. Repeated permission failures
+ended in a readiness timeout. No assurance result or completed promotion bundle
+was produced; human approval and the deployment gate were not reached, and
+device writes remained zero.
+
+The image permission correction now normalizes the immutable promotion runtime
+tree for read/traverse/execute access by an arbitrary non-root UID while keeping
+it non-writable and preserving restrictive host-owned promotion artifacts. This
+does not yet establish successful main-path 7A acceptance: a later protected-main
+run must complete promotion, reach human approval, and pass the no-write
+deployment gate.

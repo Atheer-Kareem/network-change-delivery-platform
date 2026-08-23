@@ -19,6 +19,12 @@ a bounded bind mount before the host agent uploads the artifact. Deployment
 serialization protects write execution separately. Promotion prints the
 verified commit and three exact approval digest values for the approver.
 
+The promotion stage normalizes its immutable virtual environment, application
+source, Batfish fixtures, and readiness path to read/traverse/execute permissions
+without granting broad write access. Its root-owned image content is therefore
+usable by the arbitrary host UID/GID selected for bind-mounted artifact
+ownership, independent of checkout umask.
+
 Promotion contains plan, policy, assurance, and frozen baseline bytes only.
 The approval block stores its three digest fields as Buildkite build meta-data.
 The gate retrieves those exact values with `buildkite-agent meta-data get`,

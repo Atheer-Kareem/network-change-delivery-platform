@@ -36,6 +36,11 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1
 COPY fixtures/batfish ./fixtures/batfish
 COPY scripts/buildkite/batfish_ready.py ./scripts/buildkite/batfish_ready.py
+RUN chmod -R a=rX \
+      /app/.venv \
+      /app/src \
+      /app/fixtures/batfish \
+      /app/scripts/buildkite
 
 FROM ${PYTHON_IMAGE} AS runtime
 ENV PATH="/app/.venv/bin:${PATH}" \

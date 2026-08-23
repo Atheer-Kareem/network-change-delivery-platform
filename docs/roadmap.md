@@ -54,10 +54,11 @@ Ordering may change when implementation evidence requires it.
    discovery and architecture are complete. The 8B foundation and read-only
    plan are accepted after merge: exact toolchain and lock pins, credential-free
    CI validation, provider data-source discovery, external state handling, and
-   zero CML mutation. Increment 8C topology definition and initial
-   `DEFINED_ON_CORE` creation are accepted after merge; `STARTED` and `STOPPED`
-   lifecycle acceptance remain pending. Reset and state-free bootstrap remain
-   8D. Terraform never manages production device configuration. See the
+   zero CML mutation. Increment 8C is complete: topology creation,
+   `DEFINED_ON_CORE`, controlled `STARTED`, operational `STOPPED`, configuration
+   secrecy, and legacy-runtime restoration are accepted. Increment 8 remains in
+   progress, with reset/recreate and state-free bootstrap next in 8D. Terraform
+   never manages production device configuration. See the
    [Terraform/CML digital-twin architecture](architecture/terraform-cml-digital-twin.md).
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.

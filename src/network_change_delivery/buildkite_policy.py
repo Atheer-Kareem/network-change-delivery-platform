@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -44,6 +45,23 @@ def validate_buildkite_deployment_context(
     context: BuildkiteDeploymentContext,
 ) -> BuildkiteDeploymentContext:
     return BuildkiteDeploymentContext.model_validate(context)
+
+
+def buildkite_deployment_context_from_environment(
+    environment: Mapping[str, str],
+) -> BuildkiteDeploymentContext:
+    """Construct the bounded deployment context from Buildkite job metadata."""
+    return BuildkiteDeploymentContext(
+        commit=environment.get("BUILDKITE_COMMIT", ""),
+        branch=environment.get("BUILDKITE_BRANCH", ""),
+        pull_request=environment.get("BUILDKITE_PULL_REQUEST", ""),
+        pipeline_id=environment.get("BUILDKITE_PIPELINE_ID", ""),
+        build_id=environment.get("BUILDKITE_BUILD_ID", ""),
+        build_number=environment.get("BUILDKITE_BUILD_NUMBER", ""),
+        job_id=environment.get("BUILDKITE_JOB_ID", ""),
+        step_key=environment.get("BUILDKITE_STEP_KEY", ""),
+        queue_key=environment.get("BUILDKITE_AGENT_META_DATA_QUEUE", ""),
+    )
 
 
 def compare_approved_digests(

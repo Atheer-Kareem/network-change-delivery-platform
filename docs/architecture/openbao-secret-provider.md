@@ -2,18 +2,32 @@
 
 ## Boundary and authentication
 
-OpenBao is the primary personal-lab credential provider. NCDP authenticates with
-AppRole using `NCDP_OPENBAO_URL`, `NCDP_OPENBAO_ROLE_ID`, and
+OpenBao is the primary personal-lab credential provider. The local/bootstrap
+path authenticates with AppRole using `NCDP_OPENBAO_URL`, `NCDP_OPENBAO_ROLE_ID`, and
 `NCDP_OPENBAO_SECRET_ID`; it does not accept a bootstrap OpenBao token. RoleID and
 SecretID are never CLI arguments or plan/evidence fields. The personal-lab
-SecretID is a bounded bootstrap mechanism, not the mature identity design.
-Buildkite JWT/OIDC federation remains future work.
+SecretID is a bounded bootstrap mechanism, not the mature Buildkite identity
+design.
 
 Each credential load performs a fresh AppRole login, accepts only a positive
 token lease no longer than ten minutes, and uses the issued token for exactly one
 authenticated operation. The personal-lab role issues five-minute, single-use
 tokens. NCDP does not cache, renew, inspect, or retry tokens and does not place
 them in persistent HTTP headers.
+
+The mature Buildkite path uses a Buildkite-issued OIDC JWT with issuer
+`https://agent.buildkite.com`, audience `urn:ncdp:openbao:deploy`, and the fixed
+OpenBao JWT role `ncdp-buildkite-deploy`. OpenBao, not NCDP, verifies the JWT
+signature and role constraints. A successful login must return mapped
+`pipeline_id`, `build_commit`, `build_branch`, `step_key`, and `job_id` metadata;
+NCDP compares all five values exactly with the validated deployment context and
+rejects a token lease over 300 seconds. The bearer JWT is accepted only through
+bounded stdin, and neither it nor the resulting OpenBao token is logged,
+persisted, cached, or renewed.
+
+Increment 7B-A implements and tests this application boundary with mocked HTTP.
+The active Buildkite pipeline does not yet request an OIDC token or contact
+OpenBao; external role configuration and federation acceptance remain pending.
 
 ## Exact KV-v2 derivation
 
@@ -55,5 +69,5 @@ require an explicit reviewed design.
 OpenBao access is short-lived and least privilege, but the underlying IOS XE
 username/password stored in KV-v2 is static. This increment does not provide
 dynamic or short-lived Cisco credentials, per-command Cisco authorization,
-rotation, TACACS/RADIUS, OpenBao Agent, or production-grade Buildkite identity
-federation. `EnvironmentSecretProvider` remains an explicit offline/test option.
+rotation, TACACS/RADIUS, or OpenBao Agent. `EnvironmentSecretProvider` remains
+an explicit offline/test option.

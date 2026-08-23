@@ -33,8 +33,12 @@ deployment write credentials.
 
 The personal-lab path uses bounded AppRole bootstrap credentials to obtain a
 short-lived, single-use, exact-path OpenBao token for a static device credential.
-The mature identity chain remains Buildkite OIDC to OpenBao JWT validation to a
-short-lived OpenBao token and stronger device authorization. Secrets and
+The mature identity chain is Buildkite-issued OIDC JWT to OpenBao signature and
+role validation to mapped job identity and a short-lived OpenBao token, followed
+by stronger device authorization. NCDP binds OpenBao-verified pipeline, commit,
+branch, step, and job metadata to its validated runtime context. The 7B-A
+application boundary is implemented but is not active in Buildkite until the
+external OpenBao role and pipeline integration are accepted. Secrets and
 secret-bearing payloads never enter Git, application models, logs, artifacts, or
 evidence. Company data of any kind is forbidden; only synthetic personal-lab data
 may be used.

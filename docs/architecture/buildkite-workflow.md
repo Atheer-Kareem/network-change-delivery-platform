@@ -32,6 +32,13 @@ verifies exact digests, and prints an authorization summary, then stops.
 There is no device, NetBox, or OpenBao access. OIDC identity and short-lived
 OpenBao access are deferred to 7B (target lifetime 300 seconds).
 
+The 7B-A application foundation adds a future deployment command that reads one
+bounded Buildkite OIDC JWT from stdin and submits it to OpenBao's fixed JWT role.
+OpenBao will validate the signed token and return mapped pipeline, commit,
+branch, step, and job metadata; NCDP then compares that verified metadata with
+the current deployment context. This command is not wired into the active
+pipeline yet and performs no secret retrieval or deployment.
+
 The personal lab may use one Mac, but queues, agent processes, working
 directories, and deployment environment variables remain separate. Physical
 host isolation is not claimed.

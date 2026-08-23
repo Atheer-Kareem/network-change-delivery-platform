@@ -9,10 +9,12 @@ provider, inventory system, credential store, or source of NCDP targeting
 identity.
 
 Increment 8A established the discovery and architecture contract. Increment 8B
-implements the exact Terraform/provider pins, data-source-only root, external
-state boundary, static CI validation, and accepted read-only plan. CML creation
-and lifecycle acceptance begin in 8C; state-free bootstrap, reset/recreate, and
-NCDP cutover compatibility are 8D.
+implements the exact Terraform/provider pins, data-source foundation, external
+state boundary, static CI validation, and accepted read-only plan. Increment
+8C-1 defines and reviews the managed topology through an exact speculative plan;
+no CML resource has been created yet. Apply and lifecycle acceptance remain
+pending. State-free bootstrap, reset/recreate, and NCDP cutover compatibility
+are 8D.
 
 ## Authority boundary
 
@@ -76,6 +78,52 @@ leaves only approximately 1.1–1.5 GiB RAM margin. Coexistence therefore means
 separate ownership, not simultaneous heavy runtime: lifecycle/reset acceptance
 keeps only one three-router set running unless later capacity evidence approves
 otherwise.
+
+### Increment 8C physical topology
+
+The selected twin uses an explicit management fabric and two explicit
+data-plane links. Every endpoint is bound by slot; no link uses next-free
+interface selection.
+
+| Link purpose | Endpoint A | Endpoint B |
+| --- | --- | --- |
+| Management | `system-bridge` port/slot 0 | `management-switch` port 0 |
+| Management | `management-switch` port 1 | `core-02` slot 0 (`GigabitEthernet1`) |
+| Management | `management-switch` port 2 | `edge-junos-01` slot 0 (`fxp0`) |
+| Management | `management-switch` port 3 | `core-03` slot 0 (`GigabitEthernet1`) |
+| Data plane | `core-02` slot 3 (`GigabitEthernet4`) | `edge-junos-01` slot 1 (`ge-0/0/0`) |
+| Data plane | `edge-junos-01` slot 2 (`ge-0/0/1`) | `core-03` slot 2 (`GigabitEthernet3`) |
+
+The reserved, deliberately unlinked change-target interfaces are
+`core-02 GigabitEthernet2`, `core-02 GigabitEthernet3`,
+`edge-junos-01 ge-0/0/2`, and `core-03 GigabitEthernet2`. CML tags stage
+infrastructure before routers and do not provide NCDP target selection.
+
+Canvas placement is deterministic: `system-bridge` at `(-400, -200)`,
+`management-switch` at `(-150, -200)`, `core-02` at `(100, -400)`,
+`edge-junos-01` at `(400, -200)`, and `core-03` at `(700, -400)`.
+
+### Provider lifecycle state machine
+
+The lifecycle input has no default. Missing operator intent fails closed because
+provider `0.9.3-beta1` has no single state that is safe across every phase:
+
+- Initial topology creation requires explicit `DEFINED_ON_CORE`. It creates the
+  Terraform-owned lab, nodes, links, and lifecycle resource without booting the
+  heavy routers, device bootstrap, or NCDP cutover.
+- `STARTED` is an explicit operational start. Its first use requires separate
+  review and authorization after controller capacity and the accepted legacy
+  lab runtime are handled.
+- `STOPPED` is an operational stop valid only after a successful `STARTED`
+  state. The provider rejects `DEFINED_ON_CORE` to `STOPPED`.
+- `DEFINED_ON_CORE` requested after operational use invokes reset/wipe
+  semantics. That transition is reserved for Increment 8D reset acceptance and
+  is not routine stop behavior.
+
+Terraform does not infer lifecycle intent from state, CML observations,
+workspaces, time, or resource existence. Increment 8C-1 supplies
+`DEFINED_ON_CORE` only to an unsaved speculative plan. It remains plan-only; no
+CML creation, boot, lifecycle transition, or reset has succeeded yet.
 
 ## External connector
 

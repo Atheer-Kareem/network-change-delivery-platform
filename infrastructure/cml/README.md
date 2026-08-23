@@ -9,9 +9,9 @@ lifecycle. It must never be used for network-device configuration.
 
 Terraform `1.15.8` and `CiscoDevNet/cml2` `0.9.3-beta1` are exact contracts.
 Provider connection, token, and trusted PEM content are supplied only through
-`CML2_ADDRESS`, `CML2_TOKEN`, and `CML2_CACERT`. TLS verification and the
-provider's token cache remain explicitly disabled in HCL. Do not add credential
-variables or `.tfvars` files.
+`CML2_ADDRESS`, `CML2_TOKEN`, and `CML2_CACERT`. TLS verification remains
+enabled, provider `skip_verify` is explicitly `false`, and token caching is
+explicitly disabled in HCL. Do not add credential variables or `.tfvars` files.
 
 The deterministic canvas places the external connector at `(-400, -200)`, the
 management switch at `(-150, -200)`, `core-02` at `(100, -400)`,

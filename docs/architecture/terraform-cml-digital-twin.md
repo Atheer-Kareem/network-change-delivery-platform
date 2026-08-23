@@ -72,12 +72,16 @@ Every future CML data-plane scenario must explicitly select non-management
 interfaces and define its own topology contract. Management interfaces remain
 protected.
 
-An equivalent twin consumes 6 vCPUs and 14,336 MiB RAM. Available controller
-capacity permits it, but simultaneous operation of both complete router sets
-leaves only approximately 1.1–1.5 GiB RAM margin. Coexistence therefore means
-separate ownership, not simultaneous heavy runtime: lifecycle/reset acceptance
-keeps only one three-router set running unless later capacity evidence approves
-otherwise.
+An equivalent twin consumes 6 vCPUs and 14,336 MiB RAM. Increment 8A measured
+the then-current 10-node legacy lab and found that simultaneous operation of
+both complete router sets would leave only approximately 1.1–1.5 GiB RAM
+margin. Since that discovery, the operator has manually removed unrelated and
+passive nodes from the legacy lab. The exact margin is therefore historical and
+must not be used as current admission evidence or as proof that concurrent heavy
+runtime is now safe. Before the first 8C `STARTED` transition, a fresh read-only
+CML capacity check must fail closed unless sufficient capacity is demonstrated.
+Initial `DEFINED_ON_CORE` creation remains distinct from that future operational
+capacity decision.
 
 ### Increment 8C physical topology
 
@@ -246,9 +250,13 @@ managed-resource actions, no persistent state, and no CML mutation. See the
 
 ### 8C — Terraform-owned topology and lifecycle acceptance
 
-Create the separate lab, deterministic nodes and links, prefer a stopped default
-state, and accept start/stop behavior without NCDP cutover or a requirement to
-run both heavy labs simultaneously.
+Create the separate lab and deterministic nodes and links with no lifecycle
+default. Operator input is required: initial creation uses explicit
+`DEFINED_ON_CORE`, `STARTED` is an explicit future operational start, and
+`STOPPED` is valid after operational start. A later `DEFINED_ON_CORE` request is
+reset/wipe semantics reserved for 8D. Accept start/stop behavior without NCDP
+cutover or assuming concurrent heavy-lab capacity without fresh admission
+evidence.
 
 ### 8D — reset/recreate and NCDP compatibility
 

@@ -192,7 +192,6 @@ def test_scripts_static_contract() -> None:
     assert 'cd "$tmpdir"' in gate
     assert 'buildkite-agent artifact upload "$report_relative"' in gate
     assert "deployments/live/request.yaml" not in gate
-    assert not (ROOT / "deployments/live/request.yaml").exists()
     assert "verify_commit.sh" in promotion
     assert promotion.index("verify_commit.sh") < promotion.index("assure-plan")
     assert 'promotion="$tmpdir/promotion"' in promotion

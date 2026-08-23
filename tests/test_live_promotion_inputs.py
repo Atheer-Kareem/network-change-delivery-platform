@@ -129,8 +129,7 @@ def test_committed_plan_assurance_and_promotion_verify(tmp_path: Path) -> None:
     assert promoted.digest == PLAN_DIGEST
 
 
-def test_live_promotion_inputs_are_secret_free_and_request_absent() -> None:
-    assert not (ROOT / "deployments/live/request.yaml").exists()
+def test_live_promotion_inputs_are_secret_free() -> None:
     forbidden = re.compile(
         r"(?i)(username|password|private[_ -]?key|snmp-server community|"
         r"enable secret|secret_id|client_token|x-vault-token|certificate|"

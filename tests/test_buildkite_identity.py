@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from io import StringIO
 
@@ -71,6 +72,32 @@ def login_payload(**auth_changes: object) -> dict[str, object]:
 def authenticator(handler) -> OpenBaoBuildkiteJWTAuthenticator:
     return OpenBaoBuildkiteJWTAuthenticator(
         "https://openbao.example", transport=httpx.MockTransport(handler)
+    )
+
+
+def diagnostic_jwt(**payload_changes: object) -> BuildkiteOIDCJWT:
+    def encode(value: object) -> str:
+        raw = json.dumps(value, separators=(",", ":")).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    payload: dict[str, object] = {
+        "iss": BUILDKITE_OIDC_ISSUER,
+        "sub": "pipeline-uuid",
+        "aud": OPENBAO_BUILDKITE_JWT_AUDIENCE,
+        "pipeline_id": "pipeline-uuid",
+        "build_branch": "main",
+        "build_commit": "a" * 40,
+        "step_key": "deploy-gate",
+        "job_id": "job-uuid",
+        "iat": 100,
+        "nbf": 100,
+        "exp": 400,
+        "ignored_secret_claim": "must-not-print",
+    }
+    payload.update(payload_changes)
+    return BuildkiteOIDCJWT(
+        f"{encode({'alg': 'RS256', 'kid': 'key-1', 'ignored': 'hidden'})}."
+        f"{encode(payload)}.signature"
     )
 
 
@@ -277,6 +304,65 @@ def test_authentication_failures_are_bounded(status: int) -> None:
         authenticator(handler).authenticate(BuildkiteOIDCJWT(JWT), context())
     assert str(caught.value) == "OpenBao JWT authentication failed"
     assert JWT not in repr(caught.value)
+
+
+def test_diagnostic_prints_selected_claims_exact_comparisons_and_no_jwt() -> None:
+    jwt = diagnostic_jwt()
+    output = StringIO()
+    auth = authenticator(
+        lambda _request: httpx.Response(
+            400, json={"errors": [f"claim mismatch {jwt.value}"]}
+        )
+    )
+    with pytest.raises(SecretError, match="diagnostic login failed"):
+        auth.diagnose(jwt, context(), output)
+    rendered = output.getvalue()
+    for field in (
+        "alg",
+        "kid",
+        "iss",
+        "sub",
+        "aud",
+        "pipeline_id",
+        "build_branch",
+        "build_commit",
+        "step_key",
+        "job_id",
+        "iat",
+        "nbf",
+        "exp",
+    ):
+        assert f"{field}=" in rendered
+    for field in ("pipeline_id", "build_branch", "build_commit", "step_key", "job_id"):
+        assert f"{field}: actual=" in rendered
+        assert "match=True" in rendered
+    assert "HTTP status: 400" in rendered
+    assert "claim mismatch <redacted-jwt>" in rendered
+    assert jwt.value not in rendered
+    assert "must-not-print" not in rendered
+    assert "ignored_secret_claim" not in rendered
+    assert "hidden" not in rendered
+
+
+@pytest.mark.parametrize("content", [b"not-json", b"[]", b'{"errors":"bad"}'])
+def test_diagnostic_bounds_malformed_openbao_error_response(content: bytes) -> None:
+    jwt = diagnostic_jwt()
+    output = StringIO()
+    auth = authenticator(lambda _request: httpx.Response(401, content=content))
+    with pytest.raises(SecretError, match="diagnostic login failed"):
+        auth.diagnose(jwt, context(), output)
+    assert "malformed OpenBao error response" in output.getvalue()
+    assert jwt.value not in output.getvalue()
+
+
+def test_diagnostic_success_discards_token_and_stops() -> None:
+    jwt = diagnostic_jwt()
+    output = StringIO()
+    auth = authenticator(lambda _request: httpx.Response(200, json=login_payload()))
+    assert auth.diagnose(jwt, context(), output) is None
+    assert "stopping before promotion" in output.getvalue()
+    assert CLIENT_TOKEN not in output.getvalue()
+    assert jwt.value not in output.getvalue()
 
 
 @pytest.mark.parametrize("status", [302, 404, 500])

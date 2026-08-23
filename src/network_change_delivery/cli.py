@@ -286,7 +286,11 @@ def _run_verify_buildkite_openbao_identity(arguments: argparse.Namespace) -> int
 
     context = buildkite_deployment_context_from_environment(os.environ)
     jwt = read_buildkite_oidc_jwt(sys.stdin)
-    authentication = OpenBaoBuildkiteJWTAuthenticator().authenticate(jwt, context)
+    authenticator = OpenBaoBuildkiteJWTAuthenticator()
+    if os.environ.get("NCDP_OPENBAO_JWT_DIAGNOSTICS") == "1":
+        authenticator.diagnose(jwt, context, sys.stdout)
+        return 0
+    authentication = authenticator.authenticate(jwt, context)
     print(f"Buildkite OpenBao identity verified: pipeline={context.pipeline_id}")
     print(f"commit: {context.commit}")
     print(f"job: {context.job_id}")

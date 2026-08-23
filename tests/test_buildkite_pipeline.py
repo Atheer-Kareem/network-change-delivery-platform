@@ -142,6 +142,10 @@ def test_scripts_static_contract() -> None:
         "  uv run ncdp verify-buildkite-openbao-identity"
     )
     assert oidc_command in gate
+    assert '[[ "${NCDP_OPENBAO_JWT_DIAGNOSTICS:-}" == 1 ]]' in gate
+    assert gate.index("NCDP_OPENBAO_JWT_DIAGNOSTICS") < gate.index(
+        'tmpdir="$(mktemp -d)"'
+    )
     assert "--skip-redaction" not in gate
     assert "set -x" not in gate
     assert gate.index("verify_commit.sh") < gate.index("oidc request-token")

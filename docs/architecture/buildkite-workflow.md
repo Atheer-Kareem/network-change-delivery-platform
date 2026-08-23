@@ -57,6 +57,17 @@ still has to match the current job exactly. The active gate performs no secret
 retrieval or deployment. External OpenBao configuration and protected-main
 federation acceptance remain pending.
 
+For bounded personal-lab federation troubleshooting only,
+`NCDP_OPENBAO_JWT_DIAGNOSTICS=1` changes the identity command into a terminal
+diagnostic. It decodes, without authenticating, only the JWT algorithm, key ID,
+issuer, subject, audience, five bound identity claims, and time claims; compares
+the five identity claims with the validated Buildkite environment; submits the
+same in-memory JWT to the fixed OpenBao login path; and reports only the HTTP
+status and bounded JSON `errors` strings on rejection. The JWT and any returned
+OpenBao token are never printed or persisted. The gate exits immediately after
+this attempt, before artifact retrieval, secret retrieval, or deployment. The
+flag is absent by default and does not alter normal authentication behavior.
+
 The personal lab may use one Mac, but queues, agent processes, working
 directories, and deployment environment variables remain separate. Physical
 host isolation is not claimed.

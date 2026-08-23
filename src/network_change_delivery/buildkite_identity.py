@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -32,6 +34,21 @@ _IDENTITY_FIELDS = {
     "step_key": "step_key",
     "job_id": "job_id",
 }
+_DIAGNOSTIC_FIELDS = (
+    "alg",
+    "kid",
+    "iss",
+    "sub",
+    "aud",
+    "pipeline_id",
+    "build_branch",
+    "build_commit",
+    "step_key",
+    "job_id",
+    "iat",
+    "nbf",
+    "exp",
+)
 
 
 @dataclass(frozen=True, repr=False)
@@ -156,3 +173,76 @@ class OpenBaoBuildkiteJWTAuthenticator:
                 raise SecretError(f"OpenBao Buildkite identity mismatch: {claim}")
             identity[claim] = value
         return OpenBaoJWTAuthentication(token, lease, identity)
+
+    def diagnose(
+        self,
+        jwt: BuildkiteOIDCJWT,
+        context: BuildkiteDeploymentContext,
+        stream: TextIO,
+    ) -> None:
+        """Decode selected claims for inspection, attempt login, and stop."""
+        header = _decode_unverified_jwt_part(jwt.value.split(".")[0])
+        payload = _decode_unverified_jwt_part(jwt.value.split(".")[1])
+        selected = {
+            field: (header if field in {"alg", "kid"} else payload).get(field)
+            for field in _DIAGNOSTIC_FIELDS
+        }
+        stream.write("Unverified Buildkite JWT diagnostic claims:\n")
+        for field in _DIAGNOSTIC_FIELDS:
+            stream.write(f"{field}={json.dumps(selected[field], sort_keys=True)}\n")
+        expected = {
+            "pipeline_id": context.pipeline_id,
+            "build_branch": context.branch,
+            "build_commit": context.commit,
+            "step_key": context.step_key,
+            "job_id": context.job_id,
+        }
+        stream.write("Exact Buildkite environment comparisons:\n")
+        for field, expected_value in expected.items():
+            stream.write(
+                f"{field}: actual={json.dumps(selected[field], sort_keys=True)} "
+                f"expected={json.dumps(expected_value)} "
+                f"match={selected[field] == expected_value}\n"
+            )
+        try:
+            response = self._client.post(
+                self._LOGIN_PATH,
+                json={"role": OPENBAO_BUILDKITE_JWT_ROLE, "jwt": jwt.value},
+            )
+        except (httpx.TimeoutException, httpx.RequestError):
+            raise SecretError("OpenBao unavailable or timed out") from None
+        stream.write(f"OpenBao JWT login HTTP status: {response.status_code}\n")
+        if response.status_code != 200:
+            errors = _bounded_openbao_errors(response, jwt.value)
+            stream.write(f"OpenBao errors: {json.dumps(errors, sort_keys=True)}\n")
+            raise SecretError("OpenBao JWT diagnostic login failed")
+        stream.write(
+            "OpenBao JWT diagnostic login succeeded; stopping before promotion\n"
+        )
+
+
+def _decode_unverified_jwt_part(value: str) -> dict[str, object]:
+    try:
+        padding = "=" * (-len(value) % 4)
+        decoded = base64.urlsafe_b64decode(value + padding)
+        payload = json.loads(decoded)
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        raise SecretError("Buildkite OIDC JWT diagnostic decode failed") from None
+    if not isinstance(payload, dict):
+        raise SecretError("Buildkite OIDC JWT diagnostic decode failed")
+    return payload
+
+
+def _bounded_openbao_errors(response: httpx.Response, jwt: str) -> list[str]:
+    try:
+        payload = response.json()
+    except ValueError:
+        return ["malformed OpenBao error response"]
+    if not isinstance(payload, dict):
+        return ["malformed OpenBao error response"]
+    errors = payload.get("errors")
+    if not isinstance(errors, list) or not all(
+        isinstance(item, str) for item in errors
+    ):
+        return ["malformed OpenBao error response"]
+    return [error.replace(jwt, "<redacted-jwt>")[:1000] for error in errors[:10]]

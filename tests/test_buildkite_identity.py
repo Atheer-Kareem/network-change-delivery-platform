@@ -12,8 +12,11 @@ import network_change_delivery.secrets as secrets_module
 from network_change_delivery.buildkite_identity import (
     BUILDKITE_JWT_MAX_INPUT_BYTES,
     BUILDKITE_OIDC_ISSUER,
+    BUILDKITE_OIDC_SUBJECT_CLAIM,
+    BUILDKITE_OIDC_TOKEN_LIFETIME_SECONDS,
     OPENBAO_BUILDKITE_JWT_AUDIENCE,
     OPENBAO_BUILDKITE_JWT_ROLE,
+    OPENBAO_BUILDKITE_MAX_LEASE_SECONDS,
     BuildkiteOIDCJWT,
     OpenBaoBuildkiteJWTAuthenticator,
     read_buildkite_oidc_jwt,
@@ -70,8 +73,11 @@ def authenticator(handler) -> OpenBaoBuildkiteJWTAuthenticator:
 
 def test_fixed_external_identity_contract() -> None:
     assert BUILDKITE_OIDC_ISSUER == "https://agent.buildkite.com"
+    assert BUILDKITE_OIDC_SUBJECT_CLAIM == "pipeline_id"
+    assert BUILDKITE_OIDC_TOKEN_LIFETIME_SECONDS == 300
     assert OPENBAO_BUILDKITE_JWT_AUDIENCE == "urn:ncdp:openbao:deploy"
     assert OPENBAO_BUILDKITE_JWT_ROLE == "ncdp-buildkite-deploy"
+    assert OPENBAO_BUILDKITE_MAX_LEASE_SECONDS == 300
 
 
 def test_jwt_auth_uses_the_shared_hardened_http_client(monkeypatch) -> None:

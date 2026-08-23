@@ -17,8 +17,12 @@ them in persistent HTTP headers.
 
 The mature Buildkite path uses a Buildkite-issued OIDC JWT with issuer
 `https://agent.buildkite.com`, audience `urn:ncdp:openbao:deploy`, and the fixed
-OpenBao JWT role `ncdp-buildkite-deploy`. OpenBao, not NCDP, verifies the JWT
-signature and role constraints. A successful login must return mapped
+OpenBao JWT role `ncdp-buildkite-deploy`. The job requests a 300-second JWT with
+`pipeline_id` as its subject claim, making the immutable pipeline UUID available
+as both `sub` and an explicit claim. OpenBao binds that exact subject, uses
+`job_id` as the role's machine `user_claim`, and constrains the `main` branch and
+`deploy-gate` step. OpenBao, not NCDP, verifies the JWT signature and role
+constraints. A successful login must return required JSON-pointer mappings for
 `pipeline_id`, `build_commit`, `build_branch`, `step_key`, and `job_id` metadata;
 NCDP compares all five values exactly with the validated deployment context and
 rejects a token lease over 300 seconds. The bearer JWT is accepted only through

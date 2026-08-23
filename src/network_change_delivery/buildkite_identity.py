@@ -17,6 +17,8 @@ from network_change_delivery.secrets import (
 )
 
 BUILDKITE_OIDC_ISSUER = "https://agent.buildkite.com"
+BUILDKITE_OIDC_SUBJECT_CLAIM = "pipeline_id"
+BUILDKITE_OIDC_TOKEN_LIFETIME_SECONDS = 300
 OPENBAO_BUILDKITE_JWT_ROLE = "ncdp-buildkite-deploy"
 OPENBAO_BUILDKITE_JWT_AUDIENCE = "urn:ncdp:openbao:deploy"
 OPENBAO_BUILDKITE_MAX_LEASE_SECONDS = 300

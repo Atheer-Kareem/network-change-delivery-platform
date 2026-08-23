@@ -19,6 +19,10 @@ buildkite-agent oidc request-token \
   --lifetime 300 \
   --subject-claim pipeline_id |
   uv run ncdp verify-buildkite-openbao-identity
+if [[ "${NCDP_OPENBAO_JWT_DIAGNOSTICS:-}" == 1 ]]; then
+  echo "OpenBao JWT diagnostic completed; promotion and deployment remain stopped"
+  exit 0
+fi
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 buildkite-agent artifact download "promotion/**" "$tmpdir" --step promotion

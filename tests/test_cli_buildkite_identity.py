@@ -73,6 +73,53 @@ def test_cli_has_no_jwt_argument() -> None:
         parser.parse_args(["verify-buildkite-openbao-identity", "--jwt", JWT])
 
 
+def test_diagnostic_mode_is_disabled_by_default(monkeypatch, capsys) -> None:
+    buildkite_environment(monkeypatch)
+    monkeypatch.delenv("NCDP_OPENBAO_JWT_DIAGNOSTICS", raising=False)
+
+    class Authenticator:
+        def diagnose(self, *_args):
+            raise AssertionError("diagnostic must be opt-in")
+
+        def authenticate(self, _jwt, context):
+            return OpenBaoJWTAuthentication(
+                CLIENT_TOKEN,
+                300,
+                {
+                    "pipeline_id": context.pipeline_id,
+                    "build_commit": context.commit,
+                    "build_branch": context.branch,
+                    "step_key": context.step_key,
+                    "job_id": context.job_id,
+                },
+            )
+
+    monkeypatch.setattr(cli_module, "OpenBaoBuildkiteJWTAuthenticator", Authenticator)
+    monkeypatch.setattr(sys, "stdin", StringIO(JWT))
+    assert main(["verify-buildkite-openbao-identity"]) == 0
+    assert JWT not in capsys.readouterr().out
+
+
+def test_diagnostic_mode_is_opt_in_and_skips_normal_auth(monkeypatch, capsys) -> None:
+    buildkite_environment(monkeypatch)
+    monkeypatch.setenv("NCDP_OPENBAO_JWT_DIAGNOSTICS", "1")
+
+    class Authenticator:
+        def authenticate(self, *_args):
+            raise AssertionError("normal authentication must not continue")
+
+        def diagnose(self, jwt, context, stream):
+            assert jwt.value == JWT
+            stream.write(f"diagnostic pipeline={context.pipeline_id}\n")
+
+    monkeypatch.setattr(cli_module, "OpenBaoBuildkiteJWTAuthenticator", Authenticator)
+    monkeypatch.setattr(sys, "stdin", StringIO(JWT))
+    assert main(["verify-buildkite-openbao-identity"]) == 0
+    output = capsys.readouterr()
+    assert "diagnostic pipeline=pipeline-uuid" in output.out
+    assert JWT not in output.out + output.err
+
+
 def test_cli_rejects_invalid_stdin_before_openbao(monkeypatch, capsys) -> None:
     buildkite_environment(monkeypatch)
 

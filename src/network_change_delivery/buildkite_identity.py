@@ -191,12 +191,13 @@ class OpenBaoBuildkiteJWTAuthenticator:
         for field in _DIAGNOSTIC_FIELDS:
             stream.write(f"{field}={json.dumps(selected[field], sort_keys=True)}\n")
         expected = {
-            "pipeline_id": context.pipeline_id,
+            "sub": context.pipeline_id,
             "build_branch": context.branch,
             "build_commit": context.commit,
             "step_key": context.step_key,
             "job_id": context.job_id,
         }
+        stream.write("Pipeline identity source: sub\n")
         stream.write("Exact Buildkite environment comparisons:\n")
         for field, expected_value in expected.items():
             stream.write(

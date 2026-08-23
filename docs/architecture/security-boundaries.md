@@ -45,8 +45,9 @@ pending. Its 7B token has no policies or device-secret capability and is
 discarded after identity validation. That zero-capability claim is checked both
 in the configured role and in the actual login response's token,
 Identity-derived, and aggregate effective policies. The stable OpenBao Identity
-alias is the immutable `pipeline_id`; required mapped `job_id` comparison still
-binds every individual job.
+alias is immutable JWT `sub`, mapped to application metadata named
+`pipeline_id`; required mapped `job_id` comparison still binds every individual
+job. A separate optional JWT `pipeline_id` claim is not trusted or required.
 Secrets and secret-bearing payloads never enter Git, application models, logs,
 artifacts, or evidence. Company data of any kind is forbidden; only synthetic
 personal-lab data may be used.

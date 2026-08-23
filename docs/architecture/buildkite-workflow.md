@@ -42,17 +42,17 @@ The deployment gate reads one bounded Buildkite OIDC JWT from stdin and submits
 it to OpenBao's fixed JWT role. The main, non-PR job requests that JWT with
 audience `urn:ncdp:openbao:deploy`,
 300-second lifetime, and `pipeline_id` as its subject claim. This makes the
-immutable pipeline UUID both the JWT subject and an explicit mapped claim.
-OpenBao validates the signed token and returns mapped pipeline, commit, branch,
-step, and job metadata; NCDP then compares that verified metadata with the
-current deployment context. The job rejects ambient AppRole bootstrap and
+immutable pipeline UUID the JWT `sub`. OpenBao binds that exact subject, maps
+`/sub` to application metadata named `pipeline_id`, and returns mapped commit,
+branch, step, and job metadata; NCDP then compares all five verified values with
+the current deployment context. The job rejects ambient AppRole bootstrap and
 direct device credentials before requesting identity. Only after identity
 verification does it retrieve and verify the promotion artifact and promoted
 metadata. Final authorization success therefore requires both cryptographic
 workload identity and exact promotion verification. The issued OpenBao token has
 no policies and is discarded; NCDP verifies the actual response contains no
 token, Identity-derived, or aggregate policy capability. OpenBao uses immutable
-`pipeline_id` as the stable Identity alias while the required mapped `job_id`
+`sub` as the stable Identity alias while the required mapped `job_id`
 still has to match the current job exactly. The active gate performs no secret
 retrieval or deployment. External OpenBao configuration and protected-main
 federation acceptance remain pending.
@@ -61,12 +61,19 @@ For bounded personal-lab federation troubleshooting only,
 `NCDP_OPENBAO_JWT_DIAGNOSTICS=1` changes the identity command into a terminal
 diagnostic. It decodes, without authenticating, only the JWT algorithm, key ID,
 issuer, subject, audience, five bound identity claims, and time claims; compares
-the five identity claims with the validated Buildkite environment; submits the
-same in-memory JWT to the fixed OpenBao login path; and reports only the HTTP
+`sub` and the four job claims with the validated Buildkite environment; submits
+the same in-memory JWT to the fixed OpenBao login path; and reports only the HTTP
 status and bounded JSON `errors` strings on rejection. The JWT and any returned
 OpenBao token are never printed or persisted. The gate exits immediately after
 this attempt, before artifact retrieval, secret retrieval, or deployment. The
 flag is absent by default and does not alter normal authentication behavior.
+
+Protected-main diagnostics established why the original role failed: the token
+contained the exact immutable pipeline UUID in `sub`, contained no separate
+`pipeline_id` claim, and OpenBao rejected the required `/pipeline_id` mapping
+with `claim "pipeline_id" not found in token`. The durable contract now uses
+standard `sub`; absence of the optional duplicate claim is expected. Successful
+external federation acceptance with the corrected role remains pending.
 
 The personal lab may use one Mac, but queues, agent processes, working
 directories, and deployment environment variables remain separate. Physical

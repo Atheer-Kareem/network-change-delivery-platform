@@ -33,7 +33,7 @@ JWT_CONFIG_READ = {
     "status": "valid",
 }
 JWT_CLAIM_MAPPINGS = {
-    "/pipeline_id": "pipeline_id",
+    "/sub": "pipeline_id",
     "/build_commit": "build_commit",
     "/build_branch": "build_branch",
     "/step_key": "step_key",
@@ -58,7 +58,7 @@ def buildkite_jwt_role_config(pipeline_id: str) -> dict[str, object]:
         "role_type": "jwt",
         "bound_audiences": [OPENBAO_BUILDKITE_JWT_AUDIENCE],
         "bound_subject": validate_pipeline_id(pipeline_id),
-        "user_claim": "pipeline_id",
+        "user_claim": "sub",
         "bound_claims_type": "string",
         "bound_claims": {"build_branch": "main", "step_key": "deploy-gate"},
         "claim_mappings": JWT_CLAIM_MAPPINGS,

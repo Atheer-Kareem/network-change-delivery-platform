@@ -84,7 +84,7 @@ def diagnostic_jwt(**payload_changes: object) -> BuildkiteOIDCJWT:
         "iss": BUILDKITE_OIDC_ISSUER,
         "sub": "pipeline-uuid",
         "aud": OPENBAO_BUILDKITE_JWT_AUDIENCE,
-        "pipeline_id": "pipeline-uuid",
+        "pipeline_id": None,
         "build_branch": "main",
         "build_commit": "a" * 40,
         "step_key": "deploy-gate",
@@ -333,15 +333,34 @@ def test_diagnostic_prints_selected_claims_exact_comparisons_and_no_jwt() -> Non
         "exp",
     ):
         assert f"{field}=" in rendered
-    for field in ("pipeline_id", "build_branch", "build_commit", "step_key", "job_id"):
+    for field in ("sub", "build_branch", "build_commit", "step_key", "job_id"):
         assert f"{field}: actual=" in rendered
         assert "match=True" in rendered
+    assert "Pipeline identity source: sub" in rendered
+    assert "pipeline_id=null" in rendered
+    assert "pipeline_id: actual=" not in rendered
     assert "HTTP status: 400" in rendered
     assert "claim mismatch <redacted-jwt>" in rendered
     assert jwt.value not in rendered
     assert "must-not-print" not in rendered
     assert "ignored_secret_claim" not in rendered
     assert "hidden" not in rendered
+
+
+def test_diagnostic_reports_wrong_subject_as_pipeline_identity_mismatch() -> None:
+    jwt = diagnostic_jwt(sub="other-pipeline", pipeline_id=None)
+    output = StringIO()
+    auth = authenticator(
+        lambda _request: httpx.Response(400, json={"errors": ["subject claim invalid"]})
+    )
+    with pytest.raises(SecretError, match="diagnostic login failed"):
+        auth.diagnose(jwt, context(), output)
+    rendered = output.getvalue()
+    assert "Pipeline identity source: sub" in rendered
+    assert (
+        'sub: actual="other-pipeline" expected="pipeline-uuid" match=False' in rendered
+    )
+    assert "subject claim invalid" in rendered
 
 
 @pytest.mark.parametrize("content", [b"not-json", b"[]", b'{"errors":"bad"}'])

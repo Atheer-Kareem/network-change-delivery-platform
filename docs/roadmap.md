@@ -65,9 +65,15 @@ Ordering may change when implementation evidence requires it.
    IOS XE management bootstrap, operational transfer of the unchanged NetBox
    identity from the deliberately stopped legacy realization, unchanged
    OpenBao credential reuse, strict SSH host-trust replacement, existing NCDP
-   read-only planning, state secrecy, and restart persistence. Junos bootstrap,
-   reset/recreate, full cutover, and legacy retirement remain. Terraform never
-   manages production device configuration. See the
+   read-only planning, state secrecy, and restart persistence. Increment 8D-2B
+   now introduces the ADR 0013 personal-lab Day-0 exception to replace manual
+   IOS XE bootstrap with controlled, zero-console recreation. The exception
+   deliberately persists credential-bearing manageability bootstrap in external
+   Terraform state and CML Day-0 storage while NetBox and OpenBao remain
+   authoritative and NCDP-managed intent stays outside Terraform. Junos Day-0
+   bootstrap should reuse the proven pattern. Whole-lab reset/recreate, full
+   cutover, and legacy retirement remain. Terraform never manages production or
+   NCDP-managed device configuration. See the
    [Terraform/CML digital-twin architecture](architecture/terraform-cml-digital-twin.md).
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.

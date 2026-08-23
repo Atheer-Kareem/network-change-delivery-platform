@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted for Increment 8 implementation after Increment 8A merge.
+Accepted for Increment 8 implementation after Increment 8A merge. ADR 0013
+supersedes only this ADR's prohibition on credential-bearing Terraform/CML
+Day-0 configuration inside the personal CML digital twin; the historical
+rationale and all other boundaries remain accepted.
 
 ## Context
 
@@ -86,6 +89,11 @@ values out of state, and merely omitting these attributes from HCL is
 insufficient: provider `Read()` refreshes the CML node and its Optional +
 Computed `configuration` and `configurations` values can be persisted into
 Terraform state.
+
+This prohibition was the accepted boundary through Increment 8D-2. ADR 0013
+supersedes it only for minimum manageability bootstrap in the personal CML
+digital twin. It remains the boundary for production and for NCDP-managed
+network intent.
 
 Increment 8D must identify and prove a runtime bootstrap channel that does not
 populate provider-readable CML stored configuration. CML console or serial

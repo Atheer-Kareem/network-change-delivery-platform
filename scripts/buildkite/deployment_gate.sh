@@ -4,6 +4,21 @@ set -euo pipefail
 [[ "${BUILDKITE_STEP_KEY:-}" == deploy-gate ]]
 [[ "${BUILDKITE_AGENT_META_DATA_QUEUE:-}" == ncdp-deploy ]]
 scripts/buildkite/verify_commit.sh
+for prohibited_variable in \
+  NCDP_OPENBAO_ROLE_ID \
+  NCDP_OPENBAO_SECRET_ID \
+  NCDP_DEVICE_USERNAME \
+  NCDP_DEVICE_PASSWORD; do
+  if [[ -n "${!prohibited_variable:-}" ]]; then
+    echo "prohibited deployment credential is present: $prohibited_variable" >&2
+    exit 2
+  fi
+done
+buildkite-agent oidc request-token \
+  --audience urn:ncdp:openbao:deploy \
+  --lifetime 300 \
+  --subject-claim pipeline_id |
+  uv run ncdp verify-buildkite-openbao-identity
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 buildkite-agent artifact download "promotion/**" "$tmpdir" --step promotion

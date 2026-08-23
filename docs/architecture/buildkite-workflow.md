@@ -36,19 +36,26 @@ digests. The deployment gate downloads and independently verifies the artifact,
 then requires its three verified digests to match the machine-recorded promoted
 values exactly. The separation is promotion records → human authorizes → gate
 verifies. Automated metadata is evidence, not authorization, and the gate still
-depends on the human block. It prints an authorization summary, then stops.
-There is no device, NetBox, or OpenBao access. OIDC identity and short-lived
-OpenBao access are deferred to 7B (target lifetime 300 seconds).
+depends on the human block.
 
-The 7B-A application foundation adds a future deployment command that reads one
-bounded Buildkite OIDC JWT from stdin and submits it to OpenBao's fixed JWT role.
-The future job will request that JWT with audience `urn:ncdp:openbao:deploy`,
+The deployment gate reads one bounded Buildkite OIDC JWT from stdin and submits
+it to OpenBao's fixed JWT role. The main, non-PR job requests that JWT with
+audience `urn:ncdp:openbao:deploy`,
 300-second lifetime, and `pipeline_id` as its subject claim. This makes the
 immutable pipeline UUID both the JWT subject and an explicit mapped claim.
-OpenBao will validate the signed token and return mapped pipeline, commit,
-branch, step, and job metadata; NCDP then compares that verified metadata with
-the current deployment context. This command is not wired into the active
-pipeline yet and performs no secret retrieval or deployment.
+OpenBao validates the signed token and returns mapped pipeline, commit, branch,
+step, and job metadata; NCDP then compares that verified metadata with the
+current deployment context. The job rejects ambient AppRole bootstrap and
+direct device credentials before requesting identity. Only after identity
+verification does it retrieve and verify the promotion artifact and promoted
+metadata. Final authorization success therefore requires both cryptographic
+workload identity and exact promotion verification. The issued OpenBao token has
+no policies and is discarded; NCDP verifies the actual response contains no
+token, Identity-derived, or aggregate policy capability. OpenBao uses immutable
+`pipeline_id` as the stable Identity alias while the required mapped `job_id`
+still has to match the current job exactly. The active gate performs no secret
+retrieval or deployment. External OpenBao configuration and protected-main
+federation acceptance remain pending.
 
 The personal lab may use one Mac, but queues, agent processes, working
 directories, and deployment environment variables remain separate. Physical

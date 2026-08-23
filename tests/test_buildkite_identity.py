@@ -59,6 +59,9 @@ def login_payload(**auth_changes: object) -> dict[str, object]:
     auth: dict[str, object] = {
         "client_token": CLIENT_TOKEN,
         "lease_duration": 300,
+        "token_policies": [],
+        "identity_policies": [],
+        "policies": [],
         "metadata": metadata(),
     }
     auth.update(auth_changes)
@@ -181,6 +184,54 @@ def test_unacceptable_token_and_lease_are_rejected(change: dict[str, object]) ->
         authenticator(handler).authenticate(BuildkiteOIDCJWT(JWT), context())
     assert JWT not in repr(caught.value)
     assert CLIENT_TOKEN not in repr(caught.value)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"token_policies": ["default"], "policies": ["default"]},
+        {"token_policies": ["unexpected"], "policies": ["unexpected"]},
+        {"identity_policies": ["identity-policy"], "policies": ["identity-policy"]},
+        {"policies": ["aggregate-policy"]},
+        {"token_policies": "not-a-list"},
+        {"identity_policies": {}},
+        {"policies": False},
+    ],
+)
+def test_effective_policy_capability_is_rejected(change: dict[str, object]) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=login_payload(**change))
+
+    with pytest.raises(SecretError) as caught:
+        authenticator(handler).authenticate(BuildkiteOIDCJWT(JWT), context())
+    assert str(caught.value) == "OpenBao issued unauthorized policy capability"
+    assert JWT not in repr(caught.value)
+    assert CLIENT_TOKEN not in repr(caught.value)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"token_policies": None, "identity_policies": None, "policies": None},
+        {},
+    ],
+)
+def test_null_or_omitted_empty_policy_fields_are_accepted(
+    change: dict[str, object],
+) -> None:
+    payload = login_payload(**change)
+    if not change:
+        auth = payload["auth"]
+        assert isinstance(auth, dict)
+        auth.pop("token_policies")
+        auth.pop("identity_policies")
+        auth.pop("policies")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    result = authenticator(handler).authenticate(BuildkiteOIDCJWT(JWT), context())
+    assert result.identity_metadata == metadata()
 
 
 @pytest.mark.parametrize(

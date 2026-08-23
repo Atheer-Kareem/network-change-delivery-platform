@@ -18,10 +18,12 @@ buildkite-agent oidc request-token \
   --subject-claim pipeline_id
 ```
 
-`pipeline_id` is not a default Buildkite OIDC claim. Selecting it as the subject
-claim both sets `sub` to the immutable pipeline UUID and includes the
-`pipeline_id` claim for mapping and application comparison. The 300-second
-Buildkite JWT lifetime is distinct from the OpenBao token lease limit.
+Selecting `pipeline_id` as the subject claim sets standard JWT `sub` to the
+immutable pipeline UUID. Protected-main evidence showed that it does not
+necessarily add a separate `pipeline_id` claim: `sub` held the correct UUID while
+`pipeline_id` was absent. The role therefore treats `sub` as the canonical
+pipeline identity and does not depend on a duplicate optional claim. The
+300-second Buildkite JWT lifetime is distinct from the OpenBao token lease limit.
 
 The OpenBao role contract is:
 
@@ -30,17 +32,19 @@ The OpenBao role contract is:
 - issuer/discovery authority: `https://agent.buildkite.com`;
 - `bound_audiences = ["urn:ncdp:openbao:deploy"]`;
 - `bound_subject` is the exact configured immutable NCDP Buildkite pipeline UUID;
-- `user_claim = pipeline_id`, providing one stable Identity alias for the
+- `user_claim = sub`, providing one stable Identity alias for the
   immutable workload rather than a new alias for every job;
 - exact bound claims are `build_branch = main` and `step_key = deploy-gate`;
-- required claim mappings are `/pipeline_id` → `pipeline_id`, `/build_commit` →
+- required claim mappings are `/sub` → `pipeline_id`, `/build_commit` →
   `build_commit`, `/build_branch` → `build_branch`, `/step_key` → `step_key`,
   and `/job_id` → `job_id`.
 
 The leading `/` JSON-pointer mapping form makes those source claims required.
-`job_id` remains mapped and NCDP compares all five OpenBao-verified values
-exactly with its validated Buildkite deployment context, so stable pipeline
-identity does not weaken per-job binding. For 7B identity acceptance, the role's
+OpenBao returns the subject under the application-facing metadata name
+`pipeline_id`. `job_id` remains mapped and NCDP compares all five
+OpenBao-verified values exactly with its validated Buildkite deployment context,
+so stable pipeline identity does not weaken per-job binding. For 7B identity
+acceptance, the role's
 issued OpenBao token has no default policy, no policies, TTL, maximum TTL, and
 explicit maximum TTL of at most 300 seconds, and one permitted use. NCDP also
 requires the actual login result's token, Identity-derived, and aggregate policy
@@ -73,8 +77,11 @@ The application boundary, serialized deployment-gate integration, and
 idempotent operator configuration tool are implemented. The deployment job
 rejects legacy AppRole and direct device credentials, pipes the JWT directly
 from Buildkite to NCDP, and cannot report final authorization success until
-OpenBao-verified identity and the existing promotion checks both pass. External
-JWT-role configuration and a real protected-main exchange remain pending and
-are not established by local tests. No device secret is retrieved and no
-deployment is performed. Increment 7C still owns fully enforced live CML
-deployment.
+OpenBao-verified identity and the existing promotion checks both pass. A real
+protected-main diagnostic exposed the obsolete `/pipeline_id` mapping:
+Buildkite emitted the correct immutable UUID in `sub`, omitted the separate
+`pipeline_id` claim, and OpenBao rejected login with
+`claim "pipeline_id" not found in token`. The corrected role maps `/sub`.
+Successful external federation acceptance remains pending. No device secret is
+retrieved and no deployment is performed. Increment 7C still owns fully
+enforced live CML deployment.

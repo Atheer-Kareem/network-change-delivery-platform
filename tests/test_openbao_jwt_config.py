@@ -159,7 +159,7 @@ def test_exact_role_has_identity_constraints_and_no_secret_capability() -> None:
         "role_type": "jwt",
         "bound_audiences": [OPENBAO_BUILDKITE_JWT_AUDIENCE],
         "bound_subject": PIPELINE_ID,
-        "user_claim": "pipeline_id",
+        "user_claim": "sub",
         "bound_claims_type": "string",
         "bound_claims": {"build_branch": "main", "step_key": "deploy-gate"},
         "claim_mappings": JWT_CLAIM_MAPPINGS,
@@ -181,7 +181,32 @@ def test_exact_role_has_identity_constraints_and_no_secret_capability() -> None:
         "status": "valid",
     }
     assert all(source.startswith("/") for source in JWT_CLAIM_MAPPINGS)
+    assert JWT_CLAIM_MAPPINGS == {
+        "/sub": "pipeline_id",
+        "/build_commit": "build_commit",
+        "/build_branch": "build_branch",
+        "/step_key": "step_key",
+        "/job_id": "job_id",
+    }
+    assert "/pipeline_id" not in JWT_CLAIM_MAPPINGS
     assert not role["token_policies"]
+
+
+def test_existing_owned_role_is_rewritten_to_sub_contract() -> None:
+    requests: list[httpx.Request] = []
+    assert not configurator(
+        successful_handler(requests, mount_present=True)
+    ).configure()
+    role_write = next(
+        request
+        for request in requests
+        if request.method == "POST"
+        and request.url.path == f"/v1/auth/jwt/role/{OPENBAO_BUILDKITE_JWT_ROLE}"
+    )
+    written = json.loads(role_write.content)
+    assert written["user_claim"] == "sub"
+    assert written["claim_mappings"]["/sub"] == "pipeline_id"
+    assert "/pipeline_id" not in written["claim_mappings"]
 
 
 @pytest.mark.parametrize(
@@ -253,6 +278,24 @@ def test_all_operator_environment_inputs_are_required(missing: str) -> None:
         (
             f"/v1/auth/jwt/role/{OPENBAO_BUILDKITE_JWT_ROLE}",
             role_payload(token_policies=["secret-read"]),
+            "role",
+        ),
+        (
+            f"/v1/auth/jwt/role/{OPENBAO_BUILDKITE_JWT_ROLE}",
+            role_payload(user_claim="pipeline_id"),
+            "role",
+        ),
+        (
+            f"/v1/auth/jwt/role/{OPENBAO_BUILDKITE_JWT_ROLE}",
+            role_payload(
+                claim_mappings={
+                    "/pipeline_id": "pipeline_id",
+                    "/build_commit": "build_commit",
+                    "/build_branch": "build_branch",
+                    "/step_key": "step_key",
+                    "/job_id": "job_id",
+                }
+            ),
             "role",
         ),
     ],

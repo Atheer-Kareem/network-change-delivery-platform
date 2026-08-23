@@ -19,17 +19,24 @@ The mature Buildkite path uses a Buildkite-issued OIDC JWT with issuer
 `https://agent.buildkite.com`, audience `urn:ncdp:openbao:deploy`, and the fixed
 OpenBao JWT role `ncdp-buildkite-deploy`. The job requests a 300-second JWT with
 `pipeline_id` as its subject claim, making the immutable pipeline UUID available
-as both `sub` and an explicit claim. OpenBao binds that exact subject and uses
-`pipeline_id` as the stable machine `user_claim`, avoiding a new Identity alias
-for every job. It constrains the `main` branch and `deploy-gate` step. OpenBao,
+as standard JWT `sub`. OpenBao binds that exact subject and uses `sub` as the
+stable machine `user_claim`, avoiding a new Identity alias for every job. It
+constrains the `main` branch and `deploy-gate` step. OpenBao,
 not NCDP, verifies the JWT signature and role
-constraints. A successful login must return required JSON-pointer mappings for
-`pipeline_id`, `build_commit`, `build_branch`, `step_key`, and `job_id` metadata;
-NCDP compares all five values exactly with the validated deployment context and
+constraints. A successful login must map required JSON pointers `/sub` to
+`pipeline_id` metadata and `/build_commit`, `/build_branch`, `/step_key`, and
+`/job_id` to their corresponding metadata names. NCDP compares all five values
+exactly with the validated deployment context and
 rejects a token lease over 300 seconds. Thus each changing `job_id` remains
 cryptographically bound even though the Identity alias is stable. The bearer JWT
 is accepted only through bounded stdin, and neither it nor the resulting OpenBao
 token is logged, persisted, cached, or renewed.
+
+Protected-main diagnostics proved that Buildkite correctly populated `sub` with
+the immutable pipeline UUID but omitted a separate `pipeline_id` claim. The old
+required `/pipeline_id` mapping therefore caused OpenBao to reject login. The
+standard subject is now the sole canonical pipeline claim; the application still
+receives and exactly verifies metadata named `pipeline_id`.
 
 The active main-only deployment gate implements this exchange after human
 authorization and before promotion verification. It rejects ambient AppRole and

@@ -24,8 +24,12 @@ from network_change_delivery.assurance import (
     evaluate_assurance,
     prepare_snapshot,
 )
+from network_change_delivery.buildkite_identity import (
+    OpenBaoBuildkiteJWTAuthenticator,
+    read_buildkite_oidc_jwt,
+)
 from network_change_delivery.buildkite_policy import (
-    BuildkiteDeploymentContext,
+    buildkite_deployment_context_from_environment,
     compare_approved_digests,
 )
 from network_change_delivery.fleet import FleetSafetyError, deploy_fleet, plan_fleet
@@ -246,17 +250,7 @@ def _run_verify_promotion(arguments: argparse.Namespace) -> int:
 
 
 def _run_verify_buildkite_gate(arguments: argparse.Namespace) -> int:
-    context = BuildkiteDeploymentContext(
-        commit=os.environ.get("BUILDKITE_COMMIT", ""),
-        branch=os.environ.get("BUILDKITE_BRANCH", ""),
-        pull_request=os.environ.get("BUILDKITE_PULL_REQUEST", ""),
-        pipeline_id=os.environ.get("BUILDKITE_PIPELINE_ID", ""),
-        build_id=os.environ.get("BUILDKITE_BUILD_ID", ""),
-        build_number=os.environ.get("BUILDKITE_BUILD_NUMBER", ""),
-        job_id=os.environ.get("BUILDKITE_JOB_ID", ""),
-        step_key=os.environ.get("BUILDKITE_STEP_KEY", ""),
-        queue_key=os.environ.get("BUILDKITE_AGENT_META_DATA_QUEUE", ""),
-    )
+    context = buildkite_deployment_context_from_environment(os.environ)
     manifest = verify_promotion_bundle(arguments.promotion, context.commit)
     compare_approved_digests(
         manifest.plan_digest,
@@ -272,6 +266,20 @@ def _run_verify_buildkite_gate(arguments: argparse.Namespace) -> int:
     print(f"promotion digest: {manifest.digest}")
     print("deployment authorization gate: PASSED")
     print("device write executed: NO")
+    return 0
+
+
+def _run_verify_buildkite_openbao_identity(arguments: argparse.Namespace) -> int:
+    del arguments
+    import sys
+
+    context = buildkite_deployment_context_from_environment(os.environ)
+    jwt = read_buildkite_oidc_jwt(sys.stdin)
+    authentication = OpenBaoBuildkiteJWTAuthenticator().authenticate(jwt, context)
+    print(f"Buildkite OpenBao identity verified: pipeline={context.pipeline_id}")
+    print(f"commit: {context.commit}")
+    print(f"job: {context.job_id}")
+    print(f"OpenBao token lease: {authentication.lease_duration} seconds")
     return 0
 
 
@@ -555,6 +563,12 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--approved-assurance-digest", required=True)
     gate_parser.add_argument("--approved-promotion-digest", required=True)
     gate_parser.set_defaults(handler=_run_verify_buildkite_gate)
+
+    identity_parser = subparsers.add_parser(
+        "verify-buildkite-openbao-identity",
+        help="verify Buildkite workload identity through OpenBao JWT auth",
+    )
+    identity_parser.set_defaults(handler=_run_verify_buildkite_openbao_identity)
 
     deploy_parser = subparsers.add_parser(
         "deploy",

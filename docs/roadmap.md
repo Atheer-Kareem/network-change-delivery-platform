@@ -44,8 +44,10 @@ Ordering may change when implementation evidence requires it.
 7. **Buildkite approval and hardened deployment — in progress:** 7A is complete,
    including external protected-main Buildkite acceptance of offline promotion
    artifacts, exact human-approved digests, isolated queue routing, and the
-   serialized no-write deployment gate. 7B is next and adds OIDC/OpenBao JWT
-   identity; 7C remains fully enforced live CML deployment acceptance.
+   serialized no-write deployment gate. 7B is in progress: 7B-A establishes the
+   application-side OIDC/OpenBao JWT identity boundary, while external role and
+   Buildkite federation acceptance remain pending. 7C remains fully enforced
+   live CML deployment acceptance.
 8. **Terraform/CML infrastructure as code:** reproducible twin lifecycle and reset,
    without Terraform-managed production configuration.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,

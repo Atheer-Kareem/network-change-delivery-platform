@@ -42,6 +42,8 @@ high availability, enterprise identity governance, scale, or operational staffin
 The reference implementation must not be promoted to production unchanged.
 ## Buildkite 7A residual risks
 
-7A does not establish GitHub main protection or cryptographic Buildkite job
-identity. OIDC, OpenBao JWT federation, and live deployment authorization are
-explicit 7B/7C controls; promotion artifacts contain no credentials.
+7A established protected-main Buildkite acceptance, but it did not establish
+cryptographic Buildkite job identity. 7B-A adds the application boundary for
+OpenBao-validated Buildkite JWT identity; external federation remains pending.
+Live deployment authorization and execution remain 7B/7C controls, and
+promotion artifacts contain no credentials.

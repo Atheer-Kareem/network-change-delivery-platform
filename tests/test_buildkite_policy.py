@@ -2,6 +2,7 @@ import pytest
 
 from network_change_delivery.buildkite_policy import (
     BuildkiteDeploymentContext,
+    buildkite_deployment_context_from_environment,
     compare_approved_digests,
 )
 
@@ -27,6 +28,22 @@ def test_context_contract() -> None:
         BuildkiteDeploymentContext.model_validate(context(branch="feature"))
     with pytest.raises(ValueError):
         BuildkiteDeploymentContext.model_validate(context(queue_key="ncdp-validation"))
+
+
+def test_context_can_be_constructed_from_buildkite_environment() -> None:
+    environment = {
+        "BUILDKITE_COMMIT": "a" * 40,
+        "BUILDKITE_BRANCH": "main",
+        "BUILDKITE_PIPELINE_ID": "p",
+        "BUILDKITE_BUILD_ID": "b",
+        "BUILDKITE_BUILD_NUMBER": "1",
+        "BUILDKITE_JOB_ID": "j",
+        "BUILDKITE_STEP_KEY": "deploy-gate",
+        "BUILDKITE_AGENT_META_DATA_QUEUE": "ncdp-deploy",
+    }
+    assert buildkite_deployment_context_from_environment(environment) == (
+        BuildkiteDeploymentContext.model_validate(context())
+    )
 
 
 def test_approval_digest_match_is_exact() -> None:

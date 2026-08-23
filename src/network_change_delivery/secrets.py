@@ -19,6 +19,50 @@ ENVIRONMENT_REFERENCE = "environment:NCDP_DEVICE_USERNAME+NCDP_DEVICE_PASSWORD"
 _NETBOX_DEVICE_IDENTITY = re.compile(r"netbox:dcim\.device:([1-9][0-9]*)")
 
 
+def validate_openbao_url(value: str) -> str:
+    """Validate the shared OpenBao transport boundary."""
+    try:
+        parsed = urlparse(value)
+        hostname = parsed.hostname
+        _port = parsed.port
+    except ValueError:
+        raise SecretError("OpenBao URL rejected") from None
+    if parsed.scheme not in {"http", "https"} or not hostname:
+        raise SecretError("OpenBao URL rejected")
+    if (
+        parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise SecretError("OpenBao URL rejected")
+    if parsed.scheme == "http" and hostname.casefold() not in {
+        "127.0.0.1",
+        "::1",
+        "localhost",
+    }:
+        raise SecretError("OpenBao URL rejected: HTTP requires loopback")
+    return value.rstrip("/")
+
+
+def create_openbao_client(
+    base_url: str, *, transport: httpx.BaseTransport | None = None
+) -> httpx.Client:
+    """Create one hardened, environment-independent OpenBao HTTP client."""
+    try:
+        return httpx.Client(
+            base_url=base_url,
+            timeout=httpx.Timeout(5.0, connect=3.0),
+            follow_redirects=False,
+            verify=True,
+            trust_env=False,
+            transport=transport,
+        )
+    except (TypeError, ValueError):
+        raise SecretError("OpenBao configuration missing") from None
+
+
 class SecretError(ValueError):
     """Raised without exposing secret values."""
 
@@ -91,51 +135,19 @@ class OpenBaoSecretProvider:
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        configured_url = url or os.environ.get("NCDP_OPENBAO_URL")
-        configured_role_id = role_id or os.environ.get("NCDP_OPENBAO_ROLE_ID")
-        configured_secret_id = secret_id or os.environ.get("NCDP_OPENBAO_SECRET_ID")
+        configured_url = os.environ.get("NCDP_OPENBAO_URL") if url is None else url
+        configured_role_id = (
+            os.environ.get("NCDP_OPENBAO_ROLE_ID") if role_id is None else role_id
+        )
+        configured_secret_id = (
+            os.environ.get("NCDP_OPENBAO_SECRET_ID") if secret_id is None else secret_id
+        )
         if not configured_url or not configured_role_id or not configured_secret_id:
             raise SecretError("OpenBao configuration missing")
-        self._base_url = self._validate_url(configured_url)
+        self._base_url = validate_openbao_url(configured_url)
         self._role_id = configured_role_id
         self._secret_id = configured_secret_id
-        try:
-            self._client = httpx.Client(
-                base_url=self._base_url,
-                timeout=httpx.Timeout(5.0, connect=3.0),
-                follow_redirects=False,
-                verify=True,
-                trust_env=False,
-                transport=transport,
-            )
-        except (TypeError, ValueError):
-            raise SecretError("OpenBao configuration missing") from None
-
-    @staticmethod
-    def _validate_url(value: str) -> str:
-        try:
-            parsed = urlparse(value)
-            hostname = parsed.hostname
-            _port = parsed.port
-        except ValueError:
-            raise SecretError("OpenBao URL rejected") from None
-        if parsed.scheme not in {"http", "https"} or not hostname:
-            raise SecretError("OpenBao URL rejected")
-        if (
-            parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-            or parsed.path not in {"", "/"}
-        ):
-            raise SecretError("OpenBao URL rejected")
-        if parsed.scheme == "http" and hostname.casefold() not in {
-            "127.0.0.1",
-            "::1",
-            "localhost",
-        }:
-            raise SecretError("OpenBao URL rejected: HTTP requires loopback")
-        return value.rstrip("/")
+        self._client = create_openbao_client(self._base_url, transport=transport)
 
     @staticmethod
     def _device_id(device: InventoryDevice) -> int:

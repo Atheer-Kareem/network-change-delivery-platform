@@ -125,9 +125,14 @@ provider `0.9.3-beta1` has no single state that is safe across every phase:
   is not routine stop behavior.
 
 Terraform does not infer lifecycle intent from state, CML observations,
-workspaces, time, or resource existence. Increment 8C-1 supplies
-`DEFINED_ON_CORE` only to an unsaved speculative plan. It remains plan-only; no
-CML creation, boot, lifecycle transition, or reset has succeeded yet.
+workspaces, time, or resource existence. Increment 8C-1 was plan-only and
+established the explicit `DEFINED_ON_CORE` lifecycle contract. Increment 8C-3
+subsequently created and accepted the Terraform-owned twin in
+`DEFINED_ON_CORE`; no node was started or booted. The first `STARTED` transition
+remains pending separate fresh capacity admission, and `STOPPED` acceptance
+remains pending after a successful `STARTED` transition. A later
+`DEFINED_ON_CORE` transition remains reset/wipe semantics reserved for Increment
+8D.
 
 ## External connector
 

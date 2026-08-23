@@ -88,10 +88,21 @@ def test_exact_node_contract_and_fail_closed_discovery() -> None:
     )
 
 
-def test_router_nodes_have_no_configuration_and_no_management_addresses() -> None:
+def test_router_nodes_use_explicit_empty_configuration_only() -> None:
     for name in ("core_02", "edge_junos_01", "core_03"):
         body = resource_block("cml2_node", name)
-        assert re.search(r"(?m)^\s*configurations?\s*=", body) is None
+        assert assignment(body, "configuration") == '""'
+        assert re.search(r"(?m)^\s*configurations\s*=", body) is None
+        for forbidden in ("username", "password", "secret", "community"):
+            assert forbidden not in body.lower()
+
+    bridge = resource_block("cml2_node", "system_bridge")
+    assert assignment(bridge, "configuration") == (
+        "one(local.system_bridge_matches).device_name"
+    )
+    management_switch = resource_block("cml2_node", "management_switch")
+    assert re.search(r"(?m)^\s*configurations?\s*=", management_switch) is None
+
     all_hcl = "\n".join(path.read_text() for path in TF_ROOT.glob("*.tf"))
     for address in ("192.168.4.14", "192.168.4.15", "192.168.4.20"):
         assert address not in all_hcl

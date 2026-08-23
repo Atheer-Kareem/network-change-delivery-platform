@@ -30,6 +30,13 @@ RUN uv run ruff check . \
     && uv run ansible-lint \
     && uv build
 
+FROM application AS promotion
+ENV PATH="/app/.venv/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+COPY fixtures/batfish ./fixtures/batfish
+COPY scripts/buildkite/batfish_ready.py ./scripts/buildkite/batfish_ready.py
+
 FROM ${PYTHON_IMAGE} AS runtime
 ENV PATH="/app/.venv/bin:${PATH}" \
     ANSIBLE_CONFIG="/app/ansible.cfg" \

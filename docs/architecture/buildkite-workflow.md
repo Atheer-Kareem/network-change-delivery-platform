@@ -10,10 +10,14 @@ gate uses `ncdp-deploy` with concurrency group
 
 Pull requests run only the shared validation steps. Promotion and approval are
 main, non-PR steps. Promotion has its own concurrency limit one and group
-`ncdp/batfish-promotion`, because the local service is fixed to loopback port
-9996; deployment serialization protects write execution separately. Promotion
-waits for an actual Batfish server-version request before assurance and prints
-the verified commit and three exact approval digest values for the approver.
+`ncdp/batfish-promotion`. The host verifies Git identity and orchestrates Docker
+and artifact upload; readiness, assurance, bundle creation, and verification run
+in the pinned project promotion image. Docker Compose attaches that container
+and Batfish to the deterministic `ncdp-promotion` project network, where both
+readiness and assurance use `NCDP_BATFISH_HOST=batfish`. Promotion writes through
+a bounded bind mount before the host agent uploads the artifact. Deployment
+serialization protects write execution separately. Promotion prints the
+verified commit and three exact approval digest values for the approver.
 
 Promotion contains plan, policy, assurance, and frozen baseline bytes only.
 The approval block stores its three digest fields as Buildkite build meta-data.

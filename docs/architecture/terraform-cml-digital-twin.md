@@ -10,11 +10,11 @@ identity.
 
 Increment 8A established the discovery and architecture contract. Increment 8B
 implements the exact Terraform/provider pins, data-source foundation, external
-state boundary, static CI validation, and accepted read-only plan. Increment
-8C-1 defines and reviews the managed topology through an exact speculative plan;
-no CML resource has been created yet. Apply and lifecycle acceptance remain
-pending. State-free bootstrap, reset/recreate, and NCDP cutover compatibility
-are 8D.
+state boundary, static CI validation, and accepted read-only plan. Increment 8C
+has accepted initial creation of the managed topology in `DEFINED_ON_CORE`; no
+node was booted. The first `STARTED` transition remains pending a separate fresh
+capacity admission. State-free bootstrap, reset/recreate, and NCDP cutover
+compatibility are 8D.
 
 ## Authority boundary
 

@@ -95,3 +95,8 @@ steps:
       queue: ncdp-deploy
     concurrency: 1
     concurrency_group: ncdp/network-change-deployment
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+        reason: "A fresh deployment authorization is required for another attempt."

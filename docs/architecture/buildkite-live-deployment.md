@@ -72,5 +72,21 @@ was present in the deployment runtime's effective search path. This was a
 deployment-runtime dependency defect, not a plan, inventory, OpenBao, or device
 write failure. The pre-JWT runtime check now fails closed with one sanitized
 message when requirements, search paths, installed metadata, or exact versions
-are unavailable. This guard has not yet been externally accepted, and 7C live
-device-write acceptance remains pending.
+are unavailable.
+
+Retry #3 subsequently completed the protected deployment with `SUCCEEDED` typed
+evidence. Independent read-only verification confirmed the exact desired
+description on GigabitEthernet2, retained protection of the GigabitEthernet1
+management interface, and no need for recovery. The successful execution also
+exposed a control-plane gap: after a local macOS permission failure, Buildkite
+could retry the failed `deploy-gate` job inside the already-approved build.
+
+The deployment command step therefore disables both automatic and manual retry.
+As defense in depth, `deployment_gate.sh` accepts only
+`BUILDKITE_RETRY_COUNT=0` (with absence treated as zero for local compatibility)
+and rejects every retried or malformed value before commit verification, either
+OIDC request, promotion authorization, runtime verification, or any
+NetBox/OpenBao/device boundary. Another intentional attempt requires a fresh
+Buildkite authorization context created by an explicit commit-bound retry
+marker. Increment 7C final closeout remains pending until this hardening is
+merged and its protected-main unchanged-request no-write behavior is accepted.

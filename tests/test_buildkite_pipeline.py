@@ -68,6 +68,15 @@ def test_pipeline_contract() -> None:
     assert steps["deploy-gate"]["agents"]["queue"] == "ncdp-deploy"
     assert steps["deploy-gate"]["concurrency"] == 1
     assert steps["deploy-gate"]["concurrency_group"] == "ncdp/network-change-deployment"
+    assert steps["deploy-gate"]["retry"] == {
+        "automatic": False,
+        "manual": {
+            "allowed": False,
+            "reason": (
+                "A fresh deployment authorization is required for another attempt."
+            ),
+        },
+    }
     approval = steps["deployment-approval"]
     assert approval["block"] == ":lock: Authorize exact promotion"
     assert approval["prompt"] == (
@@ -152,6 +161,14 @@ def test_scripts_static_contract() -> None:
     assert "--skip-redaction" not in gate
     assert "set -x" not in gate
     assert gate.index("verify_commit.sh") < gate.index("oidc request-token")
+    assert 'retry_count="${BUILDKITE_RETRY_COUNT:-0}"' in gate
+    assert "retried deployment job is not authorized" in gate
+    assert gate.index("BUILDKITE_STEP_KEY") < gate.index("BUILDKITE_RETRY_COUNT")
+    assert gate.index("BUILDKITE_AGENT_META_DATA_QUEUE") < gate.index(
+        "BUILDKITE_RETRY_COUNT"
+    )
+    assert gate.index("BUILDKITE_RETRY_COUNT") < gate.index("verify_commit.sh")
+    assert gate.index("BUILDKITE_RETRY_COUNT") < gate.index("oidc request-token")
     assert gate.index("verify-buildkite-openbao-identity") < gate.index(
         "artifact download"
     )

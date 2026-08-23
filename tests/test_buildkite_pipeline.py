@@ -112,6 +112,14 @@ def test_promotion_container_contract() -> None:
     assert "FROM application AS promotion" in dockerfile
     assert "COPY fixtures/batfish ./fixtures/batfish" in dockerfile
     assert "COPY . ." not in dockerfile.split("FROM application AS promotion", 1)[1]
+    assert "RUN chmod -R a=rX" in dockerfile
+    for path in (
+        "/app/.venv",
+        "/app/src",
+        "/app/fixtures/batfish",
+        "/app/scripts/buildkite",
+    ):
+        assert path in dockerfile.split("FROM application AS promotion", 1)[1]
 
 
 def test_scripts_static_contract() -> None:

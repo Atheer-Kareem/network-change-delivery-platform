@@ -49,3 +49,12 @@ repurposed or broadened. This 7C-A implementation contains no active request and
 performs no live write. A later 7C-B request PR and protected-main exercise own
 external live CML acceptance. No fleet-wide atomicity or production-grade host
 isolation is claimed.
+
+7C-B1 prepares that later acceptance with one repository-owned, single-device
+promotion input for `core-02`. Its immutable plan originated from fresh
+read-only NetBox resolution, one exact OpenBao credential read, and read-only
+device collection. The dedicated Batfish baseline is sanitized and plan-bound;
+it models the selected interface's exact observed description but is not claimed
+as a fresh full device or production twin. The B1 change contains no live request,
+so protected-main must validate the new promotion in no-write mode before a
+separate reviewed deployment-request change can exercise live acceptance.

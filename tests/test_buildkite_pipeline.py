@@ -110,12 +110,14 @@ def test_promotion_container_contract() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "FROM application AS promotion" in dockerfile
     assert "COPY fixtures/batfish ./fixtures/batfish" in dockerfile
+    assert "COPY deployments/live/promotion ./deployments/live/promotion" in dockerfile
     assert "COPY . ." not in dockerfile.split("FROM application AS promotion", 1)[1]
     assert "RUN chmod -R a=rX" in dockerfile
     for path in (
         "/app/.venv",
         "/app/src",
         "/app/fixtures/batfish",
+        "/app/deployments/live/promotion",
         "/app/scripts/buildkite",
     ):
         assert path in dockerfile.split("FROM application AS promotion", 1)[1]
@@ -202,6 +204,10 @@ def test_scripts_static_contract() -> None:
         '"${promotion_run[@]}" python scripts/buildkite/batfish_ready.py' in promotion
     )
     assert promotion.count('"${promotion_run[@]}" ncdp ') == 6
+    assert promotion.count("deployments/live/promotion/plan.json") == 2
+    assert promotion.count("deployments/live/promotion/policy.yaml") == 2
+    assert promotion.count("deployments/live/promotion/baseline") == 2
+    assert "fixtures/batfish/plans/fleet-interface-description.json" not in promotion
     for field in ("plan", "assurance", "promotion"):
         assert promotion.count(f"--field {field}") == 1
     assert '--volume "$tmpdir:/output"' in promotion

@@ -37,3 +37,13 @@ exists fabricates no artifact and reports that no typed record was produced.
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
 mutation. This foundation has no active live request and has not performed or
 externally accepted a device write.
+
+7C-B1 replaces the active synthetic fleet promotion input with the exact
+repository-owned single-device plan under `deployments/live/promotion`. The plan
+was generated through fresh read-only NetBox, OpenBao, and device boundaries.
+Its dedicated baseline is a sanitized plan-bound Batfish model that preserves
+the accepted synthetic critical flow and exact interface-description
+precondition; it is not a claim of full live configuration freshness. B1 keeps
+`deployments/live/request.yaml` absent so protected-main can first validate the
+single-device promotion and terminate in the established no-write path. Live
+device-write acceptance remains pending.

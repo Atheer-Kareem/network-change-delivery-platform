@@ -134,6 +134,32 @@ def test_scripts_static_contract() -> None:
         assert f'meta-data get "{key}"' in gate
     assert "approved-" not in gate
     assert gate.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
+    oidc_command = (
+        "buildkite-agent oidc request-token \\\n"
+        "  --audience urn:ncdp:openbao:deploy \\\n"
+        "  --lifetime 300 \\\n"
+        "  --subject-claim pipeline_id |\n"
+        "  uv run ncdp verify-buildkite-openbao-identity"
+    )
+    assert oidc_command in gate
+    assert "--skip-redaction" not in gate
+    assert "set -x" not in gate
+    assert gate.index("verify_commit.sh") < gate.index("oidc request-token")
+    assert gate.index("verify-buildkite-openbao-identity") < gate.index(
+        "artifact download"
+    )
+    assert gate.index("verify-buildkite-openbao-identity") < gate.index(
+        "verify-buildkite-gate"
+    )
+    for variable in (
+        "NCDP_OPENBAO_ROLE_ID",
+        "NCDP_OPENBAO_SECRET_ID",
+        "NCDP_DEVICE_USERNAME",
+        "NCDP_DEVICE_PASSWORD",
+    ):
+        assert variable in gate
+    assert "ncdp deploy" not in gate
+    assert "ncdp fleet-deploy" not in gate
     assert "--step promotion" in gate
     assert "uv run ncdp verify-buildkite-gate" in gate
     assert "verify_commit.sh" in promotion

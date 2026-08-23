@@ -43,7 +43,8 @@ The reference implementation must not be promoted to production unchanged.
 ## Buildkite 7A residual risks
 
 7A established protected-main Buildkite acceptance, but it did not establish
-cryptographic Buildkite job identity. 7B-A adds the application boundary for
-OpenBao-validated Buildkite JWT identity; external federation remains pending.
-Live deployment authorization and execution remain 7B/7C controls, and
+cryptographic Buildkite job identity. The 7B application boundary and active
+deployment-gate integration require OpenBao-validated Buildkite JWT identity;
+external configuration and acceptance remain pending. The 7B token deliberately
+has no secret-read policy. Live deployment execution remains a 7C control, and
 promotion artifacts contain no credentials.

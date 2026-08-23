@@ -39,8 +39,10 @@ by stronger device authorization. The immutable Buildkite pipeline UUID is the
 JWT subject, while the JWT audience, 300-second lifetime, `main` branch, and
 `deploy-gate` step constrain its purpose and scope. NCDP binds OpenBao-verified
 pipeline, commit, branch, step, and job metadata to its validated runtime
-context. The 7B-A application boundary is implemented but is not active in
-Buildkite until the external OpenBao role and pipeline integration are accepted.
+context. This chain is implemented in the main-only deployment gate, but its
+real external OpenBao configuration and protected-main acceptance remain
+pending. Its 7B token has no policies or device-secret capability and is
+discarded after identity validation.
 Secrets and secret-bearing payloads never enter Git, application models, logs,
 artifacts, or evidence. Company data of any kind is forbidden; only synthetic
 personal-lab data may be used.
@@ -51,5 +53,7 @@ to production host, network, identity, or administrative isolation.
 ## Buildkite promotion boundary
 
 Increment 7A promotion bundles bind exact commit, plan, policy, baseline, and
-PASSED assurance bytes. The deployment gate performs offline verification only.
-Environment variables are not Buildkite identity proof; OIDC federation is 7B.
+PASSED assurance bytes. Environment variables are not Buildkite identity proof.
+The 7B gate requires a Buildkite-signed JWT, OpenBao signature and role
+validation, mapped identity metadata, and NCDP's exact runtime comparison before
+it performs the existing offline promotion verification.

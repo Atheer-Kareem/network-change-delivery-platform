@@ -29,9 +29,23 @@ rejects a token lease over 300 seconds. The bearer JWT is accepted only through
 bounded stdin, and neither it nor the resulting OpenBao token is logged,
 persisted, cached, or renewed.
 
-Increment 7B-A implements and tests this application boundary with mocked HTTP.
-The active Buildkite pipeline does not yet request an OIDC token or contact
-OpenBao; external role configuration and federation acceptance remain pending.
+The active main-only deployment gate implements this exchange after human
+authorization and before promotion verification. It rejects ambient AppRole and
+direct device credentials, and pipes the JWT without argv, a shell variable, or
+a file. A repository operator tool idempotently enables and verifies the `jwt/`
+mount, discovery configuration, and exact role using `BAO_TOKEN` only from its
+operator environment. The 7B role issues a one-use token with no default policy,
+no policies, and TTL limits no greater than 300 seconds, so it cannot read device
+secrets. External role configuration and protected-main federation acceptance
+remain pending.
+
+The operator supplies `NCDP_OPENBAO_URL`, the exact immutable pipeline UUID in
+`NCDP_BUILDKITE_PIPELINE_ID`, and the administrative `BAO_TOKEN` environment
+value, then runs `uv run python scripts/openbao/configure_buildkite_jwt.py` from
+a trusted administrative shell. The tool never accepts the token as an argument
+and reports only whether the mount was newly enabled and whether the non-secret
+backend, role, and no-device-capability contracts were verified. This is an
+operator action, never a Buildkite job action.
 
 ## Exact KV-v2 derivation
 

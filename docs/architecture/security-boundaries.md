@@ -39,10 +39,10 @@ by stronger device authorization. The immutable Buildkite pipeline UUID is the
 JWT subject, while the JWT audience, 300-second lifetime, `main` branch, and
 `deploy-gate` step constrain its purpose and scope. NCDP binds OpenBao-verified
 pipeline, commit, branch, step, and job metadata to its validated runtime
-context. This chain is implemented in the main-only deployment gate, but its
-real external OpenBao configuration and protected-main acceptance remain
-pending. Its 7B token has no policies or device-secret capability and is
-discarded after identity validation. That zero-capability claim is checked both
+context. Protected-main build #26 externally validated this chain in the
+main-only deployment gate. Its 7B token has no policies or device-secret
+capability and is discarded after identity validation. That zero-capability
+claim is checked both
 in the configured role and in the actual login response's token,
 Identity-derived, and aggregate effective policies. The stable OpenBao Identity
 alias is immutable JWT `sub`, mapped to application metadata named

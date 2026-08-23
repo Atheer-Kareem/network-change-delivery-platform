@@ -40,11 +40,13 @@ The personal lab may place logical zones on one MacBook and a CML mini-PC. This
 does not reproduce production network segmentation, hardware roots of trust,
 high availability, enterprise identity governance, scale, or operational staffing.
 The reference implementation must not be promoted to production unchanged.
-## Buildkite 7A residual risks
+## Buildkite deployment-boundary residual risks
 
-7A established protected-main Buildkite acceptance, but it did not establish
-cryptographic Buildkite job identity. The 7B application boundary and active
-deployment-gate integration require OpenBao-validated Buildkite JWT identity;
-external configuration and acceptance remain pending. The 7B token deliberately
-has no secret-read policy. Live deployment execution remains a 7C control, and
-promotion artifacts contain no credentials.
+7A established protected-main promotion acceptance. Protected-main build #26
+then established the 7B cryptographic Buildkite/OpenBao identity boundary,
+including signature and constrained-role validation, exact runtime metadata
+comparison, and a token with zero effective policy. The personal-lab agent and
+OpenBao may still share one host, so this is not production-grade isolation. The
+7B token deliberately has no secret-read policy. Live deployment execution
+remains a 7C control, and promotion artifacts contain no credentials. No
+fleet-wide atomicity is claimed.

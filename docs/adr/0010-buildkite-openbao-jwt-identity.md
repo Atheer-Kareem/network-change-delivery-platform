@@ -2,8 +2,7 @@
 
 ## Status
 
-Accepted and implemented for Increment 7B integration; external federation
-configuration and protected-main acceptance are pending.
+Accepted and externally validated; Increment 7B complete.
 
 ## Decision
 
@@ -82,6 +81,10 @@ protected-main diagnostic exposed the obsolete `/pipeline_id` mapping:
 Buildkite emitted the correct immutable UUID in `sub`, omitted the separate
 `pipeline_id` claim, and OpenBao rejected login with
 `claim "pipeline_id" not found in token`. The corrected role maps `/sub`.
-Successful external federation acceptance remains pending. No device secret is
-retrieved and no deployment is performed. Increment 7C still owns fully
-enforced live CML deployment.
+After the deterministic operator migrated the owned role, protected-main
+Buildkite build #26 completed real Buildkite OIDC issuance, OpenBao validation,
+`/sub` mapping, exact NCDP runtime comparison, zero-policy verification, and
+promotion authorization for commit
+`e35ecd6dd077948e0b279536968241b8fbfa6113`. The gate passed without retrieving
+a device secret or performing a device write. This completes Increment 7B;
+Increment 7C still owns fully enforced live CML deployment.

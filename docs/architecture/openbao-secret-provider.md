@@ -51,8 +51,9 @@ while rejecting alternate JWKS/static keys and OIDC client credentials. The 7B
 role issues a one-use token with no default policy, no policies, and TTL limits
 no greater than 300 seconds. NCDP additionally rejects a login response with any
 effective token or Identity policy, proving the returned capability cannot read
-device secrets. External role configuration and protected-main federation
-acceptance remain pending.
+device secrets. Protected-main build #26 externally validated this role and
+application boundary in normal hardened mode, including zero effective policy,
+without retrieving a device secret or performing a device write.
 
 The operator supplies `NCDP_OPENBAO_URL`, the exact immutable pipeline UUID in
 `NCDP_BUILDKITE_PIPELINE_ID`, and the administrative `BAO_TOKEN` environment

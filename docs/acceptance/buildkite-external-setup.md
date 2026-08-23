@@ -52,4 +52,5 @@ reported `deployment authorization gate: PASSED` and
 OpenBao, or secrets and performed no live deployment.
 
 Build #11 establishes Increment 7A external acceptance. It does not complete
-Increment 7 as a whole; workload identity and live deployment remain 7B/7C.
+Increment 7 as a whole; workload identity was subsequently accepted in 7B, and
+live deployment remains 7C.

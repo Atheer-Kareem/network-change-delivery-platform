@@ -55,7 +55,7 @@ token, Identity-derived, or aggregate policy capability. OpenBao uses immutable
 `sub` as the stable Identity alias while the required mapped `job_id`
 still has to match the current job exactly. The active gate performs no secret
 retrieval or deployment. External OpenBao configuration and protected-main
-federation acceptance remain pending.
+federation were accepted in normal hardened mode by protected-main build #26.
 
 For bounded personal-lab federation troubleshooting only,
 `NCDP_OPENBAO_JWT_DIAGNOSTICS=1` changes the identity command into a terminal
@@ -72,8 +72,10 @@ Protected-main diagnostics established why the original role failed: the token
 contained the exact immutable pipeline UUID in `sub`, contained no separate
 `pipeline_id` claim, and OpenBao rejected the required `/pipeline_id` mapping
 with `claim "pipeline_id" not found in token`. The durable contract now uses
-standard `sub`; absence of the optional duplicate claim is expected. Successful
-external federation acceptance with the corrected role remains pending.
+standard `sub`; absence of the optional duplicate claim is expected. After the
+operator migrated the owned role, protected-main build #26 passed signature and
+role validation, exact runtime identity comparison, zero-policy verification,
+and exact promotion authorization without a device write.
 
 The personal lab may use one Mac, but queues, agent processes, working
 directories, and deployment environment variables remain separate. Physical

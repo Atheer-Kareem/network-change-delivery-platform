@@ -261,11 +261,13 @@ reaches read-only planning. Saved device configuration remains on the router
 disk and outside CML stored configuration and Terraform state. See the
 [Increment 8D-2 acceptance report](../acceptance/terraform-cml-iosxe-management-bootstrap-increment-8d.md).
 
-The accepted legacy lab remains active until it cannot conflict with stable
-NetBox-owned management endpoints. After state-free bootstrap and Terraform
-startup, NCDP freshly verifies NetBox identity, OpenBao provenance, SSH host
-trust, platform, hostname, and topology. Only successful acceptance permits the
-legacy lab to be retired separately.
+After Increment 8D-2, the accepted legacy lab remains deliberately STOPPED to
+prevent duplicate ownership of stable NetBox-managed endpoints. It has not been
+deleted or retired. The Terraform-created realization now operationally owns
+`core-02` at `192.168.4.14` for the accepted IOS XE compatibility path. Before
+future NCDP operations, NCDP must continue to freshly verify NetBox identity,
+OpenBao provenance, SSH host trust, platform, hostname, and topology. Permanent
+legacy-lab retirement remains a separate later decision.
 
 ## Increment contracts
 

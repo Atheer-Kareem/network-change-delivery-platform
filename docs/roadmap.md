@@ -61,10 +61,13 @@ Ordering may change when implementation evidence requires it.
    personal-twin bootstrap channel and proves that runtime configuration stays
    outside CML stored configuration and Terraform state and disappears after an
    unsaved restart. Console-keystroke automation was intentionally abandoned as
-   low-value for the end-to-end demonstration. Management and authentication
-   bootstrap sufficient for NCDP is next; Junos bootstrap, reset/recreate, and
-   cutover remain. Terraform never manages production device configuration. See
-   the
+   low-value for the end-to-end demonstration. Increment 8D-2 accepts persistent
+   IOS XE management bootstrap, operational transfer of the unchanged NetBox
+   identity from the deliberately stopped legacy realization, unchanged
+   OpenBao credential reuse, strict SSH host-trust replacement, existing NCDP
+   read-only planning, state secrecy, and restart persistence. Junos bootstrap,
+   reset/recreate, full cutover, and legacy retirement remain. Terraform never
+   manages production device configuration. See the
    [Terraform/CML digital-twin architecture](architecture/terraform-cml-digital-twin.md).
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.

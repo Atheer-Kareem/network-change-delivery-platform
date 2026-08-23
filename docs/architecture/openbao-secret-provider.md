@@ -19,25 +19,33 @@ The mature Buildkite path uses a Buildkite-issued OIDC JWT with issuer
 `https://agent.buildkite.com`, audience `urn:ncdp:openbao:deploy`, and the fixed
 OpenBao JWT role `ncdp-buildkite-deploy`. The job requests a 300-second JWT with
 `pipeline_id` as its subject claim, making the immutable pipeline UUID available
-as both `sub` and an explicit claim. OpenBao binds that exact subject, uses
-`job_id` as the role's machine `user_claim`, and constrains the `main` branch and
-`deploy-gate` step. OpenBao, not NCDP, verifies the JWT signature and role
+as both `sub` and an explicit claim. OpenBao binds that exact subject and uses
+`pipeline_id` as the stable machine `user_claim`, avoiding a new Identity alias
+for every job. It constrains the `main` branch and `deploy-gate` step. OpenBao,
+not NCDP, verifies the JWT signature and role
 constraints. A successful login must return required JSON-pointer mappings for
 `pipeline_id`, `build_commit`, `build_branch`, `step_key`, and `job_id` metadata;
 NCDP compares all five values exactly with the validated deployment context and
-rejects a token lease over 300 seconds. The bearer JWT is accepted only through
-bounded stdin, and neither it nor the resulting OpenBao token is logged,
-persisted, cached, or renewed.
+rejects a token lease over 300 seconds. Thus each changing `job_id` remains
+cryptographically bound even though the Identity alias is stable. The bearer JWT
+is accepted only through bounded stdin, and neither it nor the resulting OpenBao
+token is logged, persisted, cached, or renewed.
 
 The active main-only deployment gate implements this exchange after human
 authorization and before promotion verification. It rejects ambient AppRole and
 direct device credentials, and pipes the JWT without argv, a shell variable, or
 a file. A repository operator tool idempotently enables and verifies the `jwt/`
 mount, discovery configuration, and exact role using `BAO_TOKEN` only from its
-operator environment. The 7B role issues a one-use token with no default policy,
-no policies, and TTL limits no greater than 300 seconds, so it cannot read device
-secrets. External role configuration and protected-main federation acceptance
-remain pending.
+operator environment. An existing mount must have type `jwt` and exact
+description `NCDP Buildkite workload identity`; an unmarked mount is not
+overwritten. The write explicitly sets `skip_jwks_validation=false`. Read-back
+requires the exact discovery URL and issuer and OpenBao validator `status=valid`,
+while rejecting alternate JWKS/static keys and OIDC client credentials. The 7B
+role issues a one-use token with no default policy, no policies, and TTL limits
+no greater than 300 seconds. NCDP additionally rejects a login response with any
+effective token or Identity policy, proving the returned capability cannot read
+device secrets. External role configuration and protected-main federation
+acceptance remain pending.
 
 The operator supplies `NCDP_OPENBAO_URL`, the exact immutable pipeline UUID in
 `NCDP_BUILDKITE_PIPELINE_ID`, and the administrative `BAO_TOKEN` environment

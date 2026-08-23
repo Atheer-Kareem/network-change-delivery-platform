@@ -22,10 +22,15 @@ from network_change_delivery.secrets import (
 
 JWT_MOUNT = "jwt/"
 JWT_MOUNT_DESCRIPTION = "NCDP Buildkite workload identity"
-JWT_CONFIG = {
+JWT_CONFIG_WRITE = {
     "oidc_discovery_url": BUILDKITE_OIDC_ISSUER,
     "bound_issuer": BUILDKITE_OIDC_ISSUER,
     "skip_jwks_validation": False,
+}
+JWT_CONFIG_READ = {
+    "oidc_discovery_url": BUILDKITE_OIDC_ISSUER,
+    "bound_issuer": BUILDKITE_OIDC_ISSUER,
+    "status": "valid",
 }
 JWT_CLAIM_MAPPINGS = {
     "/pipeline_id": "pipeline_id",
@@ -53,7 +58,7 @@ def buildkite_jwt_role_config(pipeline_id: str) -> dict[str, object]:
         "role_type": "jwt",
         "bound_audiences": [OPENBAO_BUILDKITE_JWT_AUDIENCE],
         "bound_subject": validate_pipeline_id(pipeline_id),
-        "user_claim": "job_id",
+        "user_claim": "pipeline_id",
         "bound_claims_type": "string",
         "bound_claims": {"build_branch": "main", "step_key": "deploy-gate"},
         "claim_mappings": JWT_CLAIM_MAPPINGS,
@@ -151,12 +156,20 @@ class OpenBaoBuildkiteJWTConfigurator:
                 expected_status=204,
             )
             mounted = self._auth_mounts().get(JWT_MOUNT)
-            if not isinstance(mounted, dict) or mounted.get("type") != "jwt":
+            if not self._owned_mount(mounted):
                 raise SecretError("OpenBao JWT auth mount verification failed")
             return True
-        if not isinstance(mounted, dict) or mounted.get("type") != "jwt":
-            raise SecretError("OpenBao jwt/ auth mount has conflicting type")
+        if not self._owned_mount(mounted):
+            raise SecretError("OpenBao jwt/ auth mount is not owned by NCDP")
         return False
+
+    @staticmethod
+    def _owned_mount(mounted: object) -> bool:
+        return (
+            isinstance(mounted, dict)
+            and mounted.get("type") == "jwt"
+            and mounted.get("description") == JWT_MOUNT_DESCRIPTION
+        )
 
     @staticmethod
     def _verify_fields(
@@ -171,19 +184,24 @@ class OpenBaoBuildkiteJWTConfigurator:
         """Configure, read back, and verify the exact JWT backend and role."""
         enabled = self._ensure_mount()
         self._request(
-            "POST", "/v1/auth/jwt/config", json=JWT_CONFIG, expected_status=204
+            "POST",
+            "/v1/auth/jwt/config",
+            json=JWT_CONFIG_WRITE,
+            expected_status=204,
         )
         config_response = self._request(
             "GET", "/v1/auth/jwt/config", expected_status=200
         )
         config_data = self._payload(config_response).get("data")
         self._verify_fields(
-            config_data, JWT_CONFIG, "OpenBao JWT backend verification failed"
+            config_data, JWT_CONFIG_READ, "OpenBao JWT backend verification failed"
         )
-        if isinstance(config_data, dict) and (
-            config_data.get("oidc_client_id") or config_data.get("oidc_client_secret")
-        ):
-            raise SecretError("OpenBao JWT backend verification failed")
+        if isinstance(config_data, dict):
+            for field in ("oidc_client_id", "oidc_client_secret", "jwks_url"):
+                if config_data.get(field) not in (None, ""):
+                    raise SecretError("OpenBao JWT backend verification failed")
+            if config_data.get("jwt_validation_pubkeys") not in (None, "", []):
+                raise SecretError("OpenBao JWT backend verification failed")
 
         role = buildkite_jwt_role_config(self._pipeline_id)
         role_path = f"/v1/auth/jwt/role/{OPENBAO_BUILDKITE_JWT_ROLE}"

@@ -42,7 +42,11 @@ pipeline, commit, branch, step, and job metadata to its validated runtime
 context. This chain is implemented in the main-only deployment gate, but its
 real external OpenBao configuration and protected-main acceptance remain
 pending. Its 7B token has no policies or device-secret capability and is
-discarded after identity validation.
+discarded after identity validation. That zero-capability claim is checked both
+in the configured role and in the actual login response's token,
+Identity-derived, and aggregate effective policies. The stable OpenBao Identity
+alias is the immutable `pipeline_id`; required mapped `job_id` comparison still
+binds every individual job.
 Secrets and secret-bearing payloads never enter Git, application models, logs,
 artifacts, or evidence. Company data of any kind is forbidden; only synthetic
 personal-lab data may be used.

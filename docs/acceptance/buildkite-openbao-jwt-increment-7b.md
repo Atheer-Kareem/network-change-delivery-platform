@@ -16,14 +16,23 @@ constants, and bearer-token secrecy. Static gate contracts prove the exact OIDC
 request, pipefail-protected stdin handoff, identity-before-promotion ordering,
 and rejection of ambient AppRole and direct device credentials.
 
-The repository operator tool enables `jwt/` only when absent, rejects a
-conflicting mount, writes the Buildkite discovery and issuer configuration and
-exact immutable-pipeline role, then reads both back and verifies them. Its admin
-token is environment-only. Mocked transport tests cover absent, existing, and
-conflicting mounts, exact role constraints, idempotency, malformed responses,
-status/redirect/timeout failures, and token redaction. The 7B role has no
-default policy or other policy, so successful identity verification grants no
-device-secret read.
+The repository operator tool enables `jwt/` only when absent, accepts an existing
+mount only when its type and exact NCDP ownership description match, writes the
+Buildkite discovery and issuer configuration and exact immutable-pipeline role,
+then reads both back and verifies them. It writes
+`skip_jwks_validation=false`; because that setting is not returned, read-back
+requires the exact discovery URL and issuer plus `status=valid` and rejects
+alternate verification sources and OIDC client credentials. Its admin token is
+environment-only. Mocked transport tests cover absent, owned, conflicting, and
+unowned mounts, exact role constraints, idempotency, malformed responses,
+status/redirect/timeout failures, and token redaction.
+
+The role uses immutable `pipeline_id` as its stable OpenBao Identity alias.
+`job_id` remains a required mapped claim and exact runtime comparison. The role
+has no default policy or other policy, and the application separately requires
+the actual login result to contain no token, Identity-derived, or aggregate
+effective policy. Successful 7B identity verification therefore grants no
+device-secret read even if Identity configuration would otherwise add a policy.
 
 This acceptance is local and does not claim federation success. External
 OpenBao JWT configuration and a real protected-main Buildkite OIDC exchange are

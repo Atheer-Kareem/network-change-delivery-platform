@@ -50,9 +50,12 @@ direct device credentials before requesting identity. Only after identity
 verification does it retrieve and verify the promotion artifact and promoted
 metadata. Final authorization success therefore requires both cryptographic
 workload identity and exact promotion verification. The issued OpenBao token has
-no policies and is discarded; the active gate performs no secret retrieval or
-deployment. External OpenBao configuration and protected-main federation
-acceptance remain pending.
+no policies and is discarded; NCDP verifies the actual response contains no
+token, Identity-derived, or aggregate policy capability. OpenBao uses immutable
+`pipeline_id` as the stable Identity alias while the required mapped `job_id`
+still has to match the current job exactly. The active gate performs no secret
+retrieval or deployment. External OpenBao configuration and protected-main
+federation acceptance remain pending.
 
 The personal lab may use one Mac, but queues, agent processes, working
 directories, and deployment environment variables remain separate. Physical

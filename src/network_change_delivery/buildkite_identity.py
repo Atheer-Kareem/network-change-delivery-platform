@@ -136,6 +136,14 @@ class OpenBaoBuildkiteJWTAuthenticator:
             or lease > OPENBAO_BUILDKITE_MAX_LEASE_SECONDS
         ):
             raise SecretError("OpenBao issued unacceptable token")
+        for policy_field in ("token_policies", "identity_policies", "policies"):
+            policies = auth.get(policy_field)
+            if policies is None:
+                continue
+            if not isinstance(policies, list):
+                raise SecretError("OpenBao issued unauthorized policy capability")
+            if policies:
+                raise SecretError("OpenBao issued unauthorized policy capability")
         metadata = auth.get("metadata")
         if not isinstance(metadata, dict):
             raise SecretError("OpenBao returned invalid identity metadata")

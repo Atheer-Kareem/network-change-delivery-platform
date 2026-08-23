@@ -15,7 +15,8 @@ from network_change_delivery.buildkite_identity import (
 )
 from network_change_delivery.openbao_jwt_config import (
     JWT_CLAIM_MAPPINGS,
-    JWT_CONFIG,
+    JWT_CONFIG_READ,
+    JWT_CONFIG_WRITE,
     JWT_MOUNT_DESCRIPTION,
     OpenBaoBuildkiteJWTConfigurator,
     buildkite_jwt_role_config,
@@ -28,15 +29,30 @@ PIPELINE_ID = "0184990a-4782-42b5-afc1-16715b10b1f0"
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def mount_payload(*, present: bool = True, auth_type: str = "jwt") -> dict[str, object]:
+def mount_payload(
+    *,
+    present: bool = True,
+    auth_type: str = "jwt",
+    description: str | None = JWT_MOUNT_DESCRIPTION,
+) -> dict[str, object]:
     mounts: dict[str, object] = {"approle/": {"type": "approle"}}
     if present:
-        mounts["jwt/"] = {"type": auth_type}
+        mounted: dict[str, object] = {"type": auth_type}
+        if description is not None:
+            mounted["description"] = description
+        mounts["jwt/"] = mounted
     return {"data": mounts}
 
 
 def config_payload(**changes: object) -> dict[str, object]:
-    values = {**JWT_CONFIG, "oidc_client_id": "", "oidc_client_secret": ""}
+    values: dict[str, object] = {
+        **JWT_CONFIG_READ,
+        "oidc_discovery_ca_pem": [],
+        "jwks_url": "",
+        "jwt_validation_pubkeys": [],
+        "oidc_client_id": "",
+        "oidc_client_secret": "",
+    }
     values.update(changes)
     return {"data": values}
 
@@ -97,7 +113,7 @@ def test_absent_mount_is_enabled_then_exact_config_is_verified() -> None:
         "type": "jwt",
         "description": JWT_MOUNT_DESCRIPTION,
     }
-    assert json.loads(requests[3].content) == JWT_CONFIG
+    assert json.loads(requests[3].content) == JWT_CONFIG_WRITE
     assert json.loads(requests[5].content) == buildkite_jwt_role_config(PIPELINE_ID)
     assert all(request.headers["X-Vault-Token"] == ADMIN_TOKEN for request in requests)
 
@@ -124,7 +140,16 @@ def test_conflicting_jwt_mount_type_fails_closed() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=mount_payload(auth_type="approle"))
 
-    with pytest.raises(SecretError, match="conflicting type"):
+    with pytest.raises(SecretError, match="not owned by NCDP"):
+        configurator(handler).configure()
+
+
+@pytest.mark.parametrize("description", [None, "Other JWT workload"])
+def test_unowned_existing_jwt_mount_fails_closed(description: str | None) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=mount_payload(description=description))
+
+    with pytest.raises(SecretError, match="not owned by NCDP"):
         configurator(handler).configure()
 
 
@@ -134,7 +159,7 @@ def test_exact_role_has_identity_constraints_and_no_secret_capability() -> None:
         "role_type": "jwt",
         "bound_audiences": [OPENBAO_BUILDKITE_JWT_AUDIENCE],
         "bound_subject": PIPELINE_ID,
-        "user_claim": "job_id",
+        "user_claim": "pipeline_id",
         "bound_claims_type": "string",
         "bound_claims": {"build_branch": "main", "step_key": "deploy-gate"},
         "claim_mappings": JWT_CLAIM_MAPPINGS,
@@ -145,10 +170,15 @@ def test_exact_role_has_identity_constraints_and_no_secret_capability() -> None:
         "token_explicit_max_ttl": 300,
         "token_num_uses": 1,
     }
-    assert JWT_CONFIG == {
+    assert JWT_CONFIG_WRITE == {
         "oidc_discovery_url": BUILDKITE_OIDC_ISSUER,
         "bound_issuer": BUILDKITE_OIDC_ISSUER,
         "skip_jwks_validation": False,
+    }
+    assert JWT_CONFIG_READ == {
+        "oidc_discovery_url": BUILDKITE_OIDC_ISSUER,
+        "bound_issuer": BUILDKITE_OIDC_ISSUER,
+        "status": "valid",
     }
     assert all(source.startswith("/") for source in JWT_CLAIM_MAPPINGS)
     assert not role["token_policies"]
@@ -201,7 +231,25 @@ def test_all_operator_environment_inputs_are_required(missing: str) -> None:
 @pytest.mark.parametrize(
     ("path", "response", "message"),
     [
+        ("/v1/auth/jwt/config", config_payload(status="invalid"), "backend"),
+        (
+            "/v1/auth/jwt/config",
+            config_payload(oidc_discovery_url="https://other.example"),
+            "backend",
+        ),
         ("/v1/auth/jwt/config", config_payload(bound_issuer="wrong"), "backend"),
+        (
+            "/v1/auth/jwt/config",
+            config_payload(jwks_url="https://jwks.example"),
+            "backend",
+        ),
+        (
+            "/v1/auth/jwt/config",
+            config_payload(jwt_validation_pubkeys=["public-key"]),
+            "backend",
+        ),
+        ("/v1/auth/jwt/config", config_payload(oidc_client_id="client"), "backend"),
+        ("/v1/auth/jwt/config", config_payload(oidc_client_secret="secret"), "backend"),
         (
             f"/v1/auth/jwt/role/{OPENBAO_BUILDKITE_JWT_ROLE}",
             role_payload(token_policies=["secret-read"]),

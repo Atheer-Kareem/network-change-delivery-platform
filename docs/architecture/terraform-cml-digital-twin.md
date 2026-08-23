@@ -8,10 +8,11 @@ its infrastructure realization. It is not a network-device configuration
 provider, inventory system, credential store, or source of NCDP targeting
 identity.
 
-Increment 8A is documentation and architecture only. Terraform installation and
-plan-only foundations begin in 8B; CML creation and lifecycle acceptance begin
-in 8C; state-free bootstrap, reset/recreate, and NCDP cutover compatibility are
-8D.
+Increment 8A established the discovery and architecture contract. Increment 8B
+implements the exact Terraform/provider pins, data-source-only root, external
+state boundary, static CI validation, and accepted read-only plan. CML creation
+and lifecycle acceptance begin in 8C; state-free bootstrap, reset/recreate, and
+NCDP cutover compatibility are 8D.
 
 ## Authority boundary
 
@@ -186,11 +187,14 @@ the documentation and ADR are reviewed and merged.
 
 ### 8B — Terraform foundation and plan-only contract
 
-Install and pin Terraform `1.15.8`; pin provider `0.9.3-beta1`; commit the lock
-file; create the `infrastructure/cml` root/module structure; enforce environment,
-connector, state, formatting, validation, and static policy contracts; and run
-only safe read-only provider/data-source planning. It performs no CML resource
-mutation.
+Implemented and accepted after merge: Terraform `1.15.8`, provider
+`0.9.3-beta1`, and the multi-platform dependency lock are exact. The
+`infrastructure/cml` root resolves controller metadata, the unique `System
+Bridge`, and accepted router images through data sources only. CI validates the
+root without credentials, backend, or CML access. The live acceptance was an
+unsaved speculative plan with external state configuration, verified TLS, zero
+managed-resource actions, no persistent state, and no CML mutation. See the
+[Increment 8B acceptance report](../acceptance/terraform-cml-foundation-increment-8b.md).
 
 ### 8C — Terraform-owned topology and lifecycle acceptance
 

@@ -96,7 +96,7 @@ identity, commit-bound least-privilege deployment, real personal-CML device
 acceptance, independent validation, and same-build deployment retry hardening
 are externally accepted. See the
 [Buildkite live-deployment boundary](buildkite-live-deployment.md).
-Increment 8 is beginning with the completed 8A read-only CML discovery and
-architecture contract. No Terraform implementation or Terraform-managed CML
-resource is claimed yet; implementation begins in 8B. See the
+Increment 8 has completed 8A discovery and now implements the accepted 8B
+Terraform foundation and read-only plan. The repository has no
+Terraform-managed CML resource yet; CML topology and lifecycle begin in 8C. See the
 [Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).

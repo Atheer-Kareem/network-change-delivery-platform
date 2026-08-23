@@ -27,6 +27,7 @@ def test_pipeline_contract() -> None:
         "quality-pytest",
         "quality-ansible-lint",
         "quality-package-build",
+        "quality-terraform-cml",
     }
     assert all(
         step["agents"]["queue"] == "ncdp-validation" for step in quality_steps.values()
@@ -52,6 +53,19 @@ def test_pipeline_contract() -> None:
             "docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
             f"{validation_command}"
         )
+
+    terraform = quality_steps["quality-terraform-cml"]
+    terraform_command = terraform["command"]
+    assert "hashicorp/terraform:1.15.8@sha256:" in terraform_command
+    assert "${PWD}:/workspace:ro" in terraform_command
+    assert "TF_DATA_DIR=/tmp/terraform-data" in terraform_command
+    assert "terraform version" in terraform_command
+    assert "fmt -check -recursive" in terraform_command
+    assert "init -backend=false -input=false -lockfile=readonly" in terraform_command
+    assert "terraform -chdir=infrastructure/cml validate" in terraform_command
+    assert "CML2_" not in terraform_command
+    for forbidden in (" plan", " apply", " import", " destroy"):
+        assert forbidden not in terraform_command
 
     committed_diff = quality_steps["quality-committed-diff"]["command"]
     assert committed_diff.count("git --no-pager diff --check") == 2

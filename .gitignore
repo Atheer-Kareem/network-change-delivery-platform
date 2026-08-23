@@ -45,4 +45,7 @@ reports/
 *.tfstate.*
 *.tfplan
 .terraform/
+terraform.tfstate.d/
+crash.log
+crash.*.log
 .buildkite-agent/

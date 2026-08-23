@@ -249,8 +249,17 @@ The [Increment 8D-1 console feasibility acceptance](../acceptance/terraform-cml-
 proved those properties for a non-secret IOS XE runtime hostname. CML stored
 configuration stayed zero length, Terraform refresh did not import active
 running configuration, and the unsaved marker disappeared after restart. This
-does not yet accept management-IP or authentication bootstrap, SSH or NETCONF,
-Junos bootstrap, reset/recreate, or NCDP cutover.
+does not by itself accept management-IP or authentication bootstrap, SSH or
+NETCONF, Junos bootstrap, reset/recreate, or NCDP cutover.
+
+Increment 8D-2 accepts the next IOS XE boundary. The legacy lab is deliberately
+kept stopped to remove its duplicate management identity, and `192.168.4.14`
+now realizes the unchanged NetBox identity on Terraform-created `core-02`.
+One-time manual console bootstrap persists management, the unchanged OpenBao
+credential authenticates over strict SSH host trust, and the existing NCDP path
+reaches read-only planning. Saved device configuration remains on the router
+disk and outside CML stored configuration and Terraform state. See the
+[Increment 8D-2 acceptance report](../acceptance/terraform-cml-iosxe-management-bootstrap-increment-8d.md).
 
 The accepted legacy lab remains active until it cannot conflict with stable
 NetBox-owned management endpoints. After state-free bootstrap and Terraform
@@ -289,11 +298,11 @@ reset/wipe semantics reserved for 8D. See the
 ### 8D — reset/recreate and NCDP compatibility
 
 In progress. Increment 8D-1 accepts one-time manual CML browser-console
-bootstrap for IOS XE and proves that non-secret runtime configuration remains
-outside CML stored configuration and Terraform state and disappears after an
-unsaved restart. Next, implement the management and authentication bootstrap
-sufficient for NCDP. Controlled management cutover, destroy/recreate and reset
-acceptance, deterministic lifecycle reconciliation, explicit safe SSH
-host-trust re-establishment, Junos bootstrap, and fresh NetBox/OpenBao/NCDP
-compatibility checks remain. Terraform controls CML infrastructure and
-lifecycle only, never production configuration.
+bootstrap for IOS XE and its state-free runtime boundary. Increment 8D-2 accepts
+persistent IOS XE management/authentication bootstrap, the stable NetBox
+identity's operational transfer from the stopped legacy realization, strict SSH
+host-trust re-establishment, existing OpenBao credential reuse, and read-only
+NCDP planning. Junos bootstrap, destroy/recreate and reset acceptance,
+deterministic lifecycle reconciliation, full cutover, and legacy retirement
+remain. Terraform controls CML infrastructure and lifecycle only, never
+production configuration.

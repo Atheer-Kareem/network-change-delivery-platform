@@ -7,6 +7,8 @@ import sys
 
 import pytest
 
+import network_change_delivery.cli as cli_module
+from network_change_delivery.ansible_adapter import DeploymentRuntimeError
 from network_change_delivery.cli import main
 
 
@@ -44,6 +46,39 @@ def test_module_invocation() -> None:
     )
     assert completed.returncode == 0
     assert completed.stdout == "ncdp 0.1.0\n"
+
+
+def test_verify_deployment_ansible_runtime_cli_reports_safe_pins(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        cli_module,
+        "verify_deployment_ansible_runtime",
+        lambda: (("ansible.netcommon", "8.6.0"), ("cisco.ios", "11.4.2")),
+    )
+    assert main(["verify-deployment-ansible-runtime"]) == 0
+    assert capsys.readouterr().out == (
+        "Deployment Ansible runtime verified: "
+        "ansible.netcommon=8.6.0, cisco.ios=11.4.2\n"
+    )
+
+
+def test_verify_deployment_ansible_runtime_cli_failure_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sensitive = "password=hunter2 /untrusted/private/path"
+
+    def unavailable():
+        raise DeploymentRuntimeError from RuntimeError(sensitive)
+
+    monkeypatch.setattr(cli_module, "verify_deployment_ansible_runtime", unavailable)
+    with pytest.raises(SystemExit) as exit_info:
+        main(["verify-deployment-ansible-runtime"])
+    assert exit_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "deployment Ansible runtime prerequisites unavailable" in captured.err
+    assert sensitive not in captured.err
+    assert sensitive not in captured.out
 
 
 @pytest.mark.parametrize("command", ["plan", "deploy"])

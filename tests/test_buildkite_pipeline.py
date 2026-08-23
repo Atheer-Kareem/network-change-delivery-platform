@@ -179,6 +179,15 @@ def test_scripts_static_contract() -> None:
         "oidc request-token"
     )
     assert gate.index("verify-buildkite-live-request") < gate.index(
+        "verify-deployment-ansible-runtime"
+    )
+    assert gate.index("verify-deployment-ansible-runtime") < gate.rindex(
+        "oidc request-token"
+    )
+    assert gate.index("verify-deployment-ansible-runtime") < gate.index(
+        "deploy-buildkite-promotion"
+    )
+    assert gate.index("verify-buildkite-live-request") < gate.index(
         "deploy-buildkite-promotion"
     )
     assert 'request_status" -eq 3' in gate

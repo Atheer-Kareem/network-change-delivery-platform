@@ -15,14 +15,20 @@ to the promoted `DeploymentPlan` by change ID, digest, and
 `netbox:dcim.device:<id>` identity. Extra fields, fleet plans, local inventory,
 environment credential provenance, and arbitrary secret paths are rejected.
 
-After request validation, the gate obtains a second fresh Buildkite JWT using
-the accepted audience, lifetime, and `pipeline_id` subject selection. It pipes
-the JWT directly to `deploy-buildkite-promotion`. The command re-verifies the
-promotion and request, creates `NetBoxInventoryProvider`, derives the
-device-specific OpenBao role and credential path only from stable NetBox
-identity, and calls `deploy_plan()` with the promoted plan digest as approval.
-This preserves fresh inventory/device preflight, stale-plan checks,
-vendor-specific execution and recovery, and independent post-write validation.
+After request validation, the gate verifies the deployment agent has every
+collection and exact version pinned by `ansible/requirements.yml`. It uses the
+same effective collection search path as the Cisco adapter and performs only
+deterministic filesystem and collection-metadata inspection. Collections are
+provisioned separately into an agent-owned persistent path; the privileged job
+does not install from Galaxy. Only after this check passes does the gate obtain
+a second fresh Buildkite JWT using the accepted audience, lifetime, and
+`pipeline_id` subject selection. It pipes the JWT directly to
+`deploy-buildkite-promotion`. The command re-verifies the promotion and request,
+creates `NetBoxInventoryProvider`, derives the device-specific OpenBao role and
+credential path only from stable NetBox identity, and calls `deploy_plan()` with
+the promoted plan digest as approval. This preserves fresh inventory/device
+preflight, stale-plan checks, vendor-specific execution and recovery, and
+independent post-write validation.
 
 The device-specific OpenBao token has one use, no default policy, no Identity or
 external-namespace capability, and exactly one read policy. That use is consumed
@@ -58,3 +64,13 @@ remain suppressed from typed evidence and process output. This attribution does
 not change outcome semantics, the version 1 `ChangeRecord` schema, stale-plan
 checks, or execution and recovery behavior. Live device-write acceptance remains
 pending.
+
+Retry #2 passed inventory and credential retrieval, then blocked during device
+state collection before execution. Read-only diagnosis found that neither
+repository-pinned collection (`ansible.netcommon` 8.6.0 and `cisco.ios` 11.4.2)
+was present in the deployment runtime's effective search path. This was a
+deployment-runtime dependency defect, not a plan, inventory, OpenBao, or device
+write failure. The pre-JWT runtime check now fails closed with one sanitized
+message when requirements, search paths, installed metadata, or exact versions
+are unavailable. This guard has not yet been externally accepted, and 7C live
+device-write acceptance remains pending.

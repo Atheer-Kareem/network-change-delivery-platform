@@ -7,6 +7,7 @@ from network_change_delivery.ansible_adapter import (
     EXECUTION_TASK,
     AnsibleRunnerCiscoAdapter,
     _known_hosts_path,
+    effective_ansible_collection_path,
 )
 from network_change_delivery.models import (
     CiscoConfigArtifact,
@@ -74,3 +75,37 @@ def test_known_hosts_path_ignores_custom_environment(
 ) -> None:
     monkeypatch.setenv("NCDP_KNOWN_HOSTS", "/tmp/not-used")
     assert _known_hosts_path() == Path.home() / ".ssh" / "known_hosts"
+
+
+def test_runner_uses_the_shared_effective_collection_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    collection_root = tmp_path / "agent-collections"
+    monkeypatch.setenv("ANSIBLE_COLLECTIONS_PATH", str(collection_root))
+    monkeypatch.setattr(
+        "network_change_delivery.ansible_adapter.verify_existing_host_trust",
+        lambda _device: "safe fingerprint",
+    )
+    captured = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(status="successful", rc=0)
+
+    monkeypatch.setattr(
+        "network_change_delivery.ansible_adapter.ansible_runner.run", fake_run
+    )
+    adapter = AnsibleRunnerCiscoAdapter(tmp_path)
+    adapter._run(
+        InventoryDevice(
+            name="router-1",
+            host="192.0.2.10",
+            platform="cisco_iosxe",
+            expected_hostname="lab-router",
+        ),
+        DeviceCredentials(username="user", password="secret"),
+        "collect_interface_state.yml",
+    )
+    assert captured["envvars"]["ANSIBLE_COLLECTIONS_PATH"] == (
+        effective_ansible_collection_path(tmp_path)
+    )

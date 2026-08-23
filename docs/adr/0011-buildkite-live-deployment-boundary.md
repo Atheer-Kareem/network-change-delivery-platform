@@ -23,18 +23,22 @@ results before consuming that one use on the exact KV-v2 credential GET.
 
 A write is eligible only when the current protected-main commit changes the
 fixed `deployments/live/request.yaml` path relative to its first parent, the file
-still exists, its strict contents bind the promoted single-device plan's change
-ID, digest, and stable inventory identity, and the human promotion approval and
-accepted 7B identity gate have passed. Target hostname and arbitrary secret path
-cannot select privilege. A second fresh JWT enters the dedicated deployment CLI
-through stdin and is never stored in a shell variable or file.
+exists as a bounded regular blob in that exact commit, its strict committed
+contents bind the promoted single-device plan's change ID, digest, and stable
+inventory identity, and the human promotion approval and accepted 7B identity
+gate have passed. Mutable working-tree contents do not authorize a write. Target
+hostname and arbitrary secret path cannot select privilege. A second fresh JWT
+enters the dedicated deployment CLI through stdin and is never stored in a shell
+variable or file.
 
 The CLI verifies the promotion and request again, requires NetBox inventory and
 OpenBao provenance, creates the read-only NetBox provider and one-use OIDC secret
 provider, and delegates execution to the existing `deploy_plan()` lifecycle. It
 writes one mode-0600 `ChangeRecord` and succeeds only for existing successful or
-recovered outcomes. Fleet promotion is rejected; one token use maps to one exact
-credential read for the first protected acceptance.
+recovered outcomes. The shell uploads a produced record for both zero and
+nonzero outcomes before preserving the deployment status; it never fabricates a
+record for a pre-evidence failure. Fleet promotion is rejected; one token use
+maps to one exact credential read for the first protected acceptance.
 
 ## Consequences
 

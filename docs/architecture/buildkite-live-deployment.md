@@ -4,7 +4,9 @@
 existing vendor execution lifecycle. Every protected-main build still performs
 the accepted zero-policy 7B identity exchange and exact promotion verification.
 The gate then checks whether that exact commit changed the fixed live request
-relative to its first parent.
+relative to its first parent. Authorization reads the bounded regular blob
+directly from that commit's Git object; working-tree creation, modification,
+deletion, symlinks, and oversized content cannot substitute request semantics.
 
 An unchanged or deleted request prints `live deployment requested: NO` and
 `device write executed: NO`, then exits before a privileged JWT, NetBox, OpenBao
@@ -26,7 +28,10 @@ The device-specific OpenBao token has one use, no default policy, no Identity or
 external-namespace capability, and exactly one read policy. That use is consumed
 by `GET /v1/ncdp/data/devices/<id>/ssh`. The JWT, OpenBao token, NetBox token,
 username, and password never enter arguments, logs, artifacts, metadata, plans,
-or evidence. Only the mode-0600 typed `ChangeRecord` is uploaded after execution.
+or evidence. The mode-0600 typed `ChangeRecord` is uploaded after execution even
+when the deployment outcome is nonzero. The gate then preserves that original
+failure status; an upload failure also fails the job. A failure before evidence
+exists fabricates no artifact and reports that no typed record was produced.
 
 7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox

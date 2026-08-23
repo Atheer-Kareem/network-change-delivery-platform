@@ -182,6 +182,11 @@ def test_scripts_static_contract() -> None:
     assert 'request_status" -eq 3' in gate
     assert "live deployment requested: NO" not in gate
     assert gate.count("device write executed: YES") == 1
+    assert "set +e" in gate
+    assert "deployment_status=$?" in gate
+    assert 'exit "$deployment_status"' in gate
+    assert "inspect the uploaded typed ChangeRecord evidence" in gate
+    assert gate.index("artifact upload") < gate.index('exit "$deployment_status"')
     assert 'cd "$tmpdir"' in gate
     assert 'buildkite-agent artifact upload "$report_relative"' in gate
     assert "deployments/live/request.yaml" not in gate

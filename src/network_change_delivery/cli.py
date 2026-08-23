@@ -25,10 +25,8 @@ from network_change_delivery.assurance import (
     prepare_snapshot,
 )
 from network_change_delivery.buildkite_deployment import (
-    LIVE_DEPLOYMENT_REQUEST,
     BuildkiteOpenBaoDeploymentSecretProvider,
-    live_deployment_request_changed,
-    load_live_deployment_request,
+    load_live_deployment_request_at_commit,
     load_promoted_single_plan,
 )
 from network_change_delivery.buildkite_identity import (
@@ -288,10 +286,10 @@ def _run_verify_buildkite_gate(arguments: argparse.Namespace) -> int:
 
 
 def _verified_live_request(promotion: Path, context):
-    if not live_deployment_request_changed(context.commit):
+    request = load_live_deployment_request_at_commit(context.commit)
+    if request is None:
         raise PromotionError("live deployment request was not changed by this commit")
     manifest, plan = load_promoted_single_plan(promotion, context.commit)
-    request = load_live_deployment_request(LIVE_DEPLOYMENT_REQUEST)
     request.verify_plan(plan)
     return manifest, plan, request
 
@@ -309,7 +307,7 @@ def _run_verify_buildkite_live_request(arguments: argparse.Namespace) -> int:
 def _run_buildkite_live_request_status(arguments: argparse.Namespace) -> int:
     del arguments
     context = buildkite_deployment_context_from_environment(os.environ)
-    if not live_deployment_request_changed(context.commit):
+    if load_live_deployment_request_at_commit(context.commit) is None:
         print("live deployment requested: NO")
         print("device write executed: NO")
         return 3

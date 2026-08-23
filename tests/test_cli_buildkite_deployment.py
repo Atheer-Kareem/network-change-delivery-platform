@@ -14,9 +14,7 @@ import pytest
 import network_change_delivery.buildkite_deployment as deployment_module
 import network_change_delivery.cli as cli_module
 from network_change_delivery.buildkite_deployment import (
-    LIVE_DEPLOYMENT_REQUEST,
     LiveDeploymentRequest,
-    live_deployment_request_changed,
     load_promoted_single_plan,
 )
 from network_change_delivery.models import FinalOutcome
@@ -169,47 +167,12 @@ def test_verify_live_request_uses_no_inventory_secret_or_adapter(
     assert "live deployment requested: YES" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    ("returncode", "present", "expected"),
-    [(0, False, False), (1, False, False), (1, True, True)],
-)
-def test_commit_bound_request_unchanged_deleted_or_changed_present(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    returncode: int,
-    present: bool,
-    expected: bool,
-) -> None:
-    if present:
-        request = tmp_path / LIVE_DEPLOYMENT_REQUEST
-        request.parent.mkdir(parents=True)
-        request.write_text("bounded", encoding="utf-8")
-    observed: dict[str, object] = {}
-
-    def run_spy(command, **kwargs):
-        observed["command"] = command
-        observed["kwargs"] = kwargs
-        return SimpleNamespace(returncode=returncode)
-
-    monkeypatch.setattr(deployment_module.subprocess, "run", run_spy)
-    assert live_deployment_request_changed("a" * 40, root=tmp_path) is expected
-    assert observed["command"] == [
-        "git",
-        "diff",
-        "--quiet",
-        "a" * 40 + "^",
-        "a" * 40,
-        "--",
-        "deployments/live/request.yaml",
-    ]
-
-
 def test_no_request_status_stops_without_providers(
     monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
     environment(monkeypatch)
     monkeypatch.setattr(
-        cli_module, "live_deployment_request_changed", lambda _commit: False
+        cli_module, "load_live_deployment_request_at_commit", lambda _commit: None
     )
 
     class Forbidden:
@@ -231,7 +194,7 @@ def test_deployment_boundary_independently_requires_request_changed(
 ) -> None:
     context = SimpleNamespace(commit="a" * 40)
     monkeypatch.setattr(
-        cli_module, "live_deployment_request_changed", lambda _commit: False
+        cli_module, "load_live_deployment_request_at_commit", lambda _commit: None
     )
     monkeypatch.setattr(
         cli_module,

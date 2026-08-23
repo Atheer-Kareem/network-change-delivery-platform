@@ -34,6 +34,7 @@ from network_change_delivery.secrets import (
 )
 
 LIVE_DEPLOYMENT_REQUEST = Path("deployments/live/request.yaml")
+MAX_LIVE_DEPLOYMENT_REQUEST_BYTES = 16 * 1024
 _IDENTITY_FIELDS = {
     "pipeline_id": "pipeline_id",
     "build_commit": "commit",
@@ -57,36 +58,103 @@ def live_deployment_request_changed(
     root: Path = Path(),
     request_path: Path = LIVE_DEPLOYMENT_REQUEST,
 ) -> bool:
-    """Require the fixed request path to be changed and present at exact commit."""
-    if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
-        raise PromotionError("Buildkite live request commit rejected")
+    """Return whether the exact commit changes and contains a regular request blob."""
+    return (
+        _live_deployment_request_blob(commit, root=root, request_path=request_path)
+        is not None
+    )
+
+
+def _run_git(
+    arguments: list[str], *, root: Path, capture_output: bool = False
+) -> subprocess.CompletedProcess[bytes]:
     try:
-        result = subprocess.run(
-            [
-                "git",
-                "diff",
-                "--quiet",
-                f"{commit}^",
-                commit,
-                "--",
-                request_path.as_posix(),
-            ],
+        return subprocess.run(
+            ["git", *arguments],
             cwd=root,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE if capture_output else subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
         )
     except OSError as error:
         raise PromotionError(
-            "unable to verify live deployment request change"
+            "unable to verify committed live deployment request"
         ) from error
-    if result.returncode == 0:
-        return False
-    if result.returncode != 1:
-        raise PromotionError("unable to verify live deployment request change")
-    request = root / request_path
-    return request.is_file() and not request.is_symlink()
+
+
+def _live_deployment_request_blob(
+    commit: str,
+    *,
+    root: Path = Path(),
+    request_path: Path = LIVE_DEPLOYMENT_REQUEST,
+) -> bytes | None:
+    if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise PromotionError("Buildkite live request commit rejected")
+    changed = _run_git(
+        [
+            "diff",
+            "--quiet",
+            f"{commit}^",
+            commit,
+            "--",
+            request_path.as_posix(),
+        ],
+        root=root,
+    )
+    if changed.returncode == 0:
+        return None
+    if changed.returncode != 1:
+        raise PromotionError("unable to verify committed live deployment request")
+
+    tree = _run_git(
+        ["ls-tree", "-z", commit, "--", request_path.as_posix()],
+        root=root,
+        capture_output=True,
+    )
+    if tree.returncode != 0:
+        raise PromotionError("unable to verify committed live deployment request")
+    if not tree.stdout:
+        return None
+    entries = tree.stdout.removesuffix(b"\0").split(b"\0")
+    if len(entries) != 1:
+        raise PromotionError("committed live deployment request is not a regular blob")
+    try:
+        metadata, stored_path = entries[0].split(b"\t", 1)
+        mode, object_type, object_id = metadata.split(b" ", 2)
+    except ValueError:
+        raise PromotionError("committed live deployment request is invalid") from None
+    if (
+        mode not in {b"100644", b"100755"}
+        or object_type != b"blob"
+        or stored_path != request_path.as_posix().encode("utf-8")
+        or re.fullmatch(rb"[0-9a-f]{40,64}", object_id) is None
+    ):
+        raise PromotionError("committed live deployment request is not a regular blob")
+
+    size = _run_git(
+        ["cat-file", "-s", object_id.decode("ascii")],
+        root=root,
+        capture_output=True,
+    )
+    try:
+        byte_count = int(size.stdout.strip())
+    except ValueError:
+        raise PromotionError("committed live deployment request is invalid") from None
+    if (
+        size.returncode != 0
+        or byte_count < 0
+        or byte_count > MAX_LIVE_DEPLOYMENT_REQUEST_BYTES
+    ):
+        raise PromotionError("committed live deployment request size rejected")
+    blob = _run_git(
+        ["cat-file", "blob", object_id.decode("ascii")],
+        root=root,
+        capture_output=True,
+    )
+    if blob.returncode != 0 or len(blob.stdout) != byte_count:
+        raise PromotionError("committed live deployment request is invalid")
+    return blob.stdout
 
 
 class LiveDeploymentRequest(BaseModel):
@@ -133,6 +201,23 @@ def load_live_deployment_request(
         return LiveDeploymentRequest.model_validate(payload)
     except (OSError, yaml.YAMLError, ValueError) as error:
         raise PromotionError("live deployment request is invalid") from error
+
+
+def load_live_deployment_request_at_commit(
+    commit: str,
+    *,
+    root: Path = Path(),
+    request_path: Path = LIVE_DEPLOYMENT_REQUEST,
+) -> LiveDeploymentRequest | None:
+    """Load only the bounded request blob stored by the exact changed commit."""
+    blob = _live_deployment_request_blob(commit, root=root, request_path=request_path)
+    if blob is None:
+        return None
+    try:
+        payload = yaml.safe_load(blob.decode("utf-8"))
+        return LiveDeploymentRequest.model_validate(payload)
+    except (UnicodeDecodeError, yaml.YAMLError, ValueError) as error:
+        raise PromotionError("committed live deployment request is invalid") from error
 
 
 def load_promoted_single_plan(

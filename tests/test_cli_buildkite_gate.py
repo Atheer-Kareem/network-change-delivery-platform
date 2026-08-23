@@ -33,7 +33,7 @@ def test_promoted_values_are_exact() -> None:
 
 @pytest.mark.parametrize("changed_option", [4, 6, 8])
 def test_cli_gate_exact_and_wrong_promoted_values(
-    tmp_path, monkeypatch, changed_option: int
+    tmp_path, monkeypatch, capsys, changed_option: int
 ) -> None:
     assurance = tmp_path / "assurance.json"
     assurance.write_text(_record().model_dump_json(), encoding="utf-8")
@@ -62,6 +62,9 @@ def test_cli_gate_exact_and_wrong_promoted_values(
         manifest.digest,
     ]
     assert main(args) == 0
+    output = capsys.readouterr().out
+    assert "deployment authorization gate: PASSED" in output
+    assert "device write executed" not in output
     args[changed_option] = " " + args[changed_option]
     with pytest.raises(SystemExit):
         main(args)

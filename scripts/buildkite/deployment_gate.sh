@@ -36,3 +36,42 @@ uv run ncdp verify-buildkite-gate \
   --promoted-plan-digest "$promoted_plan_digest" \
   --promoted-assurance-digest "$promoted_assurance_digest" \
   --promoted-promotion-digest "$promoted_promotion_digest"
+if uv run ncdp buildkite-live-request-status; then
+  :
+else
+  request_status=$?
+  [[ "$request_status" -eq 3 ]]
+  exit 0
+fi
+uv run ncdp verify-buildkite-live-request --promotion "$promotion"
+report_relative="deployment-evidence/change-record.json"
+report="$tmpdir/$report_relative"
+set +e
+buildkite-agent oidc request-token \
+  --audience urn:ncdp:openbao:deploy \
+  --lifetime 300 \
+  --subject-claim pipeline_id |
+  uv run ncdp deploy-buildkite-promotion \
+    --promotion "$promotion" \
+    --report-json "$report"
+deployment_status=$?
+set -e
+if [[ -f "$report" && ! -L "$report" ]]; then
+  (
+    cd "$tmpdir"
+    buildkite-agent artifact upload "$report_relative"
+  )
+fi
+if [[ "$deployment_status" -ne 0 ]]; then
+  if [[ -f "$report" && ! -L "$report" ]]; then
+    echo "deployment failed; inspect the uploaded typed ChangeRecord evidence"
+  else
+    echo "deployment failed before typed ChangeRecord evidence was produced"
+  fi
+  exit "$deployment_status"
+fi
+if [[ ! -f "$report" || -L "$report" ]]; then
+  echo "deployment completed without required typed ChangeRecord evidence"
+  exit 1
+fi
+echo "device write executed: YES"

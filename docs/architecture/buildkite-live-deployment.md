@@ -47,3 +47,14 @@ precondition; it is not a claim of full live configuration freshness. B1 keeps
 `deployments/live/request.yaml` absent so protected-main can first validate the
 single-device promotion and terminate in the established no-write path. Live
 device-write acceptance remains pending.
+
+The first externally attempted 7C deployment stopped during preflight with a
+`BLOCKED` outcome before execution. Pre-write failures remain fail-closed, while
+the existing `StageResult.message` now attributes failure only to a fixed
+boundary: inventory resolution, credential-reference resolution, credential
+retrieval, device-state collection, or live safety validation. Provider and
+device exception strings, response bodies, command output, and secret material
+remain suppressed from typed evidence and process output. This attribution does
+not change outcome semantics, the version 1 `ChangeRecord` schema, stale-plan
+checks, or execution and recovery behavior. Live device-write acceptance remains
+pending.

@@ -150,7 +150,7 @@ def test_successful_or_recovered_deployment_uploads_evidence_and_succeeds(
 
 
 @pytest.mark.parametrize(
-    "outcome", ["POST_VALIDATION_FAILED", "AMBIGUOUS", "RECOVERY_FAILED"]
+    "outcome", ["BLOCKED", "POST_VALIDATION_FAILED", "AMBIGUOUS", "RECOVERY_FAILED"]
 )
 def test_nonzero_deployment_uploads_evidence_and_preserves_failure(
     tmp_path: Path, outcome: str

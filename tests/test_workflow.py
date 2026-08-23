@@ -25,7 +25,11 @@ from network_change_delivery.workflow import build_plan, deploy_plan, plan_chang
 class FakeInventory:
     """Resolve one fixed device."""
 
-    def __init__(self, device: InventoryDevice | None = None) -> None:
+    def __init__(
+        self,
+        device: InventoryDevice | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.device = device or InventoryDevice(
             name="router-1",
             host="192.0.2.10",
@@ -33,9 +37,12 @@ class FakeInventory:
             expected_hostname="lab-router",
             protected_interfaces=("GigabitEthernet1",),
         )
+        self.error = error
 
     def resolve(self, target: str, interface: str | None = None) -> InventoryDevice:
         del interface
+        if self.error is not None:
+            raise self.error
         if target != self.device.name:
             raise ValueError("unknown target")
         return self.device
@@ -47,21 +54,25 @@ class FakeSecrets:
     def __init__(
         self,
         credential: CredentialReference | None = None,
-        error: Exception | None = None,
+        load_error: Exception | None = None,
+        reference_error: Exception | None = None,
     ) -> None:
         self.credential = credential or CredentialReference(
             "environment", ENVIRONMENT_REFERENCE
         )
-        self.error = error
+        self.load_error = load_error
+        self.reference_error = reference_error
         self.loads = 0
 
     def reference(self, _device: InventoryDevice) -> CredentialReference:
+        if self.reference_error is not None:
+            raise self.reference_error
         return self.credential
 
     def load(self, _device: InventoryDevice) -> DeviceCredentials:
         self.loads += 1
-        if self.error is not None:
-            raise self.error
+        if self.load_error is not None:
+            raise self.load_error
         return DeviceCredentials(username="test-user", password="test-password")
 
 
@@ -174,7 +185,41 @@ def test_stale_description_before_deploy_fails_closed() -> None:
         executor,
     )
     assert record.final_outcome is FinalOutcome.STALE_PLAN
+    assert (
+        record.preflight.message == "approved preconditions no longer match live state"
+    )
+    assert record.execution.attempted is False
     assert executor.artifacts == []
+
+
+SENSITIVE_FAILURE = (
+    "username=operator password=hunter2 jwt=eyJhbGciOiJSUzI1NiJ9.sensitive.signature"
+)
+
+
+def assert_sanitized_blocked_record(record, expected_message: str, capsys) -> None:
+    assert record.final_outcome is FinalOutcome.BLOCKED
+    assert record.preflight.message == expected_message
+    assert record.execution.attempted is False
+    serialized = record.model_dump_json()
+    captured = capsys.readouterr()
+    assert SENSITIVE_FAILURE not in serialized
+    assert SENSITIVE_FAILURE not in captured.out
+    assert SENSITIVE_FAILURE not in captured.err
+    assert SENSITIVE_FAILURE not in repr(record)
+
+
+def test_inventory_resolution_failure_has_sanitized_attribution(capsys) -> None:
+    approved = plan()
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(error=RuntimeError(SENSITIVE_FAILURE)),
+        FakeSecrets(),
+        FakeCollector(),
+        FakeExecutor(),
+    )
+    assert_sanitized_blocked_record(record, "inventory resolution blocked", capsys)
 
 
 @pytest.mark.parametrize(
@@ -202,6 +247,7 @@ def test_inventory_binding_drift_is_stale_before_collection(
         executor,
     )
     assert record.final_outcome is FinalOutcome.STALE_PLAN
+    assert record.preflight.message == "approved inventory endpoint binding has changed"
     assert expected_message in record.preflight.message
     assert collector.calls == 0
 
@@ -334,14 +380,30 @@ def test_credential_binding_drift_is_stale_before_secret_load_or_collection(
         executor,
     )
     assert record.final_outcome is FinalOutcome.STALE_PLAN
+    assert record.preflight.message == "approved credential binding has changed"
     assert secrets.loads == 0
     assert collector.calls == 0
     assert executor.artifacts == []
 
 
-def test_secret_load_failure_blocks_before_device_collection() -> None:
+def test_credential_reference_failure_has_sanitized_attribution(capsys) -> None:
     approved = plan()
-    secrets = FakeSecrets(error=RuntimeError("bounded load failure"))
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(),
+        FakeSecrets(reference_error=RuntimeError(SENSITIVE_FAILURE)),
+        FakeCollector(),
+        FakeExecutor(),
+    )
+    assert_sanitized_blocked_record(
+        record, "credential reference resolution blocked", capsys
+    )
+
+
+def test_secret_load_failure_blocks_before_device_collection(capsys) -> None:
+    approved = plan()
+    secrets = FakeSecrets(load_error=RuntimeError(SENSITIVE_FAILURE))
     collector = FakeCollector()
     executor = FakeExecutor()
     record = deploy_plan(
@@ -352,9 +414,42 @@ def test_secret_load_failure_blocks_before_device_collection() -> None:
         collector,
         executor,
     )
-    assert record.final_outcome is FinalOutcome.BLOCKED
+    assert_sanitized_blocked_record(record, "credential retrieval blocked", capsys)
     assert secrets.loads == 1
     assert collector.calls == 0
+    assert executor.artifacts == []
+
+
+def test_device_collection_failure_has_sanitized_attribution(capsys) -> None:
+    approved = plan()
+    collector = FakeCollector(RuntimeError(SENSITIVE_FAILURE))
+    executor = FakeExecutor()
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(),
+        FakeSecrets(),
+        collector,
+        executor,
+    )
+    assert_sanitized_blocked_record(record, "device state collection blocked", capsys)
+    assert collector.calls == 1
+    assert executor.artifacts == []
+
+
+def test_live_safety_failure_has_sanitized_attribution(capsys) -> None:
+    approved = plan()
+    unsafe_state = state("old").model_copy(update={"protected": True})
+    executor = FakeExecutor()
+    record = deploy_plan(
+        approved,
+        approved.digest,
+        FakeInventory(),
+        FakeSecrets(),
+        FakeCollector(unsafe_state),
+        executor,
+    )
+    assert_sanitized_blocked_record(record, "live safety validation blocked", capsys)
     assert executor.artifacts == []
 
 

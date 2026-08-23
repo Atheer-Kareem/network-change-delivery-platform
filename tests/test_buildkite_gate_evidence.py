@@ -26,6 +26,7 @@ def run_gate(
     upload_status: int = 0,
     live_request: bool = True,
     runtime_status: int = 0,
+    retry_count: str | None = "0",
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     (tmp_path / "scripts/buildkite").mkdir(parents=True)
     executable(tmp_path / "scripts/buildkite/verify_commit.sh", "#!/bin/sh\nexit 0\n")
@@ -101,6 +102,10 @@ esac
         "LIVE_REQUEST": "1" if live_request else "0",
         "RUNTIME_STATUS": str(runtime_status),
     }
+    if retry_count is None:
+        environment.pop("BUILDKITE_RETRY_COUNT", None)
+    else:
+        environment["BUILDKITE_RETRY_COUNT"] = retry_count
     for prohibited in (
         "NCDP_OPENBAO_ROLE_ID",
         "NCDP_OPENBAO_SECRET_ID",
@@ -117,6 +122,44 @@ esac
         text=True,
     )
     return result, upload_log
+
+
+@pytest.mark.parametrize("retry_count", ["1", "2", "malformed", "-1", "00"])
+def test_retried_or_malformed_job_fails_before_oidc_and_live_boundaries(
+    tmp_path: Path, retry_count: str
+) -> None:
+    result, uploads = run_gate(
+        tmp_path,
+        deployment_status=0,
+        evidence=True,
+        outcome="SUCCEEDED",
+        retry_count=retry_count,
+    )
+    command_log = tmp_path / "commands"
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "retried deployment job is not authorized\n"
+    assert not command_log.exists()
+    assert not uploads.exists()
+
+
+@pytest.mark.parametrize("retry_count", ["0", None])
+def test_original_job_continues_into_normal_gate_path(
+    tmp_path: Path, retry_count: str | None
+) -> None:
+    result, uploads = run_gate(
+        tmp_path,
+        deployment_status=0,
+        evidence=True,
+        outcome="SUCCEEDED",
+        retry_count=retry_count,
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 0
+    assert commands.count("oidc") == 2
+    assert "verify-deployment-ansible-runtime" in commands
+    assert "deploy-buildkite-promotion" in commands
+    assert uploads.exists()
 
 
 def test_absent_request_stops_before_second_jwt_and_provider_construction(

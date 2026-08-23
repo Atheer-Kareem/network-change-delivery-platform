@@ -3,6 +3,11 @@ set -euo pipefail
 
 [[ "${BUILDKITE_STEP_KEY:-}" == deploy-gate ]]
 [[ "${BUILDKITE_AGENT_META_DATA_QUEUE:-}" == ncdp-deploy ]]
+retry_count="${BUILDKITE_RETRY_COUNT:-0}"
+if [[ "$retry_count" != 0 ]]; then
+  echo "retried deployment job is not authorized" >&2
+  exit 2
+fi
 scripts/buildkite/verify_commit.sh
 for prohibited_variable in \
   NCDP_OPENBAO_ROLE_ID \

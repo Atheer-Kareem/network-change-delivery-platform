@@ -32,3 +32,13 @@ output "vjunos_router_image_id" {
     error_message = "Exactly one vJunos Router image with ID vjunos-router-23-2r1-15 is required."
   }
 }
+
+output "twin_lab_id" {
+  description = "CML realization identifier for the Terraform-owned twin lab."
+  value       = cml2_lab.twin.id
+}
+
+output "twin_lab_state" {
+  description = "Observed lifecycle state of the Terraform-owned twin lab."
+  value       = cml2_lifecycle.twin.state
+}

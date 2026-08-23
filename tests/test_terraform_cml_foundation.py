@@ -21,10 +21,26 @@ def test_exact_toolchain_and_backend_contract() -> None:
     assert "path" not in backend.group(1)
 
 
-def test_read_only_configuration_and_provider_security() -> None:
+def test_managed_resource_allow_list_and_provider_security() -> None:
     text = terraform_text()
     assert not list(TF_ROOT.rglob("*.tfvars"))
-    for block in ("resource", "module", "import", "moved", "removed"):
+    resources = re.findall(r'(?m)^resource\s+"([^"]+)"\s+"([^"]+)"\s*\{', text)
+    assert set(resources) == {
+        ("cml2_lab", "twin"),
+        ("cml2_node", "system_bridge"),
+        ("cml2_node", "management_switch"),
+        ("cml2_node", "core_02"),
+        ("cml2_node", "edge_junos_01"),
+        ("cml2_node", "core_03"),
+        ("cml2_link", "system_bridge_management"),
+        ("cml2_link", "management_core_02"),
+        ("cml2_link", "management_edge_junos_01"),
+        ("cml2_link", "management_core_03"),
+        ("cml2_link", "core_02_edge_junos_01"),
+        ("cml2_link", "edge_junos_01_core_03"),
+        ("cml2_lifecycle", "twin"),
+    }
+    for block in ("module", "import", "moved", "removed"):
         assert re.search(rf"(?m)^\s*{block}\s+", text) is None
 
     provider = (TF_ROOT / "provider.tf").read_text()

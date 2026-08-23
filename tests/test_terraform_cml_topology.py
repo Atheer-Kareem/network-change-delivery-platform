@@ -88,8 +88,19 @@ def test_exact_node_contract_and_fail_closed_discovery() -> None:
     )
 
 
-def test_router_nodes_use_explicit_empty_configuration_only() -> None:
-    for name in ("core_02", "edge_junos_01", "core_03"):
+def test_only_core_02_uses_sensitive_day0_template() -> None:
+    core_02 = resource_block("cml2_node", "core_02")
+    assert assignment(core_02, "configuration").startswith("sensitive(templatefile(")
+    assert "bootstrap/cat8000v.tftpl" in core_02
+    for variable in (
+        "core_02_bootstrap_hostname",
+        "core_02_bootstrap_management_cidr",
+        "core_02_bootstrap_username",
+        "core_02_bootstrap_password",
+    ):
+        assert f"var.{variable}" in core_02
+
+    for name in ("edge_junos_01", "core_03"):
         body = resource_block("cml2_node", name)
         assert assignment(body, "configuration") == '""'
         assert re.search(r"(?m)^\s*configurations\s*=", body) is None
@@ -106,6 +117,13 @@ def test_router_nodes_use_explicit_empty_configuration_only() -> None:
     all_hcl = "\n".join(path.read_text() for path in TF_ROOT.glob("*.tf"))
     for address in ("192.168.4.14", "192.168.4.15", "192.168.4.20"):
         assert address not in all_hcl
+
+    template = (TF_ROOT / "bootstrap/cat8000v.tftpl").read_text()
+    assert "interface GigabitEthernet1" in template
+    assert "netconf-yang" in template
+    assert "GigabitEthernet2" not in template
+    assert "description" not in template
+    assert "192.168.4.14" not in template
 
 
 def test_exact_link_slots_and_reserved_interfaces_remain_unlinked() -> None:

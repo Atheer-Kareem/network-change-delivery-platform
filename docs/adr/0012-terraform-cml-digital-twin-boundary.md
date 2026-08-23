@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted for Increment 8 implementation after Increment 8A merge.
+Accepted for Increment 8 implementation after Increment 8A merge. ADR 0013
+supersedes only this ADR's prohibition on credential-bearing Terraform/CML
+Day-0 configuration inside the personal CML digital twin; the historical
+rationale and all other boundaries remain accepted.
 
 ## Context
 
@@ -87,25 +90,29 @@ insufficient: provider `Read()` refreshes the CML node and its Optional +
 Computed `configuration` and `configurations` values can be persisted into
 Terraform state.
 
-Increment 8D must identify and prove a runtime bootstrap channel that does not
-populate provider-readable CML stored configuration. CML console or serial
-interaction with a booted device is a candidate, but is neither selected nor
-accepted until feasibility is demonstrated. Acceptance must prove that
-credentials and rendered secret material are absent from CML stored
-configuration and Terraform plans/state, and that a Terraform refresh after
-bootstrap cannot recover secret-bearing data into state. If no such boundary is
-proven, 8D stops and revisits the architecture rather than weakening state
-secrecy. Increment 8A does not implement this boundary.
+This prohibition was the accepted boundary through Increment 8D-2. ADR 0013
+supersedes it only for minimum manageability bootstrap in the personal CML
+digital twin. It remains the boundary for production and for NCDP-managed
+network intent.
+
+Through Increment 8D-2, the accepted strategy required a state-free runtime
+bootstrap channel that did not populate provider-readable CML stored
+configuration or Terraform state. Increment 8D-1 proved console feasibility,
+and Increment 8D-2 proved the resulting manual management bootstrap and state
+boundary. ADR 0013 supersedes that requirement for future personal-twin
+recreation: current personal-twin recreation uses credential-bearing
+CML/Terraform Day-0 configuration. Production use and NCDP-managed network
+intent remain outside that exception.
 
 ## Consequences
 
-The accepted Increment 7 lab remains the active NCDP environment until a
-controlled cutover. A running twin cannot reuse its stable management addresses.
-Before activation, the legacy lab must be unable to conflict; state-free
-bootstrap then applies NetBox/OpenBao-backed management settings, Terraform
-starts the twin, and NCDP independently verifies inventory identity, credential
-provenance, SSH host trust, platform, hostname, and expected topology. Retirement
-of the legacy lab is a later, separate operation.
+The accepted legacy lab is deliberately STOPPED so it cannot conflict with
+stable management addresses. The Terraform realization now operationally owns
+the accepted core-02 identity. Personal-twin recreation uses the Day-0 boundary
+defined by ADR 0013, while NCDP continues to independently verify inventory
+identity, credential provenance, SSH host trust, platform, hostname, and
+expected topology. Permanent retirement of the legacy lab remains a later,
+separate operation.
 
 Reset/recreate is proven on infrastructure Terraform owns from birth, beta
 provider risk stays bounded, CML UUIDs remain realization identifiers rather

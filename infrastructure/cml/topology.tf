@@ -1,7 +1,7 @@
 resource "cml2_lab" "twin" {
   title       = "NCDP Terraform Twin"
   description = "Terraform-owned personal CML digital twin; no production configuration."
-  notes       = "No production configuration and no stable management-address cutover."
+  notes       = "Personal-lab Day-0 manageability only; stable identity remains NetBox-owned and NCDP-managed intent remains outside Terraform."
 
   lifecycle {
     prevent_destroy = true
@@ -38,7 +38,13 @@ resource "cml2_node" "core_02" {
   lab_id         = cml2_lab.twin.id
   label          = "core-02"
   nodedefinition = "cat8000v"
-  configuration  = ""
+  configuration = sensitive(templatefile("${path.module}/bootstrap/cat8000v.tftpl", {
+    hostname        = var.core_02_bootstrap_hostname
+    management_ip   = split("/", var.core_02_bootstrap_management_cidr)[0]
+    management_mask = cidrnetmask(var.core_02_bootstrap_management_cidr)
+    username        = var.core_02_bootstrap_username
+    password        = var.core_02_bootstrap_password
+  }))
   imagedefinition = one(
     local.accepted_cat8000v_images
   ).id

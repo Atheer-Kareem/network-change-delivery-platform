@@ -12,8 +12,8 @@ Increment 8A established the discovery and architecture contract. Increment 8B
 implements the exact Terraform/provider pins, data-source foundation, external
 state boundary, static CI validation, and accepted read-only plan. Increment 8C
 has accepted initial creation plus the controlled `DEFINED_ON_CORE` to `STARTED`
-to `STOPPED` lifecycle. State-free bootstrap, reset/recreate, and NCDP cutover
-compatibility are 8D.
+to `STOPPED` lifecycle. Day-0/bootstrap, reset/recreate, and NCDP compatibility
+are 8D.
 
 ## Authority boundary
 
@@ -23,7 +23,7 @@ compatibility are 8D.
 | Node definition, image, CPU/RAM, canvas, links, connector, lifecycle | Terraform/CML |
 | Stable device and interface identity, management IP, platform, role, targeting metadata | NetBox |
 | Managed network configuration, automation and validation policy | Git/NCDP |
-| Explicit future non-secret bootstrap policy and templates | Git/NCDP |
+| Personal-lab minimum Day-0 manageability template | Git/Terraform/CML |
 | Device credentials | OpenBao |
 | Runtime CML and device observations | Evidence only |
 
@@ -176,74 +176,56 @@ to the provider contract, before 8B performs live read-only provider access.
 `CML2_CACERT` is not assumed to be a filesystem path. Private key material is
 not committed.
 
-## State-free bootstrap and cutover
+## Personal-lab Day-0 bootstrap and cutover
 
-Credential-bearing startup configuration cannot pass through
-`cml2_node.configuration`, `cml2_node.configurations`,
-`cml2_lifecycle.configs`, `cml2_lifecycle.named_configs`, topology-embedded
-configuration, or an equivalent out-of-band CML API write to those same stored
-or day-zero fields. The payload can persist in state even when marked sensitive.
-Merely omitting the fields from HCL is insufficient: provider `Read()` fetches
-the CML node, and its Optional + Computed `configuration` and `configurations`
-attributes can bring out-of-band stored configuration back into Terraform state
-on refresh.
+ADR 0013 supersedes only ADR 0012's credential-bearing Day-0 prohibition for
+this personal CML digital twin. Terraform/CML may materialize the minimum
+initialization needed to make a lab router manageable: hostname realization,
+management interface/address, local lab account, SSH, NETCONF, and required
+platform prerequisites. This remains infrastructure initialization and cannot
+include NCDP-managed intent such as interface descriptions or routing.
 
-For the three Terraform-owned routers, Increment 8C explicitly sets
-`configuration = ""`. This is a state-secrecy control, not managed network
-intent: provider `0.9.3-beta1` can otherwise read CML node-definition default or
-bootstrap configuration into Terraform state when the attribute is null. The
-router field must never contain a credential-bearing or functional network
-bootstrap configuration. No implicit CML bootstrap-generation action, including
-CML **Bootstrap Lab** or an equivalent default-configuration generator, is part
-of the accepted Terraform workflow. Runtime state-free bootstrap remains an 8D
-responsibility. An empty stored configuration does not prove that a router will
-later boot successfully; operational boot behavior requires separate
-acceptance.
-
-Existing stored CML configurations are also unsuitable as an adoption source:
-their hostnames are placeholders, they are not authoritative runtime identity,
-and a negative secret-pattern scan cannot prove arbitrary configuration
-non-sensitive.
-
-Increment 8D must introduce a separate state-free boundary:
+The authority flow is:
 
 ```text
 NetBox identity, management IP, and platform
           +
 OpenBao device credentials
           +
-Git/NCDP non-secret bootstrap policy
+Git-reviewed minimum Day-0 template
           |
           v
-Python/operator in-memory rendering
+bounded Terraform runtime inputs
           |
           v
-proven runtime channel that does not populate
-provider-readable CML stored configuration
+external Terraform state + cml2_node.configuration
           |
           v
-discard credentials and rendered payload
+CML stored Day-0 configuration
 ```
 
-Increment 8D-1 accepts the CML browser console as the one-time manual IOS XE
-runtime-bootstrap channel for the personal digital twin. The operator applies
-bootstrap directly to the running device; Terraform retains infrastructure and
-lifecycle ownership and never owns the runtime payload. Console-keystroke
-automation was intentionally abandoned because it adds little value to the
-end-to-end NCDP demonstration compared with a bounded manual bootstrap followed
-by automated management-plane operation.
+NetBox remains authoritative for the values and stable identity; OpenBao
+remains credential authority. Required inputs have no credential defaults or
+committed tfvars. The rendered configuration is sensitive in normal Terraform
+display, but its credential copy deliberately persists in external Terraform
+state and CML Day-0 storage. State stays outside Git with restrictive
+permissions on encrypted host storage. Saved plans containing the bootstrap are
+prohibited. This tradeoff is accepted only for the personal lab and is not a
+production secret-distribution design.
 
-Increment 8D acceptance must prove all of these properties:
+The selected mechanism is `cml2_node.core_02.configuration`, not lifecycle
+`configs` or named configurations. Provider `0.9.3-beta1` documents node
+configuration as Day-0 and requires replacement when it changes after the node
+has started. The existing `${node.id}:${node.generation}` update trigger then
+reconciles lifecycle for the replacement. Lifecycle config injection requires
+a `DEFINED_ON_CORE` node and is outside this pattern.
 
-1. Credentials and rendered secret material are never persisted in CML stored
-   configuration.
-2. Credentials and rendered secret material are never present in Terraform
-   plans or state.
-3. A Terraform refresh after bootstrap does not recover secret-bearing data
-   into state.
-
-If no runtime bootstrap boundary can satisfy all three properties, 8D must stop
-and revisit the architecture rather than weakening state secrecy.
+Increment 8D-1 accepted the CML browser console as the initial one-time manual
+IOS XE feasibility channel. Increment 8D-2 then accepted persistent manual
+manageability, unchanged NetBox/OpenBao identity, strict SSH trust, read-only
+NCDP planning, and restart persistence while the stored/state configuration
+remained empty. Those historical proofs remain valid, but ADR 0013 changes the
+future IOS XE recreation architecture.
 
 The [Increment 8D-1 console feasibility acceptance](../acceptance/terraform-cml-console-bootstrap-feasibility-increment-8d.md)
 proved those properties for a non-secret IOS XE runtime hostname. CML stored
@@ -252,7 +234,7 @@ running configuration, and the unsaved marker disappeared after restart. This
 does not by itself accept management-IP or authentication bootstrap, SSH or
 NETCONF, Junos bootstrap, reset/recreate, or NCDP cutover.
 
-Increment 8D-2 accepts the next IOS XE boundary. The legacy lab is deliberately
+Increment 8D-2 accepted the next IOS XE boundary. The legacy lab is deliberately
 kept stopped to remove its duplicate management identity, and `192.168.4.14`
 now realizes the unchanged NetBox identity on Terraform-created `core-02`.
 One-time manual console bootstrap persists management, the unchanged OpenBao
@@ -260,6 +242,21 @@ credential authenticates over strict SSH host trust, and the existing NCDP path
 reaches read-only planning. Saved device configuration remains on the router
 disk and outside CML stored configuration and Terraform state. See the
 [Increment 8D-2 acceptance report](../acceptance/terraform-cml-iosxe-management-bootstrap-increment-8d.md).
+
+Increment 8D-2B replaces manual IOS XE bootstrap with the ADR 0013 Day-0
+exception. Controlled replacement automatically produced first-boot and restart
+manageability with zero console configuration while the stable NetBox identity
+and OpenBao credential remained unchanged. Strict SSH, TCP/830, and existing
+NCDP read-only planning/preflight succeeded. See the
+[Increment 8D-2B acceptance report](../acceptance/terraform-cml-iosxe-day0-bootstrap-increment-8d.md).
+
+Replacing a previously started node also recreates links that reference its CML
+UUID. The recreated core-02 to edge-junos link initially remained
+`DEFINED_ON_CORE` because CML would not start it while endpoint interfaces were
+down. Temporarily running exactly its two endpoint routers allowed the link to
+transition `STARTED` to `STOPPED`; no Junos configuration was involved. This is
+an operational-state normalization detail, not an NCDP configuration
+dependency.
 
 After Increment 8D-2, the accepted legacy lab remains deliberately STOPPED to
 prevent duplicate ownership of stable NetBox-managed endpoints. It has not been
@@ -299,12 +296,14 @@ reset/wipe semantics reserved for 8D. See the
 
 ### 8D — reset/recreate and NCDP compatibility
 
-In progress. Increment 8D-1 accepts one-time manual CML browser-console
-bootstrap for IOS XE and its state-free runtime boundary. Increment 8D-2 accepts
+In progress. Increment 8D-1 accepted one-time manual CML browser-console
+bootstrap for IOS XE and its state-free runtime boundary. Increment 8D-2 accepted
 persistent IOS XE management/authentication bootstrap, the stable NetBox
 identity's operational transfer from the stopped legacy realization, strict SSH
 host-trust re-establishment, existing OpenBao credential reuse, and read-only
-NCDP planning. Junos bootstrap, destroy/recreate and reset acceptance,
+NCDP planning. Increment 8D-2B accepts the personal-lab credential-bearing
+Day-0 exception and zero-console IOS XE replacement. Junos Day-0
+bootstrap should reuse the proven pattern. Whole-lab destroy/recreate and reset acceptance,
 deterministic lifecycle reconciliation, full cutover, and legacy retirement
-remain. Terraform controls CML infrastructure and lifecycle only, never
-production configuration.
+remain. Terraform controls CML infrastructure and minimum lab manageability,
+never NCDP-managed or production configuration.

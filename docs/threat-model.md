@@ -14,7 +14,7 @@ evidence store, and the personal lab and any company environment.
 | Threat | Primary mitigations |
 | --- | --- |
 | Malicious or accidental PR content | Unprivileged Zone 1, review, policy/schema tests, no write credentials or access, sanitized inputs |
-| Secret exposure | OIDC-derived short-lived scoped credentials; no secrets in Git, models, logs, artifacts, or evidence |
+| Secret exposure | OIDC-derived short-lived scoped credentials; no secrets in Git, models, logs, artifacts, or evidence; restrictive external state and CML access for the explicit personal-lab Day-0 exception |
 | Unauthorized deployment | Protected commit binding, immutable plan digest, human approval, isolated deployment queue and identity |
 | Stale approved plan | Fresh identity/state/necessity checks immediately before writes; fail closed |
 | Target identity mismatch | Complete frozen resolution plus endpoint and device identity verification; no fallback |
@@ -40,6 +40,15 @@ The personal lab may place logical zones on one MacBook and a CML mini-PC. This
 does not reproduce production network segmentation, hardware roots of trust,
 high availability, enterprise identity governance, scale, or operational staffing.
 The reference implementation must not be promoted to production unchanged.
+
+ADR 0013 accepts an additional personal-lab residual risk: the existing device
+credential is deliberately copied into external Terraform state and CML Day-0
+storage to permit zero-console recreation. Terraform sensitivity markings
+protect normal display, not stored bytes. The state remains outside Git with
+restrictive permissions on encrypted host storage, CML access remains bounded,
+credential-bearing tfvars and saved plans are prohibited, and logs/evidence must
+never emit the value. Compromise of either store can still expose the static lab
+credential; this pattern is explicitly not accepted for production.
 ## Buildkite deployment-boundary residual risks
 
 7A established protected-main promotion acceptance. Protected-main build #26

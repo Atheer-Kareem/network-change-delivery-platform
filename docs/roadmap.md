@@ -66,8 +66,9 @@ Ordering may change when implementation evidence requires it.
    identity from the deliberately stopped legacy realization, unchanged
    OpenBao credential reuse, strict SSH host-trust replacement, existing NCDP
    read-only planning, state secrecy, and restart persistence. Increment 8D-2B
-   now introduces the ADR 0013 personal-lab Day-0 exception to replace manual
-   IOS XE bootstrap with controlled, zero-console recreation. The exception
+   accepts the ADR 0013 personal-lab Day-0 exception, replacing manual IOS XE
+   bootstrap with controlled, zero-console recreation and restart. Strict SSH,
+   TCP/830, and existing NCDP read-only planning/preflight succeeded. The exception
    deliberately persists credential-bearing manageability bootstrap in external
    Terraform state and CML Day-0 storage while NetBox and OpenBao remain
    authoritative and NCDP-managed intent stays outside Terraform. Junos Day-0

@@ -60,3 +60,10 @@ reserved for Increment 8D reset acceptance. Increment 8C-1 remains plan-only.
 CI performs formatting, backend-free initialization with the committed lockfile
 in read-only mode, and static validation. CI receives no CML credentials and
 does not run a plan or contact the controller.
+
+Increment 8D-2B live acceptance replaced core-02 and its two UUID-bound links,
+then proved zero-console first boot and restart, strict SSH, TCP/830, and
+existing NCDP read-only planning. A recreated link may remain
+`DEFINED_ON_CORE` until its endpoint interfaces run; normalizing that link to
+`STOPPED` is a bounded CML operational lifecycle action and never authorizes
+device configuration.

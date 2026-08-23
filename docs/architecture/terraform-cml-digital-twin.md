@@ -244,9 +244,19 @@ disk and outside CML stored configuration and Terraform state. See the
 [Increment 8D-2 acceptance report](../acceptance/terraform-cml-iosxe-management-bootstrap-increment-8d.md).
 
 Increment 8D-2B replaces manual IOS XE bootstrap with the ADR 0013 Day-0
-exception. Acceptance requires controlled replacement and automatic first-boot
+exception. Controlled replacement automatically produced first-boot and restart
 manageability with zero console configuration while the stable NetBox identity
-and OpenBao credential remain unchanged.
+and OpenBao credential remained unchanged. Strict SSH, TCP/830, and existing
+NCDP read-only planning/preflight succeeded. See the
+[Increment 8D-2B acceptance report](../acceptance/terraform-cml-iosxe-day0-bootstrap-increment-8d.md).
+
+Replacing a previously started node also recreates links that reference its CML
+UUID. The recreated core-02 to edge-junos link initially remained
+`DEFINED_ON_CORE` because CML would not start it while endpoint interfaces were
+down. Temporarily running exactly its two endpoint routers allowed the link to
+transition `STARTED` to `STOPPED`; no Junos configuration was involved. This is
+an operational-state normalization detail, not an NCDP configuration
+dependency.
 
 After Increment 8D-2, the accepted legacy lab remains deliberately STOPPED to
 prevent duplicate ownership of stable NetBox-managed endpoints. It has not been
@@ -291,8 +301,8 @@ bootstrap for IOS XE and its state-free runtime boundary. Increment 8D-2 accepte
 persistent IOS XE management/authentication bootstrap, the stable NetBox
 identity's operational transfer from the stopped legacy realization, strict SSH
 host-trust re-establishment, existing OpenBao credential reuse, and read-only
-NCDP planning. Increment 8D-2B introduces the personal-lab credential-bearing
-Day-0 exception and must prove zero-console IOS XE replacement. Junos Day-0
+NCDP planning. Increment 8D-2B accepts the personal-lab credential-bearing
+Day-0 exception and zero-console IOS XE replacement. Junos Day-0
 bootstrap should reuse the proven pattern. Whole-lab destroy/recreate and reset acceptance,
 deterministic lifecycle reconciliation, full cutover, and legacy retirement
 remain. Terraform controls CML infrastructure and minimum lab manageability,

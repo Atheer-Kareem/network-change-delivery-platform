@@ -44,6 +44,7 @@ else
   exit 0
 fi
 uv run ncdp verify-buildkite-live-request --promotion "$promotion"
+uv run ncdp verify-deployment-ansible-runtime
 report_relative="deployment-evidence/change-record.json"
 report="$tmpdir/$report_relative"
 set +e

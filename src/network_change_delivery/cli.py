@@ -13,7 +13,10 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from network_change_delivery.ansible_adapter import ProviderError
+from network_change_delivery.ansible_adapter import (
+    ProviderError,
+    verify_deployment_ansible_runtime,
+)
 from network_change_delivery.assurance import (
     AssuranceEvidence,
     AssuranceOutcome,
@@ -312,6 +315,16 @@ def _run_buildkite_live_request_status(arguments: argparse.Namespace) -> int:
         print("device write executed: NO")
         return 3
     print("commit-bound live deployment request changed: YES")
+    return 0
+
+
+def _run_verify_deployment_ansible_runtime(arguments: argparse.Namespace) -> int:
+    del arguments
+    verified = verify_deployment_ansible_runtime()
+    print(
+        "Deployment Ansible runtime verified: "
+        + ", ".join(f"{name}={version}" for name, version in verified)
+    )
     return 0
 
 
@@ -672,6 +685,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="check whether this commit changed the fixed live request",
     )
     live_status_parser.set_defaults(handler=_run_buildkite_live_request_status)
+
+    deployment_runtime_parser = subparsers.add_parser(
+        "verify-deployment-ansible-runtime",
+        help="verify exact repository-pinned deployment Ansible collections",
+    )
+    deployment_runtime_parser.set_defaults(
+        handler=_run_verify_deployment_ansible_runtime
+    )
 
     identity_parser = subparsers.add_parser(
         "verify-buildkite-openbao-identity",

@@ -25,6 +25,7 @@ def run_gate(
     outcome: str,
     upload_status: int = 0,
     live_request: bool = True,
+    runtime_status: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     (tmp_path / "scripts/buildkite").mkdir(parents=True)
     executable(tmp_path / "scripts/buildkite/verify_commit.sh", "#!/bin/sh\nexit 0\n")
@@ -61,6 +62,7 @@ printf '%s\\n' "$command" >> "$COMMAND_LOG"
 case "$command" in
   verify-buildkite-openbao-identity) read -r jwt; [[ "$jwt" == bounded-jwt ]] ;;
   verify-buildkite-gate|verify-buildkite-live-request) exit 0 ;;
+  verify-deployment-ansible-runtime) exit "$RUNTIME_STATUS" ;;
   buildkite-live-request-status)
     if [[ "$LIVE_REQUEST" == 1 ]]; then exit 0; fi
     printf '%s\\n' 'live deployment requested: NO' 'device write executed: NO'
@@ -97,6 +99,7 @@ esac
         "DEPLOY_OUTCOME": outcome,
         "CREATE_EVIDENCE": "1" if evidence else "0",
         "LIVE_REQUEST": "1" if live_request else "0",
+        "RUNTIME_STATUS": str(runtime_status),
     }
     for prohibited in (
         "NCDP_OPENBAO_ROLE_ID",
@@ -130,9 +133,30 @@ def test_absent_request_stops_before_second_jwt_and_provider_construction(
     assert result.returncode == 0
     assert commands.count("oidc") == 1
     assert "deploy-buildkite-promotion" not in commands
+    assert "verify-deployment-ansible-runtime" not in commands
     assert not uploads.exists()
     assert "live deployment requested: NO" in result.stdout
     assert "device write executed: NO" in result.stdout
+
+
+def test_runtime_failure_stops_before_privileged_jwt_and_deployment(
+    tmp_path: Path,
+) -> None:
+    result, uploads = run_gate(
+        tmp_path,
+        deployment_status=90,
+        evidence=False,
+        outcome="forbidden",
+        runtime_status=2,
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 2
+    assert commands.count("oidc") == 1
+    assert commands.index("verify-buildkite-live-request") < commands.index(
+        "verify-deployment-ansible-runtime"
+    )
+    assert "deploy-buildkite-promotion" not in commands
+    assert not uploads.exists()
 
 
 @pytest.mark.parametrize("outcome", ["SUCCEEDED", "RECOVERED"])

@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
+import re
+import stat
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import ansible_runner
+import yaml
 
 from network_change_delivery.models import (
     CiscoConfigArtifact,
@@ -34,6 +39,145 @@ class ProviderError(RuntimeError):
 
 class HostTrustError(ProviderError):
     """Raised when the candidate lacks an existing trusted host-key entry."""
+
+
+class DeploymentRuntimeError(ProviderError):
+    """Fixed non-secret deployment-runtime prerequisite failure."""
+
+    def __init__(self) -> None:
+        super().__init__("deployment Ansible runtime prerequisites unavailable")
+
+
+SYSTEM_ANSIBLE_COLLECTIONS = Path("/opt/ansible/collections")
+_COLLECTION_NAME = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
+_EXACT_COLLECTION_VERSION = re.compile(r"[0-9]+(?:\.[0-9]+){2}")
+
+
+def deployment_repository_root(
+    repository_root: Path | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> Path:
+    """Resolve the adapter and verifier repository root identically."""
+    if repository_root is not None:
+        return repository_root
+    values = environment if environment is not None else os.environ
+    configured = values.get("NCDP_PROJECT_ROOT")
+    return Path(configured) if configured else Path.cwd()
+
+
+def effective_ansible_collection_paths(
+    repository_root: Path,
+    environment: Mapping[str, str] | None = None,
+) -> tuple[Path, ...]:
+    """Return one validated effective Ansible collection search path."""
+    values = environment if environment is not None else os.environ
+    configured = values.get("ANSIBLE_COLLECTIONS_PATH")
+    if configured is None:
+        return (
+            repository_root / ".ansible" / "collections",
+            SYSTEM_ANSIBLE_COLLECTIONS,
+        )
+    entries = configured.split(os.pathsep)
+    paths = tuple(Path(entry) for entry in entries)
+    if (
+        not configured
+        or any(
+            not entry or not path.is_absolute()
+            for entry, path in zip(entries, paths, strict=True)
+        )
+        or len(set(paths)) != len(paths)
+    ):
+        raise DeploymentRuntimeError
+    return paths
+
+
+def effective_ansible_collection_path(
+    repository_root: Path,
+    environment: Mapping[str, str] | None = None,
+) -> str:
+    """Render the shared collection paths for Ansible Runner."""
+    return os.pathsep.join(
+        str(path)
+        for path in effective_ansible_collection_paths(repository_root, environment)
+    )
+
+
+def _required_ansible_collections(repository_root: Path) -> tuple[tuple[str, str], ...]:
+    requirements = repository_root / "ansible" / "requirements.yml"
+    try:
+        if requirements.is_symlink() or not stat.S_ISREG(requirements.stat().st_mode):
+            raise DeploymentRuntimeError
+        payload = yaml.safe_load(requirements.read_text(encoding="utf-8"))
+        collections = payload["collections"]
+        if not isinstance(payload, dict) or set(payload) != {"collections"}:
+            raise DeploymentRuntimeError
+        if not isinstance(collections, list) or not collections:
+            raise DeploymentRuntimeError
+        required: list[tuple[str, str]] = []
+        for collection in collections:
+            if not isinstance(collection, dict) or set(collection) != {
+                "name",
+                "version",
+            }:
+                raise DeploymentRuntimeError
+            name = collection["name"]
+            version = collection["version"]
+            if (
+                not isinstance(name, str)
+                or _COLLECTION_NAME.fullmatch(name) is None
+                or not isinstance(version, str)
+                or _EXACT_COLLECTION_VERSION.fullmatch(version) is None
+            ):
+                raise DeploymentRuntimeError
+            required.append((name, version))
+        if len({name for name, _version in required}) != len(required):
+            raise DeploymentRuntimeError
+        return tuple(required)
+    except (DeploymentRuntimeError, KeyError, OSError, TypeError, yaml.YAMLError):
+        raise DeploymentRuntimeError from None
+
+
+def verify_deployment_ansible_runtime(
+    repository_root: Path | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> tuple[tuple[str, str], ...]:
+    """Verify exact repository-pinned collections without network or installation."""
+    try:
+        root = deployment_repository_root(repository_root, environment)
+        paths = effective_ansible_collection_paths(root, environment)
+        required = _required_ansible_collections(root)
+        for name, expected_version in required:
+            namespace, collection = name.split(".")
+            manifests = [
+                path / "ansible_collections" / namespace / collection / "MANIFEST.json"
+                for path in paths
+            ]
+            installed = [manifest for manifest in manifests if manifest.exists()]
+            if len(installed) != 1:
+                raise DeploymentRuntimeError
+            manifest = installed[0]
+            if manifest.is_symlink() or not stat.S_ISREG(manifest.stat().st_mode):
+                raise DeploymentRuntimeError
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            information = payload["collection_info"]
+            if (
+                not isinstance(payload, dict)
+                or not isinstance(information, dict)
+                or information.get("namespace") != namespace
+                or information.get("name") != collection
+                or information.get("version") != expected_version
+            ):
+                raise DeploymentRuntimeError
+        return required
+    except (
+        DeploymentRuntimeError,
+        json.JSONDecodeError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        raise DeploymentRuntimeError from None
 
 
 @contextmanager
@@ -98,9 +242,7 @@ class AnsibleRunnerCiscoAdapter:
     """Collect structured state and apply exact artifacts through Runner."""
 
     def __init__(self, repository_root: Path | None = None) -> None:
-        self._root = repository_root or Path(
-            os.environ.get("NCDP_PROJECT_ROOT", Path.cwd())
-        )
+        self._root = deployment_repository_root(repository_root)
 
     @staticmethod
     def _inventory(device: InventoryDevice) -> dict[str, Any]:
@@ -162,12 +304,8 @@ class AnsibleRunnerCiscoAdapter:
                     extravars=extravars or {},
                     envvars={
                         "ANSIBLE_CONFIG": str(self._root / "ansible.cfg"),
-                        "ANSIBLE_COLLECTIONS_PATH": os.environ.get(
-                            "ANSIBLE_COLLECTIONS_PATH",
-                            (
-                                f"{self._root / '.ansible' / 'collections'}:"
-                                "/opt/ansible/collections"
-                            ),
+                        "ANSIBLE_COLLECTIONS_PATH": effective_ansible_collection_path(
+                            self._root
                         ),
                         "ANSIBLE_HOST_KEY_CHECKING": "True",
                     },

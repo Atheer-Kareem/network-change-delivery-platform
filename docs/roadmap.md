@@ -41,10 +41,11 @@ Ordering may change when implementation evidence requires it.
    6B binds exact validated plans, policy, frozen baseline bytes, derived
    candidates, and self-digested assurance records. Deployment enforcement and
    provenance remain Increment 7.
-7. **Buildkite approval and hardened deployment — in progress:** 7A provides
-   offline promotion artifacts, exact approval digests, isolated queue routing,
-   and a serialized no-write deployment gate. 7B adds OIDC/OpenBao JWT identity;
-   7C adds fully enforced live CML deployment acceptance.
+7. **Buildkite approval and hardened deployment — in progress:** 7A is complete,
+   including external protected-main Buildkite acceptance of offline promotion
+   artifacts, exact human-approved digests, isolated queue routing, and the
+   serialized no-write deployment gate. 7B is next and adds OIDC/OpenBao JWT
+   identity; 7C remains fully enforced live CML deployment acceptance.
 8. **Terraform/CML infrastructure as code:** reproducible twin lifecycle and reset,
    without Terraform-managed production configuration.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,

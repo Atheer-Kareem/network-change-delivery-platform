@@ -74,6 +74,7 @@ def test_pipeline_contract() -> None:
         "Authorize the exact immutable promotion verified and recorded by the "
         "promotion step."
     )
+    assert approval["submit"] == "Authorize exact promotion"
     assert "fields" not in approval
     assert steps["promotion"]["depends_on"] == ["quality", "pipeline-contract"]
     assert steps["deployment-approval"]["depends_on"] == "promotion"

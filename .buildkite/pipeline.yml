@@ -84,6 +84,7 @@ steps:
     depends_on: promotion
     if: build.branch == "main" && build.pull_request.id == null
     prompt: "Authorize the exact immutable promotion verified and recorded by the promotion step."
+    submit: "Authorize exact promotion"
 
   - label: ":lock: deployment gate"
     key: deploy-gate

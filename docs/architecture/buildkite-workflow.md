@@ -17,7 +17,7 @@ and Batfish to the deterministic `ncdp-promotion` project network, where both
 readiness and assurance use `NCDP_BATFISH_HOST=batfish`. Promotion writes through
 a bounded bind mount before the host agent uploads the artifact. Deployment
 serialization protects write execution separately. Promotion prints the
-verified commit and three exact approval digest values for the approver.
+verified commit and three exact promotion digest values for visibility.
 
 The promotion stage normalizes its immutable virtual environment, application
 source, Batfish fixtures, and readiness path to read/traverse/execute permissions
@@ -26,9 +26,17 @@ usable by the arbitrary host UID/GID selected for bind-mounted artifact
 ownership, independent of checkout umask.
 
 Promotion contains plan, policy, assurance, and frozen baseline bytes only.
-The approval block stores its three digest fields as Buildkite build meta-data.
-The gate retrieves those exact values with `buildkite-agent meta-data get`,
-verifies exact digests, and prints an authorization summary, then stops.
+After repository-owned verification, manifest confirmation, and successful
+artifact upload, promotion independently re-verifies the bundle and records the
+plan, assurance, and promotion digests as `promoted-*` Buildkite build metadata.
+Buildkite then pauses at a fieldless `deployment-approval` block. Its successful
+completion is the explicit human authorization of the exact promotion belonging
+to that build; the human does not manually transcribe or independently compare
+digests. The deployment gate downloads and independently verifies the artifact,
+then requires its three verified digests to match the machine-recorded promoted
+values exactly. The separation is promotion records → human authorizes → gate
+verifies. Automated metadata is evidence, not authorization, and the gate still
+depends on the human block. It prints an authorization summary, then stops.
 There is no device, NetBox, or OpenBao access. OIDC identity and short-lived
 OpenBao access are deferred to 7B (target lifetime 300 seconds).
 

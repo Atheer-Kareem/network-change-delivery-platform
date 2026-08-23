@@ -3,7 +3,7 @@ import pytest
 from network_change_delivery.buildkite_policy import (
     BuildkiteDeploymentContext,
     buildkite_deployment_context_from_environment,
-    compare_approved_digests,
+    compare_promoted_digests,
 )
 
 
@@ -46,16 +46,16 @@ def test_context_can_be_constructed_from_buildkite_environment() -> None:
     )
 
 
-def test_approval_digest_match_is_exact() -> None:
-    compare_approved_digests(
-        "p", "a", "x", approved_plan="p", approved_assurance="a", approved_promotion="x"
+def test_promoted_digest_match_is_exact() -> None:
+    compare_promoted_digests(
+        "p", "a", "x", promoted_plan="p", promoted_assurance="a", promoted_promotion="x"
     )
     with pytest.raises(ValueError):
-        compare_approved_digests(
+        compare_promoted_digests(
             "p ",
             "a",
             "x",
-            approved_plan="p",
-            approved_assurance="a",
-            approved_promotion="x",
+            promoted_plan="p",
+            promoted_assurance="a",
+            promoted_promotion="x",
         )

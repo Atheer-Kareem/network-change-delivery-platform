@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from network_change_delivery.buildkite_policy import compare_approved_digests
+from network_change_delivery.buildkite_policy import compare_promoted_digests
 from network_change_delivery.cli import main
 from network_change_delivery.promotion import create_promotion_bundle
 
@@ -11,27 +11,30 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_promotion import BASELINE, PLAN, POLICY, _record
 
 
-def test_approval_values_are_exact() -> None:
+def test_promoted_values_are_exact() -> None:
     values = ("sha256:" + "a" * 64, "sha256:" + "b" * 64, "sha256:" + "c" * 64)
-    compare_approved_digests(
+    compare_promoted_digests(
         *values,
-        approved_plan=values[0],
-        approved_assurance=values[1],
-        approved_promotion=values[2],
+        promoted_plan=values[0],
+        promoted_assurance=values[1],
+        promoted_promotion=values[2],
     )
     for index in range(3):
         changed = list(values)
         changed[index] = " " + changed[index]
         with pytest.raises(ValueError):
-            compare_approved_digests(
+            compare_promoted_digests(
                 *values,
-                approved_plan=changed[0],
-                approved_assurance=changed[1],
-                approved_promotion=changed[2],
+                promoted_plan=changed[0],
+                promoted_assurance=changed[1],
+                promoted_promotion=changed[2],
             )
 
 
-def test_cli_gate_exact_and_wrong_approvals(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("changed_option", [4, 6, 8])
+def test_cli_gate_exact_and_wrong_promoted_values(
+    tmp_path, monkeypatch, changed_option: int
+) -> None:
     assurance = tmp_path / "assurance.json"
     assurance.write_text(_record().model_dump_json(), encoding="utf-8")
     promotion = tmp_path / "promotion"
@@ -51,14 +54,60 @@ def test_cli_gate_exact_and_wrong_approvals(tmp_path, monkeypatch) -> None:
         "verify-buildkite-gate",
         "--promotion",
         str(promotion),
-        "--approved-plan-digest",
+        "--promoted-plan-digest",
         manifest.plan_digest,
-        "--approved-assurance-digest",
+        "--promoted-assurance-digest",
         manifest.assurance_record_digest,
-        "--approved-promotion-digest",
+        "--promoted-promotion-digest",
         manifest.digest,
     ]
     assert main(args) == 0
-    args[-1] = " " + manifest.digest
+    args[changed_option] = " " + args[changed_option]
     with pytest.raises(SystemExit):
         main(args)
+
+
+def test_promotion_digest_cli_verifies_before_returning_each_value(
+    tmp_path, capsys
+) -> None:
+    assurance = tmp_path / "assurance.json"
+    assurance.write_text(_record().model_dump_json(), encoding="utf-8")
+    promotion = tmp_path / "promotion"
+    manifest = create_promotion_bundle(
+        PLAN, POLICY, BASELINE, assurance, "a" * 40, promotion
+    )
+    expected = {
+        "plan": manifest.plan_digest,
+        "assurance": manifest.assurance_record_digest,
+        "promotion": manifest.digest,
+    }
+    for field, value in expected.items():
+        assert (
+            main(
+                [
+                    "promotion-digest",
+                    "--promotion",
+                    str(promotion),
+                    "--git-commit",
+                    "a" * 40,
+                    "--field",
+                    field,
+                ]
+            )
+            == 0
+        )
+        assert capsys.readouterr().out == value + "\n"
+
+    (promotion / "plan.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "promotion-digest",
+                "--promotion",
+                str(promotion),
+                "--git-commit",
+                "a" * 40,
+                "--field",
+                "plan",
+            ]
+        )

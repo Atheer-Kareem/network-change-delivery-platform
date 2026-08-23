@@ -9,11 +9,11 @@ trap 'rm -rf "$tmpdir"' EXIT
 buildkite-agent artifact download "promotion/**" "$tmpdir" --step promotion
 promotion="$tmpdir/promotion"
 [[ -f "$promotion/manifest.json" ]]
-approved_plan_digest="$(buildkite-agent meta-data get "approved-plan-digest")"
-approved_assurance_digest="$(buildkite-agent meta-data get "approved-assurance-digest")"
-approved_promotion_digest="$(buildkite-agent meta-data get "approved-promotion-digest")"
+promoted_plan_digest="$(buildkite-agent meta-data get "promoted-plan-digest")"
+promoted_assurance_digest="$(buildkite-agent meta-data get "promoted-assurance-digest")"
+promoted_promotion_digest="$(buildkite-agent meta-data get "promoted-promotion-digest")"
 uv run ncdp verify-buildkite-gate \
   --promotion "$promotion" \
-  --approved-plan-digest "$approved_plan_digest" \
-  --approved-assurance-digest "$approved_assurance_digest" \
-  --approved-promotion-digest "$approved_promotion_digest"
+  --promoted-plan-digest "$promoted_plan_digest" \
+  --promoted-assurance-digest "$promoted_assurance_digest" \
+  --promoted-promotion-digest "$promoted_promotion_digest"

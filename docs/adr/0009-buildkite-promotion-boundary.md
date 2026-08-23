@@ -10,3 +10,12 @@ OIDC federation to OpenBao and live enforced execution remain 7B/7C work. The
 external main-branch protection prerequisite was satisfied during Increment 7A
 acceptance; Buildkite environment metadata remains non-cryptographic and is not
 workload identity proof.
+
+The active approval UX was subsequently refined without removing the human
+boundary. After successful artifact upload, promotion records its three
+repository-verified digests as machine-generated `promoted-*` build metadata. A
+fieldless Buildkite block is the explicit human authorization event. The gate
+still depends on that block, independently verifies the downloaded promotion,
+and requires exact agreement with the recorded values. Automatic metadata is
+evidence, not approval, and the system no longer claims that the human
+independently transcribes or cryptographically compares the digests.

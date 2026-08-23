@@ -30,7 +30,7 @@ from network_change_delivery.buildkite_identity import (
 )
 from network_change_delivery.buildkite_policy import (
     buildkite_deployment_context_from_environment,
-    compare_approved_digests,
+    compare_promoted_digests,
 )
 from network_change_delivery.fleet import FleetSafetyError, deploy_fleet, plan_fleet
 from network_change_delivery.inventory import (
@@ -249,16 +249,27 @@ def _run_verify_promotion(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_promotion_digest(arguments: argparse.Namespace) -> int:
+    manifest = verify_promotion_bundle(arguments.promotion, arguments.git_commit)
+    values = {
+        "plan": manifest.plan_digest,
+        "assurance": manifest.assurance_record_digest,
+        "promotion": manifest.digest,
+    }
+    print(values[arguments.field])
+    return 0
+
+
 def _run_verify_buildkite_gate(arguments: argparse.Namespace) -> int:
     context = buildkite_deployment_context_from_environment(os.environ)
     manifest = verify_promotion_bundle(arguments.promotion, context.commit)
-    compare_approved_digests(
+    compare_promoted_digests(
         manifest.plan_digest,
         manifest.assurance_record_digest,
         manifest.digest,
-        approved_plan=arguments.approved_plan_digest,
-        approved_assurance=arguments.approved_assurance_digest,
-        approved_promotion=arguments.approved_promotion_digest,
+        promoted_plan=arguments.promoted_plan_digest,
+        promoted_assurance=arguments.promoted_assurance_digest,
+        promoted_promotion=arguments.promoted_promotion_digest,
     )
     print(f"commit: {context.commit}")
     print(f"plan digest: {manifest.plan_digest}")
@@ -555,13 +566,24 @@ def build_parser() -> argparse.ArgumentParser:
     verify_promotion_parser.add_argument("--git-commit", required=True)
     verify_promotion_parser.set_defaults(handler=_run_verify_promotion)
 
+    promotion_digest_parser = subparsers.add_parser(
+        "promotion-digest",
+        help="verify a promotion and print one machine-readable digest",
+    )
+    promotion_digest_parser.add_argument("--promotion", required=True, type=Path)
+    promotion_digest_parser.add_argument("--git-commit", required=True)
+    promotion_digest_parser.add_argument(
+        "--field", required=True, choices=("plan", "assurance", "promotion")
+    )
+    promotion_digest_parser.set_defaults(handler=_run_promotion_digest)
+
     gate_parser = subparsers.add_parser(
         "verify-buildkite-gate", help="verify Buildkite deployment authorization"
     )
     gate_parser.add_argument("--promotion", required=True, type=Path)
-    gate_parser.add_argument("--approved-plan-digest", required=True)
-    gate_parser.add_argument("--approved-assurance-digest", required=True)
-    gate_parser.add_argument("--approved-promotion-digest", required=True)
+    gate_parser.add_argument("--promoted-plan-digest", required=True)
+    gate_parser.add_argument("--promoted-assurance-digest", required=True)
+    gate_parser.add_argument("--promoted-promotion-digest", required=True)
     gate_parser.set_defaults(handler=_run_verify_buildkite_gate)
 
     identity_parser = subparsers.add_parser(

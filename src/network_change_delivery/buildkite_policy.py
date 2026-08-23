@@ -64,18 +64,18 @@ def buildkite_deployment_context_from_environment(
     )
 
 
-def compare_approved_digests(
+def compare_promoted_digests(
     plan: str,
     assurance: str,
     promotion: str,
     *,
-    approved_plan: str,
-    approved_assurance: str,
-    approved_promotion: str,
+    promoted_plan: str,
+    promoted_assurance: str,
+    promoted_promotion: str,
 ) -> None:
     if (plan, assurance, promotion) != (
-        approved_plan,
-        approved_assurance,
-        approved_promotion,
+        promoted_plan,
+        promoted_assurance,
+        promoted_promotion,
     ):
-        raise ValueError("approved promotion digests do not match")
+        raise ValueError("recorded promotion digests do not match")

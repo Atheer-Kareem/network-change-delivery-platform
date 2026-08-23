@@ -31,3 +31,24 @@ promotion="$tmpdir/promotion"
   cd "$tmpdir"
   buildkite-agent artifact upload 'promotion/**'
 )
+promoted_plan_digest="$(
+  "${promotion_run[@]}" ncdp promotion-digest \
+    --promotion /output/promotion \
+    --git-commit "$BUILDKITE_COMMIT" \
+    --field plan
+)"
+promoted_assurance_digest="$(
+  "${promotion_run[@]}" ncdp promotion-digest \
+    --promotion /output/promotion \
+    --git-commit "$BUILDKITE_COMMIT" \
+    --field assurance
+)"
+promoted_promotion_digest="$(
+  "${promotion_run[@]}" ncdp promotion-digest \
+    --promotion /output/promotion \
+    --git-commit "$BUILDKITE_COMMIT" \
+    --field promotion
+)"
+buildkite-agent meta-data set "promoted-plan-digest" "$promoted_plan_digest"
+buildkite-agent meta-data set "promoted-assurance-digest" "$promoted_assurance_digest"
+buildkite-agent meta-data set "promoted-promotion-digest" "$promoted_promotion_digest"

@@ -68,15 +68,13 @@ def test_pipeline_contract() -> None:
     assert steps["deploy-gate"]["agents"]["queue"] == "ncdp-deploy"
     assert steps["deploy-gate"]["concurrency"] == 1
     assert steps["deploy-gate"]["concurrency_group"] == "ncdp/network-change-deployment"
-    assert {field["key"] for field in steps["deployment-approval"]["fields"]} == {
-        "approved-plan-digest",
-        "approved-assurance-digest",
-        "approved-promotion-digest",
-    }
-    assert all(
-        field["format"] == "sha256:[0-9a-f]{64}"
-        for field in steps["deployment-approval"]["fields"]
+    approval = steps["deployment-approval"]
+    assert approval["block"] == ":lock: Authorize exact promotion"
+    assert approval["prompt"] == (
+        "Authorize the exact immutable promotion verified and recorded by the "
+        "promotion step."
     )
+    assert "fields" not in approval
     assert steps["promotion"]["depends_on"] == ["quality", "pipeline-contract"]
     assert steps["deployment-approval"]["depends_on"] == "promotion"
     assert steps["deploy-gate"]["depends_on"] == "deployment-approval"
@@ -125,10 +123,16 @@ def test_promotion_container_contract() -> None:
 def test_scripts_static_contract() -> None:
     gate = (ROOT / "scripts/buildkite/deployment_gate.sh").read_text()
     promotion = (ROOT / ".buildkite/scripts/promotion.sh").read_text()
-    assert 'meta-data get "approved-plan-digest"' in gate
-    assert 'meta-data get "approved-assurance-digest"' in gate
-    assert 'meta-data get "approved-promotion-digest"' in gate
-    assert "BUILDKITE_APPROVED_" not in gate
+    promoted_keys = {
+        "promoted-plan-digest",
+        "promoted-assurance-digest",
+        "promoted-promotion-digest",
+    }
+    assert gate.count("buildkite-agent meta-data get") == 3
+    for key in promoted_keys:
+        assert f'meta-data get "{key}"' in gate
+    assert "approved-" not in gate
+    assert gate.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
     assert "--step promotion" in gate
     assert "uv run ncdp verify-buildkite-gate" in gate
     assert "verify_commit.sh" in promotion
@@ -141,7 +145,22 @@ def test_scripts_static_contract() -> None:
     assert (
         '"${promotion_run[@]}" python scripts/buildkite/batfish_ready.py' in promotion
     )
-    assert promotion.count('"${promotion_run[@]}" ncdp ') == 3
+    assert promotion.count('"${promotion_run[@]}" ncdp ') == 6
+    for field in ("plan", "assurance", "promotion"):
+        assert promotion.count(f"--field {field}") == 1
     assert '--volume "$tmpdir:/output"' in promotion
     assert '[[ -f "$promotion/manifest.json" ]]' in promotion
     assert "buildkite-agent artifact upload 'promotion/**'" in promotion
+    assert {
+        line.split('"')[1]
+        for line in promotion.splitlines()
+        if "buildkite-agent meta-data set" in line
+    } == promoted_keys
+    assert "approved-" not in promotion
+    upload = promotion.index("buildkite-agent artifact upload 'promotion/**'")
+    digest = promotion.index("ncdp promotion-digest")
+    publication = promotion.index("buildkite-agent meta-data set")
+    assert promotion.index("ncdp verify-promotion") < upload < digest < publication
+    metadata_section = promotion[digest:]
+    assert "grep" not in metadata_section
+    assert "sed" not in metadata_section

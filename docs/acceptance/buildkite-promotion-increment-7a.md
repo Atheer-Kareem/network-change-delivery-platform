@@ -39,3 +39,9 @@ the accepted commit and all three values, reported
 provide OIDC/OpenBao JWT federation, deployment secret retrieval, an actual
 device write from Buildkite, or live CML deployment through Buildkite. Identity
 federation remains 7B; fully enforced live CML deployment acceptance remains 7C.
+
+Build #11's manually entered digest workflow remains the historical acceptance
+record. The active workflow was later refined to fieldless human authorization
+with machine-recorded promoted digests and independent gate verification. That
+new click-only UX requires its own later protected-main exercise and is not
+claimed as externally accepted by this documentation update.

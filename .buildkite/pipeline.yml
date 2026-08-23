@@ -79,24 +79,11 @@ steps:
     concurrency: 1
     concurrency_group: ncdp/batfish-promotion
 
-  - block: ":lock: authorize exact promotion"
+  - block: ":lock: Authorize exact promotion"
     key: deployment-approval
     depends_on: promotion
     if: build.branch == "main" && build.pull_request.id == null
-    prompt: "Approve this exact immutable plan, assurance record, and promotion digest."
-    fields:
-      - text: "Approved plan digest"
-        key: approved-plan-digest
-        required: true
-        format: "sha256:[0-9a-f]{64}"
-      - text: "Approved assurance digest"
-        key: approved-assurance-digest
-        required: true
-        format: "sha256:[0-9a-f]{64}"
-      - text: "Approved promotion digest"
-        key: approved-promotion-digest
-        required: true
-        format: "sha256:[0-9a-f]{64}"
+    prompt: "Authorize the exact immutable promotion verified and recorded by the promotion step."
 
   - label: ":lock: deployment gate"
     key: deploy-gate

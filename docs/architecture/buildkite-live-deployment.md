@@ -86,7 +86,16 @@ As defense in depth, `deployment_gate.sh` accepts only
 `BUILDKITE_RETRY_COUNT=0` (with absence treated as zero for local compatibility)
 and rejects every retried or malformed value before commit verification, either
 OIDC request, promotion authorization, runtime verification, or any
-NetBox/OpenBao/device boundary. Another intentional attempt requires a fresh
-Buildkite authorization context created by an explicit commit-bound retry
-marker. Increment 7C final closeout remains pending until this hardening is
-merged and its protected-main unchanged-request no-write behavior is accepted.
+NetBox/OpenBao/device boundary. This prohibits same-build `deploy-gate` replay.
+Another Buildkite build is a distinct authorization context and requires another
+human approval; normal NCDP operating procedure also requires an explicit
+commit-bound retry marker for an intentional retry. Pipeline-wide Buildkite
+Rebuild disablement is not part of the accepted 7C step-level control.
+
+Increment 7C is complete. Protected-main build #46 produced `SUCCEEDED` typed
+evidence for the exact single-device plan, and independent read-only verification
+confirmed the desired GigabitEthernet2 state and GigabitEthernet1 management
+safety. The single-attempt retry hardening then merged, and protected-main build
+#48 accepted the unchanged-request no-write path without privileged credential
+or device access. The complete evidence and scope boundaries are recorded in the
+[Increment 7C acceptance report](../acceptance/buildkite-live-deployment-increment-7c.md).

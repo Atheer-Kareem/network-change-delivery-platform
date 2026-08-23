@@ -41,18 +41,15 @@ Ordering may change when implementation evidence requires it.
    6B binds exact validated plans, policy, frozen baseline bytes, derived
    candidates, and self-digested assurance records. Deployment enforcement and
    provenance remain Increment 7.
-7. **Buildkite approval and hardened deployment — in progress:** 7A is complete,
-   including external protected-main Buildkite acceptance of offline promotion
-   artifacts, exact human-approved digests, isolated queue routing, and the
-   serialized no-write deployment gate. 7B is complete, including its
-   application boundary, main-only gate integration, reproducible JWT-role
-   operator tool, and protected-main external Buildkite/OpenBao federation
-   acceptance. Increment 7 remains in progress. 7C-A implements the commit-bound,
-   single-device, least-privilege live-deployment foundation without an active
-   request or live write. External 7C live CML acceptance remains pending.
-   Increment 7C-B1 prepares a repository-owned, read-only-discovered
-   single-device promotion and sanitized plan-bound assurance input while
-   deliberately retaining the no-request/no-write protected-main path.
+7. **Buildkite approval and hardened deployment — complete:** 7A completed
+   protected promotion and exact human approval; 7B completed real Buildkite
+   OIDC-to-OpenBao federation; and 7C completed commit-bound, least-privilege,
+   single-device protected deployment. External acceptance includes a real CML
+   IOS XE write and independent validation, deployment-runtime prerequisite
+   verification before privileged identity, prohibition of same-build
+   deployment-job retries, and protected-main acceptance of the unchanged-request
+   no-write path. See the
+   [Increment 7C acceptance report](acceptance/buildkite-live-deployment-increment-7c.md).
 8. **Terraform/CML infrastructure as code:** reproducible twin lifecycle and reset,
    without Terraform-managed production configuration.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,

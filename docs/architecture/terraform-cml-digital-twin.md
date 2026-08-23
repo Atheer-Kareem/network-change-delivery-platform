@@ -225,10 +225,13 @@ provider-readable CML stored configuration
 discard credentials and rendered payload
 ```
 
-Console or serial interaction with a booted CML device is a candidate runtime
-channel, but Increment 8 does not select or claim it until feasibility is
-demonstrated. Terraform retains lifecycle ownership but never owns the
-secret-bearing payload.
+Increment 8D-1 accepts the CML browser console as the one-time manual IOS XE
+runtime-bootstrap channel for the personal digital twin. The operator applies
+bootstrap directly to the running device; Terraform retains infrastructure and
+lifecycle ownership and never owns the runtime payload. Console-keystroke
+automation was intentionally abandoned because it adds little value to the
+end-to-end NCDP demonstration compared with a bounded manual bootstrap followed
+by automated management-plane operation.
 
 Increment 8D acceptance must prove all of these properties:
 
@@ -241,6 +244,13 @@ Increment 8D acceptance must prove all of these properties:
 
 If no runtime bootstrap boundary can satisfy all three properties, 8D must stop
 and revisit the architecture rather than weakening state secrecy.
+
+The [Increment 8D-1 console feasibility acceptance](../acceptance/terraform-cml-console-bootstrap-feasibility-increment-8d.md)
+proved those properties for a non-secret IOS XE runtime hostname. CML stored
+configuration stayed zero length, Terraform refresh did not import active
+running configuration, and the unsaved marker disappeared after restart. This
+does not yet accept management-IP or authentication bootstrap, SSH or NETCONF,
+Junos bootstrap, reset/recreate, or NCDP cutover.
 
 The accepted legacy lab remains active until it cannot conflict with stable
 NetBox-owned management endpoints. After state-free bootstrap and Terraform
@@ -278,8 +288,12 @@ reset/wipe semantics reserved for 8D. See the
 
 ### 8D — reset/recreate and NCDP compatibility
 
-Implement state-free bootstrap, controlled management cutover, destroy/recreate
-and reset acceptance, deterministic lifecycle reconciliation, explicit safe SSH
-host-trust re-establishment, provider-refresh state-secrecy proof, and fresh
-NetBox/OpenBao/NCDP compatibility checks. Prove that Terraform controls CML
+In progress. Increment 8D-1 accepts one-time manual CML browser-console
+bootstrap for IOS XE and proves that non-secret runtime configuration remains
+outside CML stored configuration and Terraform state and disappears after an
+unsaved restart. Next, implement the management and authentication bootstrap
+sufficient for NCDP. Controlled management cutover, destroy/recreate and reset
+acceptance, deterministic lifecycle reconciliation, explicit safe SSH
+host-trust re-establishment, Junos bootstrap, and fresh NetBox/OpenBao/NCDP
+compatibility checks remain. Terraform controls CML infrastructure and
 lifecycle only, never production configuration.

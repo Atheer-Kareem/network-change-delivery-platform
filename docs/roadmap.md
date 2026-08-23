@@ -56,9 +56,15 @@ Ordering may change when implementation evidence requires it.
    CI validation, provider data-source discovery, external state handling, and
    zero CML mutation. Increment 8C is complete: topology creation,
    `DEFINED_ON_CORE`, controlled `STARTED`, operational `STOPPED`, configuration
-   secrecy, and legacy-runtime restoration are accepted. Increment 8 remains in
-   progress, with reset/recreate and state-free bootstrap next in 8D. Terraform
-   never manages production device configuration. See the
+   secrecy, and legacy-runtime restoration are accepted. Increment 8D is in
+   progress: 8D-1 accepts the IOS XE CML browser console as the one-time manual
+   personal-twin bootstrap channel and proves that runtime configuration stays
+   outside CML stored configuration and Terraform state and disappears after an
+   unsaved restart. Console-keystroke automation was intentionally abandoned as
+   low-value for the end-to-end demonstration. Management and authentication
+   bootstrap sufficient for NCDP is next; Junos bootstrap, reset/recreate, and
+   cutover remain. Terraform never manages production device configuration. See
+   the
    [Terraform/CML digital-twin architecture](architecture/terraform-cml-digital-twin.md).
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.

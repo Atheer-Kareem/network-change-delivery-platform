@@ -53,9 +53,9 @@ workload identity and exact promotion verification. The issued OpenBao token has
 no policies and is discarded; NCDP verifies the actual response contains no
 token, Identity-derived, or aggregate policy capability. OpenBao uses immutable
 `sub` as the stable Identity alias while the required mapped `job_id`
-still has to match the current job exactly. The active gate performs no secret
-retrieval or deployment. External OpenBao configuration and protected-main
-federation were accepted in normal hardened mode by protected-main build #26.
+still has to match the current job exactly. External OpenBao configuration and
+protected-main federation were accepted in normal hardened mode by
+protected-main build #26.
 
 For bounded personal-lab federation troubleshooting only,
 `NCDP_OPENBAO_JWT_DIAGNOSTICS=1` changes the identity command into a terminal
@@ -76,6 +76,13 @@ standard `sub`; absence of the optional duplicate claim is expected. After the
 operator migrated the owned role, protected-main build #26 passed signature and
 role validation, exact runtime identity comparison, zero-policy verification,
 and exact promotion authorization without a device write.
+
+7C-A preserves that identity-only exchange on every ordinary main build and adds
+a later conditional boundary. Only an exact commit that changes the fixed live
+request and binds it to the promoted single-device plan can request a second
+fresh JWT for the device-specific read role. All other builds stop with an
+explicit no-write result before privileged identity, NetBox, secrets, or device
+access. See [Buildkite protected live deployment](buildkite-live-deployment.md).
 
 The personal lab may use one Mac, but queues, agent processes, working
 directories, and deployment environment variables remain separate. Physical

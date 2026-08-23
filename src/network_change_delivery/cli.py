@@ -24,6 +24,13 @@ from network_change_delivery.assurance import (
     evaluate_assurance,
     prepare_snapshot,
 )
+from network_change_delivery.buildkite_deployment import (
+    LIVE_DEPLOYMENT_REQUEST,
+    BuildkiteOpenBaoDeploymentSecretProvider,
+    live_deployment_request_changed,
+    load_live_deployment_request,
+    load_promoted_single_plan,
+)
 from network_change_delivery.buildkite_identity import (
     OpenBaoBuildkiteJWTAuthenticator,
     read_buildkite_oidc_jwt,
@@ -40,6 +47,7 @@ from network_change_delivery.inventory import (
 )
 from network_change_delivery.models import (
     DeploymentPlan,
+    FinalOutcome,
     FleetDeploymentPlan,
     FleetFinalOutcome,
     FleetInterfaceDescriptionIntent,
@@ -276,8 +284,72 @@ def _run_verify_buildkite_gate(arguments: argparse.Namespace) -> int:
     print(f"assurance digest: {manifest.assurance_record_digest}")
     print(f"promotion digest: {manifest.digest}")
     print("deployment authorization gate: PASSED")
-    print("device write executed: NO")
     return 0
+
+
+def _verified_live_request(promotion: Path, context):
+    if not live_deployment_request_changed(context.commit):
+        raise PromotionError("live deployment request was not changed by this commit")
+    manifest, plan = load_promoted_single_plan(promotion, context.commit)
+    request = load_live_deployment_request(LIVE_DEPLOYMENT_REQUEST)
+    request.verify_plan(plan)
+    return manifest, plan, request
+
+
+def _run_verify_buildkite_live_request(arguments: argparse.Namespace) -> int:
+    context = buildkite_deployment_context_from_environment(os.environ)
+    _manifest, plan, request = _verified_live_request(arguments.promotion, context)
+    print("live deployment requested: YES")
+    print(f"change: {request.change_id}")
+    print(f"plan digest: {plan.digest}")
+    print(f"inventory identity: {request.inventory_object_id}")
+    return 0
+
+
+def _run_buildkite_live_request_status(arguments: argparse.Namespace) -> int:
+    del arguments
+    context = buildkite_deployment_context_from_environment(os.environ)
+    if not live_deployment_request_changed(context.commit):
+        print("live deployment requested: NO")
+        print("device write executed: NO")
+        return 3
+    print("commit-bound live deployment request changed: YES")
+    return 0
+
+
+def _run_deploy_buildkite_promotion(arguments: argparse.Namespace) -> int:
+    import sys
+
+    context = buildkite_deployment_context_from_environment(os.environ)
+    _manifest, plan, _request = _verified_live_request(arguments.promotion, context)
+    if arguments.report_json.exists() or arguments.report_json.is_symlink():
+        raise OSError("deployment evidence path already exists")
+    jwt = read_buildkite_oidc_jwt(sys.stdin)
+    inventory = NetBoxInventoryProvider()
+    secrets = BuildkiteOpenBaoDeploymentSecretProvider(jwt, context)
+    adapter = MultiVendorAdapter()
+    record = deploy_plan(
+        plan,
+        plan.digest,
+        inventory,
+        secrets,
+        adapter,
+        adapter,
+    )
+    _write_new_fleet_plan(
+        arguments.report_json, record.model_dump_json(indent=2) + "\n"
+    )
+    print(f"Final outcome: {record.final_outcome}")
+    print(f"Evidence: {arguments.report_json}")
+    return (
+        0
+        if record.final_outcome
+        in {
+            FinalOutcome.SUCCEEDED,
+            FinalOutcome.RECOVERED,
+        }
+        else 2
+    )
 
 
 def _run_verify_buildkite_openbao_identity(arguments: argparse.Namespace) -> int:
@@ -590,11 +662,32 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--promoted-promotion-digest", required=True)
     gate_parser.set_defaults(handler=_run_verify_buildkite_gate)
 
+    live_request_parser = subparsers.add_parser(
+        "verify-buildkite-live-request",
+        help="verify one commit-bound promoted live deployment request",
+    )
+    live_request_parser.add_argument("--promotion", required=True, type=Path)
+    live_request_parser.set_defaults(handler=_run_verify_buildkite_live_request)
+
+    live_status_parser = subparsers.add_parser(
+        "buildkite-live-request-status",
+        help="check whether this commit changed the fixed live request",
+    )
+    live_status_parser.set_defaults(handler=_run_buildkite_live_request_status)
+
     identity_parser = subparsers.add_parser(
         "verify-buildkite-openbao-identity",
         help="verify Buildkite workload identity through OpenBao JWT auth",
     )
     identity_parser.set_defaults(handler=_run_verify_buildkite_openbao_identity)
+
+    buildkite_deploy_parser = subparsers.add_parser(
+        "deploy-buildkite-promotion",
+        help="deploy one requested protected Buildkite promotion",
+    )
+    buildkite_deploy_parser.add_argument("--promotion", required=True, type=Path)
+    buildkite_deploy_parser.add_argument("--report-json", required=True, type=Path)
+    buildkite_deploy_parser.set_defaults(handler=_run_deploy_buildkite_promotion)
 
     deploy_parser = subparsers.add_parser(
         "deploy",

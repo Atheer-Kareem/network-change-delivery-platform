@@ -47,8 +47,9 @@ Ordering may change when implementation evidence requires it.
    serialized no-write deployment gate. 7B is complete, including its
    application boundary, main-only gate integration, reproducible JWT-role
    operator tool, and protected-main external Buildkite/OpenBao federation
-   acceptance. Increment 7 remains in progress; 7C is next and still owns fully
-   enforced live CML deployment acceptance.
+   acceptance. Increment 7 remains in progress. 7C-A implements the commit-bound,
+   single-device, least-privilege live-deployment foundation without an active
+   request or live write. External 7C live CML acceptance remains pending.
 8. **Terraform/CML infrastructure as code:** reproducible twin lifecycle and reset,
    without Terraform-managed production configuration.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,

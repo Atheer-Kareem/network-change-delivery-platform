@@ -142,6 +142,7 @@ def test_scripts_static_contract() -> None:
         "  uv run ncdp verify-buildkite-openbao-identity"
     )
     assert oidc_command in gate
+    assert gate.count("buildkite-agent oidc request-token") == 2
     assert '[[ "${NCDP_OPENBAO_JWT_DIAGNOSTICS:-}" == 1 ]]' in gate
     assert gate.index("NCDP_OPENBAO_JWT_DIAGNOSTICS") < gate.index(
         'tmpdir="$(mktemp -d)"'
@@ -162,10 +163,29 @@ def test_scripts_static_contract() -> None:
         "NCDP_DEVICE_PASSWORD",
     ):
         assert variable in gate
-    assert "ncdp deploy" not in gate
+    assert "uv run ncdp deploy " not in gate
     assert "ncdp fleet-deploy" not in gate
     assert "--step promotion" in gate
     assert "uv run ncdp verify-buildkite-gate" in gate
+    assert gate.index("verify-buildkite-gate") < gate.index(
+        "buildkite-live-request-status"
+    )
+    assert gate.index("buildkite-live-request-status") < gate.index(
+        "verify-buildkite-live-request"
+    )
+    assert gate.index("verify-buildkite-live-request") < gate.rindex(
+        "oidc request-token"
+    )
+    assert gate.index("verify-buildkite-live-request") < gate.index(
+        "deploy-buildkite-promotion"
+    )
+    assert 'request_status" -eq 3' in gate
+    assert "live deployment requested: NO" not in gate
+    assert gate.count("device write executed: YES") == 1
+    assert 'cd "$tmpdir"' in gate
+    assert 'buildkite-agent artifact upload "$report_relative"' in gate
+    assert "deployments/live/request.yaml" not in gate
+    assert not (ROOT / "deployments/live/request.yaml").exists()
     assert "verify_commit.sh" in promotion
     assert promotion.index("verify_commit.sh") < promotion.index("assure-plan")
     assert 'promotion="$tmpdir/promotion"' in promotion

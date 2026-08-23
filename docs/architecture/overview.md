@@ -88,3 +88,10 @@ process-local overlap admission are Increment 5C: a shared in-memory controller
 atomically reserves complete stable device-identity sets, including no-ops,
 across preflight, execution, and final validation. It is deliberately not a
 distributed lock. Other named integrations remain future work.
+
+Increment 7A and 7B establish externally accepted promotion and zero-policy
+Buildkite/OpenBao workload identity. Increment 7C-A adds the protected,
+commit-bound single-device deployment composition boundary, separate
+device-specific OpenBao read roles, and typed evidence reuse without activating
+a live request or claiming external device-write acceptance. See the
+[Buildkite live-deployment boundary](buildkite-live-deployment.md).

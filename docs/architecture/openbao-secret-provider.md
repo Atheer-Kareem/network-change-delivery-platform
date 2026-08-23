@@ -63,6 +63,16 @@ and reports only whether the mount was newly enabled and whether the non-secret
 backend, role, and no-device-capability contracts were verified. This is an
 operator action, never a Buildkite job action.
 
+7C-A adds a separate device-specific Buildkite JWT role family without changing
+the AppRole provider or accepted zero-policy identity role. Role
+`ncdp-buildkite-cml-deploy-device-<id>` carries exactly policy
+`ncdp-buildkite-cml-device-<id>-read`, whose sole capability is `read` on
+`ncdp/data/devices/<id>/ssh`. A dedicated environment-only operator verifies the
+owned mount and unchanged 7B role, writes and reads back the exact policy and
+role, and rejects divergent state. The deployment provider verifies exact
+identity, lease, token/Identity/aggregate/external policy results and consumes
+the single-use token on one exact KV-v2 GET. It does not use AppRole.
+
 ## Exact KV-v2 derivation
 
 The provider supports NetBox-backed inventory only. It requires a stable identity

@@ -19,6 +19,16 @@ ENVIRONMENT_REFERENCE = "environment:NCDP_DEVICE_USERNAME+NCDP_DEVICE_PASSWORD"
 _NETBOX_DEVICE_IDENTITY = re.compile(r"netbox:dcim\.device:([1-9][0-9]*)")
 
 
+def netbox_device_id(device: InventoryDevice) -> int:
+    """Derive one positive device ID from stable NetBox inventory identity."""
+    if device.inventory_source != "netbox" or device.inventory_object_id is None:
+        raise SecretError("OpenBao requires NetBox-backed inventory identity")
+    match = _NETBOX_DEVICE_IDENTITY.fullmatch(device.inventory_object_id)
+    if match is None:
+        raise SecretError("OpenBao requires NetBox-backed inventory identity")
+    return int(match.group(1))
+
+
 def validate_openbao_url(value: str) -> str:
     """Validate the shared OpenBao transport boundary."""
     try:
@@ -151,12 +161,7 @@ class OpenBaoSecretProvider:
 
     @staticmethod
     def _device_id(device: InventoryDevice) -> int:
-        if device.inventory_source != "netbox" or device.inventory_object_id is None:
-            raise SecretError("OpenBao requires NetBox-backed inventory identity")
-        match = _NETBOX_DEVICE_IDENTITY.fullmatch(device.inventory_object_id)
-        if match is None:
-            raise SecretError("OpenBao requires NetBox-backed inventory identity")
-        return int(match.group(1))
+        return netbox_device_id(device)
 
     def reference(self, device: InventoryDevice) -> CredentialReference:
         """Derive fixed non-secret provenance from stable NetBox identity."""

@@ -62,3 +62,12 @@ PASSED assurance bytes. Environment variables are not Buildkite identity proof.
 The 7B gate requires a Buildkite-signed JWT, OpenBao signature and role
 validation, mapped identity metadata, and NCDP's exact runtime comparison before
 it performs the existing offline promotion verification.
+
+7C-A does not add device capability to that role. A commit-bound, exact-plan live
+request is required before a second fresh JWT may authenticate to one
+device-specific role with one exact read policy and one token use. Stable NetBox
+device identity determines both role and KV-v2 path. The dedicated command then
+reuses the full `deploy_plan()` boundary and emits secret-free typed evidence.
+An absent, unchanged, deleted, malformed, fleet, or mismatched request stops
+before privileged JWT issuance, NetBox access, credential retrieval, or device
+access.

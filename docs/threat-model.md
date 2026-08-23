@@ -47,6 +47,10 @@ then established the 7B cryptographic Buildkite/OpenBao identity boundary,
 including signature and constrained-role validation, exact runtime metadata
 comparison, and a token with zero effective policy. The personal-lab agent and
 OpenBao may still share one host, so this is not production-grade isolation. The
-7B token deliberately has no secret-read policy. Live deployment execution
-remains a 7C control, and promotion artifacts contain no credentials. No
-fleet-wide atomicity is claimed.
+7B token deliberately has no secret-read policy. The unaccepted 7C-A foundation
+uses a distinct single-device role, one exact read policy, one token use, and a
+commit-changed request bound to the promoted plan. A compromised eligible
+deployment job remains a high-impact boundary; short leases, exact runtime
+identity, fresh preflight, and vendor-aware recovery reduce but do not eliminate
+that risk. Promotion artifacts contain no credentials. No fleet-wide atomicity
+is claimed.

@@ -12,8 +12,8 @@ Increment 8A established the discovery and architecture contract. Increment 8B
 implements the exact Terraform/provider pins, data-source foundation, external
 state boundary, static CI validation, and accepted read-only plan. Increment 8C
 has accepted initial creation plus the controlled `DEFINED_ON_CORE` to `STARTED`
-to `STOPPED` lifecycle. State-free bootstrap, reset/recreate, and NCDP cutover
-compatibility are 8D.
+to `STOPPED` lifecycle. Day-0/bootstrap, reset/recreate, and NCDP compatibility
+are 8D.
 
 ## Authority boundary
 

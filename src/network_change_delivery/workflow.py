@@ -160,7 +160,7 @@ def collect_preflight_state(
         device = inventory.resolve(binding.target, binding.interface)
     except (ValueError, OSError, RuntimeError):
         raise PreflightError(
-            FinalOutcome.BLOCKED, "pre-write verification blocked"
+            FinalOutcome.BLOCKED, "inventory resolution blocked"
         ) from None
     if (
         device.inventory_source != binding.inventory_source
@@ -180,7 +180,7 @@ def collect_preflight_state(
         current_credential = secrets.reference(device)
     except (ValueError, OSError, RuntimeError):
         raise PreflightError(
-            FinalOutcome.BLOCKED, "pre-write verification blocked"
+            FinalOutcome.BLOCKED, "credential reference resolution blocked"
         ) from None
     if (
         current_credential.source != binding.credential_source
@@ -191,7 +191,17 @@ def collect_preflight_state(
         )
     try:
         credentials = secrets.load(device)
+    except (ValueError, OSError, RuntimeError):
+        raise PreflightError(
+            FinalOutcome.BLOCKED, "credential retrieval blocked"
+        ) from None
+    try:
         state = collector.collect(device, credentials, binding.interface)
+    except (ValueError, OSError, RuntimeError):
+        raise PreflightError(
+            FinalOutcome.BLOCKED, "device state collection blocked"
+        ) from None
+    try:
         intent = InterfaceDescriptionIntent.model_validate(
             {
                 "change_id": getattr(binding, "change_id", "fleet-preflight"),
@@ -204,7 +214,7 @@ def collect_preflight_state(
         _assert_safe_state(intent, device, state)
     except (ValueError, OSError, RuntimeError):
         raise PreflightError(
-            FinalOutcome.BLOCKED, "pre-write verification blocked"
+            FinalOutcome.BLOCKED, "live safety validation blocked"
         ) from None
     return PreflightSnapshot(device=device, credentials=credentials, state=state)
 

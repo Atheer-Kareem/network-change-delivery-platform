@@ -67,13 +67,15 @@ Ordering may change when implementation evidence requires it.
    was completely destroyed. Terraform never manages production or NCDP-managed
    device configuration. See the
    [Terraform/CML digital-twin architecture](architecture/terraform-cml-digital-twin.md).
-   **Increment 8E — Ephemeral CML staging pipeline** is next: reusable
-   Terraform root/module design, build-scoped state and run identity, serialized
-   CML staging concurrency, create, first-boot readiness, NCDP staging
-   validation, sanitized evidence, finally-style destroy, cleanup verification,
-   failed-destroy state retention, and Buildkite integration. Parallel twins
-   require a future isolated management network. 8E is not implemented in the
-   Increment 8D PR.
+   **Increment 8E — Ephemeral CML staging pipeline** is split into explicit
+   stages. 8E-1 provides the reusable Terraform realization module, protected
+   operator root, intentionally destroyable ephemeral root, required run
+   identity, build/run-scoped state contract, safe outputs, and credential-free
+   static validation. 8E-2 performs local real create/first-boot/test/destroy
+   acceptance. 8E-3 adds serialized Buildkite orchestration, staging workload
+   identity, readiness, NCDP validation, sanitized evidence, finally-style
+   cleanup, absence proof, and failed-destroy state retention. Parallel twins
+   require a future isolated management network.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.
 10. **Audit/configuration history:** typed `ChangeRecord`, durable correlation, and

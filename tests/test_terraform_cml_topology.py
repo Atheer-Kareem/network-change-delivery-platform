@@ -3,7 +3,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 TF_ROOT = ROOT / "infrastructure/cml"
-TOPOLOGY = (TF_ROOT / "topology.tf").read_text()
+MODULE_ROOT = TF_ROOT / "modules/twin"
+EPHEMERAL_ROOT = TF_ROOT / "ephemeral"
+ROOT_TOPOLOGY = (TF_ROOT / "topology.tf").read_text()
+TOPOLOGY = (MODULE_ROOT / "topology.tf").read_text()
 
 
 def balanced_body(pattern: str, text: str) -> str:
@@ -36,13 +39,17 @@ def assignment(body: str, name: str) -> str:
 
 def test_exact_resource_type_counts_and_no_structural_escape_hatches() -> None:
     resources = re.findall(r'(?m)^resource\s+"([^"]+)"\s+"[^"]+"\s*\{', TOPOLOGY)
-    assert resources.count("cml2_lab") == 1
     assert resources.count("cml2_node") == 5
     assert resources.count("cml2_link") == 6
     assert resources.count("cml2_lifecycle") == 1
-    assert len(resources) == 13
-    all_hcl = "\n".join(path.read_text() for path in TF_ROOT.glob("*.tf"))
-    for forbidden in ("module", "import", "moved", "removed"):
+    assert len(resources) == 12
+    assert ROOT_TOPOLOGY.count('resource "cml2_lab" "twin"') == 1
+    assert ROOT_TOPOLOGY.count('module "twin"') == 1
+    ephemeral = (EPHEMERAL_ROOT / "topology.tf").read_text()
+    assert ephemeral.count('resource "cml2_lab" "twin"') == 1
+    assert ephemeral.count('module "twin"') == 1
+    all_hcl = "\n".join(path.read_text() for path in TF_ROOT.rglob("*.tf"))
+    for forbidden in ("import", "moved", "removed"):
         assert re.search(rf"(?m)^\s*{forbidden}\s+", all_hcl) is None
 
 
@@ -124,18 +131,18 @@ def test_router_day0_templates_are_sensitive_and_narrow() -> None:
     management_switch = resource_block("cml2_node", "management_switch")
     assert re.search(r"(?m)^\s*configurations?\s*=", management_switch) is None
 
-    all_hcl = "\n".join(path.read_text() for path in TF_ROOT.glob("*.tf"))
+    all_hcl = "\n".join(path.read_text() for path in TF_ROOT.rglob("*.tf"))
     for address in ("192.168.4.14", "192.168.4.15", "192.168.4.20"):
         assert address not in all_hcl
 
-    template = (TF_ROOT / "bootstrap/cat8000v.tftpl").read_text()
+    template = (MODULE_ROOT / "bootstrap/cat8000v.tftpl").read_text()
     assert "interface GigabitEthernet1" in template
     assert "netconf-yang" in template
     assert "GigabitEthernet2" not in template
     assert "description" not in template
     assert "192.168.4.14" not in template
 
-    junos_template = (TF_ROOT / "bootstrap/vjunos-router.tftpl").read_text()
+    junos_template = (MODULE_ROOT / "bootstrap/vjunos-router.tftpl").read_text()
     assert "root-login deny" in junos_template
     assert "ssh-ed25519" in junos_template
     assert "class super-user" in junos_template
@@ -181,7 +188,7 @@ def test_exact_link_slots_and_reserved_interfaces_remain_unlinked() -> None:
 
 
 def test_safe_lifecycle_contract_and_increment_guard() -> None:
-    variables = (TF_ROOT / "variables.tf").read_text()
+    variables = (MODULE_ROOT / "variables.tf").read_text()
     variable = balanced_body(r'variable\s+"twin_lifecycle_state"\s*\{', variables)
     assert re.search(r"(?m)^\s*default\s*=", variable) is None
     allowed = re.search(r"contains\(\s*\[([^]]+)]", variable, re.DOTALL)
@@ -214,8 +221,36 @@ def test_safe_lifecycle_contract_and_increment_guard() -> None:
     for forbidden in ("configs", "named_configs", "topology", "elements"):
         assert re.search(rf"(?m)^\s*{forbidden}\s*=", lifecycle) is None
 
-    lab = resource_block("cml2_lab", "twin")
-    assert "prevent_destroy = true" in lab
+    operator_lab = balanced_body(r'resource\s+"cml2_lab"\s+"twin"\s*\{', ROOT_TOPOLOGY)
+    ephemeral_lab = balanced_body(
+        r'resource\s+"cml2_lab"\s+"twin"\s*\{',
+        (EPHEMERAL_ROOT / "topology.tf").read_text(),
+    )
+    assert "prevent_destroy = true" in operator_lab
+    assert "prevent_destroy" not in ephemeral_lab
+
+
+def test_ephemeral_run_identity_and_required_inputs_fail_closed() -> None:
+    variables = (EPHEMERAL_ROOT / "variables.tf").read_text()
+    run_id = balanced_body(r'variable\s+"staging_run_id"\s*\{', variables)
+    assert re.search(r"(?m)^\s*default\s*=", run_id) is None
+    assert "{0,39}" in run_id
+    for name in (
+        "twin_lifecycle_state",
+        "core_02_bootstrap_username",
+        "core_02_bootstrap_password",
+        "edge_junos_01_bootstrap_username",
+        "edge_junos_01_bootstrap_password_hash",
+    ):
+        body = balanced_body(rf'variable\s+"{name}"\s*\{{', variables)
+        assert re.search(r"(?m)^\s*default\s*=", body) is None
+
+    versions = (EPHEMERAL_ROOT / "versions.tf").read_text()
+    backend = balanced_body(r'backend\s+"local"\s*\{', versions)
+    assert "path" not in backend
+    assert "/Users/" not in "\n".join(
+        path.read_text() for path in EPHEMERAL_ROOT.rglob("*") if path.is_file()
+    )
 
 
 def test_defined_on_core_is_creation_or_reset_not_stopped_steady_state() -> None:

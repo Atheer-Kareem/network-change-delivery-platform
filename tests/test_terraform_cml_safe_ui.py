@@ -56,6 +56,17 @@ def test_allowlisted_events_emit_only_structural_metadata() -> None:
             },
         },
         {
+            "type": "planned_change",
+            "change": {
+                "resource": {
+                    "addr": "module.twin.cml2_link.management_core_02",
+                    "data": SENTINELS["resource"],
+                },
+                "action": "create",
+                "after": {"configuration": SENTINELS["nested"]},
+            },
+        },
+        {
             "type": "apply_progress",
             "hook": {
                 "resource": {"addr": "cml2_node.edge_junos_01"},
@@ -97,6 +108,7 @@ def test_allowlisted_events_emit_only_structural_metadata() -> None:
         "version terraform=1.15.8 ui=1.2",
         "planned resource=cml2_node.edge_junos_01 action=replace reason=cannot_update",
         "drift resource=cml2_lab.twin action=update",
+        "planned resource=module.twin.cml2_link.management_core_02 action=create",
         "apply_progress resource=cml2_node.edge_junos_01 action=replace elapsed=12s",
         "plan add=4 change=1 destroy=4",
         "diagnostic severity=warning summary=bounded summary",

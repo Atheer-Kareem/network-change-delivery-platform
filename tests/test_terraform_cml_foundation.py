@@ -5,10 +5,8 @@ import yaml
 
 ROOT = Path(__file__).parents[1]
 TF_ROOT = ROOT / "infrastructure/cml"
-
-
-def terraform_text() -> str:
-    return "\n".join(path.read_text() for path in sorted(TF_ROOT.glob("*.tf")))
+MODULE_ROOT = TF_ROOT / "modules/twin"
+EPHEMERAL_ROOT = TF_ROOT / "ephemeral"
 
 
 def test_exact_toolchain_and_backend_contract() -> None:
@@ -22,9 +20,10 @@ def test_exact_toolchain_and_backend_contract() -> None:
 
 
 def test_managed_resource_allow_list_and_provider_security() -> None:
-    text = terraform_text()
+    text = "\n".join(path.read_text() for path in sorted(TF_ROOT.rglob("*.tf")))
     assert not list(TF_ROOT.rglob("*.tfvars"))
     resources = re.findall(r'(?m)^resource\s+"([^"]+)"\s+"([^"]+)"\s*\{', text)
+    assert resources.count(("cml2_lab", "twin")) == 2
     assert set(resources) == {
         ("cml2_lab", "twin"),
         ("cml2_node", "system_bridge"),
@@ -40,10 +39,13 @@ def test_managed_resource_allow_list_and_provider_security() -> None:
         ("cml2_link", "edge_junos_01_core_03"),
         ("cml2_lifecycle", "twin"),
     }
-    for block in ("module", "import", "moved", "removed"):
+    for block in ("import", "moved", "removed"):
         assert re.search(rf"(?m)^\s*{block}\s+", text) is None
 
-    provider = (TF_ROOT / "provider.tf").read_text()
+    provider = "\n".join(
+        path.read_text()
+        for path in (TF_ROOT / "provider.tf", EPHEMERAL_ROOT / "provider.tf")
+    )
     for credential in (
         "address",
         "token",
@@ -60,8 +62,8 @@ def test_managed_resource_allow_list_and_provider_security() -> None:
 
 
 def test_data_source_and_fail_closed_selection_contract() -> None:
-    data = (TF_ROOT / "data.tf").read_text()
-    outputs = (TF_ROOT / "outputs.tf").read_text()
+    data = (MODULE_ROOT / "data.tf").read_text()
+    outputs = (MODULE_ROOT / "outputs.tf").read_text()
     assert 'data "cml2_system" "controller"' in data
     assert 'data "cml2_connector" "system_bridge"' in data
     assert 'label = "System Bridge"' in data
@@ -70,8 +72,9 @@ def test_data_source_and_fail_closed_selection_contract() -> None:
     assert 'nodedefinition = "vjunos-router"' in data
     assert 'image.id == "cat8000v-17-18-02"' in data
     assert 'image.id == "vjunos-router-23-2r1-15"' in data
-    assert "bridge0" not in terraform_text()
-    assert "virbr0" not in terraform_text()
+    module_text = "\n".join(path.read_text() for path in MODULE_ROOT.glob("*.tf"))
+    assert "bridge0" not in module_text
+    assert "virbr0" not in module_text
     assert outputs.count("precondition {") == 3
     assert "length(local.system_bridge_matches) == 1" in outputs
     assert "length(local.accepted_cat8000v_images) == 1" in outputs
@@ -79,10 +82,11 @@ def test_data_source_and_fail_closed_selection_contract() -> None:
 
 
 def test_lock_and_ignore_contract() -> None:
-    lock = (TF_ROOT / ".terraform.lock.hcl").read_text()
-    assert 'version     = "0.9.3-beta1"' in lock
-    assert 'constraints = "0.9.3-beta1"' in lock
-    assert lock.count('provider "registry.terraform.io/ciscodevnet/cml2"') == 1
+    for root in (TF_ROOT, EPHEMERAL_ROOT):
+        lock = (root / ".terraform.lock.hcl").read_text()
+        assert 'version     = "0.9.3-beta1"' in lock
+        assert 'constraints = "0.9.3-beta1"' in lock
+        assert lock.count('provider "registry.terraform.io/ciscodevnet/cml2"') == 1
     gitignore = (ROOT / ".gitignore").read_text()
     assert ".terraform.lock.hcl" not in gitignore
     dockerignore = (ROOT / ".dockerignore").read_text()
@@ -102,8 +106,12 @@ def test_buildkite_terraform_contract_and_existing_gates() -> None:
     )
     assert terraform["agents"]["queue"] == "ncdp-validation"
     assert "${PWD}:/workspace:ro" in command
+    assert "TF_DATA_DIR=/tmp/terraform-data-operator" in command
+    assert "TF_DATA_DIR=/tmp/terraform-data-ephemeral" in command
     assert "-backend=false" in command
     assert "-lockfile=readonly" in command
+    assert "terraform -chdir=infrastructure/cml validate" in command
+    assert "terraform -chdir=infrastructure/cml/ephemeral validate" in command
     assert "CML2_" not in command
     assert not re.search(r"terraform[^\n]*(plan|apply|import|destroy)", command)
     for key in ("promotion", "deployment-approval", "deploy-gate"):

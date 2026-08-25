@@ -58,11 +58,13 @@ def test_pipeline_contract() -> None:
     terraform_command = terraform["command"]
     assert "hashicorp/terraform:1.15.8@sha256:" in terraform_command
     assert "${PWD}:/workspace:ro" in terraform_command
-    assert "TF_DATA_DIR=/tmp/terraform-data" in terraform_command
+    assert "TF_DATA_DIR=/tmp/terraform-data-operator" in terraform_command
+    assert "TF_DATA_DIR=/tmp/terraform-data-ephemeral" in terraform_command
     assert "terraform version" in terraform_command
     assert "fmt -check -recursive" in terraform_command
     assert "init -backend=false -input=false -lockfile=readonly" in terraform_command
     assert "terraform -chdir=infrastructure/cml validate" in terraform_command
+    assert "terraform -chdir=infrastructure/cml/ephemeral validate" in terraform_command
     assert "CML2_" not in terraform_command
     for forbidden in (" plan", " apply", " import", " destroy"):
         assert forbidden not in terraform_command

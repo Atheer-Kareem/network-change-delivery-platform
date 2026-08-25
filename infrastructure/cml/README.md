@@ -1,19 +1,20 @@
 # CML Terraform digital twin
 
-This root defines the validated Terraform CML digital-twin topology. It
-discovers controller metadata, the uniquely labelled `System Bridge` connector,
-and the two accepted image definitions before it can plan the lab, five nodes,
-six links, and explicit lifecycle. Its only device configuration is the
-personal-lab minimum Day-0 manageability exception defined by ADR 0013; it must
-never own NCDP-managed network intent or production configuration.
+This directory contains the protected operator/local root, the reusable
+`modules/twin` realization module, and the intentionally destroyable
+`ephemeral` staging root. Each root owns its CML lab. The shared module discovers
+controller metadata, the unique `System Bridge` connector, accepted images,
+five nodes, six links, and explicit lifecycle. Its only device configuration is
+the ADR 0013 personal-lab minimum Day-0 exception; it never owns NCDP-managed
+network intent or production configuration.
 
 ADR 0014 makes normal staging ephemeral: absent, fresh create, first boot,
 readiness and validation, sanitized evidence, complete destroy, then proven
 absence. The final Increment 8D twin was destroyed and the external state has no
-managed resources. This root intentionally retains its `prevent_destroy` guard
-until Increment 8E introduces the reviewed reusable ephemeral design and
-Buildkite lifecycle. Do not treat a normal create-oriented plan against the
-empty state as drift.
+managed resources. The operator root retains `prevent_destroy = true`; the
+ephemeral root has no such guard because complete destroy is its normal success
+path. Both consume `modules/twin`. Do not treat a normal create-oriented plan
+against the empty operator state as drift.
 
 Terraform `1.15.8` and `CiscoDevNet/cml2` `0.9.3-beta1` are exact contracts.
 Provider connection, token, and trusted PEM content are supplied only through
@@ -26,13 +27,13 @@ management switch at `(-150, -200)`, `core-02` at `(100, -400)`,
 `edge-junos-01` at `(400, -200)`, and `core-03` at `(700, -400)`. Tags control
 only CML lifecycle staging; they are not NCDP targeting metadata.
 
-`core-02` renders `bootstrap/cat8000v.tftpl`, and `edge-junos-01` renders
-`bootstrap/vjunos-router.tftpl`, into their respective `cml2_node.configuration`
-fields. Each template contains only hostname, management addressing, the local
-lab account, SSH, NETCONF, and minimum platform prerequisites. Neither contains
-an actual credential or address in Git, NCDP-managed interface intent, routing,
-or interface descriptions. `core-03` retains explicit empty configuration
-until its own bootstrap is accepted.
+`core-02` renders `modules/twin/bootstrap/cat8000v.tftpl`, and
+`edge-junos-01` renders `modules/twin/bootstrap/vjunos-router.tftpl`, into their
+respective `cml2_node.configuration` fields. Each template contains only
+hostname, management addressing, the local lab account, SSH, NETCONF, and
+minimum platform prerequisites. Neither contains an actual credential or
+address in Git, NCDP-managed interface intent, routing, or interface
+descriptions. `core-03` retains explicit empty configuration.
 
 Every live plan or apply requires these runtime inputs:
 
@@ -131,3 +132,25 @@ same accepted vJunos UUID did not restore management connectivity; it was not
 fixed. ADR 0014 therefore makes restart persistence an explicit scenario test,
 not a normal staging-readiness requirement. The whole twin was subsequently
 destroyed through an exact 13-resource Terraform graph.
+
+### Ephemeral run contract
+
+The ephemeral root requires a unique non-secret `staging_run_id`, explicit
+`twin_lifecycle_state`, and every NetBox/OpenBao-derived Day-0 input. It has no
+credential defaults or committed tfvars. Initialize it with a unique backend
+path supplied externally for that run:
+
+```shell
+terraform -chdir=infrastructure/cml/ephemeral init \
+  -backend-config="path=<protected-run-directory>/terraform.tfstate"
+```
+
+The state directory and file permissions are orchestration responsibilities.
+State contains ADR 0013 credential copies, must never be shared or uploaded as
+a Buildkite artifact, and must be retained after failed destruction. Retire it
+only after successful Terraform destroy and independent CML absence proof.
+Increment 8E-1 adds no automatic state deletion and no live staging job.
+
+CML Configuration Customizer Scripts must already be enabled for vJunos Day-0.
+This controller-global prerequisite is verified outside Terraform and is not
+configured by either root.

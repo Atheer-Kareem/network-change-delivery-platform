@@ -9,7 +9,9 @@ import sys
 from collections.abc import Iterable, Mapping
 from typing import TextIO
 
-_ADDRESS = re.compile(r"^(?:data\.)?cml2_[a-z0-9_]+\.[a-z0-9_]+$")
+_ADDRESS = re.compile(
+    r"^(?:module\.[a-z0-9_]+\.)*(?:data\.)?cml2_[a-z0-9_]+\.[a-z0-9_]+$"
+)
 _EVENT_TYPE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _ACTIONS = frozenset({"create", "delete", "no-op", "read", "replace", "update"})
 _REASONS = frozenset(

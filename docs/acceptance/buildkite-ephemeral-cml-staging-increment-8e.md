@@ -22,7 +22,7 @@ acceptance therefore uses the existing personal-controller operator login to
 mint a process-memory bearer while rejecting ambient `CML2_TOKEN`. No CML lab,
 node, or link was created during prerequisite setup.
 
-Two rejected PR-build diagnostics remained entirely before Terraform creation.
+Three rejected PR-build diagnostics remained entirely before Terraform creation.
 Build #81 exposed reliance on a shell-hook path variable that Buildkite only
 documents for polyglot hooks; no evidence or state directory was produced. The
 agent-owned command hook now loads its protected credential file from the
@@ -33,6 +33,16 @@ the complete NetBox v2 bearer presentation; status-only checks for status,
 device, and interface endpoints returned HTTP 200. Build #82 had
 `creation_outcome=not_attempted`, `destroy_outcome=not_attempted`, no run state,
 and zero CML mutations. Neither failed job was retried.
+
+Build #83 verified the corrected Buildkite, NetBox, OpenBao, and CML identity
+boundaries, then failed before Terraform initialization because Terraform was
+not installed on the dedicated agent path. Its sanitized evidence recorded run
+ID `bk-01a03a31-933d-46b0-a55c-18454cb24191`, no lab/node/link realization,
+no creation, no cleanup attempt, and no cleanup failure. The run directory held
+only an empty Terraform data directory and no state. Terraform 1.15.8 was then
+installed at the agent's Homebrew path and the dedicated agent was restarted.
+Build #83 was not retried; acceptance proceeds through a distinct build-bound
+run identity.
 
 ## External PR build
 

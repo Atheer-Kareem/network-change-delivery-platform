@@ -330,7 +330,14 @@ class AnsibleRunnerCiscoAdapter:
                         ),
                         "ANSIBLE_HOST_KEY_CHECKING": "True",
                         **(
-                            {"ANSIBLE_LIBSSH_CONFIG_FILE": str(libssh_config)}
+                            {
+                                "ANSIBLE_LIBSSH_CONFIG_FILE": str(libssh_config),
+                                **(
+                                    {"HOME": str(self._known_hosts.parents[1])}
+                                    if self._known_hosts.parent.name == ".ssh"
+                                    else {}
+                                ),
+                            }
                             if libssh_config is not None
                             else {}
                         ),

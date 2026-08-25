@@ -114,7 +114,8 @@ def test_runner_uses_the_shared_effective_collection_path(
 def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
     tmp_path: Path, monkeypatch
 ) -> None:
-    known_hosts = tmp_path / "known_hosts"
+    known_hosts = tmp_path / ".ssh" / "known_hosts"
+    known_hosts.parent.mkdir()
     known_hosts.write_text("hashed trusted host key\n", encoding="utf-8")
     captured: dict[str, object] = {}
 
@@ -127,6 +128,7 @@ def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
         config = Path(kwargs["envvars"]["ANSIBLE_LIBSSH_CONFIG_FILE"])
         captured["config"] = config.read_text(encoding="utf-8")
         captured["mode"] = config.stat().st_mode & 0o777
+        captured["home"] = kwargs["envvars"]["HOME"]
         return SimpleNamespace(status="successful", rc=0)
 
     monkeypatch.setattr(
@@ -148,3 +150,4 @@ def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
         f"Host *\n  StrictHostKeyChecking yes\n  UserKnownHostsFile {known_hosts}\n"
     )
     assert captured["mode"] == 0o600
+    assert captured["home"] == str(tmp_path)

@@ -118,7 +118,7 @@ class LocalOperations:
             raise StagingError("staging identity boundary is incomplete")
         self._client = self._cml_client(buildkite_context is not None)
         self._known_hosts = (
-            run_directory / "known_hosts"
+            run_directory / ".ssh" / "known_hosts"
             if buildkite_context is not None
             else Path.home() / ".ssh" / "known_hosts"
         )

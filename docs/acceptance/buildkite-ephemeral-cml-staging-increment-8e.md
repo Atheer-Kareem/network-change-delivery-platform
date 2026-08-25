@@ -77,6 +77,15 @@ independently disqualifies the build from zero-console acceptance. Core-03 now
 receives a minimal deterministic, non-credential Day-0 configuration and must
 reach CML `BOOTED` in a completely fresh build with zero console access.
 
+Build #86 proved that correction unattended: core-03 reached CML `BOOTED`,
+core-02 and edge-junos-01 passed ARP, ICMP, TCP/22, and TCP/830 readiness, and
+console operations remained zero. Core-02 collection still failed because the
+pinned libssh plugin's host-key policy resolves `~/.ssh/known_hosts` even when
+an alternate OpenSSH configuration is provided. Build-scoped trust now uses
+`<run>/.ssh/known_hosts`, and only the Ansible subprocess receives the run
+directory as `HOME`. Direct destroy, independent absence, and state retirement
+again passed with no cleanup failure; Build #86 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

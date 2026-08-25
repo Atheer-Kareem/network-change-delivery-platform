@@ -110,7 +110,7 @@ def test_read_only_connection_failure_has_bounded_classification(monkeypatch) ->
         ("invalid input detected", "Cisco rejected a read-only CLI command"),
         (
             "unrecognized provider module detail",
-            "signals=module shape=none",
+            "signals=module shape=none exception_type=none",
         ),
     ],
 )
@@ -169,6 +169,37 @@ def test_read_only_task_exception_is_allowlist_classified(monkeypatch) -> None:
             ),
             DeviceCredentials(username="user", password="secret"),
         )
+
+
+def test_unknown_task_exception_exposes_only_bounded_class_name(monkeypatch) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    secret = "must-not-escape"
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(status="failed", rc=2),
+            {
+                IDENTITY_TASK: {
+                    "_ncdp_event": "runner_on_failed",
+                    "msg": "failed",
+                    "exception": f"traceback path and {secret}: VendorProtocolError",
+                }
+            },
+        ),
+    )
+    with pytest.raises(ProviderError) as caught:
+        adapter.discover(
+            InventoryDevice(
+                name="router-1",
+                host="192.0.2.10",
+                platform="cisco_iosxe",
+                expected_hostname="lab-router",
+            ),
+            DeviceCredentials(username="user", password=secret),
+        )
+    assert "exception_type=VendorProtocolError" in str(caught.value)
+    assert secret not in str(caught.value)
 
 
 def test_known_hosts_path_ignores_custom_environment(

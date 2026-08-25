@@ -144,7 +144,16 @@ def _bounded_read_failure(result: object) -> str:
     ]
     signal_text = ",".join(signals) or "none"
     shape_text = ",".join(shape) or "none"
-    return f"Cisco identity failure signals={signal_text} shape={shape_text}"
+    exception = str(values.get("exception", ""))
+    exception_types = re.findall(
+        r"\b(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception))\b",
+        exception,
+    )
+    exception_type = exception_types[-1] if exception_types else "none"
+    return (
+        "Cisco identity failure "
+        f"signals={signal_text} shape={shape_text} exception_type={exception_type}"
+    )
 
 
 SYSTEM_ANSIBLE_COLLECTIONS = Path("/opt/ansible/collections")

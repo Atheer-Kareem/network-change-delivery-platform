@@ -137,6 +137,12 @@ connections, SSH session failures, and read-only command timeouts; deterministic
 task exceptions fail immediately. Cleanup, absence, and retirement passed and
 Build #92 was not retried.
 
+Build #93 confirmed a single deterministic exception but exposed no approved
+semantic signal beyond `failed` and `traceback`. The classifier now extracts
+only the final bounded exception class identifier ending in `Error` or
+`Exception`; it still withholds the exception message, stack, paths, and values.
+Cleanup, absence, and state retirement passed and Build #93 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

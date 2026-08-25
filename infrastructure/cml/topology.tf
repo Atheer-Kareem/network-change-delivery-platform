@@ -66,7 +66,12 @@ resource "cml2_node" "edge_junos_01" {
   lab_id         = cml2_lab.twin.id
   label          = "edge-junos-01"
   nodedefinition = "vjunos-router"
-  configuration  = ""
+  configuration = sensitive(templatefile("${path.module}/bootstrap/vjunos-router.tftpl", {
+    hostname        = var.edge_junos_01_bootstrap_hostname
+    management_cidr = var.edge_junos_01_bootstrap_management_cidr
+    username        = var.edge_junos_01_bootstrap_username
+    password_hash   = var.edge_junos_01_bootstrap_password_hash
+  }))
   imagedefinition = one(
     local.accepted_vjunos_images
   ).id

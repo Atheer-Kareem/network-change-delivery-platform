@@ -5,7 +5,9 @@
 Accepted for Increment 8 implementation after Increment 8A merge. ADR 0013
 supersedes only this ADR's prohibition on credential-bearing Terraform/CML
 Day-0 configuration inside the personal CML digital twin; the historical
-rationale and all other boundaries remain accepted.
+rationale and all other authority boundaries remain accepted. ADR 0014
+supersedes the persistent operational staging-lifecycle assumption: normal CML
+staging now creates, validates, and destroys a fresh twin per run.
 
 ## Context
 
@@ -106,13 +108,12 @@ intent remain outside that exception.
 
 ## Consequences
 
-The accepted legacy lab is deliberately STOPPED so it cannot conflict with
-stable management addresses. The Terraform realization now operationally owns
-the accepted core-02 identity. Personal-twin recreation uses the Day-0 boundary
+The accepted legacy lab remains deliberately STOPPED so it cannot conflict with
+stable management addresses. Personal-twin recreation uses the Day-0 boundary
 defined by ADR 0013, while NCDP continues to independently verify inventory
 identity, credential provenance, SSH host trust, platform, hostname, and
-expected topology. Permanent retirement of the legacy lab remains a later,
-separate operation.
+expected topology. ADR 0014 makes those Terraform realizations ephemeral; no
+persistent Terraform twin currently owns a stable NetBox identity.
 
 Reset/recreate is proven on infrastructure Terraform owns from birth, beta
 provider risk stays bounded, CML UUIDs remain realization identifiers rather

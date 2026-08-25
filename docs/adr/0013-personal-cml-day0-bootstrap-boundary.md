@@ -4,7 +4,9 @@
 
 Accepted for Increment 8D-2B. This decision supersedes only ADR 0012's
 prohibition on credential-bearing Terraform/CML Day-0 configuration inside the
-personal CML digital twin.
+personal CML digital twin. ADR 0014 retains this boundary for fresh ephemeral
+staging realizations; it changes their lifecycle, not their authority or Day-0
+scope.
 
 ## Context
 

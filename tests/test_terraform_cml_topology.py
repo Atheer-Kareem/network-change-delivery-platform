@@ -88,7 +88,7 @@ def test_exact_node_contract_and_fail_closed_discovery() -> None:
     )
 
 
-def test_only_core_02_uses_sensitive_day0_template() -> None:
+def test_router_day0_templates_are_sensitive_and_narrow() -> None:
     core_02 = resource_block("cml2_node", "core_02")
     assert assignment(core_02, "configuration").startswith("sensitive(templatefile(")
     assert "bootstrap/cat8000v.tftpl" in core_02
@@ -100,12 +100,22 @@ def test_only_core_02_uses_sensitive_day0_template() -> None:
     ):
         assert f"var.{variable}" in core_02
 
-    for name in ("edge_junos_01", "core_03"):
-        body = resource_block("cml2_node", name)
-        assert assignment(body, "configuration") == '""'
-        assert re.search(r"(?m)^\s*configurations\s*=", body) is None
-        for forbidden in ("username", "password", "secret", "community"):
-            assert forbidden not in body.lower()
+    edge = resource_block("cml2_node", "edge_junos_01")
+    assert assignment(edge, "configuration").startswith("sensitive(templatefile(")
+    assert "bootstrap/vjunos-router.tftpl" in edge
+    for variable in (
+        "edge_junos_01_bootstrap_hostname",
+        "edge_junos_01_bootstrap_management_cidr",
+        "edge_junos_01_bootstrap_username",
+        "edge_junos_01_bootstrap_password_hash",
+    ):
+        assert f"var.{variable}" in edge
+
+    core_03 = resource_block("cml2_node", "core_03")
+    assert assignment(core_03, "configuration") == '""'
+    assert re.search(r"(?m)^\s*configurations\s*=", core_03) is None
+    for forbidden in ("username", "password", "secret", "community"):
+        assert forbidden not in core_03.lower()
 
     bridge = resource_block("cml2_node", "system_bridge")
     assert assignment(bridge, "configuration") == (
@@ -124,6 +134,23 @@ def test_only_core_02_uses_sensitive_day0_template() -> None:
     assert "GigabitEthernet2" not in template
     assert "description" not in template
     assert "192.168.4.14" not in template
+
+    junos_template = (TF_ROOT / "bootstrap/vjunos-router.tftpl").read_text()
+    assert "root-login deny" in junos_template
+    assert "ssh-ed25519" in junos_template
+    assert "class super-user" in junos_template
+    assert 'encrypted-password "${password_hash}"' in junos_template
+    assert "netconf" in junos_template
+    assert "fxp0" in junos_template
+    for forbidden in (
+        "ge-0/0/",
+        "description",
+        "static",
+        "protocols",
+        "ciscoCML",
+        "192.168.4.20",
+    ):
+        assert forbidden not in junos_template
 
 
 def test_exact_link_slots_and_reserved_interfaces_remain_unlinked() -> None:

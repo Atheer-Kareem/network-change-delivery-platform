@@ -3,17 +3,21 @@
 ## Scope
 
 Increment 8 establishes reproducible personal-CML infrastructure lifecycle for
-digital-twin testing. Terraform controls only a separately created CML lab and
-its infrastructure realization. It is not a network-device configuration
-provider, inventory system, credential store, or source of NCDP targeting
-identity.
+digital-twin testing. Under ADR 0014, staging is ephemeral integration
+infrastructure: a run creates a fresh Terraform-owned CML lab, validates its
+first-boot realizations, retains sanitized evidence, and destroys the complete
+twin. Terraform is not a network-device configuration provider, inventory
+system, credential store, or source of NCDP targeting identity.
 
 Increment 8A established the discovery and architecture contract. Increment 8B
 implements the exact Terraform/provider pins, data-source foundation, external
 state boundary, static CI validation, and accepted read-only plan. Increment 8C
-has accepted initial creation plus the controlled `DEFINED_ON_CORE` to `STARTED`
-to `STOPPED` lifecycle. Day-0/bootstrap, reset/recreate, and NCDP compatibility
-are 8D.
+accepted initial creation plus the controlled `DEFINED_ON_CORE` to `STARTED`
+to `STOPPED` lifecycle. Increment 8D proved Day-0 fresh-first-boot
+manageability, whole-twin replacement, and complete destruction, while a
+same-realization vJunos restart failed. ADR 0014 therefore supersedes the
+persistent operational staging assumption; Increment 8E will implement the
+ephemeral pipeline.
 
 ## Authority boundary
 
@@ -120,8 +124,7 @@ provider `0.9.3-beta1` has no single state that is safe across every phase:
 - `STOPPED` is an operational stop valid only after a successful `STARTED`
   state. The provider rejects `DEFINED_ON_CORE` to `STOPPED`.
 - `DEFINED_ON_CORE` requested after operational use invokes reset/wipe
-  semantics. That transition is reserved for Increment 8D reset acceptance and
-  is not routine stop behavior.
+  semantics and is not routine stop behavior.
 
 Terraform does not infer lifecycle intent from state, CML observations,
 workspaces, time, or resource existence. Increment 8C-1 was plan-only and
@@ -133,8 +136,10 @@ it to operational `STOPPED`, and restored the legacy routers. Every lifecycle
 plan and apply changed only `cml2_lifecycle.twin`, and router stored
 configuration remained empty. See the
 [Increment 8C lifecycle acceptance report](../acceptance/terraform-cml-lifecycle-increment-8c.md).
-A later `DEFINED_ON_CORE` transition remains reset/wipe semantics reserved for
-Increment 8D.
+A later `DEFINED_ON_CORE` transition remains reset/wipe semantics. ADR 0014
+changes the normal staging contract to fresh create and complete destroy rather
+than persistent realization reuse. Reboot/restart is now an explicit scenario
+test, not general staging readiness.
 
 ## External connector
 
@@ -258,13 +263,12 @@ transition `STARTED` to `STOPPED`; no Junos configuration was involved. This is
 an operational-state normalization detail, not an NCDP configuration
 dependency.
 
-After Increment 8D-2, the accepted legacy lab remains deliberately STOPPED to
-prevent duplicate ownership of stable NetBox-managed endpoints. It has not been
-deleted or retired. The Terraform-created realization now operationally owns
-`core-02` at `192.168.4.14` for the accepted IOS XE compatibility path. Before
-future NCDP operations, NCDP must continue to freshly verify NetBox identity,
-OpenBao provenance, SSH host trust, platform, hostname, and topology. Permanent
-legacy-lab retirement remains a separate later decision.
+The accepted legacy lab remains deliberately STOPPED to prevent duplicate
+ownership of stable NetBox-managed endpoints. It has not been deleted or
+retired. The final Increment 8D Terraform twin was completely destroyed, so no
+Terraform realization currently owns `core-02` or `edge-junos-01`. Future
+ephemeral runs must freshly verify NetBox identity, OpenBao provenance, SSH host
+trust, platform, hostname, and topology before NCDP validation.
 
 ## Increment contracts
 
@@ -290,20 +294,25 @@ managed-resource actions, no persistent state, and no CML mutation. See the
 Complete. The separate deterministic topology was created with explicit
 `DEFINED_ON_CORE`. Fresh capacity admission preceded the accepted operational
 `STARTED` transition, and the twin was then accepted in steady `STOPPED` state
-before the legacy runtime was restored. A later `DEFINED_ON_CORE` request is
-reset/wipe semantics reserved for 8D. See the
+before the legacy runtime was restored. A later `DEFINED_ON_CORE` request has
+reset/wipe semantics. See the
 [lifecycle acceptance report](../acceptance/terraform-cml-lifecycle-increment-8c.md).
 
-### 8D — reset/recreate and NCDP compatibility
+### 8D — Day-0 investigation and lifecycle decision
 
-In progress. Increment 8D-1 accepted one-time manual CML browser-console
-bootstrap for IOS XE and its state-free runtime boundary. Increment 8D-2 accepted
-persistent IOS XE management/authentication bootstrap, the stable NetBox
-identity's operational transfer from the stopped legacy realization, strict SSH
-host-trust re-establishment, existing OpenBao credential reuse, and read-only
-NCDP planning. Increment 8D-2B accepts the personal-lab credential-bearing
-Day-0 exception and zero-console IOS XE replacement. Junos Day-0
-bootstrap should reuse the proven pattern. Whole-lab destroy/recreate and reset acceptance,
-deterministic lifecycle reconciliation, full cutover, and legacy retirement
-remain. Terraform controls CML infrastructure and minimum lab manageability,
-never NCDP-managed or production configuration.
+Complete. IOS XE and vJunos both achieved automatic, zero-console management on
+fresh first boot using NetBox/OpenBao authority and ADR 0013 Day-0 renders. An
+explicit whole-twin replacement recreated all 13 managed resources and
+converged cleanly. The same vJunos UUID then failed to restore ARP, ICMP, SSH,
+or NETCONF after restart, so the persistent 8D-3 acceptance contract did not
+pass. ADR 0014 adopts fresh ephemeral staging instead. The final Terraform twin
+was destroyed completely and its managed state is empty. See the
+[Increment 8D investigation report](../acceptance/terraform-cml-vjunos-day0-bootstrap-increment-8d.md).
+
+### 8E — ephemeral CML staging pipeline
+
+Next. Design a reusable Terraform root/module, build-scoped state and run
+identity, serialized fixed-address staging concurrency, create and first-boot
+readiness, NCDP staging validation, sanitized evidence, finally-style destroy,
+cleanup verification, and failed-destroy state retention. Buildkite integration
+belongs to this increment and is not implemented by 8D.

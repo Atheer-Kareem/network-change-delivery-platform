@@ -50,32 +50,30 @@ Ordering may change when implementation evidence requires it.
    deployment-job retries, and protected-main acceptance of the unchanged-request
    no-write path. See the
    [Increment 7C acceptance report](acceptance/buildkite-live-deployment-increment-7c.md).
-8. **Terraform/CML infrastructure as code — in progress:** Increment 8A read-only
+8. **Terraform/CML infrastructure as code — Increment 8D complete:** Increment 8A read-only
    discovery and architecture are complete. The 8B foundation and read-only
    plan are accepted after merge: exact toolchain and lock pins, credential-free
    CI validation, provider data-source discovery, external state handling, and
    zero CML mutation. Increment 8C is complete: topology creation,
    `DEFINED_ON_CORE`, controlled `STARTED`, operational `STOPPED`, configuration
-   secrecy, and legacy-runtime restoration are accepted. Increment 8D is in
-   progress: 8D-1 accepts the IOS XE CML browser console as the one-time manual
-   personal-twin bootstrap channel and proves that runtime configuration stays
-   outside CML stored configuration and Terraform state and disappears after an
-   unsaved restart. Console-keystroke automation was intentionally abandoned as
-   low-value for the end-to-end demonstration. Increment 8D-2 accepts persistent
-   IOS XE management bootstrap, operational transfer of the unchanged NetBox
-   identity from the deliberately stopped legacy realization, unchanged
-   OpenBao credential reuse, strict SSH host-trust replacement, existing NCDP
-   read-only planning, state secrecy, and restart persistence. Increment 8D-2B
-   accepts the ADR 0013 personal-lab Day-0 exception, replacing manual IOS XE
-   bootstrap with controlled, zero-console recreation and restart. Strict SSH,
-   TCP/830, and existing NCDP read-only planning/preflight succeeded. The exception
-   deliberately persists credential-bearing manageability bootstrap in external
-   Terraform state and CML Day-0 storage while NetBox and OpenBao remain
-   authoritative and NCDP-managed intent stays outside Terraform. Junos Day-0
-   bootstrap should reuse the proven pattern. Whole-lab reset/recreate, full
-   cutover, and legacy retirement remain. Terraform never manages production or
-   NCDP-managed device configuration. See the
+   secrecy, and legacy-runtime restoration are accepted. Increment 8D records
+   the Day-0 manageability investigation: IOS XE first-boot automation was
+   accepted; vJunos fresh-first-boot automation and the exact customizer payload
+   were proven independently; and explicit replacement of the lab, five nodes,
+   six links, and lifecycle resource proved a complete Terraform reset/recreate.
+   The same vJunos realization did not preserve management connectivity across
+   restart, so persistent 8D-3 acceptance failed. ADR 0014 supersedes that
+   staging model with an ephemeral lifecycle, and the current Terraform twin
+   was completely destroyed. Terraform never manages production or NCDP-managed
+   device configuration. See the
    [Terraform/CML digital-twin architecture](architecture/terraform-cml-digital-twin.md).
+   **Increment 8E — Ephemeral CML staging pipeline** is next: reusable
+   Terraform root/module design, build-scoped state and run identity, serialized
+   CML staging concurrency, create, first-boot readiness, NCDP staging
+   validation, sanitized evidence, finally-style destroy, cleanup verification,
+   failed-destroy state retention, and Buildkite integration. Parallel twins
+   require a future isolated management network. 8E is not implemented in the
+   Increment 8D PR.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.
 10. **Audit/configuration history:** typed `ChangeRecord`, durable correlation, and

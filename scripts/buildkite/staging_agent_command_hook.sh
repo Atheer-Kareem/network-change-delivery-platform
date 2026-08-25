@@ -14,8 +14,7 @@ if [[ -n "${BUILDKITE_PULL_REQUEST_REPO:-}" && \
   exit 2
 fi
 
-hook_directory="$(cd -- "$(dirname -- "${BUILDKITE_HOOK_PATH:?}")" && pwd -P)"
-staging_environment="$hook_directory/staging.env"
+staging_environment="${HOME:?}/.config/buildkite/ncdp-lab/hooks/ncdp-staging/staging.env"
 if [[ ! -f "$staging_environment" || -L "$staging_environment" ]]; then
   echo "protected staging environment is unavailable" >&2
   exit 2

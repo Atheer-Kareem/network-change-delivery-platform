@@ -164,8 +164,8 @@ def test_no_evidence_is_not_fabricated(tmp_path: Path) -> None:
 
 
 def test_agent_hook_rejects_fork_and_non_staging_commands(tmp_path: Path) -> None:
-    hook_directory = tmp_path / "agent-hooks"
-    hook_directory.mkdir()
+    hook_directory = tmp_path / ".config/buildkite/ncdp-lab/hooks/ncdp-staging"
+    hook_directory.mkdir(parents=True)
     (hook_directory / "staging.env").write_text("export STAGING_TEST=1\n")
     (hook_directory / "staging.env").chmod(0o600)
     wrapper = tmp_path / "scripts/buildkite/ephemeral_staging.sh"
@@ -177,7 +177,7 @@ def test_agent_hook_rejects_fork_and_non_staging_commands(tmp_path: Path) -> Non
         "BUILDKITE_COMMAND": "scripts/buildkite/ephemeral_staging.sh",
         "BUILDKITE_REPO": "git@github.com:example/ncdp.git",
         "BUILDKITE_PULL_REQUEST_REPO": "git@github.com:fork/ncdp.git",
-        "BUILDKITE_HOOK_PATH": str(hook_directory / "command"),
+        "HOME": str(tmp_path),
     }
     rejected = subprocess.run(
         [str(AGENT_HOOK)],

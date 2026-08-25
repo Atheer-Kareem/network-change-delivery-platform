@@ -73,9 +73,11 @@ Ordering may change when implementation evidence requires it.
    identity, build/run-scoped state contract, safe outputs, and credential-free
    static validation. 8E-2 is locally accepted: fresh creation, first-boot
    readiness, both read-only NCDP vendor chains, direct destroy from STARTED,
-   independent absence, and guarded state retirement passed. 8E-3 is next and
-   adds serialized Buildkite orchestration, staging workload identity, evidence
-   publication, and retained-state recovery operations. Parallel twins require
+   independent absence, and guarded state retirement passed. 8E-3 adds the
+   serialized Buildkite gate, staging workload identity, dedicated read-only
+   authority boundaries, trusted-agent PR admission, evidence publication, and
+   retained-state recovery. External same-repository PR-build acceptance remains
+   required before completion. Parallel twins require
    a future isolated management network.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.

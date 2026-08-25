@@ -11,6 +11,7 @@ def test_pipeline_contract() -> None:
     assert set(steps) == {
         "quality",
         "pipeline-contract",
+        "cml-staging",
         "promotion",
         "deployment-approval",
         "deploy-gate",
@@ -78,6 +79,19 @@ def test_pipeline_contract() -> None:
     )
 
     assert steps["pipeline-contract"]["agents"]["queue"] == "ncdp-validation"
+    staging = steps["cml-staging"]
+    assert staging["agents"]["queue"] == "ncdp-staging"
+    assert staging["depends_on"] == ["quality", "pipeline-contract"]
+    assert staging["command"] == "scripts/buildkite/ephemeral_staging.sh"
+    assert staging["concurrency"] == 1
+    assert staging["concurrency_group"] == "ncdp/cml-ephemeral-staging"
+    assert staging["retry"] == {
+        "automatic": False,
+        "manual": {
+            "allowed": False,
+            "reason": "Retained staging state requires explicit operator recovery.",
+        },
+    }
     assert steps["promotion"]["agents"]["queue"] == "ncdp-validation"
     assert steps["promotion"]["concurrency"] == 1
     assert steps["promotion"]["concurrency_group"] == "ncdp/batfish-promotion"
@@ -101,7 +115,7 @@ def test_pipeline_contract() -> None:
     )
     assert approval["submit"] == "Authorize exact promotion"
     assert "fields" not in approval
-    assert steps["promotion"]["depends_on"] == ["quality", "pipeline-contract"]
+    assert steps["promotion"]["depends_on"] == "cml-staging"
     assert steps["deployment-approval"]["depends_on"] == "promotion"
     assert steps["deploy-gate"]["depends_on"] == "deployment-approval"
     assert len(steps["pipeline-contract"]["commands"]) == 1

@@ -4,9 +4,9 @@
 
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.
 Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary
-and thin operator entry point. Increment 8E-3 will invoke that same boundary in
-Buildkite after separate identity and external acceptance; no live Buildkite
-staging step exists yet.
+and thin operator entry point. Increment 8E-3 invokes that same boundary from a
+serialized Buildkite step with dedicated workload, NetBox, and CML identities;
+it does not fork the lifecycle or add network writes.
 
 The normal lifecycle is absent, fresh create at `DEFINED_ON_CORE`, first boot
 through `STARTED`, readiness, NCDP staging validation, sanitized evidence,
@@ -48,8 +48,8 @@ The ephemeral root requires `staging_run_id` with no default. It is a non-secret
 1-40 character lowercase ASCII identifier containing only letters, digits, and
 hyphens and beginning with a letter or digit. The lab title is
 `NCDP Staging <run-id>`, making one realization attributable to one run without
-changing device targeting. Increment 8E-3 will derive this value
-deterministically from stable Buildkite build/run identity.
+changing device targeting. Buildkite derives it as
+`bk-${BUILDKITE_BUILD_ID}` from the immutable build UUID.
 
 The fixed NetBox-authoritative management addresses `192.168.4.14` and
 `192.168.4.20` require one admitted CML staging run at a time. Initial Buildkite
@@ -96,29 +96,31 @@ CML Configuration Customizer Scripts must already be enabled for vJunos Day-0
 processing. This is a controller-global infrastructure prerequisite verified
 outside Terraform. Neither root attempts to configure it.
 
-## Future Buildkite identities
+## Buildkite identities
 
-Buildkite staging must not use ambient `NCDP_OPENBAO_ROLE_ID` or
-`NCDP_OPENBAO_SECRET_ID`. Increment 8E-3 should use Buildkite OIDC with a new
-staging-specific audience, OpenBao JWT role, and policies rather than reuse the
-deployment identity role. The deployment role is bound to protected `main`, the
+Buildkite staging does not use ambient `NCDP_OPENBAO_ROLE_ID` or
+`NCDP_OPENBAO_SECRET_ID`. It uses audience `urn:ncdp:openbao:staging` and
+separate device-scoped staging roles rather than the deployment identity. The
+deployment role is bound to protected `main`, the
 `deploy-gate` step, approval semantics, and device-specific write workflow;
 reusing it would conflate staging infrastructure with production-like
 deployment authorization.
 
-The staging JWT role should bind the immutable pipeline subject plus exact
-build commit, branch policy, staging step key, build identity, and job identity,
-with short TTL and no default policy. Its policy should read only the two exact
+The staging roles bind the immutable pipeline subject and exact staging step,
+map build commit, branch, build, and job identity for application verification,
+and issue one-use tokens with no default policy. Their policies read only the two exact
 personal-lab device credential paths required for Day-0. NCDP should validate
-all mapped claims before credential access. PR trust and branch eligibility for
-a credential-bearing staging step require an explicit 8E-3 decision; Zone 1
-quality jobs remain unprivileged.
+all mapped claims before credential access. A trusted agent-owned command hook
+rejects fork PRs and commands other than the exact staging wrapper before
+checkout code can use staging credentials. Zone 1 quality jobs remain
+unprivileged.
 
-NetBox access should use a dedicated read-only token supplied by the protected
+NetBox access uses a dedicated read-only token supplied by the protected
 staging agent's secret mechanism, never a repository value or artifact. CML
-authentication should likewise be a dedicated short-lived staging credential
-delivered only to the serialized staging step, with address and trusted CA
-supplied separately. CML administrative capability, controller-global
-customizer changes, and deployment-device write capability are outside that
-identity. Concrete OpenBao roles/policies and Buildkite wiring are deferred to
-8E-3.
+authentication prefers a dedicated regular staging credential. The personal
+CML license rejects creation of additional users, so acceptance uses the
+existing personal-controller operator login to mint one process-memory bearer
+while rejecting ambient `CML2_TOKEN`. This is a platform limitation, not a
+least-privilege claim. Controller-global customizer changes and device writes
+remain outside staging. See
+[Buildkite ephemeral CML staging operations](buildkite-ephemeral-cml-staging-operations.md).

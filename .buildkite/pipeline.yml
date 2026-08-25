@@ -87,11 +87,25 @@ steps:
     agents:
       queue: ncdp-validation
 
-  - label: ":package: promotion"
-    key: promotion
+  - label: ":cloud: ephemeral CML staging"
+    key: cml-staging
     depends_on:
       - quality
       - pipeline-contract
+    command: scripts/buildkite/ephemeral_staging.sh
+    agents:
+      queue: ncdp-staging
+    concurrency: 1
+    concurrency_group: ncdp/cml-ephemeral-staging
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+        reason: "Retained staging state requires explicit operator recovery."
+
+  - label: ":package: promotion"
+    key: promotion
+    depends_on: cml-staging
     if: build.branch == "main" && build.pull_request.id == null
     command: .buildkite/scripts/promotion.sh
     agents:

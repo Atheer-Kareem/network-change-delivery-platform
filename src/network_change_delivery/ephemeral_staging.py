@@ -17,6 +17,13 @@ class StagingEvidence:
 
     schema_version: str
     staging_run_id: str
+    orchestrator: str = "local"
+    pipeline_id: str | None = None
+    build_id: str | None = None
+    build_commit: str | None = None
+    build_branch: str | None = None
+    step_key: str | None = None
+    job_id: str | None = None
     lab_id: str | None = None
     node_ids: dict[str, str] = field(default_factory=dict)
     link_ids: dict[str, str] = field(default_factory=dict)
@@ -72,13 +79,31 @@ def validate_run_directory(run_id: str, run_directory: Path) -> None:
         raise StagingError("run-scoped state already exists; recovery is required")
 
 
+def validate_recovery_destroy_graph(
+    state_addresses: set[str],
+    expected_addresses: set[str],
+    planned_changes: dict[str, str],
+) -> None:
+    """Require recovery to destroy only the exact retained managed subset."""
+    if not state_addresses or not state_addresses.issubset(expected_addresses):
+        raise StagingError("retained staging state addresses are rejected")
+    if set(planned_changes) != state_addresses or any(
+        action != "delete" for action in planned_changes.values()
+    ):
+        raise StagingError("recovery destroy graph is not exact")
+
+
 def run_staging_lifecycle(
     run_id: str,
     run_directory: Path,
     operations: StagingOperations,
+    *,
+    evidence: StagingEvidence | None = None,
 ) -> StagingEvidence:
     """Run create/start/validate and always attempt eligible cleanup once."""
-    evidence = StagingEvidence(schema_version="1", staging_run_id=run_id)
+    evidence = evidence or StagingEvidence(schema_version="1", staging_run_id=run_id)
+    if evidence.staging_run_id != run_id:
+        raise StagingError("staging evidence run identity mismatch")
     primary: Exception | None = None
     cleanup: Exception | None = None
     try:

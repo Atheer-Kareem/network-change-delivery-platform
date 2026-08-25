@@ -217,9 +217,11 @@ def _fingerprint_from_line(line: str) -> str | None:
     return f"SHA256:{digest}"
 
 
-def verify_existing_host_trust(device: InventoryDevice) -> str:
+def verify_existing_host_trust(
+    device: InventoryDevice, known_hosts: Path | None = None
+) -> str:
     """Confirm a known_hosts entry exists without discovering or trusting a key."""
-    known_hosts = _known_hosts_path()
+    known_hosts = known_hosts or _known_hosts_path()
     if not known_hosts.is_file():
         raise HostTrustError("known_hosts file is absent; establish trust separately")
     completed = subprocess.run(
@@ -241,8 +243,14 @@ def verify_existing_host_trust(device: InventoryDevice) -> str:
 class AnsibleRunnerCiscoAdapter:
     """Collect structured state and apply exact artifacts through Runner."""
 
-    def __init__(self, repository_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        repository_root: Path | None = None,
+        *,
+        known_hosts: Path | None = None,
+    ) -> None:
         self._root = deployment_repository_root(repository_root)
+        self._known_hosts = known_hosts
 
     @staticmethod
     def _inventory(device: InventoryDevice) -> dict[str, Any]:
@@ -268,7 +276,10 @@ class AnsibleRunnerCiscoAdapter:
         *,
         extravars: dict[str, Any] | None = None,
     ) -> tuple[object, dict[str, dict[str, Any]]]:
-        verify_existing_host_trust(device)
+        if self._known_hosts is None:
+            verify_existing_host_trust(device)
+        else:
+            verify_existing_host_trust(device, self._known_hosts)
         selected: dict[str, dict[str, Any]] = {}
 
         def handle_event(event: dict[str, Any]) -> None:
@@ -308,6 +319,16 @@ class AnsibleRunnerCiscoAdapter:
                             self._root
                         ),
                         "ANSIBLE_HOST_KEY_CHECKING": "True",
+                        **(
+                            {
+                                "ANSIBLE_SSH_COMMON_ARGS": (
+                                    "-o StrictHostKeyChecking=yes "
+                                    f"-o UserKnownHostsFile={self._known_hosts}"
+                                )
+                            }
+                            if self._known_hosts is not None
+                            else {}
+                        ),
                     },
                     event_handler=handle_event,
                     quiet=True,

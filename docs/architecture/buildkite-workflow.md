@@ -1,15 +1,18 @@
 # Buildkite workflow
 
-The 7A DAG is `quality` → `pipeline-contract` → `promotion` →
-`deployment-approval` → serialized `deploy-gate`. `quality` is a visible group:
+The current DAG is `quality` plus `pipeline-contract` → serialized
+`cml-staging` → main-only `promotion` → `deployment-approval` → serialized
+`deploy-gate`. `quality` is a visible group:
 one step builds a frozen `quality-base` Docker environment, then separate steps
 run the committed-diff, Ruff, pytest, ansible-lint, and package checks. The five
 tool checks reuse that exact build image. Validation uses `ncdp-validation`; the
 gate uses `ncdp-deploy` with concurrency group
 `ncdp/network-change-deployment` and limit one.
 
-Pull requests run only the shared validation steps. Promotion and approval are
-main, non-PR steps. Promotion has its own concurrency limit one and group
+Pull requests run shared validation and, for same-repository PRs, staging.
+Fork-origin staging is rejected by a trusted agent command hook. Promotion and
+approval are main, non-PR steps and promotion depends on same-build staging.
+Promotion has its own concurrency limit one and group
 `ncdp/batfish-promotion`. The host verifies Git identity and orchestrates Docker
 and artifact upload; readiness, assurance, bundle creation, and verification run
 in the pinned project promotion image. Docker Compose attaches that container
@@ -87,3 +90,10 @@ access. See [Buildkite protected live deployment](buildkite-live-deployment.md).
 The personal lab may use one Mac, but queues, agent processes, working
 directories, and deployment environment variables remain separate. Physical
 host isolation is not claimed.
+
+The staging queue is `ncdp-staging`, independently serialized in
+`ncdp/cml-ephemeral-staging`. It has no retry and uses build-UUID run identity,
+persistent external state, dedicated identities, run-scoped SSH trust, and
+sanitized evidence. It calls the accepted Python state machine; YAML and shell
+do not implement Terraform lifecycle decisions. See
+[Buildkite ephemeral CML staging operations](buildkite-ephemeral-cml-staging-operations.md).

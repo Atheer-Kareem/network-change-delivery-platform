@@ -5,6 +5,7 @@ import pytest
 from network_change_delivery.ephemeral_staging import (
     StagingError,
     run_staging_lifecycle,
+    validate_recovery_destroy_graph,
 )
 
 
@@ -104,3 +105,20 @@ def test_duplicate_run_state_fails_closed(tmp_path: Path) -> None:
     assert result.primary_failure == (
         "run-scoped state already exists; recovery is required"
     )
+
+
+def test_recovery_accepts_only_exact_delete_subset() -> None:
+    expected = {"cml2_lab.twin", "module.twin.cml2_node.core_02"}
+    validate_recovery_destroy_graph(
+        {"cml2_lab.twin"}, expected, {"cml2_lab.twin": "delete"}
+    )
+    with pytest.raises(StagingError, match="state addresses"):
+        validate_recovery_destroy_graph(
+            {"unrelated.resource"}, expected, {"unrelated.resource": "delete"}
+        )
+    with pytest.raises(StagingError, match="graph is not exact"):
+        validate_recovery_destroy_graph(
+            {"cml2_lab.twin"}, expected, {"cml2_lab.twin": "update"}
+        )
+    with pytest.raises(StagingError, match="graph is not exact"):
+        validate_recovery_destroy_graph({"cml2_lab.twin"}, expected, {})

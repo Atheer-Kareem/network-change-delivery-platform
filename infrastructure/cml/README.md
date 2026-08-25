@@ -155,8 +155,12 @@ sanitized `--evidence` destinations. It admits one fixed-address run, resolves
 authority inputs once, performs only safe-rendered live Terraform operations,
 attempts destroy in `finally`, independently verifies CML absence, and retires
 only the exact run directory after empty state is proven. Failed destroy or
-absence verification retains the directory for recovery. The script is local
-foundation code; no live Buildkite staging job exists yet.
+absence verification retains the directory for recovery. Increment 8E-3 invokes
+the same engine from serialized Buildkite staging. Its build-UUID run has an
+isolated backend, `TF_DATA_DIR`, and strict SSH trust beneath an agent-owned
+persistent state root; only sanitized evidence is uploaded. The retained-state
+operator command can only destroy an exact known run and retires state only
+after independent absence proof.
 
 CML Configuration Customizer Scripts must already be enabled for vJunos Day-0.
 This controller-global prerequisite is verified outside Terraform and is not

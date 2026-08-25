@@ -78,7 +78,9 @@ def test_host_key_acquisition_retries_and_creates_restrictive_trust(
     scans = iter(
         (
             SimpleNamespace(returncode=1, stdout=""),
-            SimpleNamespace(returncode=0, stdout="host ssh-ed25519 AAAA\n"),
+            SimpleNamespace(returncode=0, stdout="hash-1 ssh-ed25519 AAAA\n"),
+            SimpleNamespace(returncode=0, stdout="hash-2 ssh-ed25519 AAAA\n"),
+            SimpleNamespace(returncode=0, stdout="hash-3 ssh-ed25519 AAAA\n"),
         )
     )
 
@@ -87,12 +89,11 @@ def test_host_key_acquisition_retries_and_creates_restrictive_trust(
             return SimpleNamespace(returncode=0, stdout="")
         return next(scans)
 
-    clock = iter((0.0, 1.0, 2.0))
     monkeypatch.setattr(driver.subprocess, "run", run)
-    monkeypatch.setattr(driver.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(driver.time, "monotonic", lambda: 0.0)
     monkeypatch.setattr(driver.time, "sleep", lambda _seconds: None)
 
     operations._establish_host_trust("192.0.2.10", (22,))
 
-    assert operations._known_hosts.read_text() == "host ssh-ed25519 AAAA\n"
+    assert operations._known_hosts.read_text() == "hash-3 ssh-ed25519 AAAA\n"
     assert stat.S_IMODE(operations._known_hosts.stat().st_mode) == 0o600

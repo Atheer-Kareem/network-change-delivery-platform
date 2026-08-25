@@ -195,6 +195,13 @@ the generated libssh configuration and strict checking directly on the Runner
 inventory host as well as in the child environment, avoiding reliance on
 ambient plugin discovery while retaining exact-host verification.
 
+Build #102 exercised that direct binding but still observed a changed core-02
+host key between acquisition and the first libssh task. Fresh IOS XE can expose
+SSH while its first-boot key material is still settling. Host trust acquisition
+therefore now requires three consecutive samples with identical public key
+material (independent of hashed-host salt) before accepting the run-scoped
+strict-trust file.
+
 ## External PR build
 
 - Buildkite build/ID: pending

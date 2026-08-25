@@ -615,6 +615,8 @@ class LocalOperations:
             )
             deadline = time.monotonic() + 60
             scan = ""
+            previous_keys: frozenset[tuple[str, str]] | None = None
+            stable_samples = 0
             while time.monotonic() < deadline:
                 completed = subprocess.run(
                     ["ssh-keyscan", "-H", "-p", str(port), host],
@@ -624,10 +626,21 @@ class LocalOperations:
                 )
                 if completed.returncode == 0 and completed.stdout.strip():
                     scan = completed.stdout
-                    break
+                    keys = frozenset(
+                        (fields[1], fields[2])
+                        for line in scan.splitlines()
+                        if not line.startswith("#") and len(fields := line.split()) >= 3
+                    )
+                    if keys:
+                        stable_samples = (
+                            stable_samples + 1 if keys == previous_keys else 1
+                        )
+                        previous_keys = keys
+                        if stable_samples == 3:
+                            break
                 time.sleep(5)
-            if not scan:
-                raise StagingError("bounded SSH host-key acquisition failed")
+            if stable_samples != 3:
+                raise StagingError("bounded stable SSH host-key acquisition failed")
             with known_hosts.open("a", encoding="utf-8") as stream:
                 stream.write(scan)
         known_hosts.chmod(0o600)

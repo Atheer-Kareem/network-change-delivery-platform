@@ -151,7 +151,8 @@ def _bounded_read_failure(result: object) -> str:
     )
     exception_type = exception_types[-1] if exception_types else "none"
     frames = re.findall(
-        r"""File ["'][^"']*/([A-Za-z0-9_.-]+)["'], line \d+, in ([A-Za-z_][A-Za-z0-9_]*)""",
+        r"""File ["'][^"']*/([A-Za-z0-9_.-]+)["'], line \d+, in """
+        r"([A-Za-z_][A-Za-z0-9_]*)",
         exception,
     )[-4:]
     frame_text = ",".join(f"{filename}:{function}" for filename, function in frames)

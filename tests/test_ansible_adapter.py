@@ -143,6 +143,34 @@ def test_read_only_task_failure_message_is_allowlist_classified(
         )
 
 
+def test_read_only_task_exception_is_allowlist_classified(monkeypatch) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(status="failed", rc=2),
+            {
+                IDENTITY_TASK: {
+                    "_ncdp_event": "runner_on_failed",
+                    "msg": "failed",
+                    "exception": "traceback omitted: AttributeError",
+                }
+            },
+        ),
+    )
+    with pytest.raises(ProviderError, match="runtime attribute failed"):
+        adapter.discover(
+            InventoryDevice(
+                name="router-1",
+                host="192.0.2.10",
+                platform="cisco_iosxe",
+                expected_hostname="lab-router",
+            ),
+            DeviceCredentials(username="user", password="secret"),
+        )
+
+
 def test_known_hosts_path_ignores_custom_environment(
     monkeypatch,
 ) -> None:

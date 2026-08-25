@@ -22,6 +22,7 @@ import httpx
 from network_change_delivery.ansible_adapter import (
     AnsibleRunnerCiscoAdapter,
     ProviderError,
+    ProviderReadinessError,
     verify_deployment_ansible_runtime,
 )
 from network_change_delivery.buildkite_identity import (
@@ -84,7 +85,7 @@ def retry_provider_read(action: Any, *, timeout: int = 180, interval: int = 15) 
         try:
             action()
             return attempts
-        except ProviderError:
+        except ProviderReadinessError:
             if time.monotonic() >= deadline:
                 raise
             time.sleep(interval)

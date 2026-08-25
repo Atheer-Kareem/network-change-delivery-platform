@@ -37,6 +37,10 @@ class ProviderError(RuntimeError):
     """Bounded provider failure that never embeds raw Runner output."""
 
 
+class ProviderReadinessError(ProviderError):
+    """Bounded transient read failure eligible for readiness retry."""
+
+
 class HostTrustError(ProviderError):
     """Raised when the candidate lacks an existing trusted host-key entry."""
 
@@ -51,7 +55,9 @@ class DeploymentRuntimeError(ProviderError):
 def _bounded_read_failure(result: object) -> str:
     """Classify a Runner task failure without exposing its provider message."""
     values = result if isinstance(result, dict) else {}
-    message = str(values.get("msg", "")).lower()
+    message = "\n".join(
+        str(values.get(key, "")).lower() for key in ("msg", "exception")
+    )
     categories = (
         (("connection type", "not valid"), "Cisco connection type was rejected"),
         (("ssh connection failed",), "Cisco SSH session failed"),
@@ -66,8 +72,17 @@ def _bounded_read_failure(result: object) -> str:
         (("couldn't resolve module",), "Cisco collection runtime was unavailable"),
         (("module", "not found"), "Cisco collection runtime was unavailable"),
         (("failed to import",), "Cisco collection runtime import failed"),
+        (("modulenotfounderror",), "Cisco collection runtime import failed"),
+        (("importerror",), "Cisco collection runtime import failed"),
         (("required", "library"), "Cisco collection runtime import failed"),
         (("libssh",), "Cisco libssh runtime failed"),
+        (("ansibleconnectionfailure",), "Cisco SSH session failed"),
+        (("connectionreseterror",), "Cisco SSH session failed"),
+        (("permissionerror",), "Cisco collection runtime permission failed"),
+        (("filenotfounderror",), "Cisco collection runtime file was unavailable"),
+        (("attributeerror",), "Cisco collection runtime attribute failed"),
+        (("keyerror",), "Cisco collection runtime key failed"),
+        (("typeerror",), "Cisco collection runtime type failed"),
         (("unsupported parameters",), "Cisco collection parameters were rejected"),
         (("network os", "not supported"), "Cisco network OS plugin was rejected"),
         (
@@ -83,25 +98,31 @@ def _bounded_read_failure(result: object) -> str:
             return classification
     approved = {
         "argument",
+        "attributeerror",
         "authentication",
         "command",
         "connection",
         "enable",
         "executable",
         "failed",
+        "filenotfounderror",
         "host",
         "import",
+        "importerror",
         "invalid",
         "json",
         "key",
+        "keyerror",
         "library",
         "libssh",
         "missing",
         "module",
+        "modulenotfounderror",
         "network",
         "os",
         "parameters",
         "paramiko",
+        "permissionerror",
         "privilege",
         "python",
         "required",
@@ -109,7 +130,9 @@ def _bounded_read_failure(result: object) -> str:
         "socket",
         "supported",
         "terminal",
+        "traceback",
         "timeout",
+        "typeerror",
         "unsupported",
         "valid",
     }
@@ -441,9 +464,17 @@ class AnsibleRunnerCiscoAdapter:
         ):
             identity_event = selected.get(IDENTITY_TASK, {}).get("_ncdp_event")
             if identity_event == "runner_on_unreachable":
-                raise ProviderError("trusted Cisco SSH collection was unreachable")
+                raise ProviderReadinessError(
+                    "trusted Cisco SSH collection was unreachable"
+                )
             if identity_event == "runner_on_failed":
-                raise ProviderError(_bounded_read_failure(selected[IDENTITY_TASK]))
+                classification = _bounded_read_failure(selected[IDENTITY_TASK])
+                if classification in {
+                    "Cisco SSH session failed",
+                    "Cisco read-only command timed out",
+                }:
+                    raise ProviderReadinessError(classification)
+                raise ProviderError(classification)
             if IDENTITY_TASK not in selected:
                 raise ProviderError(
                     "Cisco collection failed before a bounded identity result"

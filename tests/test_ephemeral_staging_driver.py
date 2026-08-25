@@ -7,7 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from network_change_delivery.ansible_adapter import ProviderError
+from network_change_delivery.ansible_adapter import (
+    ProviderError,
+    ProviderReadinessError,
+)
 
 SCRIPT = Path(__file__).parents[1] / "scripts/run_ephemeral_cml_staging.py"
 SPEC = importlib.util.spec_from_file_location("run_ephemeral_cml_staging", SCRIPT)
@@ -23,7 +26,7 @@ def test_provider_read_retries_bounded_provider_failures(monkeypatch) -> None:
         nonlocal calls
         calls += 1
         if calls < 3:
-            raise ProviderError("bounded provider read failed")
+            raise ProviderReadinessError("bounded provider read failed")
 
     monkeypatch.setattr(driver.time, "monotonic", lambda: 0.0)
     monkeypatch.setattr(driver.time, "sleep", lambda _seconds: None)
@@ -46,11 +49,25 @@ def test_provider_read_does_not_retry_non_provider_failure(monkeypatch) -> None:
 def test_provider_read_stops_at_deadline(monkeypatch) -> None:
     monkeypatch.setattr(driver.time, "sleep", lambda _seconds: None)
 
-    with pytest.raises(ProviderError, match="still unavailable"):
+    with pytest.raises(ProviderReadinessError, match="still unavailable"):
         driver.retry_provider_read(
-            lambda: (_ for _ in ()).throw(ProviderError("still unavailable")),
+            lambda: (_ for _ in ()).throw(ProviderReadinessError("still unavailable")),
             timeout=0,
         )
+
+
+def test_provider_read_does_not_retry_deterministic_provider_error(
+    monkeypatch,
+) -> None:
+    sleeps = []
+    monkeypatch.setattr(driver.time, "sleep", sleeps.append)
+
+    with pytest.raises(ProviderError, match="deterministic task failure"):
+        driver.retry_provider_read(
+            lambda: (_ for _ in ()).throw(ProviderError("deterministic task failure"))
+        )
+
+    assert sleeps == []
 
 
 def test_host_key_acquisition_retries_and_creates_restrictive_trust(

@@ -128,6 +128,15 @@ emits only the intersection with a small approved diagnostic vocabulary plus
 the presence of four safe result-shape keys. Cleanup, absence, and state
 retirement passed and Build #91 was not retried.
 
+Build #92 narrowed the identity-task result to a generic failed message with an
+exception field; the exception content was not published. Classification now
+inspects that field in process for fixed Python, Ansible, transport, import,
+file, permission, and compatibility categories while exposing only the bounded
+category or approved signals. Retry eligibility is now limited to unreachable
+connections, SSH session failures, and read-only command timeouts; deterministic
+task exceptions fail immediately. Cleanup, absence, and retirement passed and
+Build #92 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

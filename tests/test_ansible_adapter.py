@@ -268,6 +268,52 @@ def test_nonstandard_ansible_failure_class_is_bounded(monkeypatch) -> None:
         )
 
 
+def test_requested_runner_diagnostic_is_local_restrictive_and_redacted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    diagnostic = tmp_path / "diagnostics" / "runner.json"
+    secret = "must-not-escape"
+    monkeypatch.setenv("NCDP_RUNNER_DIAGNOSTIC_PATH", str(diagnostic))
+    monkeypatch.setattr(
+        "network_change_delivery.ansible_adapter.verify_existing_host_trust",
+        lambda _device: "safe fingerprint",
+    )
+    monkeypatch.setattr(
+        "network_change_delivery.ansible_adapter.ansible_runner.run",
+        lambda **kwargs: (
+            kwargs["event_handler"](
+                {
+                    "event": "runner_on_failed",
+                    "event_data": {
+                        "task": IDENTITY_TASK,
+                        "res": {
+                            "msg": f"provider detail {secret}",
+                            "exception": f"traceback {secret}",
+                        },
+                    },
+                }
+            )
+            or SimpleNamespace(status="failed", rc=2)
+        ),
+    )
+    adapter = AnsibleRunnerCiscoAdapter(tmp_path)
+    adapter._run(
+        InventoryDevice(
+            name="router-1",
+            host="192.0.2.10",
+            platform="cisco_iosxe",
+            expected_hostname="lab-router",
+        ),
+        DeviceCredentials(username="user", password=secret),
+        "collect_interface_state.yml",
+    )
+
+    contents = diagnostic.read_text()
+    assert "[redacted]" in contents
+    assert secret not in contents
+    assert diagnostic.stat().st_mode & 0o777 == 0o600
+
+
 def test_known_hosts_path_ignores_custom_environment(
     monkeypatch,
 ) -> None:

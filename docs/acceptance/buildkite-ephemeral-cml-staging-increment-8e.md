@@ -174,6 +174,13 @@ in-memory credential values explicitly into that child mapping; they remain
 inside the temporary Runner boundary and are neither logged nor evidenced.
 Cleanup, absence, and retirement passed and Build #98 was not retried.
 
+Build #99 repeated the same identity-task failure after credentials were passed
+explicitly through Runner `envvars`, disproving credential propagation as the
+root cause. Classifier expansion stopped. One subsequent fresh run writes the
+identity task's credential-redacted result to a mode-0600 agent-local diagnostic
+outside the checkout and artifact boundary. This temporary diagnostic path is
+removed after root-cause isolation and cannot be part of final acceptance.
+
 ## External PR build
 
 - Buildkite build/ID: pending

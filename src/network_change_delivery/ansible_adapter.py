@@ -186,6 +186,32 @@ def _bounded_read_failure(result: object) -> str:
     )
 
 
+def _write_restricted_runner_diagnostic(
+    selected: dict[str, dict[str, Any]], credentials: DeviceCredentials
+) -> None:
+    """Write one explicitly requested, local-only redacted Runner diagnostic."""
+    configured = os.environ.get("NCDP_RUNNER_DIAGNOSTIC_PATH")
+    if not configured:
+        return
+    path = Path(configured)
+    if not path.is_absolute() or path.is_symlink():
+        raise ProviderError("Runner diagnostic path is unsafe")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    identity = selected.get(IDENTITY_TASK, {})
+    payload = {
+        "event": identity.get("_ncdp_event"),
+        "keys": sorted(str(key) for key in identity),
+        "msg": identity.get("msg"),
+        "exception": identity.get("exception"),
+    }
+    rendered = json.dumps(payload, sort_keys=True, default=str)
+    for secret in (credentials.username, credentials.password):
+        rendered = rendered.replace(secret, "[redacted]")
+    path.write_text(rendered + "\n", encoding="utf-8")
+    path.chmod(0o600)
+
+
 SYSTEM_ANSIBLE_COLLECTIONS = Path("/opt/ansible/collections")
 _COLLECTION_NAME = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
 _EXACT_COLLECTION_VERSION = re.compile(r"[0-9]+(?:\.[0-9]+){2}")
@@ -486,6 +512,7 @@ class AnsibleRunnerCiscoAdapter:
                     quiet=True,
                     rotate_artifacts=1,
                 )
+            _write_restricted_runner_diagnostic(selected, credentials)
             return result, selected
 
     def discover(

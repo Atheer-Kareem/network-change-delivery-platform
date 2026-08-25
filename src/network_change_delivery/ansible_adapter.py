@@ -50,9 +50,11 @@ class DeploymentRuntimeError(ProviderError):
 
 def _bounded_read_failure(result: object) -> str:
     """Classify a Runner task failure without exposing its provider message."""
-    message = str(result.get("msg", "")).lower() if isinstance(result, dict) else ""
+    values = result if isinstance(result, dict) else {}
+    message = str(values.get("msg", "")).lower()
     categories = (
         (("connection type", "not valid"), "Cisco connection type was rejected"),
+        (("ssh connection failed",), "Cisco SSH session failed"),
         (("authentication",), "Cisco authentication was rejected"),
         (("permission denied",), "Cisco authentication was rejected"),
         (("host key",), "Cisco host trust was rejected"),
@@ -63,12 +65,63 @@ def _bounded_read_failure(result: object) -> str:
         (("timed out",), "Cisco read-only command timed out"),
         (("couldn't resolve module",), "Cisco collection runtime was unavailable"),
         (("module", "not found"), "Cisco collection runtime was unavailable"),
+        (("failed to import",), "Cisco collection runtime import failed"),
+        (("required", "library"), "Cisco collection runtime import failed"),
+        (("libssh",), "Cisco libssh runtime failed"),
+        (("unsupported parameters",), "Cisco collection parameters were rejected"),
+        (("network os", "not supported"), "Cisco network OS plugin was rejected"),
+        (
+            ("automatically determine", "network os"),
+            "Cisco network OS detection failed",
+        ),
+        (("module failure",), "Cisco facts module execution failed"),
+        (("json", "response"), "Cisco facts response decoding failed"),
         (("invalid input",), "Cisco rejected a read-only CLI command"),
     )
     for needles, classification in categories:
         if all(needle in message for needle in needles):
             return classification
-    return "Cisco read-only identity task failed without a classified result"
+    approved = {
+        "argument",
+        "authentication",
+        "command",
+        "connection",
+        "enable",
+        "executable",
+        "failed",
+        "host",
+        "import",
+        "invalid",
+        "json",
+        "key",
+        "library",
+        "libssh",
+        "missing",
+        "module",
+        "network",
+        "os",
+        "parameters",
+        "paramiko",
+        "privilege",
+        "python",
+        "required",
+        "response",
+        "socket",
+        "supported",
+        "terminal",
+        "timeout",
+        "unsupported",
+        "valid",
+    }
+    signals = sorted(set(re.findall(r"[a-z]+", message)) & approved)
+    shape = [
+        key
+        for key in ("exception", "module_stderr", "module_stdout", "results")
+        if key in values
+    ]
+    signal_text = ",".join(signals) or "none"
+    shape_text = ",".join(shape) or "none"
+    return f"Cisco identity failure signals={signal_text} shape={shape_text}"
 
 
 SYSTEM_ANSIBLE_COLLECTIONS = Path("/opt/ansible/collections")

@@ -108,7 +108,10 @@ def test_read_only_connection_failure_has_bounded_classification(monkeypatch) ->
         ),
         ("command timeout triggered", "Cisco read-only command timed out"),
         ("invalid input detected", "Cisco rejected a read-only CLI command"),
-        ("unrecognized provider detail", "without a classified result"),
+        (
+            "unrecognized provider module detail",
+            "signals=module shape=none",
+        ),
     ],
 )
 def test_read_only_task_failure_message_is_allowlist_classified(

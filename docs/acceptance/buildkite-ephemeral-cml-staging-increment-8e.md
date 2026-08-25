@@ -120,6 +120,14 @@ allowlisted task-result categories and withholds unknown provider text, while
 failed-attempt counts are recorded. Cleanup, absence, and retirement passed and
 Build #90 was not retried.
 
+Build #91 recorded 13 failed authenticated IOS identity-task attempts across the
+bounded window. Its message did not match the first allowlist; no raw text was
+published. The classifier now covers additional fixed runtime, transport,
+platform, parameter, execution, and response categories. Its final fallback
+emits only the intersection with a small approved diagnostic vocabulary plus
+the presence of four safe result-shape keys. Cleanup, absence, and state
+retirement passed and Build #91 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

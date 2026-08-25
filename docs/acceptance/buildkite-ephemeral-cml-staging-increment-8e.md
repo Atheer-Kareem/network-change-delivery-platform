@@ -150,6 +150,14 @@ function identifiers. Full paths, line numbers, messages, arguments, and values
 remain withheld. Cleanup, absence, and retirement passed and Build #94 was not
 retried.
 
+Build #96 (the clean formatting successor to superseded Build #95) found that
+Ansible's exception rendering matched neither conventional traceback frames nor
+an `Error`/`Exception` class. The structural parser now also recognizes bounded
+identifiers ending in `Fail`/`Failure` and Python basenames followed by function
+identifiers under nonstandard traceback rendering. It still exposes no paths,
+line numbers, messages, arguments, or values. Cleanup, absence, and retirement
+passed and Build #96 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

@@ -146,13 +146,14 @@ def _bounded_read_failure(result: object) -> str:
     shape_text = ",".join(shape) or "none"
     exception = str(values.get("exception", ""))
     exception_types = re.findall(
-        r"\b(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception))\b",
+        r"\b(?:[A-Za-z_][A-Za-z0-9_]*\.)*"
+        r"([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Failure|Fail))\b",
         exception,
     )
     exception_type = exception_types[-1] if exception_types else "none"
     frames = re.findall(
-        r"""File ["'][^"']*/([A-Za-z0-9_.-]+)["'], line \d+, in """
-        r"([A-Za-z_][A-Za-z0-9_]*)",
+        r"\b([A-Za-z_][A-Za-z0-9_.-]*\.py)\b[^\n]{0,120}"
+        r"\bin\s+([A-Za-z_][A-Za-z0-9_]*)\b",
         exception,
     )[-4:]
     frame_text = ",".join(f"{filename}:{function}" for filename, function in frames)

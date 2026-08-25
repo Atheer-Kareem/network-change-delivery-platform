@@ -237,6 +237,34 @@ def test_unknown_task_exception_exposes_only_bounded_frames(monkeypatch) -> None
     assert secret not in str(caught.value)
 
 
+def test_nonstandard_ansible_failure_class_is_bounded(monkeypatch) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(status="failed", rc=2),
+            {
+                IDENTITY_TASK: {
+                    "_ncdp_event": "runner_on_failed",
+                    "msg": "failed",
+                    "exception": "raise ansible.errors.AnsibleActionFail(value)",
+                }
+            },
+        ),
+    )
+    with pytest.raises(ProviderError, match="exception_type=AnsibleActionFail"):
+        adapter.discover(
+            InventoryDevice(
+                name="router-1",
+                host="192.0.2.10",
+                platform="cisco_iosxe",
+                expected_hostname="lab-router",
+            ),
+            DeviceCredentials(username="user", password="secret"),
+        )
+
+
 def test_known_hosts_path_ignores_custom_environment(
     monkeypatch,
 ) -> None:

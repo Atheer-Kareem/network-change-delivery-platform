@@ -839,9 +839,6 @@ def main() -> int:
             )
             if args.run_directory.resolve() != expected_run_directory:
                 raise StagingError("Buildkite staging run directory mismatch")
-            os.environ["NCDP_RUNNER_DIAGNOSTIC_PATH"] = str(
-                state_root / "diagnostics" / f"{buildkite_context.staging_run_id}.json"
-            )
             buildkite_jwt = read_buildkite_oidc_jwt(sys.stdin)
         validate_run_directory(args.run_id, args.run_directory)
         operations = LocalOperations(

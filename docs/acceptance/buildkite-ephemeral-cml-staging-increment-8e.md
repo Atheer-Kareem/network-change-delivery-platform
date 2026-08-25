@@ -210,6 +210,13 @@ therefore continues using ambient known-hosts state. Cisco `network_cli` now
 uses the already pinned and supported Paramiko 4.x transport, whose strict
 known-host handling reads the explicitly isolated run-scoped `HOME`.
 
+Build #106 passed the complete lifecycle with that transport correction. Before
+final acceptance, the temporary Runner diagnostic path was removed, device
+credentials were narrowed to Runner's child `envvars` without parent-process
+environment mutation, and traceback-shape diagnostics were replaced by a fixed
+secret-free fallback while durable operational classifications were retained.
+The resulting hardening commit requires its own fresh green staging build.
+
 Build #103 was manually canceled and is excluded from acceptance because two
 local processes had registered the same staging-agent name before the build.
 The duplicate launchd service was unloaded, and the known-good foreground

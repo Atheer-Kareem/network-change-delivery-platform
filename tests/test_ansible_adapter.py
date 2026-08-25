@@ -1,5 +1,6 @@
 """Tests for bounded, secret-safe Runner result normalization."""
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -110,9 +111,7 @@ def test_read_only_connection_failure_has_bounded_classification(monkeypatch) ->
         ("invalid input detected", "Cisco rejected a read-only CLI command"),
         (
             "unrecognized provider module detail",
-            "signals=module shape=none exception_type=none frames=none "
-            "structural_tokens=none exception_kind=NoneType exception_length=0 "
-            "exception_lines=0",
+            "Cisco read-only task failed",
         ),
     ],
 )
@@ -145,35 +144,7 @@ def test_read_only_task_failure_message_is_allowlist_classified(
         )
 
 
-def test_read_only_task_exception_is_allowlist_classified(monkeypatch) -> None:
-    adapter = AnsibleRunnerCiscoAdapter()
-    monkeypatch.setattr(
-        adapter,
-        "_run",
-        lambda *_args, **_kwargs: (
-            SimpleNamespace(status="failed", rc=2),
-            {
-                IDENTITY_TASK: {
-                    "_ncdp_event": "runner_on_failed",
-                    "msg": "failed",
-                    "exception": "traceback omitted: AttributeError",
-                }
-            },
-        ),
-    )
-    with pytest.raises(ProviderError, match="runtime attribute failed"):
-        adapter.discover(
-            InventoryDevice(
-                name="router-1",
-                host="192.0.2.10",
-                platform="cisco_iosxe",
-                expected_hostname="lab-router",
-            ),
-            DeviceCredentials(username="user", password="secret"),
-        )
-
-
-def test_unknown_task_exception_exposes_only_bounded_class_name(monkeypatch) -> None:
+def test_unknown_task_exception_is_bounded_and_secret_free(monkeypatch) -> None:
     adapter = AnsibleRunnerCiscoAdapter()
     secret = "must-not-escape"
     monkeypatch.setattr(
@@ -190,7 +161,7 @@ def test_unknown_task_exception_exposes_only_bounded_class_name(monkeypatch) -> 
             },
         ),
     )
-    with pytest.raises(ProviderError) as caught:
+    with pytest.raises(ProviderError, match=r"^Cisco read-only task failed$") as caught:
         adapter.discover(
             InventoryDevice(
                 name="router-1",
@@ -200,118 +171,7 @@ def test_unknown_task_exception_exposes_only_bounded_class_name(monkeypatch) -> 
             ),
             DeviceCredentials(username="user", password=secret),
         )
-    assert "exception_type=VendorProtocolError" in str(caught.value)
     assert secret not in str(caught.value)
-
-
-def test_unknown_task_exception_exposes_only_bounded_frames(monkeypatch) -> None:
-    adapter = AnsibleRunnerCiscoAdapter()
-    secret = "must-not-escape"
-    exception = (
-        f'Traceback: File "/private/{secret}/network.py", line 12, in run\n'
-        'File "/private/provider/action.py", line 34, in execute\n'
-    )
-    monkeypatch.setattr(
-        adapter,
-        "_run",
-        lambda *_args, **_kwargs: (
-            SimpleNamespace(status="failed", rc=2),
-            {
-                IDENTITY_TASK: {
-                    "_ncdp_event": "runner_on_failed",
-                    "msg": "failed",
-                    "exception": exception,
-                }
-            },
-        ),
-    )
-    with pytest.raises(ProviderError) as caught:
-        adapter.discover(
-            InventoryDevice(
-                name="router-1",
-                host="192.0.2.10",
-                platform="cisco_iosxe",
-                expected_hostname="lab-router",
-            ),
-            DeviceCredentials(username="user", password=secret),
-        )
-    assert "frames=network.py:run,action.py:execute" in str(caught.value)
-    assert "structural_tokens=Traceback" in str(caught.value)
-    assert secret not in str(caught.value)
-
-
-def test_nonstandard_ansible_failure_class_is_bounded(monkeypatch) -> None:
-    adapter = AnsibleRunnerCiscoAdapter()
-    monkeypatch.setattr(
-        adapter,
-        "_run",
-        lambda *_args, **_kwargs: (
-            SimpleNamespace(status="failed", rc=2),
-            {
-                IDENTITY_TASK: {
-                    "_ncdp_event": "runner_on_failed",
-                    "msg": "failed",
-                    "exception": "raise ansible.errors.AnsibleActionFail(value)",
-                }
-            },
-        ),
-    )
-    with pytest.raises(ProviderError, match="exception_type=AnsibleActionFail"):
-        adapter.discover(
-            InventoryDevice(
-                name="router-1",
-                host="192.0.2.10",
-                platform="cisco_iosxe",
-                expected_hostname="lab-router",
-            ),
-            DeviceCredentials(username="user", password="secret"),
-        )
-
-
-def test_requested_runner_diagnostic_is_local_restrictive_and_redacted(
-    tmp_path: Path, monkeypatch
-) -> None:
-    diagnostic = tmp_path / "diagnostics" / "runner.json"
-    secret = "must-not-escape"
-    monkeypatch.setenv("NCDP_RUNNER_DIAGNOSTIC_PATH", str(diagnostic))
-    monkeypatch.setattr(
-        "network_change_delivery.ansible_adapter.verify_existing_host_trust",
-        lambda _device: "safe fingerprint",
-    )
-    monkeypatch.setattr(
-        "network_change_delivery.ansible_adapter.ansible_runner.run",
-        lambda **kwargs: (
-            kwargs["event_handler"](
-                {
-                    "event": "runner_on_failed",
-                    "event_data": {
-                        "task": IDENTITY_TASK,
-                        "res": {
-                            "msg": f"provider detail {secret}",
-                            "exception": f"traceback {secret}",
-                        },
-                    },
-                }
-            )
-            or SimpleNamespace(status="failed", rc=2)
-        ),
-    )
-    adapter = AnsibleRunnerCiscoAdapter(tmp_path)
-    adapter._run(
-        InventoryDevice(
-            name="router-1",
-            host="192.0.2.10",
-            platform="cisco_iosxe",
-            expected_hostname="lab-router",
-        ),
-        DeviceCredentials(username="user", password=secret),
-        "collect_interface_state.yml",
-    )
-
-    contents = diagnostic.read_text()
-    assert "[redacted]" in contents
-    assert secret not in contents
-    assert diagnostic.stat().st_mode & 0o777 == 0o600
 
 
 def test_known_hosts_path_ignores_custom_environment(
@@ -326,6 +186,8 @@ def test_runner_uses_the_shared_effective_collection_path(
 ) -> None:
     collection_root = tmp_path / "agent-collections"
     monkeypatch.setenv("ANSIBLE_COLLECTIONS_PATH", str(collection_root))
+    monkeypatch.setenv("NCDP_DEVICE_USERNAME", "parent-user")
+    monkeypatch.setenv("NCDP_DEVICE_PASSWORD", "parent-password")
     monkeypatch.setattr(
         "network_change_delivery.ansible_adapter.verify_existing_host_trust",
         lambda _device: "safe fingerprint",
@@ -357,6 +219,8 @@ def test_runner_uses_the_shared_effective_collection_path(
     assert captured["envvars"]["NCDP_DEVICE_PASSWORD"] == "secret"
     assert captured["envvars"]["ANSIBLE_PERSISTENT_CONTROL_PATH_DIR"].endswith("/pc")
     assert len(captured["envvars"]["ANSIBLE_PERSISTENT_CONTROL_PATH_DIR"]) < 90
+    assert os.environ["NCDP_DEVICE_USERNAME"] == "parent-user"
+    assert os.environ["NCDP_DEVICE_PASSWORD"] == "parent-password"
 
 
 def test_runner_gives_paramiko_the_run_scoped_known_hosts_home(

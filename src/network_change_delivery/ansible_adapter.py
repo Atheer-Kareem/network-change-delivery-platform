@@ -11,7 +11,6 @@ import stat
 import subprocess
 import tempfile
 from collections.abc import Mapping
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -75,14 +74,8 @@ def _bounded_read_failure(result: object) -> str:
         (("modulenotfounderror",), "Cisco collection runtime import failed"),
         (("importerror",), "Cisco collection runtime import failed"),
         (("required", "library"), "Cisco collection runtime import failed"),
-        (("libssh",), "Cisco libssh runtime failed"),
         (("ansibleconnectionfailure",), "Cisco SSH session failed"),
         (("connectionreseterror",), "Cisco SSH session failed"),
-        (("permissionerror",), "Cisco collection runtime permission failed"),
-        (("filenotfounderror",), "Cisco collection runtime file was unavailable"),
-        (("attributeerror",), "Cisco collection runtime attribute failed"),
-        (("keyerror",), "Cisco collection runtime key failed"),
-        (("typeerror",), "Cisco collection runtime type failed"),
         (("unsupported parameters",), "Cisco collection parameters were rejected"),
         (("network os", "not supported"), "Cisco network OS plugin was rejected"),
         (
@@ -96,120 +89,7 @@ def _bounded_read_failure(result: object) -> str:
     for needles, classification in categories:
         if all(needle in message for needle in needles):
             return classification
-    approved = {
-        "argument",
-        "attributeerror",
-        "authentication",
-        "command",
-        "connection",
-        "enable",
-        "executable",
-        "failed",
-        "filenotfounderror",
-        "host",
-        "import",
-        "importerror",
-        "invalid",
-        "json",
-        "key",
-        "keyerror",
-        "library",
-        "libssh",
-        "missing",
-        "module",
-        "modulenotfounderror",
-        "network",
-        "os",
-        "parameters",
-        "paramiko",
-        "permissionerror",
-        "privilege",
-        "python",
-        "required",
-        "response",
-        "socket",
-        "supported",
-        "terminal",
-        "traceback",
-        "timeout",
-        "typeerror",
-        "unsupported",
-        "valid",
-    }
-    signals = sorted(set(re.findall(r"[a-z]+", message)) & approved)
-    shape = [
-        key
-        for key in ("exception", "module_stderr", "module_stdout", "results")
-        if key in values
-    ]
-    signal_text = ",".join(signals) or "none"
-    shape_text = ",".join(shape) or "none"
-    exception = str(values.get("exception", ""))
-    exception_types = re.findall(
-        r"\b(?:[A-Za-z_][A-Za-z0-9_]*\.)*"
-        r"([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Failure|Fail))\b",
-        exception,
-    )
-    exception_type = exception_types[-1] if exception_types else "none"
-    frames = re.findall(
-        r"\b([A-Za-z_][A-Za-z0-9_.-]*\.py)\b[^\n]{0,120}"
-        r"\bin\s+([A-Za-z_][A-Za-z0-9_]*)\b",
-        exception,
-    )[-4:]
-    frame_text = ",".join(f"{filename}:{function}" for filename, function in frames)
-    frame_text = frame_text or "none"
-    structural_tokens = sorted(
-        {
-            token
-            for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{2,63}\b", exception)
-            if token.startswith(
-                (
-                    "Ansible",
-                    "Connection",
-                    "Module",
-                    "Network",
-                    "Traceback",
-                )
-            )
-        }
-    )[:8]
-    token_text = ",".join(structural_tokens) or "none"
-    exception_kind = type(values.get("exception")).__name__
-    exception_length = min(len(exception), 99999)
-    exception_lines = min(exception.count("\n") + bool(exception), 9999)
-    return (
-        "Cisco identity failure "
-        f"signals={signal_text} shape={shape_text} exception_type={exception_type} "
-        f"frames={frame_text} structural_tokens={token_text} "
-        f"exception_kind={exception_kind} exception_length={exception_length} "
-        f"exception_lines={exception_lines}"
-    )
-
-
-def _write_restricted_runner_diagnostic(
-    selected: dict[str, dict[str, Any]], credentials: DeviceCredentials
-) -> None:
-    """Write one explicitly requested, local-only redacted Runner diagnostic."""
-    configured = os.environ.get("NCDP_RUNNER_DIAGNOSTIC_PATH")
-    if not configured:
-        return
-    path = Path(configured)
-    if not path.is_absolute() or path.is_symlink():
-        raise ProviderError("Runner diagnostic path is unsafe")
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path.parent.chmod(0o700)
-    identity = selected.get(IDENTITY_TASK, {})
-    payload = {
-        "event": identity.get("_ncdp_event"),
-        "keys": sorted(str(key) for key in identity),
-        "msg": identity.get("msg"),
-        "exception": identity.get("exception"),
-    }
-    rendered = json.dumps(payload, sort_keys=True, default=str)
-    for secret in (credentials.username, credentials.password):
-        rendered = rendered.replace(secret, "[redacted]")
-    path.write_text(rendered + "\n", encoding="utf-8")
-    path.chmod(0o600)
+    return "Cisco read-only task failed"
 
 
 SYSTEM_ANSIBLE_COLLECTIONS = Path("/opt/ansible/collections")
@@ -344,23 +224,6 @@ def verify_deployment_ansible_runtime(
         raise DeploymentRuntimeError from None
 
 
-@contextmanager
-def _credential_environment(credentials: DeviceCredentials):
-    """Expose credentials only to the child process and restore prior state."""
-    names = ("NCDP_DEVICE_USERNAME", "NCDP_DEVICE_PASSWORD")
-    previous = {name: os.environ.get(name) for name in names}
-    os.environ[names[0]] = credentials.username
-    os.environ[names[1]] = credentials.password
-    try:
-        yield
-    finally:
-        for name, value in previous.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
-
-
 def _known_hosts_query(device: InventoryDevice) -> str:
     return device.host if device.port == 22 else f"[{device.host}]:{device.port}"
 
@@ -470,35 +333,33 @@ class AnsibleRunnerCiscoAdapter:
         with tempfile.TemporaryDirectory(prefix="ncdp-runner-") as directory:
             private_data = Path(directory)
             private_data.chmod(0o700)
-            with _credential_environment(credentials):
-                result = ansible_runner.run(
-                    private_data_dir=str(private_data),
-                    project_dir=str(self._root / "ansible"),
-                    artifact_dir=str(private_data / "artifacts"),
-                    playbook=playbook,
-                    inventory=inventory,
-                    extravars=extravars or {},
-                    envvars={
-                        "ANSIBLE_CONFIG": str(self._root / "ansible.cfg"),
-                        "ANSIBLE_COLLECTIONS_PATH": effective_ansible_collection_path(
-                            self._root
-                        ),
-                        "ANSIBLE_HOST_KEY_CHECKING": "True",
-                        "ANSIBLE_PERSISTENT_CONTROL_PATH_DIR": str(private_data / "pc"),
-                        "NCDP_DEVICE_USERNAME": os.environ["NCDP_DEVICE_USERNAME"],
-                        "NCDP_DEVICE_PASSWORD": os.environ["NCDP_DEVICE_PASSWORD"],
-                        **(
-                            {"HOME": str(self._known_hosts.parents[1])}
-                            if self._known_hosts is not None
-                            and self._known_hosts.parent.name == ".ssh"
-                            else {}
-                        ),
-                    },
-                    event_handler=handle_event,
-                    quiet=True,
-                    rotate_artifacts=1,
-                )
-            _write_restricted_runner_diagnostic(selected, credentials)
+            result = ansible_runner.run(
+                private_data_dir=str(private_data),
+                project_dir=str(self._root / "ansible"),
+                artifact_dir=str(private_data / "artifacts"),
+                playbook=playbook,
+                inventory=inventory,
+                extravars=extravars or {},
+                envvars={
+                    "ANSIBLE_CONFIG": str(self._root / "ansible.cfg"),
+                    "ANSIBLE_COLLECTIONS_PATH": effective_ansible_collection_path(
+                        self._root
+                    ),
+                    "ANSIBLE_HOST_KEY_CHECKING": "True",
+                    "ANSIBLE_PERSISTENT_CONTROL_PATH_DIR": str(private_data / "pc"),
+                    "NCDP_DEVICE_USERNAME": credentials.username,
+                    "NCDP_DEVICE_PASSWORD": credentials.password,
+                    **(
+                        {"HOME": str(self._known_hosts.parents[1])}
+                        if self._known_hosts is not None
+                        and self._known_hosts.parent.name == ".ssh"
+                        else {}
+                    ),
+                },
+                event_handler=handle_event,
+                quiet=True,
+                rotate_artifacts=1,
+            )
             return result, selected
 
     def discover(

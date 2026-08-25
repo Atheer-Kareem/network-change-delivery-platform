@@ -29,11 +29,14 @@ only CML lifecycle staging; they are not NCDP targeting metadata.
 
 `core-02` renders `modules/twin/bootstrap/cat8000v.tftpl`, and
 `edge-junos-01` renders `modules/twin/bootstrap/vjunos-router.tftpl`, into their
-respective `cml2_node.configuration` fields. Each template contains only
+respective `cml2_node.configuration` fields. Their templates contain only
 hostname, management addressing, the local lab account, SSH, NETCONF, and
 minimum platform prerequisites. Neither contains an actual credential or
 address in Git, NCDP-managed interface intent, routing, or interface
-descriptions. `core-03` retains explicit empty configuration.
+descriptions. `core-03` receives a separate deterministic, non-secret
+`cat8000v-unmanaged.tftpl` bootstrap containing only its existing role hostname
+and serial-console platform prerequisite. This prevents the IOS XE first-boot
+setup/security dialog without inventing a management identity or credential.
 
 Every live plan or apply requires these runtime inputs:
 

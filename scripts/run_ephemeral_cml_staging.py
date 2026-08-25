@@ -22,6 +22,7 @@ import httpx
 from network_change_delivery.ansible_adapter import (
     AnsibleRunnerCiscoAdapter,
     ProviderError,
+    verify_deployment_ansible_runtime,
 )
 from network_change_delivery.buildkite_identity import (
     BuildkiteOIDCJWT,
@@ -448,6 +449,7 @@ class LocalOperations:
                 raise StagingError("created CML node was not DEFINED_ON_CORE")
         self._verify_day0(evidence, "core_02", self._render_core())
         self._verify_day0(evidence, "edge_junos_01", self._render_edge())
+        self._verify_day0(evidence, "core_03", self._render_core_03())
 
     def _configuration(self, lab_id: str, node_id: str) -> str:
         for suffix in ("configuration", "configurations"):
@@ -520,6 +522,12 @@ class LocalOperations:
             template = template.replace("${" + key + "}", value)
         return template
 
+    @staticmethod
+    def _render_core_03() -> str:
+        return (
+            ROOT / "infrastructure/cml/modules/twin/bootstrap/cat8000v-unmanaged.tftpl"
+        ).read_text()
+
     def start(self, evidence: StagingEvidence) -> None:
         self._terraform_env["TF_VAR_twin_lifecycle_state"] = "STARTED"
         changes = self._changes(self._run_safe(["plan"]))
@@ -568,6 +576,17 @@ class LocalOperations:
             time.sleep(10)
         raise StagingError(f"{host} did not reach bounded management readiness")
 
+    def _wait_node_booted(
+        self, lab_id: str, node_id: str, *, timeout: int = 1200
+    ) -> None:
+        started = time.monotonic()
+        while time.monotonic() - started < timeout:
+            node = self._api(f"/api/v0/labs/{lab_id}/nodes/{node_id}")
+            if node.get("state") == "BOOTED":
+                return
+            time.sleep(10)
+        raise StagingError("core_03 did not reach unattended CML BOOTED state")
+
     def _establish_host_trust(self, host: str, ports: tuple[int, ...]) -> None:
         known_hosts = self._known_hosts
         known_hosts.parent.mkdir(mode=0o700, exist_ok=True)
@@ -589,6 +608,9 @@ class LocalOperations:
         known_hosts.chmod(0o600)
 
     def validate(self, evidence: StagingEvidence) -> None:
+        self._wait_node_booted(str(evidence.lab_id), evidence.node_ids["core_03"])
+        evidence.node_states["core_03"] = "BOOTED"
+        verify_deployment_ansible_runtime(ROOT)
         for role in ("core_02", "edge_junos_01"):
             device = self._devices[role]
             evidence.readiness_seconds[role] = self._wait_device(device.host)

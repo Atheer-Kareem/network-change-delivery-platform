@@ -62,6 +62,21 @@ failure, direct destroy, independent CML absence, empty-state verification, and
 state retirement all passed. Build #84 had no cleanup failure and was not
 retried.
 
+Build #85 proved direct mode-0600 state creation and passed management readiness
+for core-02 and edge-junos-01, but remained rejected. Its NCDP collection failed
+closed because the isolated checkout did not contain the ignored pinned Ansible
+collections; the driver now invokes the existing exact-pin verifier, and the
+dedicated agent uses an external collection path containing `ansible.netcommon
+8.6.0` and `cisco.ios 11.4.2`. Direct destroy, independent absence, and state
+retirement passed with no cleanup failure.
+
+During Build #85 an operator also opened the core-03 console once and observed
+the IOS XE 17.18 initial configuration/security flow caused by the node's empty
+configuration. No secret or configuration was entered, but the console operation
+independently disqualifies the build from zero-console acceptance. Core-03 now
+receives a minimal deterministic, non-credential Day-0 configuration and must
+reach CML `BOOTED` in a completely fresh build with zero console access.
+
 ## External PR build
 
 - Buildkite build/ID: pending

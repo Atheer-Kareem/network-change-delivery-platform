@@ -31,6 +31,7 @@ class StagingEvidence:
     readiness_outcome: str = "not_attempted"
     readiness_seconds: dict[str, float] = field(default_factory=dict)
     readiness_checks: dict[str, dict[str, str]] = field(default_factory=dict)
+    node_states: dict[str, str] = field(default_factory=dict)
     netbox_device_ids: dict[str, str] = field(default_factory=dict)
     credential_references: dict[str, str] = field(default_factory=dict)
     ncdp_validation_outcome: str = "not_attempted"

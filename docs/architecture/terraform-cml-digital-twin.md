@@ -111,6 +111,13 @@ Canvas placement is deterministic: `system-bridge` at `(-400, -200)`,
 `management-switch` at `(-150, -200)`, `core-02` at `(100, -400)`,
 `edge-junos-01` at `(400, -200)`, and `core-03` at `(700, -400)`.
 
+The managed `core-02` and `edge-junos-01` nodes retain their ADR 0013
+credential-bearing Day-0 management boundary. The unmanaged `core-03` node has
+only a deterministic non-secret CAT8000V startup configuration containing its
+existing role hostname and serial-console platform prerequisite. It prevents
+the IOS XE 17.18 initial setup/security dialogue without assigning core-03 a
+management identity or credential.
+
 ### Provider lifecycle state machine
 
 The lifecycle input has no default. Missing operator intent fails closed because

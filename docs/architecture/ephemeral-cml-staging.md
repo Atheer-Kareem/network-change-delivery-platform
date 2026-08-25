@@ -96,6 +96,13 @@ CML Configuration Customizer Scripts must already be enabled for vJunos Day-0
 processing. This is a controller-global infrastructure prerequisite verified
 outside Terraform. Neither root attempts to configure it.
 
+Every router in the STARTED topology must boot unattended. The unmanaged
+`core-03` role therefore receives a non-secret minimal CAT8000V startup
+configuration containing only its established role hostname and platform
+console prerequisite. It carries no management address or credential authority;
+its staging readiness boundary is the CML `BOOTED` state. This avoids the IOS XE
+17.18 initial setup/security dialog without expanding NetBox or OpenBao scope.
+
 ## Buildkite identities
 
 Buildkite staging does not use ambient `NCDP_OPENBAO_ROLE_ID` or

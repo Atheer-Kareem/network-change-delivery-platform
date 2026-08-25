@@ -94,6 +94,15 @@ boundaries so the next fresh build can distinguish unreachable SSH, identity
 task failure, and failure before a bounded identity result without retaining or
 publishing raw provider output. Build #87 was not retried.
 
+Build #88 classified the core-02 failure as the IOS read-only identity task
+failing after authenticated SSH connectivity, rather than an unreachable
+connection. Core-03, endpoint readiness, direct destroy, absence, and state
+retirement again passed. Because IOS XE can accept SSH before its CLI/facts
+subsystem is ready, NCDP read-only provider collection now has a bounded
+three-minute retry with a fresh session per attempt. Inventory, policy, and
+non-provider failures remain immediate and no write/deploy path is retried.
+Build #88 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

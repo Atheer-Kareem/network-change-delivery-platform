@@ -103,6 +103,12 @@ console prerequisite. It carries no management address or credential authority;
 its staging readiness boundary is the CML `BOOTED` state. This avoids the IOS XE
 17.18 initial setup/security dialog without expanding NetBox or OpenBao scope.
 
+TCP readiness can precede vendor CLI/facts readiness. The read-only NCDP
+validation boundary therefore retries only bounded provider collection failures
+for three minutes, using a fresh connection each time. Inventory, policy, and
+other ambiguous failures remain immediate failures; this retry never invokes a
+deploy or device-write operation.
+
 ## Buildkite identities
 
 Buildkite staging does not use ambient `NCDP_OPENBAO_ROLE_ID` or

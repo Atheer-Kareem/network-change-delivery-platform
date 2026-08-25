@@ -75,6 +75,21 @@ LEGACY_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
 SCRATCH_LAB = "a824a8b3-bcd1-488a-a791-d0783594ad9a"
 
 
+def retry_provider_read(action: Any, *, timeout: int = 180, interval: int = 15) -> int:
+    """Retry only bounded provider-read failures and return the attempt count."""
+    deadline = time.monotonic() + timeout
+    attempts = 0
+    while True:
+        attempts += 1
+        try:
+            action()
+            return attempts
+        except ProviderError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(interval)
+
+
 class CachedSecrets:
     """Reuse credentials already resolved once from OpenBao."""
 
@@ -652,7 +667,11 @@ class LocalOperations:
                 ),
             )
             try:
-                plan_change(intent, inventory, cached, adapter)
+                evidence.ncdp_validation_attempts[role] = retry_provider_read(
+                    lambda intent=intent, adapter=adapter: plan_change(
+                        intent, inventory, cached, adapter
+                    )
+                )
             except ProviderError as error:
                 evidence.ncdp_validation_outcome = "failed"
                 raise StagingError(

@@ -35,6 +35,7 @@ class StagingEvidence:
     netbox_device_ids: dict[str, str] = field(default_factory=dict)
     credential_references: dict[str, str] = field(default_factory=dict)
     ncdp_validation_outcome: str = "not_attempted"
+    ncdp_validation_attempts: dict[str, int] = field(default_factory=dict)
     primary_failure: str | None = None
     destroy_outcome: str = "not_attempted"
     cleanup_failure: str | None = None

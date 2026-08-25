@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 if [[ "${BUILDKITE_STEP_KEY:-}" != cml-staging || \
   "${BUILDKITE_AGENT_META_DATA_QUEUE:-}" != ncdp-staging ]]; then

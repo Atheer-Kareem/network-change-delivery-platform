@@ -305,6 +305,16 @@ class AnsibleRunnerCiscoAdapter:
         with tempfile.TemporaryDirectory(prefix="ncdp-runner-") as directory:
             private_data = Path(directory)
             private_data.chmod(0o700)
+            libssh_config: Path | None = None
+            if self._known_hosts is not None:
+                libssh_config = private_data / "libssh_config"
+                libssh_config.write_text(
+                    "Host *\n"
+                    "  StrictHostKeyChecking yes\n"
+                    f"  UserKnownHostsFile {self._known_hosts}\n",
+                    encoding="utf-8",
+                )
+                libssh_config.chmod(0o600)
             with _credential_environment(credentials):
                 result = ansible_runner.run(
                     private_data_dir=str(private_data),
@@ -320,13 +330,8 @@ class AnsibleRunnerCiscoAdapter:
                         ),
                         "ANSIBLE_HOST_KEY_CHECKING": "True",
                         **(
-                            {
-                                "ANSIBLE_SSH_COMMON_ARGS": (
-                                    "-o StrictHostKeyChecking=yes "
-                                    f"-o UserKnownHostsFile={self._known_hosts}"
-                                )
-                            }
-                            if self._known_hosts is not None
+                            {"ANSIBLE_LIBSSH_CONFIG_FILE": str(libssh_config)}
+                            if libssh_config is not None
                             else {}
                         ),
                     },

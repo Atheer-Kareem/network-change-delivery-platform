@@ -44,6 +44,24 @@ installed at the agent's Homebrew path and the dedicated agent was restarted.
 Build #83 was not retried; acceptance proceeds through a distinct build-bound
 run identity.
 
+Build #84 crossed the live lifecycle boundary with run ID
+`bk-01a03a42-ea65-4a45-b48e-1dce08ceb89d`. It created the exact 13-resource
+topology under lab `00f3caf8-2d8b-41c9-b44e-d7168234a768`, reached management
+readiness, and then failed closed during core-02 NCDP read-only validation. The
+run-scoped known-hosts path had been passed through `ANSIBLE_SSH_COMMON_ARGS`,
+but the pinned Ansible libssh connection accepts only `ProxyCommand` from that
+option. The adapter now supplies the strict run-scoped trust configuration
+through libssh's supported `ANSIBLE_LIBSSH_CONFIG_FILE` boundary.
+
+Build #84 also exposed that Terraform initially created its credential-bearing
+state with the agent's permissive process umask before the driver applied its
+post-command `0600` correction. The exact live state file was immediately
+restricted to `0600`; the Buildkite shell and shared Python entry point now
+both set umask `077`, with regression coverage. Despite the primary validation
+failure, direct destroy, independent CML absence, empty-state verification, and
+state retirement all passed. Build #84 had no cleanup failure and was not
+retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

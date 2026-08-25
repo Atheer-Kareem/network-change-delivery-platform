@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import subprocess
 from pathlib import Path
 
@@ -118,6 +119,8 @@ def test_shell_requests_exact_oidc_and_uploads_evidence(tmp_path: Path) -> None:
     assert "--identity buildkite" in logged
     assert "bk-79c012df-23bf-49b3-a6dd-f28799c4bb24" in logged
     assert uploads.read_text().strip() == "staging-evidence/staging-run.json"
+    evidence = tmp_path / "work/staging-evidence/staging-run.json"
+    assert stat.S_IMODE(evidence.stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize("retry", ["1", "2", "-1", "00", "malformed"])

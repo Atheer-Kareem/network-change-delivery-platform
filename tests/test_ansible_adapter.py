@@ -109,3 +109,42 @@ def test_runner_uses_the_shared_effective_collection_path(
     assert captured["envvars"]["ANSIBLE_COLLECTIONS_PATH"] == (
         effective_ansible_collection_path(tmp_path)
     )
+
+
+def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("hashed trusted host key\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "network_change_delivery.ansible_adapter.verify_existing_host_trust",
+        lambda _device, _path: "safe fingerprint",
+    )
+
+    def fake_run(**kwargs):
+        config = Path(kwargs["envvars"]["ANSIBLE_LIBSSH_CONFIG_FILE"])
+        captured["config"] = config.read_text(encoding="utf-8")
+        captured["mode"] = config.stat().st_mode & 0o777
+        return SimpleNamespace(status="successful", rc=0)
+
+    monkeypatch.setattr(
+        "network_change_delivery.ansible_adapter.ansible_runner.run", fake_run
+    )
+    adapter = AnsibleRunnerCiscoAdapter(tmp_path, known_hosts=known_hosts)
+    adapter._run(
+        InventoryDevice(
+            name="router-1",
+            host="192.0.2.10",
+            platform="cisco_iosxe",
+            expected_hostname="lab-router",
+        ),
+        DeviceCredentials(username="user", password="secret"),
+        "collect_interface_state.yml",
+    )
+
+    assert captured["config"] == (
+        f"Host *\n  StrictHostKeyChecking yes\n  UserKnownHostsFile {known_hosts}\n"
+    )
+    assert captured["mode"] == 0o600

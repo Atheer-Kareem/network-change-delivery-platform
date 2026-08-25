@@ -19,7 +19,10 @@ from typing import Any
 
 import httpx
 
-from network_change_delivery.ansible_adapter import AnsibleRunnerCiscoAdapter
+from network_change_delivery.ansible_adapter import (
+    AnsibleRunnerCiscoAdapter,
+    ProviderError,
+)
 from network_change_delivery.buildkite_identity import (
     BuildkiteOIDCJWT,
     read_buildkite_oidc_jwt,
@@ -598,6 +601,7 @@ class LocalOperations:
             self._establish_host_trust(
                 device.host, (22, 830) if role == "edge_junos_01" else (22,)
             )
+        evidence.readiness_outcome = "passed"
         cached = CachedSecrets(self._credentials)
         targets = {
             "core_02": (
@@ -627,9 +631,14 @@ class LocalOperations:
             )
             try:
                 plan_change(intent, inventory, cached, adapter)
+            except ProviderError as error:
+                evidence.ncdp_validation_outcome = "failed"
+                raise StagingError(
+                    f"{role} NCDP read-only validation failed: {error}"
+                ) from None
             except Exception:
+                evidence.ncdp_validation_outcome = "failed"
                 raise StagingError(f"{role} NCDP read-only validation failed") from None
-        evidence.readiness_outcome = "passed"
         evidence.ncdp_validation_outcome = "passed"
 
     def destroy(self, evidence: StagingEvidence) -> None:
@@ -733,6 +742,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    os.umask(0o077)
     args = parse_args()
     try:
         buildkite_context = None

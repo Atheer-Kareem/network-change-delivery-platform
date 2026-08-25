@@ -2,10 +2,11 @@
 
 ## Scope
 
-Increment 8E-1 provides the static Terraform foundation for ADR 0014. It does
-not contact CML, NetBox, OpenBao, or devices and does not add a live Buildkite
-step. Increment 8E-2 will exercise the lifecycle locally; Increment 8E-3 will
-orchestrate it in Buildkite after separate identity and external acceptance.
+Increment 8E-1 provides the static Terraform foundation for ADR 0014.
+Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary
+and thin operator entry point. Increment 8E-3 will invoke that same boundary in
+Buildkite after separate identity and external acceptance; no live Buildkite
+staging step exists yet.
 
 The normal lifecycle is absent, fresh create at `DEFINED_ON_CORE`, first boot
 through `STARTED`, readiness, NCDP staging validation, sanitized evidence,
@@ -70,10 +71,18 @@ between runs and must never be uploaded as a Buildkite artifact. Under ADR 0013
 it contains credential-bearing Day-0 copies and is privileged operational data.
 
 Finally-style cleanup attempts complete Terraform destruction after success and
-failure. A failed or ambiguous destroy retains the exact run state. State may be
-retired only after Terraform destroy succeeds and an independent CML query
-proves the lab and all realization UUIDs absent. Increment 8E-1 deliberately
-implements no state deletion automation.
+failure once managed resources exist. A failed or ambiguous destroy therefore
+retains the exact run state and its `TF_DATA_DIR`. State may be retired only
+after Terraform destroy succeeds, an independent CML query proves the title and
+every recorded realization UUID absent, and `terraform state list` is empty.
+Increment 8E-2
+implements this guarded retirement for a caller-supplied run directory; it
+never deletes shared caches.
+
+The structured evidence schema preserves primary validation failure separately
+from cleanup failure and allowlists only structural identities, stable authority
+references, timings, and outcomes. It excludes credentials, rendered configs,
+state, tokens, raw device configuration, and raw provider exception bodies.
 
 All future live plan, apply, lifecycle, and destroy operations must use
 Terraform's JSON UI piped directly through `scripts/terraform_cml_safe_ui.py`.

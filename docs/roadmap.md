@@ -71,11 +71,12 @@ Ordering may change when implementation evidence requires it.
    stages. 8E-1 provides the reusable Terraform realization module, protected
    operator root, intentionally destroyable ephemeral root, required run
    identity, build/run-scoped state contract, safe outputs, and credential-free
-   static validation. 8E-2 performs local real create/first-boot/test/destroy
-   acceptance. 8E-3 adds serialized Buildkite orchestration, staging workload
-   identity, readiness, NCDP validation, sanitized evidence, finally-style
-   cleanup, absence proof, and failed-destroy state retention. Parallel twins
-   require a future isolated management network.
+   static validation. 8E-2 is locally accepted: fresh creation, first-boot
+   readiness, both read-only NCDP vendor chains, direct destroy from STARTED,
+   independent absence, and guarded state retirement passed. 8E-3 is next and
+   adds serialized Buildkite orchestration, staging workload identity, evidence
+   publication, and retained-state recovery operations. Parallel twins require
+   a future isolated management network.
 9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
    safe inverse planning, and later-change conflict detection.
 10. **Audit/configuration history:** typed `ChangeRecord`, durable correlation, and

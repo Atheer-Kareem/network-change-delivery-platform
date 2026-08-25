@@ -271,6 +271,13 @@ Terraform realization currently owns `core-02` or `edge-junos-01`. Future
 ephemeral runs must freshly verify NetBox identity, OpenBao provenance, SSH host
 trust, platform, hostname, and topology before NCDP validation.
 
+Increment 8E-2 accepted the reusable ephemeral root locally: a fresh 13-resource
+realization transitioned from `DEFINED_ON_CORE` to `STARTED`, passed both vendor
+read-only provider chains, and was destroyed directly from STARTED. Independent
+CML absence and empty Terraform state were required before run-specific state
+retirement. See the
+[local ephemeral acceptance report](../acceptance/terraform-cml-ephemeral-local-increment-8e.md).
+
 ## Increment contracts
 
 ### 8A — discovery and architecture contract
@@ -315,7 +322,8 @@ was destroyed completely and its managed state is empty. See the
 In progress. 8E-1 statically separates root-owned lab policy from a reusable
 five-node/six-link realization module and adds an intentionally destroyable
 ephemeral root with required run identity, externally configured per-run state,
-and safe structural outputs. 8E-2 will perform local real lifecycle acceptance.
-8E-3 will add serialized Buildkite orchestration, workload identity, readiness,
-NCDP staging validation, evidence, finally-style destroy, cleanup proof, and
-failed-destroy state retention.
+and safe structural outputs. 8E-2 accepts the local real lifecycle, reusable
+finally-style orchestration, sanitized evidence, direct destroy from STARTED,
+independent absence proof, and guarded state retirement. 8E-3 will add
+serialized Buildkite orchestration and workload identity without duplicating
+the accepted lifecycle logic.

@@ -99,6 +99,47 @@ def test_read_only_connection_failure_has_bounded_classification(monkeypatch) ->
         )
 
 
+@pytest.mark.parametrize(
+    ("message", "classification"),
+    [
+        (
+            "Connection type ansible.builtin.ssh is not valid for this module",
+            "Cisco connection type was rejected",
+        ),
+        ("command timeout triggered", "Cisco read-only command timed out"),
+        ("invalid input detected", "Cisco rejected a read-only CLI command"),
+        ("unrecognized provider detail", "without a classified result"),
+    ],
+)
+def test_read_only_task_failure_message_is_allowlist_classified(
+    monkeypatch, message: str, classification: str
+) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(status="failed", rc=2),
+            {
+                IDENTITY_TASK: {
+                    "_ncdp_event": "runner_on_failed",
+                    "msg": message,
+                }
+            },
+        ),
+    )
+    with pytest.raises(ProviderError, match=classification):
+        adapter.discover(
+            InventoryDevice(
+                name="router-1",
+                host="192.0.2.10",
+                platform="cisco_iosxe",
+                expected_hostname="lab-router",
+            ),
+            DeviceCredentials(username="user", password="secret"),
+        )
+
+
 def test_known_hosts_path_ignores_custom_environment(
     monkeypatch,
 ) -> None:

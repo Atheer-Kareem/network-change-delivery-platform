@@ -678,11 +678,19 @@ class LocalOperations:
                 ),
             )
             try:
-                evidence.ncdp_validation_attempts[role] = retry_provider_read(
-                    lambda intent=intent, adapter=adapter: plan_change(
-                        intent, inventory, cached, adapter
-                    )
-                )
+                attempts = 0
+
+                def collect(
+                    intent: InterfaceDescriptionIntent = intent,
+                    adapter: Any = adapter,
+                    role: str = role,
+                ) -> None:
+                    nonlocal attempts
+                    attempts += 1
+                    evidence.ncdp_validation_attempts[role] = attempts
+                    plan_change(intent, inventory, cached, adapter)
+
+                evidence.ncdp_validation_attempts[role] = retry_provider_read(collect)
             except ProviderError as error:
                 evidence.ncdp_validation_outcome = "failed"
                 raise StagingError(

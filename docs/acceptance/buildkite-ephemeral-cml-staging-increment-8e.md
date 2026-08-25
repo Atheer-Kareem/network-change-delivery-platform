@@ -111,6 +111,15 @@ bounded minute, requires non-empty scanner output, emits only a fixed sanitized
 failure, and retains strict run-scoped mode-0600 trust. Build #89 was not
 retried.
 
+Build #90 exercised the full three-minute provider-read retry and failed with
+the same identity-task classification, proving the condition deterministic.
+The external agent collection inventory was then confirmed to include
+`ansible.netcommon 8.6.0`, `cisco.ios 11.4.2`, and the required transitive
+`ansible.utils 6.1.0`; no collection pin was changed. The adapter now maps only
+allowlisted task-result categories and withholds unknown provider text, while
+failed-attempt counts are recorded. Cleanup, absence, and retirement passed and
+Build #90 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

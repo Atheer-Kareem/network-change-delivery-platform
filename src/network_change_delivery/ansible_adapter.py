@@ -48,6 +48,29 @@ class DeploymentRuntimeError(ProviderError):
         super().__init__("deployment Ansible runtime prerequisites unavailable")
 
 
+def _bounded_read_failure(result: object) -> str:
+    """Classify a Runner task failure without exposing its provider message."""
+    message = str(result.get("msg", "")).lower() if isinstance(result, dict) else ""
+    categories = (
+        (("connection type", "not valid"), "Cisco connection type was rejected"),
+        (("authentication",), "Cisco authentication was rejected"),
+        (("permission denied",), "Cisco authentication was rejected"),
+        (("host key",), "Cisco host trust was rejected"),
+        (("privilege",), "Cisco privileged read access was rejected"),
+        (("enable",), "Cisco privileged read access was rejected"),
+        (("terminal",), "Cisco terminal initialization failed"),
+        (("timeout",), "Cisco read-only command timed out"),
+        (("timed out",), "Cisco read-only command timed out"),
+        (("couldn't resolve module",), "Cisco collection runtime was unavailable"),
+        (("module", "not found"), "Cisco collection runtime was unavailable"),
+        (("invalid input",), "Cisco rejected a read-only CLI command"),
+    )
+    for needles, classification in categories:
+        if all(needle in message for needle in needles):
+            return classification
+    return "Cisco read-only identity task failed without a classified result"
+
+
 SYSTEM_ANSIBLE_COLLECTIONS = Path("/opt/ansible/collections")
 _COLLECTION_NAME = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
 _EXACT_COLLECTION_VERSION = re.compile(r"[0-9]+(?:\.[0-9]+){2}")
@@ -367,7 +390,7 @@ class AnsibleRunnerCiscoAdapter:
             if identity_event == "runner_on_unreachable":
                 raise ProviderError("trusted Cisco SSH collection was unreachable")
             if identity_event == "runner_on_failed":
-                raise ProviderError("Cisco read-only identity task failed")
+                raise ProviderError(_bounded_read_failure(selected[IDENTITY_TASK]))
             if IDENTITY_TASK not in selected:
                 raise ProviderError(
                     "Cisco collection failed before a bounded identity result"

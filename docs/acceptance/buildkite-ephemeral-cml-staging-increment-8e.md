@@ -202,10 +202,11 @@ therefore now requires three consecutive samples with identical public key
 material (independent of hashed-host salt) before accepting the run-scoped
 strict-trust file.
 
-Build #103 is excluded from acceptance because two local processes had
-registered the same staging-agent name before the build. The duplicate launchd
-service was unloaded, and the known-good foreground runtime was restarted and
-verified before the next build as the sole connected agent: PID 62337, name
+Build #103 was manually canceled and is excluded from acceptance because two
+local processes had registered the same staging-agent name before the build.
+The duplicate launchd service was unloaded, and the known-good foreground
+runtime was restarted and verified before the next build as the sole connected
+agent: PID 62337, name
 `ncdp-staging-Net-DevOps.local`, queue `ncdp-staging`. The PID is local
 acceptance evidence only; the durable contract remains one registered agent in
 the serialized staging queue.

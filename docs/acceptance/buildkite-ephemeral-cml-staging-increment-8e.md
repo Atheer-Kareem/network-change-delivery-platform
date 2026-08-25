@@ -22,6 +22,18 @@ acceptance therefore uses the existing personal-controller operator login to
 mint a process-memory bearer while rejecting ambient `CML2_TOKEN`. No CML lab,
 node, or link was created during prerequisite setup.
 
+Two rejected PR-build diagnostics remained entirely before Terraform creation.
+Build #81 exposed reliance on a shell-hook path variable that Buildkite only
+documents for polyglot hooks; no evidence or state directory was produced. The
+agent-owned command hook now loads its protected credential file from the
+documented `$HOME` configuration boundary after admission. Build #82 then
+produced sanitized failure evidence for a dedicated NetBox v2 token stored as
+only its plaintext component. The unusable token was revoked and replaced with
+the complete NetBox v2 bearer presentation; status-only checks for status,
+device, and interface endpoints returned HTTP 200. Build #82 had
+`creation_outcome=not_attempted`, `destroy_outcome=not_attempted`, no run state,
+and zero CML mutations. Neither failed job was retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

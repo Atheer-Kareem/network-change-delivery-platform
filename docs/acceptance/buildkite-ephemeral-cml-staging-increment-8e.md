@@ -165,6 +165,15 @@ such as `Ansible`, `Connection`, `Module`, `Network`, and `Traceback`. Arbitrary
 tokens and text remain withheld. Cleanup, absence, and state retirement passed
 and Build #97 was not retried.
 
+Build #98 found that the exception value was a 23-character single-line
+placeholder with no structural tokens, rather than an actionable traceback.
+The remaining child-process boundary was Ansible Runner credential propagation:
+the context manager set credentials in the parent environment while Runner also
+received an explicit environment mapping. The adapter now places the same two
+in-memory credential values explicitly into that child mapping; they remain
+inside the temporary Runner boundary and are neither logged nor evidenced.
+Cleanup, absence, and retirement passed and Build #98 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

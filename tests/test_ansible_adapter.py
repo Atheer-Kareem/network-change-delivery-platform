@@ -307,6 +307,8 @@ def test_runner_uses_the_shared_effective_collection_path(
     assert captured["envvars"]["ANSIBLE_COLLECTIONS_PATH"] == (
         effective_ansible_collection_path(tmp_path)
     )
+    assert captured["envvars"]["NCDP_DEVICE_USERNAME"] == "user"
+    assert captured["envvars"]["NCDP_DEVICE_PASSWORD"] == "secret"
 
 
 def test_runner_gives_libssh_the_run_scoped_known_hosts_file(

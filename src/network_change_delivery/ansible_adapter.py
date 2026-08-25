@@ -467,6 +467,8 @@ class AnsibleRunnerCiscoAdapter:
                             self._root
                         ),
                         "ANSIBLE_HOST_KEY_CHECKING": "True",
+                        "NCDP_DEVICE_USERNAME": os.environ["NCDP_DEVICE_USERNAME"],
+                        "NCDP_DEVICE_PASSWORD": os.environ["NCDP_DEVICE_PASSWORD"],
                         **(
                             {
                                 "ANSIBLE_LIBSSH_CONFIG_FILE": str(libssh_config),

@@ -86,6 +86,14 @@ an alternate OpenSSH configuration is provided. Build-scoped trust now uses
 directory as `HOME`. Direct destroy, independent absence, and state retirement
 again passed with no cleanup failure; Build #86 was not retried.
 
+Build #87 repeated the unattended core-03 `BOOTED` and managed-endpoint
+readiness proofs, but the core-02 adapter still returned its generic bounded
+collection failure after the run-scoped `HOME` alignment. Cleanup, absence, and
+state retirement passed. The adapter now classifies only safe Runner event/task
+boundaries so the next fresh build can distinguish unreachable SSH, identity
+task failure, and failure before a bounded identity result without retaining or
+publishing raw provider output. Build #87 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

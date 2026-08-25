@@ -363,6 +363,15 @@ class AnsibleRunnerCiscoAdapter:
             getattr(runner, "status", None) != "successful"
             or getattr(runner, "rc", 1) != 0
         ):
+            identity_event = selected.get(IDENTITY_TASK, {}).get("_ncdp_event")
+            if identity_event == "runner_on_unreachable":
+                raise ProviderError("trusted Cisco SSH collection was unreachable")
+            if identity_event == "runner_on_failed":
+                raise ProviderError("Cisco read-only identity task failed")
+            if IDENTITY_TASK not in selected:
+                raise ProviderError(
+                    "Cisco collection failed before a bounded identity result"
+                )
             raise ProviderError("trusted authenticated read-only collection failed")
         try:
             facts = selected[IDENTITY_TASK]["ansible_facts"]

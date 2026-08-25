@@ -3,9 +3,13 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from network_change_delivery.ansible_adapter import (
     EXECUTION_TASK,
+    IDENTITY_TASK,
     AnsibleRunnerCiscoAdapter,
+    ProviderError,
     _known_hosts_path,
     effective_ansible_collection_path,
 )
@@ -68,6 +72,31 @@ def test_failed_write_task_is_treated_as_ambiguous(monkeypatch) -> None:
         ),
     )
     assert result.disposition is ExecutionDisposition.AMBIGUOUS
+
+
+def test_read_only_connection_failure_has_bounded_classification(monkeypatch) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(status="failed", rc=4),
+            {IDENTITY_TASK: {"_ncdp_event": "runner_on_unreachable"}},
+        ),
+    )
+    with pytest.raises(
+        ProviderError, match=r"^trusted Cisco SSH collection was unreachable$"
+    ):
+        adapter.discover(
+            InventoryDevice(
+                name="router-1",
+                host="192.0.2.10",
+                platform="cisco_iosxe",
+                expected_hostname="lab-router",
+            ),
+            DeviceCredentials(username="user", password="secret"),
+        )
 
 
 def test_known_hosts_path_ignores_custom_environment(

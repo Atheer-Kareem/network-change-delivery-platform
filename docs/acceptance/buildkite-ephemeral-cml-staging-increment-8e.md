@@ -202,6 +202,14 @@ therefore now requires three consecutive samples with identical public key
 material (independent of hashed-host salt) before accepting the run-scoped
 strict-trust file.
 
+The next sole-agent run disproved key rotation: stable acquisition passed, but
+libssh still rejected a different stored key. Source inspection of the pinned
+runtime found the mismatch: `ansible.netcommon` passes a `config_file` argument,
+while `ansible-pylibssh 1.4.0` does not map that argument to a libssh option and
+therefore continues using ambient known-hosts state. Cisco `network_cli` now
+uses the already pinned and supported Paramiko 4.x transport, whose strict
+known-host handling reads the explicitly isolated run-scoped `HOME`.
+
 Build #103 was manually canceled and is excluded from acceptance because two
 local processes had registered the same staging-agent name before the build.
 The duplicate launchd service was unloaded, and the known-good foreground

@@ -359,7 +359,7 @@ def test_runner_uses_the_shared_effective_collection_path(
     assert len(captured["envvars"]["ANSIBLE_PERSISTENT_CONTROL_PATH_DIR"]) < 90
 
 
-def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
+def test_runner_gives_paramiko_the_run_scoped_known_hosts_home(
     tmp_path: Path, monkeypatch
 ) -> None:
     known_hosts = tmp_path / ".ssh" / "known_hosts"
@@ -373,9 +373,6 @@ def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
     )
 
     def fake_run(**kwargs):
-        config = Path(kwargs["envvars"]["ANSIBLE_LIBSSH_CONFIG_FILE"])
-        captured["config"] = config.read_text(encoding="utf-8")
-        captured["mode"] = config.stat().st_mode & 0o777
         captured["home"] = kwargs["envvars"]["HOME"]
         captured["inventory"] = kwargs["inventory"]
         return SimpleNamespace(status="successful", rc=0)
@@ -395,11 +392,6 @@ def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
         "collect_interface_state.yml",
     )
 
-    assert captured["config"] == (
-        f"Host *\n  StrictHostKeyChecking yes\n  UserKnownHostsFile {known_hosts}\n"
-    )
-    assert captured["mode"] == 0o600
     assert captured["home"] == str(tmp_path)
     target = captured["inventory"]["all"]["hosts"]["ncdp_target"]
-    assert target["ansible_libssh_config_file"].endswith("/libssh_config")
-    assert target["ansible_libssh_host_key_checking"] is True
+    assert target["ansible_network_cli_ssh_type"] == "paramiko"

@@ -426,7 +426,7 @@ class AnsibleRunnerCiscoAdapter:
                         "ansible_port": device.port,
                         "ansible_connection": "ansible.netcommon.network_cli",
                         "ansible_network_os": "cisco.ios.ios",
-                        "ansible_network_cli_ssh_type": "libssh",
+                        "ansible_network_cli_ssh_type": "paramiko",
                     }
                 }
             }
@@ -470,19 +470,6 @@ class AnsibleRunnerCiscoAdapter:
         with tempfile.TemporaryDirectory(prefix="ncdp-runner-") as directory:
             private_data = Path(directory)
             private_data.chmod(0o700)
-            libssh_config: Path | None = None
-            if self._known_hosts is not None:
-                libssh_config = private_data / "libssh_config"
-                libssh_config.write_text(
-                    "Host *\n"
-                    "  StrictHostKeyChecking yes\n"
-                    f"  UserKnownHostsFile {self._known_hosts}\n",
-                    encoding="utf-8",
-                )
-                libssh_config.chmod(0o600)
-                target = inventory["all"]["hosts"]["ncdp_target"]
-                target["ansible_libssh_config_file"] = str(libssh_config)
-                target["ansible_libssh_host_key_checking"] = True
             with _credential_environment(credentials):
                 result = ansible_runner.run(
                     private_data_dir=str(private_data),
@@ -501,15 +488,9 @@ class AnsibleRunnerCiscoAdapter:
                         "NCDP_DEVICE_USERNAME": os.environ["NCDP_DEVICE_USERNAME"],
                         "NCDP_DEVICE_PASSWORD": os.environ["NCDP_DEVICE_PASSWORD"],
                         **(
-                            {
-                                "ANSIBLE_LIBSSH_CONFIG_FILE": str(libssh_config),
-                                **(
-                                    {"HOME": str(self._known_hosts.parents[1])}
-                                    if self._known_hosts.parent.name == ".ssh"
-                                    else {}
-                                ),
-                            }
-                            if libssh_config is not None
+                            {"HOME": str(self._known_hosts.parents[1])}
+                            if self._known_hosts is not None
+                            and self._known_hosts.parent.name == ".ssh"
                             else {}
                         ),
                     },

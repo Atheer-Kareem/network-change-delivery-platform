@@ -149,7 +149,14 @@ The state directory and file permissions are orchestration responsibilities.
 State contains ADR 0013 credential copies, must never be shared or uploaded as
 a Buildkite artifact, and must be retained after failed destruction. Retire it
 only after successful Terraform destroy and independent CML absence proof.
-Increment 8E-1 adds no automatic state deletion and no live staging job.
+Increment 8E-2 provides `scripts/run_ephemeral_cml_staging.py` as the local
+operator entry point. It requires explicit `--run-id`, `--run-directory`, and
+sanitized `--evidence` destinations. It admits one fixed-address run, resolves
+authority inputs once, performs only safe-rendered live Terraform operations,
+attempts destroy in `finally`, independently verifies CML absence, and retires
+only the exact run directory after empty state is proven. Failed destroy or
+absence verification retains the directory for recovery. The script is local
+foundation code; no live Buildkite staging job exists yet.
 
 CML Configuration Customizer Scripts must already be enabled for vJunos Day-0.
 This controller-global prerequisite is verified outside Terraform and is not

@@ -143,6 +143,13 @@ only the final bounded exception class identifier ending in `Error` or
 `Exception`; it still withholds the exception message, stack, paths, and values.
 Cleanup, absence, and state retirement passed and Build #93 was not retried.
 
+Build #94 found no conventional exception class identifier, consistent with an
+Ansible traceback fragment that omits its terminal exception line. The fallback
+now exposes at most the last four sanitized stack-frame basenames and Python
+function identifiers. Full paths, line numbers, messages, arguments, and values
+remain withheld. Cleanup, absence, and retirement passed and Build #94 was not
+retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

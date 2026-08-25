@@ -150,9 +150,16 @@ def _bounded_read_failure(result: object) -> str:
         exception,
     )
     exception_type = exception_types[-1] if exception_types else "none"
+    frames = re.findall(
+        r"""File ["'][^"']*/([A-Za-z0-9_.-]+)["'], line \d+, in ([A-Za-z_][A-Za-z0-9_]*)""",
+        exception,
+    )[-4:]
+    frame_text = ",".join(f"{filename}:{function}" for filename, function in frames)
+    frame_text = frame_text or "none"
     return (
         "Cisco identity failure "
-        f"signals={signal_text} shape={shape_text} exception_type={exception_type}"
+        f"signals={signal_text} shape={shape_text} exception_type={exception_type} "
+        f"frames={frame_text}"
     )
 
 

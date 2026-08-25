@@ -110,7 +110,7 @@ def test_read_only_connection_failure_has_bounded_classification(monkeypatch) ->
         ("invalid input detected", "Cisco rejected a read-only CLI command"),
         (
             "unrecognized provider module detail",
-            "signals=module shape=none exception_type=none",
+            "signals=module shape=none exception_type=none frames=none",
         ),
     ],
 )
@@ -199,6 +199,41 @@ def test_unknown_task_exception_exposes_only_bounded_class_name(monkeypatch) -> 
             DeviceCredentials(username="user", password=secret),
         )
     assert "exception_type=VendorProtocolError" in str(caught.value)
+    assert secret not in str(caught.value)
+
+
+def test_unknown_task_exception_exposes_only_bounded_frames(monkeypatch) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    secret = "must-not-escape"
+    exception = (
+        f'Traceback: File "/private/{secret}/network.py", line 12, in run\n'
+        'File "/private/provider/action.py", line 34, in execute\n'
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(status="failed", rc=2),
+            {
+                IDENTITY_TASK: {
+                    "_ncdp_event": "runner_on_failed",
+                    "msg": "failed",
+                    "exception": exception,
+                }
+            },
+        ),
+    )
+    with pytest.raises(ProviderError) as caught:
+        adapter.discover(
+            InventoryDevice(
+                name="router-1",
+                host="192.0.2.10",
+                platform="cisco_iosxe",
+                expected_hostname="lab-router",
+            ),
+            DeviceCredentials(username="user", password=secret),
+        )
+    assert "frames=network.py:run,action.py:execute" in str(caught.value)
     assert secret not in str(caught.value)
 
 

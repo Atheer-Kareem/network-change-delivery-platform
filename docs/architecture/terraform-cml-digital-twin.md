@@ -16,8 +16,9 @@ accepted initial creation plus the controlled `DEFINED_ON_CORE` to `STARTED`
 to `STOPPED` lifecycle. Increment 8D proved Day-0 fresh-first-boot
 manageability, whole-twin replacement, and complete destruction, while a
 same-realization vJunos restart failed. ADR 0014 therefore supersedes the
-persistent operational staging assumption; Increment 8E will implement the
-ephemeral pipeline.
+persistent operational staging assumption. Increment 8E-1 establishes the
+[ephemeral staging Terraform architecture](ephemeral-cml-staging.md); 8E-2 and
+8E-3 retain local lifecycle acceptance and Buildkite orchestration respectively.
 
 ## Authority boundary
 
@@ -311,8 +312,10 @@ was destroyed completely and its managed state is empty. See the
 
 ### 8E — ephemeral CML staging pipeline
 
-Next. Design a reusable Terraform root/module, build-scoped state and run
-identity, serialized fixed-address staging concurrency, create and first-boot
-readiness, NCDP staging validation, sanitized evidence, finally-style destroy,
-cleanup verification, and failed-destroy state retention. Buildkite integration
-belongs to this increment and is not implemented by 8D.
+In progress. 8E-1 statically separates root-owned lab policy from a reusable
+five-node/six-link realization module and adds an intentionally destroyable
+ephemeral root with required run identity, externally configured per-run state,
+and safe structural outputs. 8E-2 will perform local real lifecycle acceptance.
+8E-3 will add serialized Buildkite orchestration, workload identity, readiness,
+NCDP staging validation, evidence, finally-style destroy, cleanup proof, and
+failed-destroy state retention.

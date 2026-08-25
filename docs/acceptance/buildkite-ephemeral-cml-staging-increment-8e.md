@@ -103,6 +103,14 @@ three-minute retry with a fresh session per attempt. Inventory, policy, and
 non-provider failures remain immediate and no write/deploy path is retried.
 Build #88 was not retried.
 
+Build #89 reached unattended core-03 `BOOTED` and both managed endpoint
+readiness boundaries, then failed before NCDP validation when a one-time
+`ssh-keyscan` raced the freshly opened edge-junos SSH service. Direct destroy,
+absence, and state retirement passed. Host-key acquisition now retries for a
+bounded minute, requires non-empty scanner output, emits only a fixed sanitized
+failure, and retains strict run-scoped mode-0600 trust. Build #89 was not
+retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

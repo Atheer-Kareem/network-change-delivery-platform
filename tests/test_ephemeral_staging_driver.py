@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -49,3 +51,31 @@ def test_provider_read_stops_at_deadline(monkeypatch) -> None:
             lambda: (_ for _ in ()).throw(ProviderError("still unavailable")),
             timeout=0,
         )
+
+
+def test_host_key_acquisition_retries_and_creates_restrictive_trust(
+    tmp_path: Path, monkeypatch
+) -> None:
+    operations = object.__new__(driver.LocalOperations)
+    operations._known_hosts = tmp_path / ".ssh" / "known_hosts"
+    scans = iter(
+        (
+            SimpleNamespace(returncode=1, stdout=""),
+            SimpleNamespace(returncode=0, stdout="host ssh-ed25519 AAAA\n"),
+        )
+    )
+
+    def run(command, **_kwargs):
+        if command[0] == "ssh-keygen":
+            return SimpleNamespace(returncode=0, stdout="")
+        return next(scans)
+
+    clock = iter((0.0, 1.0, 2.0))
+    monkeypatch.setattr(driver.subprocess, "run", run)
+    monkeypatch.setattr(driver.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(driver.time, "sleep", lambda _seconds: None)
+
+    operations._establish_host_trust("192.0.2.10", (22,))
+
+    assert operations._known_hosts.read_text() == "host ssh-ed25519 AAAA\n"
+    assert stat.S_IMODE(operations._known_hosts.stat().st_mode) == 0o600

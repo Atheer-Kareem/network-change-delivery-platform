@@ -612,12 +612,21 @@ class LocalOperations:
                 capture_output=True,
                 check=False,
             )
-            scan = subprocess.run(
-                ["ssh-keyscan", "-H", "-p", str(port), host],
-                text=True,
-                capture_output=True,
-                check=True,
-            ).stdout
+            deadline = time.monotonic() + 60
+            scan = ""
+            while time.monotonic() < deadline:
+                completed = subprocess.run(
+                    ["ssh-keyscan", "-H", "-p", str(port), host],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                if completed.returncode == 0 and completed.stdout.strip():
+                    scan = completed.stdout
+                    break
+                time.sleep(5)
+            if not scan:
+                raise StagingError("bounded SSH host-key acquisition failed")
             with known_hosts.open("a", encoding="utf-8") as stream:
                 stream.write(scan)
         known_hosts.chmod(0o600)
@@ -635,10 +644,12 @@ class LocalOperations:
                 "tcp22": "passed",
                 "tcp830": "passed",
             }
+        evidence.readiness_outcome = "passed"
+        for role in ("core_02", "edge_junos_01"):
+            device = self._devices[role]
             self._establish_host_trust(
                 device.host, (22, 830) if role == "edge_junos_01" else (22,)
             )
-        evidence.readiness_outcome = "passed"
         cached = CachedSecrets(self._credentials)
         targets = {
             "core_02": (

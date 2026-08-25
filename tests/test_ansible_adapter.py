@@ -110,7 +110,9 @@ def test_read_only_connection_failure_has_bounded_classification(monkeypatch) ->
         ("invalid input detected", "Cisco rejected a read-only CLI command"),
         (
             "unrecognized provider module detail",
-            "signals=module shape=none exception_type=none frames=none",
+            "signals=module shape=none exception_type=none frames=none "
+            "structural_tokens=none exception_kind=NoneType exception_length=0 "
+            "exception_lines=0",
         ),
     ],
 )
@@ -234,6 +236,7 @@ def test_unknown_task_exception_exposes_only_bounded_frames(monkeypatch) -> None
             DeviceCredentials(username="user", password=secret),
         )
     assert "frames=network.py:run,action.py:execute" in str(caught.value)
+    assert "structural_tokens=Traceback" in str(caught.value)
     assert secret not in str(caught.value)
 
 

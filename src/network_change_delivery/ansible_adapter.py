@@ -158,10 +158,31 @@ def _bounded_read_failure(result: object) -> str:
     )[-4:]
     frame_text = ",".join(f"{filename}:{function}" for filename, function in frames)
     frame_text = frame_text or "none"
+    structural_tokens = sorted(
+        {
+            token
+            for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{2,63}\b", exception)
+            if token.startswith(
+                (
+                    "Ansible",
+                    "Connection",
+                    "Module",
+                    "Network",
+                    "Traceback",
+                )
+            )
+        }
+    )[:8]
+    token_text = ",".join(structural_tokens) or "none"
+    exception_kind = type(values.get("exception")).__name__
+    exception_length = min(len(exception), 99999)
+    exception_lines = min(exception.count("\n") + bool(exception), 9999)
     return (
         "Cisco identity failure "
         f"signals={signal_text} shape={shape_text} exception_type={exception_type} "
-        f"frames={frame_text}"
+        f"frames={frame_text} structural_tokens={token_text} "
+        f"exception_kind={exception_kind} exception_length={exception_length} "
+        f"exception_lines={exception_lines}"
     )
 
 

@@ -158,6 +158,13 @@ identifiers under nonstandard traceback rendering. It still exposes no paths,
 line numbers, messages, arguments, or values. Cleanup, absence, and retirement
 passed and Build #96 was not retried.
 
+Build #97 produced the same result under the broadened structural parser. The
+fallback now records only the exception value kind, bounded length/newline
+counts, and identifiers beginning with a small trusted set of framework prefixes
+such as `Ansible`, `Connection`, `Module`, `Network`, and `Traceback`. Arbitrary
+tokens and text remain withheld. Cleanup, absence, and state retirement passed
+and Build #97 was not retried.
+
 ## External PR build
 
 - Buildkite build/ID: pending

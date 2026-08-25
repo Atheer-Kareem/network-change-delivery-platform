@@ -377,6 +377,7 @@ def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
         captured["config"] = config.read_text(encoding="utf-8")
         captured["mode"] = config.stat().st_mode & 0o777
         captured["home"] = kwargs["envvars"]["HOME"]
+        captured["inventory"] = kwargs["inventory"]
         return SimpleNamespace(status="successful", rc=0)
 
     monkeypatch.setattr(
@@ -399,3 +400,6 @@ def test_runner_gives_libssh_the_run_scoped_known_hosts_file(
     )
     assert captured["mode"] == 0o600
     assert captured["home"] == str(tmp_path)
+    target = captured["inventory"]["all"]["hosts"]["ncdp_target"]
+    assert target["ansible_libssh_config_file"].endswith("/libssh_config")
+    assert target["ansible_libssh_host_key_checking"] is True

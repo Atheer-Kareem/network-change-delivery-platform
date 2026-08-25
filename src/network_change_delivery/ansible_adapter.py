@@ -445,6 +445,7 @@ class AnsibleRunnerCiscoAdapter:
         else:
             verify_existing_host_trust(device, self._known_hosts)
         selected: dict[str, dict[str, Any]] = {}
+        inventory = self._inventory(device)
 
         def handle_event(event: dict[str, Any]) -> None:
             event_kind = event.get("event")
@@ -479,13 +480,16 @@ class AnsibleRunnerCiscoAdapter:
                     encoding="utf-8",
                 )
                 libssh_config.chmod(0o600)
+                target = inventory["all"]["hosts"]["ncdp_target"]
+                target["ansible_libssh_config_file"] = str(libssh_config)
+                target["ansible_libssh_host_key_checking"] = True
             with _credential_environment(credentials):
                 result = ansible_runner.run(
                     private_data_dir=str(private_data),
                     project_dir=str(self._root / "ansible"),
                     artifact_dir=str(private_data / "artifacts"),
                     playbook=playbook,
-                    inventory=self._inventory(device),
+                    inventory=inventory,
                     extravars=extravars or {},
                     envvars={
                         "ANSIBLE_CONFIG": str(self._root / "ansible.cfg"),

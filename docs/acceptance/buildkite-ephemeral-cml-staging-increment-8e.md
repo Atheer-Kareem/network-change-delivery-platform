@@ -188,6 +188,13 @@ now gives Ansible a short, mode-0700 temporary Runner-local persistent-control
 directory while retaining run-scoped strict host trust. This changes no device
 credential, network intent, or provider retry classification.
 
+Build #101 confirmed the persistent socket correction and then exposed the
+next actual child input failure: libssh rejected core-02 against stale host
+trust instead of the freshly established run-scoped file. The adapter now binds
+the generated libssh configuration and strict checking directly on the Runner
+inventory host as well as in the child environment, avoiding reliance on
+ambient plugin discovery while retaining exact-host verification.
+
 ## External PR build
 
 - Buildkite build/ID: pending

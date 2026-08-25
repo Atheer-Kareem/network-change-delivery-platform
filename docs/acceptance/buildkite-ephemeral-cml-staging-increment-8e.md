@@ -181,6 +181,13 @@ identity task's credential-redacted result to a mode-0600 agent-local diagnostic
 outside the checkout and artifact boundary. This temporary diagnostic path is
 removed after root-cause isolation and cannot be part of final acceptance.
 
+Build #100 isolated the child-process failure as `AF_UNIX path too long`. The
+run-scoped `HOME` used for strict host trust made Ansible's default persistent
+connection socket path exceed the macOS Unix-domain socket limit. The adapter
+now gives Ansible a short, mode-0700 temporary Runner-local persistent-control
+directory while retaining run-scoped strict host trust. This changes no device
+credential, network intent, or provider retry classification.
+
 ## External PR build
 
 - Buildkite build/ID: pending

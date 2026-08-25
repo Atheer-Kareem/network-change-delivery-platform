@@ -493,6 +493,7 @@ class AnsibleRunnerCiscoAdapter:
                             self._root
                         ),
                         "ANSIBLE_HOST_KEY_CHECKING": "True",
+                        "ANSIBLE_PERSISTENT_CONTROL_PATH_DIR": str(private_data / "pc"),
                         "NCDP_DEVICE_USERNAME": os.environ["NCDP_DEVICE_USERNAME"],
                         "NCDP_DEVICE_PASSWORD": os.environ["NCDP_DEVICE_PASSWORD"],
                         **(

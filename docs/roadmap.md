@@ -95,13 +95,16 @@ Ordering may change when implementation evidence requires it.
     chronology. **10A — audit architecture and durable-correlation contract**
     defines the evidence inventory, a top-level correlation envelope, external
     append-only storage, authority boundaries, and the Oxidized integration
-    boundary. **10B — durable audit record/store and Buildkite correlation** will
-    implement the typed envelope, canonical integrity binding, external JSON
-    store, read/query boundary, and sanitized delivery correlation without
-    Oxidized. **10C — Oxidized Git-backed actual-state chronology and audit
-    correlation** will add private external Cisco/Junos configuration history,
-    bounded collection, and non-secret Git references without changing desired
-    intent authority. 10A is complete after review and merge.
+    boundary. **10B-1 — durable audit models and append-only store** implements
+    the typed envelope, reviewed artifact references, canonical integrity,
+    bounded filesystem persistence, no-overwrite publication, and validated
+    programmatic reads independently of deployment. **10B-2 — Buildkite
+    correlation and CLI query integration** will persist sanitized protected
+    delivery evidence and add bounded record lookup without Oxidized. **10C —
+    Oxidized Git-backed actual-state chronology and audit correlation** will add
+    private external Cisco/Junos configuration history, bounded collection, and
+    non-secret Git references without changing desired intent authority. 10A is
+    complete; 10B-1 is complete after review and merge.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

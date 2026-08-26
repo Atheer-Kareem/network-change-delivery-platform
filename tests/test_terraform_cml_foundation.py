@@ -114,7 +114,8 @@ def test_buildkite_terraform_contract_and_existing_gates() -> None:
     assert "terraform -chdir=infrastructure/cml/ephemeral validate" in command
     assert "CML2_" not in command
     assert not re.search(r"terraform[^\n]*(plan|apply|import|destroy)", command)
-    for key in ("promotion", "deployment-approval", "deploy-gate"):
-        assert 'build.branch == "main"' in steps[key]["if"]
-        assert "build.pull_request.id == null" in steps[key]["if"]
-    assert steps["deploy-gate"]["agents"]["queue"] == "ncdp-deploy"
+    protected = steps["protected-delivery"]
+    assert 'build.branch == "main"' in protected["if"]
+    assert "build.pull_request.id == null" in protected["if"]
+    protected_steps = {step["key"]: step for step in protected["steps"]}
+    assert protected_steps["deploy-gate"]["agents"]["queue"] == "ncdp-deploy"

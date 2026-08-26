@@ -1,21 +1,45 @@
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
+RUNTIME_CHANGE_CONDITION = {
+    "include": "**",
+    "exclude": [
+        "docs/**",
+        "README.md",
+        "AGENTS.md",
+        ".github/CODEOWNERS",
+        ".github/pull_request_template.md",
+        "tests/**",
+        ".gitignore",
+    ],
+}
+
+
+def _steps_by_key(pipeline: dict[str, object]) -> dict[str, dict[str, object]]:
+    steps = {step["key"]: step for step in pipeline["steps"]}
+    protected = steps["protected-delivery"]
+    steps.update({step["key"]: step for step in protected["steps"]})
+    return steps
 
 
 def test_pipeline_contract() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
-    steps = {step["key"]: step for step in pipeline["steps"]}
-    assert set(steps) == {
+    top_level_steps = {step["key"]: step for step in pipeline["steps"]}
+    assert set(top_level_steps) == {
         "quality",
         "pipeline-contract",
         "cml-staging",
-        "promotion",
-        "deployment-approval",
-        "deploy-gate",
+        "protected-delivery",
     }
+    steps = _steps_by_key(pipeline)
+    assert "if_changed" not in steps["quality"]
+    assert "if_changed" not in steps["pipeline-contract"]
     quality = steps["quality"]
     assert quality["group"] == ":white_check_mark: quality"
     assert quality["key"] == "quality"
@@ -92,6 +116,15 @@ def test_pipeline_contract() -> None:
             "reason": "Retained staging state requires explicit operator recovery.",
         },
     }
+    assert staging["if_changed"] == RUNTIME_CHANGE_CONDITION
+    protected = steps["protected-delivery"]
+    assert protected["depends_on"] == "cml-staging"
+    assert protected["if_changed"] == RUNTIME_CHANGE_CONDITION
+    assert [step["key"] for step in protected["steps"]] == [
+        "promotion",
+        "deployment-approval",
+        "deploy-gate",
+    ]
     assert steps["promotion"]["agents"]["queue"] == "ncdp-validation"
     assert steps["promotion"]["concurrency"] == 1
     assert steps["promotion"]["concurrency_group"] == "ncdp/batfish-promotion"
@@ -133,10 +166,103 @@ def test_pipeline_contract() -> None:
 
 def test_pr_and_main_conditions() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
-    steps = {step["key"]: step for step in pipeline["steps"]}
+    steps = _steps_by_key(pipeline)
+    protected = steps["protected-delivery"]
+    assert 'build.branch == "main"' in protected["if"]
+    assert "build.pull_request.id == null" in protected["if"]
+    assert "if" not in steps["cml-staging"]
     for key in ("promotion", "deployment-approval", "deploy-gate"):
-        assert 'build.branch == "main"' in steps[key]["if"]
-        assert "build.pull_request.id == null" in steps[key]["if"]
+        assert "if" not in steps[key]
+
+
+def test_live_paths_use_fail_closed_allowlist() -> None:
+    pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
+    steps = _steps_by_key(pipeline)
+    assert steps["cml-staging"]["if_changed"] == RUNTIME_CHANGE_CONDITION
+    assert steps["protected-delivery"]["if_changed"] == RUNTIME_CHANGE_CONDITION
+
+    assert RUNTIME_CHANGE_CONDITION["include"] == "**"
+    assert set(RUNTIME_CHANGE_CONDITION["exclude"]) == {
+        "docs/**",
+        "README.md",
+        "AGENTS.md",
+        ".github/CODEOWNERS",
+        ".github/pull_request_template.md",
+        "tests/**",
+        ".gitignore",
+    }
+
+
+@pytest.mark.parametrize(
+    ("changed_files", "live_path_expected"),
+    [
+        (("docs/foo.md",), False),
+        (("README.md",), False),
+        (("AGENTS.md",), False),
+        ((".github/CODEOWNERS",), False),
+        ((".github/pull_request_template.md",), False),
+        (("tests/test_something.py",), False),
+        ((".gitignore",), False),
+        (("docs/foo.md", "tests/test_something.py"), False),
+        (("src/network_change_delivery/example.py",), True),
+        (("scripts/example.sh",), True),
+        ((".buildkite/pipeline.yml",), True),
+        ((".github/workflows/quality.yml",), True),
+        ((".github/new-control-plane-file.yml",), True),
+        (("infrastructure/example.tf",), True),
+        (("ansible/example.yml",), True),
+        (("ansible.cfg",), True),
+        (("pyproject.toml",), True),
+        (("uv.lock",), True),
+        ((".python-version",), True),
+        (("Dockerfile",), True),
+        ((".dockerignore",), True),
+        (("compose.assurance.yaml",), True),
+        (("deployments/example",), True),
+        (("arbitrary-new-directory/example.txt",), True),
+        (("docs/foo.md", "src/network_change_delivery/example.py"), True),
+    ],
+)
+def test_installed_buildkite_change_evaluation(
+    tmp_path: Path,
+    changed_files: tuple[str, ...],
+    live_path_expected: bool,
+) -> None:
+    agent = shutil.which("buildkite-agent")
+    if agent is None:
+        pytest.skip("Buildkite agent is not installed in this test environment")
+
+    changed_files_path = tmp_path / "changed-files.txt"
+    changed_files_path.write_text("\n".join(changed_files) + "\n")
+    result = subprocess.run(
+        [
+            agent,
+            "pipeline",
+            "upload",
+            str(ROOT / ".buildkite/pipeline.yml"),
+            "--dry-run",
+            "--format",
+            "yaml",
+            "--reject-secrets",
+            "--reject-parse-warnings",
+            "--changed-files-path",
+            str(changed_files_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "BUILDKITE_AGENT_ACCESS_TOKEN": "local-dry-run"},
+    )
+    rendered = yaml.safe_load(result.stdout)
+    rendered_steps = {step["key"]: step for step in rendered["steps"]}
+    for key in ("cml-staging", "protected-delivery"):
+        assert ("skip" not in rendered_steps[key]) is live_path_expected
+
+
+def test_external_bootstrap_fetches_diff_base() -> None:
+    setup = (ROOT / "docs/acceptance/buildkite-external-setup.md").read_text()
+    assert "buildkite-agent pipeline upload --fetch-diff-base" in setup
+    assert "Settings → Steps → Commands" in setup
 
 
 def test_promotion_container_contract() -> None:

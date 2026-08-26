@@ -1,5 +1,32 @@
 # Buildkite external acceptance
 
+## Pipeline bootstrap and change detection
+
+The Buildkite pipeline settings must use this bootstrap command:
+
+```sh
+buildkite-agent pipeline upload --fetch-diff-base
+```
+
+Configure it in the Buildkite pipeline UI under **Settings → Steps → Commands**.
+The fetch is required because repository-defined `if_changed` conditions are
+evaluated during pipeline upload; refreshing the comparison ref prevents a
+long-lived agent checkout from classifying against a stale base.
+
+For pull requests, Buildkite compares the complete change against the pull
+request base branch. For ordinary non-PR `main` builds, the repository assumes
+that `main` advances through one reviewed merge at a time; when the refreshed
+base is the checked-out commit, the agent evaluates the latest commit against
+its parent. If the agent cannot determine changed files, Buildkite disables
+`if_changed` filtering and runs all steps, which is the required fail-closed
+behavior.
+
+Quality and pipeline-contract checks remain unconditional. Only changes made
+entirely within `docs/**`, `README.md`, `AGENTS.md`, `.github/CODEOWNERS`,
+`.github/pull_request_template.md`, `tests/**`, or `.gitignore` may omit live
+CML staging and the complete protected-delivery group. Any other `.github`
+path—and any mixed, executable, deployment, or unknown path—runs the live path.
+
 This document records the external Buildkite and GitHub acceptance for Increment 7.
 
 PR-side external acceptance is verified. GitHub pull requests trigger Buildkite,

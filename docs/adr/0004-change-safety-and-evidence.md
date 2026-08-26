@@ -19,8 +19,11 @@ change checks run immediately before writing; stale plans fail closed.
 Deploy one canary per representative platform, then bounded waves with independent
 validation. Failure stops subsequent waves. Report partial outcomes honestly and
 never automatically retry an ambiguous write. Immediate recovery uses proven
-vendor-aware mechanisms. Delayed rollback is a new controlled change and checks
-later approved changes for conflict before calculating an inverse.
+vendor-aware mechanisms. Increment 9 narrows the implemented recovery baseline:
+automated historical ancestry, inverse generation, and later-change conflict
+handling are deferred. A later rollback is a new reviewed desired-state change
+through the ordinary delivery pipeline; Git history alone does not authorize a
+device write.
 
 A future typed `ChangeRecord` correlates the PR, commit, build, container,
 inventory, targets, plan and digest, approval, assurance, twin, per-device

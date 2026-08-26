@@ -20,7 +20,7 @@ flowchart TD
   W --> I[Independent validation]
   I --> E[Typed evidence]
   E --> M[Continuous monitoring]
-  M -->|later problem| D[New delayed-rollback proposal]
+  M -->|later problem| D[New reviewed restoration change]
   D --> V
 ```
 
@@ -41,11 +41,13 @@ partial outcomes remain explicit. Command success is insufficient—independent
 post-change validation decides deployment success.
 
 Immediate recovery uses proven vendor-native semantics for the supported change.
-A later regression creates a new reviewed rollback change. It evaluates original
-pre-change state and plan, subsequent approved changes, current desired state,
-and live state, then produces a safe inverse or blocks on conflict. Git revert is
-history manipulation, not device-change authorization. Monitoring continues
-independently after pipeline completion.
+A later regression is handled as a new reviewed desired-state change through the
+ordinary delivery lifecycle. Git revert may produce that proposed Git change,
+but is history manipulation rather than device-change authorization. Automated
+historical ancestry reconstruction, inverse generation, and later-change
+conflict handling are deferred. Monitoring continues independently after
+pipeline completion. See [recovery safety](recovery-safety.md).
+
 ## Promotion before deployment
 
 The 7A promotion stage packages verified immutable artifacts and requires human

@@ -76,11 +76,16 @@ Ordering may change when implementation evidence requires it.
    independent absence, and guarded state retirement passed. 8E-3 adds the
    serialized Buildkite gate, staging workload identity, dedicated read-only
    authority boundaries, trusted-agent PR admission, evidence publication, and
-   retained-state recovery. External same-repository PR-build acceptance remains
-   required before completion. Parallel twins require
-   a future isolated management network.
-9. **Recovery and delayed rollback:** vendor-aware immediate recovery, ancestry,
-   safe inverse planning, and later-change conflict detection.
+   retained-state recovery. Increment 8E-3 is complete: PR #44 merged and the
+   merged commit passed Buildkite build #115, including the ephemeral CML staging
+   gate before promotion. Parallel twins require a future isolated management
+   network.
+9. **Failure recovery:** vendor-aware immediate recovery, failed-validation
+   handling, honest ambiguous-write behavior, recovery verification, and strict
+   fleet stop semantics. Sophisticated historical rollback with ancestry,
+   automatic inverse planning, and later-change conflict detection is deferred;
+   a later rollback is a new reviewed desired-state change through the ordinary
+   delivery pipeline.
 10. **Audit/configuration history:** typed `ChangeRecord`, durable correlation, and
     Oxidized Git-backed actual-state chronology.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,

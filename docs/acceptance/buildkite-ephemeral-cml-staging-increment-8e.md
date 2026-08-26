@@ -8,8 +8,8 @@ quality and pipeline-contract and before main-only promotion, preserving human
 approval and deploy-gate semantics. It invokes the accepted 8E-2 lifecycle and
 keeps network-intent validation read-only.
 
-External acceptance is pending. This increment is not accepted until a
-same-repository PR build records the following evidence.
+External acceptance passed on the hardened implementation. Any later commit
+must receive its own fresh same-repository PR build before final review.
 
 Static implementation and prerequisite setup passed before that build. The
 `ncdp-staging` queue exists with concurrency controlled by the pipeline, and its

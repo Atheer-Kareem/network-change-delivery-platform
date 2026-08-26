@@ -319,6 +319,11 @@ gem graph, and the multi-platform base image are exact inputs. The final image
 runs as a fixed non-root user and retains runtime libraries rather than its
 native build toolchain.
 
+Rugged 1.9.6 supplies its vendored libgit2 1.9.6 in this image. Runtime version
+and native-linkage inspection established that `rugged.so` does not dynamically
+use Debian system libgit2, so the runtime carries no separate system-libgit2
+dependency.
+
 The packaging acceptance is intentionally synthetic: one TEST-NET identity is
 loaded with polling disabled, `GET /nodes.json` reports that it has never been
 collected, and Docker publishes the web listener only on host loopback. No

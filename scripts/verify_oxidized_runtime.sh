@@ -14,6 +14,17 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+docker run --rm --entrypoint bundle "${image}" \
+  _2.5.22_ exec ruby -rtimeout -e '
+    Timeout.timeout(10) do
+      require "rugged"
+      abort "unexpected Rugged version" unless Rugged::VERSION == "1.9.6"
+      abort "unexpected libgit2 version" unless Rugged.libgit2_version == [1, 9, 6]
+      abort "Rugged diagnostic ran as root" if Process.uid.zero?
+      abort "unexpected runtime identity" unless Process.uid == 30_000 && Process.gid == 30_000
+    end
+  '
+
 mkdir -p "${fixture_root}/configs"
 printf '%s\n' '192.0.2.1:ios' > "${fixture_root}/router.db"
 cat > "${fixture_root}/config" <<EOF
@@ -112,6 +123,7 @@ docker inspect "${container_id}" | jq -e '
 
 [ "$(docker exec "${container_id}" id -u)" -ne 0 ]
 echo "Oxidized synthetic runtime acceptance: PASS"
+echo "Rugged/libgit2 runtime: 1.9.6/1.9.6"
 echo "API route: /nodes.json"
 echo "Synthetic nodes: 1"
 echo "Configuration outputs: 0"

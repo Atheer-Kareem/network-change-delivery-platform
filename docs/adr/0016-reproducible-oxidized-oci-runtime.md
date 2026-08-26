@@ -29,6 +29,13 @@ The verified Linux arm64 child digest is
 Registry index and platform-manifest digests are distinct from a local built
 image ID.
 
+The accepted Rugged 1.9.6 extension uses its vendored libgit2 1.9.6. Runtime
+inspection proved the reported libgit2 version and found no dynamic
+`libgit2.so` dependency on `rugged.so`; consequently this image neither
+installs nor depends on Debian's system libgit2 development or runtime package.
+The repeatable acceptance checks the Rugged and libgit2 runtime versions; the
+native-linkage inspection records the basis for this packaging decision.
+
 The multi-stage image retains only runtime libraries and runs by default as the
 fixed non-root UID/GID `30000:30000`. This stable default is sufficient for the
 packaging proof; host bind-mount ownership and any caller-selected identity are

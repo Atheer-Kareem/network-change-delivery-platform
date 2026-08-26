@@ -47,6 +47,11 @@ def test_gem_contract_and_lock_are_exact() -> None:
 def test_final_image_is_non_root_and_has_no_build_toolchain() -> None:
     dockerfile = read("Dockerfile")
     runtime = dockerfile.split(" AS runtime\n", maxsplit=1)[1]
+    assert "libgit2-dev" not in dockerfile
+    assert "libgit2-1.5" not in dockerfile
+    assert "--use-system-libraries" not in dockerfile
+    assert "libssl-dev" in dockerfile
+    assert "zlib1g-dev" in dockerfile
     assert "USER 30000:30000" in runtime
     assert "EXPOSE 8888/tcp" in runtime
     assert 'ENTRYPOINT ["bundle", "_2.5.22_", "exec", "oxidized"]' in runtime
@@ -68,6 +73,8 @@ def test_synthetic_verifier_is_bounded_and_hardened() -> None:
         '"http://127.0.0.1:${host_port}/nodes.json"',
         '"${attempt}" -lt 30',
         'status == "never"',
+        'Rugged::VERSION == "1.9.6"',
+        "Rugged.libgit2_version == [1, 9, 6]",
         "trap cleanup EXIT HUP INT TERM",
     ):
         assert contract in verifier

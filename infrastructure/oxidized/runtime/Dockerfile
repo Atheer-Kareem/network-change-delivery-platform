@@ -12,10 +12,11 @@ RUN apt-get update && \
     apt-get install --yes --no-install-recommends \
       build-essential \
       cmake \
-      libgit2-dev \
       libicu-dev \
+      libssl-dev \
       libyaml-dev \
-      pkg-config && \
+      pkg-config \
+      zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 COPY Gemfile Gemfile.lock ./
 RUN gem install --no-document bundler --version "${BUNDLER_VERSION}" && \
@@ -30,7 +31,6 @@ ENV BUNDLE_DEPLOYMENT=true \
     HOME=/home/oxidized
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends \
-      libgit2-1.5 \
       libicu72 \
       libyaml-0-2 && \
     rm -rf /var/lib/apt/lists/* && \

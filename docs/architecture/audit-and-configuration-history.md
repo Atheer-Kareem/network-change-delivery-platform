@@ -89,24 +89,48 @@ Baseline 1 needs an append-only external JSON store, not a database. The query
 volume and access pattern do not yet justify PostgreSQL, Elasticsearch, or a
 second service.
 
-The store contract for 10B is:
+Increment 10B-1 implements this contract in `audit.py` and `audit_store.py`:
 
 - an explicit agent/operator-owned absolute root outside every checkout;
-- root and parent directories mode `0700`, record and artifact files mode
-  `0600`, with ownership and symlink checks;
+- the root and store-managed child directories mode `0700`, record and artifact
+  files mode `0600`, with current-UID ownership and symlink checks; arbitrary
+  ancestors such as `/Users` are not part of this permission boundary;
 - one canonical JSON artifact per immutable object;
-- SHA-256 over canonical JSON with the object's digest field omitted;
-- a content-addressed artifact layout such as
-  `artifacts/<kind>/<sha256>.json`;
-- a bounded record layout such as `records/<year>/<month>/<record-id>.json`,
-  where `record-id` is a generated UUID, recorded once and thereafter stable;
+- for intrinsically digested plans, plan assurance, and promotion manifests,
+  store identity equals the model's verified digest; for `ChangeRecord`,
+  `FleetChangeRecord`, and `StagingEvidence`, it is SHA-256 over their complete
+  canonical JSON;
+- content-addressed artifacts at
+  `artifacts/<reviewed-kind>/<sha256-hex>.json`;
+- direct stable record lookup at `records/<record-id>.json`, preventing one UUID
+  from appearing in multiple date partitions without introducing an index;
 - exclusive create-new behavior and no silent overwrite;
-- write to a unique mode-0600 temporary file in the destination filesystem,
-  flush and `fsync`, publish without replacement, then `fsync` the directory;
+- a 4 MiB maximum canonical artifact and 256 KiB maximum audit record;
+- write to an exclusively created mode-0600 temporary inode in the destination
+  directory, flush and `fsync`, publish with a same-directory hard link, then
+  `fsync` the directory; `link()` returns `EEXIST` rather than replacing an
+  existing destination;
 - readers ignore incomplete temporary files and validate schema and digest;
 - referenced artifacts are persisted before the final envelope, so no visible
   record points to a half-written artifact;
 - a persistence failure fails closed and must not claim durable audit success.
+
+`AuditArtifactKind` admits only `DeploymentPlan`, `FleetDeploymentPlan`,
+`PlanAssuranceRecord`, `DeploymentPromotionManifest`, `StagingEvidence`,
+`ChangeRecord`, and `FleetChangeRecord`. `AuditArtifactReference` binds kind,
+schema version, digest, canonical store-relative locator, and size. It cannot be
+used as a label for arbitrary JSON. Exact existing content-addressed artifacts
+may be reused only after their regular-file metadata, canonical schema, size,
+and integrity are revalidated. A corrupt or divergent collision fails closed.
+A `ChangeAuditRecord` UUID collision always fails, even when existing bytes are
+identical.
+
+`AuditStore.persist_record()` validates the envelope digest and reads and
+verifies every referenced artifact before publishing the record.
+`read_artifact()` and `read_record()` enforce containment, regular non-symlink
+files, owner and mode, size, exact schema version, canonical bytes, and digest.
+There are deliberately no CLI, search, Buildkite, deployment, staging, or
+device-workflow integrations in 10B-1.
 
 The envelope's canonical digest is its integrity identity; `record-id` is its
 stable lookup identity. Both are recorded. Two records with the same content
@@ -115,9 +139,10 @@ Buildkite may upload a sanitized convenience copy, but artifact retention is
 never the durable authority and runtime evidence never enters the product Git
 repository.
 
-Initial reads can scan and validate the bounded record tree. The anticipated
-interface is `ncdp audit show <record-id>` and `ncdp audit find` by change ID,
-commit, Buildkite build ID, or NetBox device ID. Secondary indexes or a database
+10B-1 reads directly by artifact reference or record UUID. The anticipated
+10B-2 interface is `ncdp audit show <record-id>` and `ncdp audit find` by change
+ID, commit, Buildkite build ID, or NetBox device ID. Initial queries may scan
+and validate the bounded `records` directory. Secondary indexes or a database
 should be introduced only after measured scale or concurrency requires them.
 Retention and deletion policy are deliberately outside 10B; append-only means
 the baseline does not mutate or silently retire records.
@@ -204,12 +229,12 @@ observed actual state; Git/NCDP remains desired-intent authority.
 
 ## Implementation sequence and limitations
 
-10B should add only the typed envelope/reference models, canonical digest,
-append-only external JSON store, validated read/query boundary, and Buildkite
-deployment correlation needed to persist sanitized existing evidence. It should
-not migrate current execution schemas or add Oxidized. If assembling a complete
-record and adding CLI queries is too large after implementation discovery, split
-10B into model/store first and pipeline/query integration second.
+10B-1 provides the typed envelope/reference models, canonical digest, direct
+validated reads, and append-only external JSON store independently of runtime
+delivery. 10B-2 should assemble and persist sanitized existing evidence at the
+protected Buildkite boundary and add bounded `show`/`find` CLI reads. It must
+decide explicitly how audit persistence affects deployment success, without
+migrating current execution schemas or adding Oxidized.
 
 10C should add the private persistent Oxidized runtime, Cisco and Junos models,
 NetBox-to-node mapping, OpenBao credential boundary, bounded forced collection,
@@ -222,4 +247,11 @@ storage; approver identity is unavailable at the current boundary; existing
 execution records are not self-digested; the current deployment context does
 not expose a trustworthy built-container digest; and an Oxidized collection
 cannot always prove one-to-one causality or create a new commit when the
-configuration is unchanged.
+configuration is unchanged. The filesystem store narrows races with a private,
+owned root, no-follow checks, inode metadata checks, exclusive temporary files,
+and no-replace hard-link publication. It does not claim protection from a
+privileged hostile local actor or eliminate every check/use race on platforms
+without directory-handle-relative reads. If directory durability fails after
+linking, it attempts to remove its new final link before returning failure; an
+unclean process or filesystem failure may still leave an ignored temporary
+entry or require operator inspection.

@@ -228,17 +228,30 @@ the serialized staging queue.
 
 ## External PR build
 
-- Buildkite build/ID: pending
-- tested commit: pending
-- `cml-staging` job ID and run ID: pending
-- fresh lab/node/link IDs: pending
-- core-02 and edge-junos readiness: pending
-- NCDP read-only validation: pending
-- direct destroy from STARTED: pending
-- independent CML absence and state retirement: pending
-- sanitized artifact/digest: pending
-- final CML staging count: pending
-- console operations/device writes: expected zero
+- Buildkite build: #107, passed
+- Build ID: `01a03b56-f780-4762-bfee-ea1bae84e576`
+- tested commit: `97c9a031d841e472982ace61989f5fe442ee6b09`
+- `cml-staging` job ID: `01a03b57-07b0-4777-96f5-018604ff9fc7`
+- run ID: `bk-01a03b56-f780-4762-bfee-ea1bae84e576`
+- fresh lab ID: `1cc6469e-7c04-4db9-be1c-7dcbc399ca09`
+- node IDs: system bridge `da0eb3eb-c6b0-4b59-b863-2a7ed9af26e9`,
+  management switch `1da3b400-930c-437c-b0be-c92fb6c6d801`, core-02
+  `73980847-00a3-4298-b450-c075bc832089`, edge-junos-01
+  `31635f2e-ca38-41db-8b4e-169102de7e19`, core-03
+  `85f98eb8-dc9f-426f-bcd2-e01e0e0dd746`
+- six fresh link IDs were recorded in the versioned sanitized evidence
+- readiness: core-02 76.7 seconds; edge-junos-01 immediately ready when polled;
+  ARP, ICMP, TCP/22, and TCP/830 all passed
+- core-03 unattended CML state: `BOOTED`
+- NCDP read-only validation: core-02 and edge-junos-01 passed on attempt one
+- direct destroy from `STARTED`: passed
+- independent CML absence and empty-state retirement: passed
+- sanitized artifact: `staging-evidence/staging-run.json`
+- artifact SHA-256:
+  `5bcd7c71f3542cda25702bb13e6e990c7d199047957c6cb30463b3e46a43c235`
+- final CML staging count for the run: zero
+- console operations: zero
+- device writes and NCDP deploy operations: zero
 
 The PR remains unmerged. A later merged-main build is a separate check that the
 same staging gate precedes promotion for the merged commit.

@@ -341,7 +341,15 @@ def test_scripts_static_contract() -> None:
     assert "uv run ncdp deploy " not in gate
     assert "ncdp fleet-deploy" not in gate
     assert "--step promotion" in gate
+    assert '"staging-evidence/staging-run.json" "$tmpdir" --step cml-staging' in gate
     assert "uv run ncdp verify-buildkite-gate" in gate
+    assert "uv run ncdp audit verify-buildkite" in gate
+    assert gate.index("audit verify-buildkite") < gate.index(
+        "buildkite-live-request-status"
+    )
+    assert gate.index("audit verify-buildkite") < gate.index(
+        "deploy-buildkite-promotion"
+    )
     assert gate.index("verify-buildkite-gate") < gate.index(
         "buildkite-live-request-status"
     )
@@ -368,6 +376,12 @@ def test_scripts_static_contract() -> None:
     assert gate.count("device write executed: YES") == 1
     assert "set +e" in gate
     assert "deployment_status=$?" in gate
+    assert "audit_status=$?" in gate
+    assert gate.count("deploy-buildkite-promotion") == 1
+    assert gate.rindex("audit persist-buildkite") > gate.index(
+        "deploy-buildkite-promotion"
+    )
+    assert "will not be retried or recovered for an audit-only failure" in gate
     assert 'exit "$deployment_status"' in gate
     assert "inspect the uploaded typed ChangeRecord evidence" in gate
     assert gate.index("artifact upload") < gate.index('exit "$deployment_status"')

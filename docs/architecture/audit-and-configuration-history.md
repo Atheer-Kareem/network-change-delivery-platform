@@ -11,7 +11,8 @@ inventory identity, OpenBao for credentials, and devices for observed reality.
 Increment 10 is divided deliberately:
 
 - 10A defines this evidence, correlation, storage, and sensitivity contract.
-- 10B will implement the durable correlation record and append-only store.
+- 10B-1 implements the durable correlation record and append-only store;
+  10B-2 integrates the protected Buildkite boundary and bounded queries.
 - 10C will add private Oxidized Git-backed actual-state chronology and bounded
   references from audit evidence.
 
@@ -129,8 +130,8 @@ identical.
 verifies every referenced artifact before publishing the record.
 `read_artifact()` and `read_record()` enforce containment, regular non-symlink
 files, owner and mode, size, exact schema version, canonical bytes, and digest.
-There are deliberately no CLI, search, Buildkite, deployment, staging, or
-device-workflow integrations in 10B-1.
+10B-1 deliberately added no CLI, search, Buildkite, deployment, staging, or
+device-workflow integration.
 
 The envelope's canonical digest is its integrity identity; `record-id` is its
 stable lookup identity. Both are recorded. Two records with the same content
@@ -139,11 +140,15 @@ Buildkite may upload a sanitized convenience copy, but artifact retention is
 never the durable authority and runtime evidence never enters the product Git
 repository.
 
-10B-1 reads directly by artifact reference or record UUID. The anticipated
-10B-2 interface is `ncdp audit show <record-id>` and `ncdp audit find` by change
-ID, commit, Buildkite build ID, or NetBox device ID. Initial queries may scan
-and validate the bounded `records` directory. Secondary indexes or a database
-should be introduced only after measured scale or concurrency requires them.
+10B-2 adds `ncdp audit show <record-id>` and an exactly-one-filter
+`ncdp audit find` by change ID, exact commit, Buildkite build UUID, or stable
+NetBox device identity. Find validates every durable record, scans at most
+10,000 records, returns at most 100 summaries by default and by hard limit, and
+fails rather than returning incomplete results when either bound is exceeded.
+Final-record corruption, symlinks, non-canonical names, and unexpected entries
+fail the whole query; only `.audit-tmp-*` incomplete publication entries are
+ignored. Artifact payloads are never printed by normal query output. Secondary
+indexes or a database require measured scale or concurrency evidence.
 Retention and deletion policy are deliberately outside 10B; append-only means
 the baseline does not mutate or silently retire records.
 
@@ -182,6 +187,51 @@ block key, `passed = true`, build/commit/promotion identity, and downstream
 deployment job identity. It must not claim or infer the approver's personal
 identity. Adding that authority is a separate reviewed decision. See the
 [Buildkite block-step contract](https://buildkite.com/docs/pipelines/configure/step-types/block-step).
+
+## Protected Buildkite assembly and failure domains
+
+10B-2 assembles one `ChangeAuditRecord` only in the existing main-only,
+single-device `deploy-gate`. Its record UUID is exactly the immutable Buildkite
+deployment-job UUID, so repeated publication in one prohibited retry context
+collides while a new build/job is a distinct attempt. `BUILDKITE_REPO` is
+normalized from reviewed GitHub SSH or HTTPS clone forms; commit and pipeline,
+build, job, number, and step identities come from the validated Buildkite
+environment. The record states only that `deployment-approval` was passed and
+does not claim approver identity.
+
+The gate downloads `staging-evidence/staging-run.json` specifically from the
+same build's `cml-staging` step. Before it is durable, the application requires
+matching pipeline, build, commit, main branch, staging step and `bk-<build-id>`
+run identity, plus successful creation, readiness, NCDP validation, direct
+destroy, independent absence, state retirement, and no primary or cleanup
+failure. Existing promotion verification remains authoritative for the exact
+manifest, single-device plan, PASSED plan assurance, artifact hashes, commit,
+and their mutual digests. A produced `ChangeRecord` must agree with every
+duplicated plan identity and property before publication.
+
+An unchanged commit-bound live request is independently proven with the
+existing Git-object contract and produces `NO_WRITE` evidence containing only
+the plan, assurance record, promotion manifest, staging evidence, and envelope.
+Absence of `ChangeRecord` alone never implies `NO_WRITE`. A real attempt adds
+the semantically correlated `ChangeRecord`; its detailed outcome remains
+authoritative and the envelope uses a total reviewed summary mapping.
+
+The current single-device outcome mapping is explicit: `COMPLIANT` maps to
+`NO_WRITE`; `SUCCEEDED` to `SUCCEEDED`; `RECOVERED` to `RECOVERED`; `BLOCKED`
+and `STALE_PLAN` to `BLOCKED`; `AMBIGUOUS`, `RECOVERY_AMBIGUOUS`, and
+`CONFIRMATION_AMBIGUOUS` to `AMBIGUOUS`; and `EXECUTION_FAILED`,
+`POST_VALIDATION_FAILED`, `RECOVERY_FAILED`, `AUTO_ROLLBACK_PENDING`, and
+`CONFIRMATION_FAILED` to `FAILED`. A newly introduced `FinalOutcome` has no
+default path and requires an explicit mapping review.
+
+`NCDP_AUDIT_STORE_ROOT` is required and `AuditStore` plus all same-build audit
+inputs are validated before the second device-capable JWT, credential read, or
+possible write. After a typed device outcome, durable artifacts publish first
+and the envelope last. An audit failure then fails the Buildkite job but never
+retries execution, invokes recovery, or changes Cisco/Junos transaction
+semantics. When deployment and audit both fail, deployment remains the primary
+outcome and both domains are reported. A failure before typed `ChangeRecord`
+exists fabricates no durable execution record.
 
 ## Oxidized actual-state chronology
 
@@ -229,12 +279,10 @@ observed actual state; Git/NCDP remains desired-intent authority.
 
 ## Implementation sequence and limitations
 
-10B-1 provides the typed envelope/reference models, canonical digest, direct
-validated reads, and append-only external JSON store independently of runtime
-delivery. 10B-2 should assemble and persist sanitized existing evidence at the
-protected Buildkite boundary and add bounded `show`/`find` CLI reads. It must
-decide explicitly how audit persistence affects deployment success, without
-migrating current execution schemas or adding Oxidized.
+10B-1 provides the typed envelope/reference models and append-only store.
+10B-2 adds protected Buildkite assembly, pre-write store validation, honest
+post-outcome persistence failure semantics, and bounded `show`/`find` reads
+without migrating execution schemas or adding Oxidized.
 
 10C should add the private persistent Oxidized runtime, Cisco and Junos models,
 NetBox-to-node mapping, OpenBao credential boundary, bounded forced collection,

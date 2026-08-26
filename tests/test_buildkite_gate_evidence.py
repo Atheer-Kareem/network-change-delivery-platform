@@ -26,6 +26,8 @@ def run_gate(
     upload_status: int = 0,
     live_request: bool = True,
     runtime_status: int = 0,
+    audit_status: int = 0,
+    audit_root: bool = True,
     retry_count: str | None = "0",
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     (tmp_path / "scripts/buildkite").mkdir(parents=True)
@@ -43,7 +45,13 @@ case "$1 $2" in
     printf '%s\\n' oidc >> "$COMMAND_LOG"
     printf '%s\\n' 'bounded-jwt'
     ;;
-  "artifact download") mkdir -p "$4/promotion"; : > "$4/promotion/manifest.json" ;;
+  "artifact download")
+    if [[ "$3" == "promotion/**" ]]; then
+      mkdir -p "$4/promotion"; : > "$4/promotion/manifest.json"
+    else
+      mkdir -p "$4/staging-evidence"; : > "$4/staging-evidence/staging-run.json"
+    fi
+    ;;
   "artifact upload") printf '%s\\n' "$3" >> "$UPLOAD_LOG"; exit "$UPLOAD_STATUS" ;;
   "meta-data get")
     printf 'sha256:'
@@ -59,8 +67,20 @@ esac
         """#!/usr/bin/env bash
 set -eu
 command="$3"
-printf '%s\\n' "$command" >> "$COMMAND_LOG"
+subcommand="${4:-}"
+if [[ "$command" == audit ]]; then
+  printf 'audit:%s\\n' "$subcommand" >> "$COMMAND_LOG"
+else
+  printf '%s\\n' "$command" >> "$COMMAND_LOG"
+fi
 case "$command" in
+  audit)
+    case "$subcommand" in
+      verify-buildkite) [[ -n "${NCDP_AUDIT_STORE_ROOT:-}" ]] ;;
+      persist-buildkite) exit "$AUDIT_STATUS" ;;
+      *) exit 92 ;;
+    esac
+    ;;
   verify-buildkite-openbao-identity) read -r jwt; [[ "$jwt" == bounded-jwt ]] ;;
   verify-buildkite-gate|verify-buildkite-live-request) exit 0 ;;
   verify-deployment-ansible-runtime) exit "$RUNTIME_STATUS" ;;
@@ -101,7 +121,12 @@ esac
         "CREATE_EVIDENCE": "1" if evidence else "0",
         "LIVE_REQUEST": "1" if live_request else "0",
         "RUNTIME_STATUS": str(runtime_status),
+        "AUDIT_STATUS": str(audit_status),
     }
+    if audit_root:
+        environment["NCDP_AUDIT_STORE_ROOT"] = str(tmp_path / "audit")
+    else:
+        environment.pop("NCDP_AUDIT_STORE_ROOT", None)
     if retry_count is None:
         environment.pop("BUILDKITE_RETRY_COUNT", None)
     else:
@@ -159,6 +184,8 @@ def test_original_job_continues_into_normal_gate_path(
     assert commands.count("oidc") == 2
     assert "verify-deployment-ansible-runtime" in commands
     assert "deploy-buildkite-promotion" in commands
+    assert commands.count("audit:verify-buildkite") == 1
+    assert commands.count("audit:persist-buildkite") == 1
     assert uploads.exists()
 
 
@@ -177,9 +204,26 @@ def test_absent_request_stops_before_second_jwt_and_provider_construction(
     assert commands.count("oidc") == 1
     assert "deploy-buildkite-promotion" not in commands
     assert "verify-deployment-ansible-runtime" not in commands
+    assert commands.count("audit:persist-buildkite") == 1
     assert not uploads.exists()
     assert "live deployment requested: NO" in result.stdout
     assert "device write executed: NO" in result.stdout
+
+
+def test_missing_audit_root_stops_before_device_capable_boundary(
+    tmp_path: Path,
+) -> None:
+    result, _uploads = run_gate(
+        tmp_path,
+        deployment_status=90,
+        evidence=False,
+        outcome="forbidden",
+        audit_root=False,
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode != 0
+    assert commands.count("oidc") == 1
+    assert "deploy-buildkite-promotion" not in commands
 
 
 def test_runtime_failure_stops_before_privileged_jwt_and_deployment(
@@ -244,6 +288,37 @@ def test_failure_before_evidence_does_not_fabricate_artifact(tmp_path: Path) -> 
     assert "device write executed:" not in result.stdout
 
 
+def test_audit_failure_after_success_does_not_retry_deployment(tmp_path: Path) -> None:
+    result, _uploads = run_gate(
+        tmp_path,
+        deployment_status=0,
+        evidence=True,
+        outcome="SUCCEEDED",
+        audit_status=8,
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 1
+    assert commands.count("deploy-buildkite-promotion") == 1
+    assert commands.count("audit:persist-buildkite") == 1
+    assert "will not be retried or recovered" in result.stderr
+
+
+def test_deployment_failure_remains_primary_when_audit_also_fails(
+    tmp_path: Path,
+) -> None:
+    result, _uploads = run_gate(
+        tmp_path,
+        deployment_status=2,
+        evidence=True,
+        outcome="AMBIGUOUS",
+        audit_status=8,
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 2
+    assert commands.count("deploy-buildkite-promotion") == 1
+    assert "deployment outcome remains primary" in result.stdout
+
+
 def test_artifact_upload_failure_fails_job_without_exposing_secrets(
     tmp_path: Path,
 ) -> None:
@@ -254,7 +329,10 @@ def test_artifact_upload_failure_fails_job_without_exposing_secrets(
         outcome="SUCCEEDED",
         upload_status=9,
     )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
     assert result.returncode == 9
+    assert commands.count("deploy-buildkite-promotion") == 1
+    assert commands.count("audit:persist-buildkite") == 1
     assert uploads.exists()
     combined = result.stdout + result.stderr + uploads.read_text(encoding="utf-8")
     for secret in ("bounded-jwt", "client-token", "device-password"):

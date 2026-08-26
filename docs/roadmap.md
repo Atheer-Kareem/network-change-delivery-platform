@@ -99,12 +99,14 @@ Ordering may change when implementation evidence requires it.
     the typed envelope, reviewed artifact references, canonical integrity,
     bounded filesystem persistence, no-overwrite publication, and validated
     programmatic reads independently of deployment. **10B-2 — Buildkite
-    correlation and CLI query integration** will persist sanitized protected
-    delivery evidence and add bounded record lookup without Oxidized. **10C —
+    correlation and CLI query integration** implements same-build semantic
+    correlation, a pre-write durable-store gate, honest post-outcome audit
+    failures, and bounded `show`/`find` reads without Oxidized. **10C —
     Oxidized Git-backed actual-state chronology and audit correlation** will add
     private external Cisco/Junos configuration history, bounded collection, and
     non-secret Git references without changing desired intent authority. 10A is
-    complete; 10B-1 is complete after review and merge.
+    complete; 10B-1 is complete after review and merge, while 10B-2 remains in
+    implementation and external acceptance.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

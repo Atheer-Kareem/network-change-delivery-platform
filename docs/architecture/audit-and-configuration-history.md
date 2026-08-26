@@ -311,6 +311,22 @@ rollback. Runtime installation, private Git history, inventory/credential
 materialization, scheduling, API control, and protected pre/post integration
 remain future 10C work.
 
+### Reproducible observation runtime
+
+Increment 10C-2 packages Oxidized 0.37.0 and oxidized-web 0.18.1 in the
+project-controlled OCI runtime frozen by ADR 0016. Ruby, Bundler, the complete
+gem graph, and the multi-platform base image are exact inputs. The final image
+runs as a fixed non-root user and retains runtime libraries rather than its
+native build toolchain.
+
+The packaging acceptance is intentionally synthetic: one TEST-NET identity is
+loaded with polling disabled, `GET /nodes.json` reports that it has never been
+collected, and Docker publishes the web listener only on host loopback. No
+device connection, configuration output, NetBox or OpenBao access, private Git
+history, or persistent service is part of this increment. Inventory and
+credential materialization, external Git output, scheduling, forced collection,
+and reboot-persistent ownership remain later 10C work.
+
 ## Implementation sequence and limitations
 
 10B-1 provides the typed envelope/reference models and append-only store.
@@ -319,8 +335,9 @@ post-outcome persistence failure semantics, and bounded `show`/`find` reads
 without migrating execution schemas or adding Oxidized.
 
 10C-1 adds typed append-only observation correlation without an Oxidized
-runtime. Later 10C increments should add the private persistent Oxidized
-runtime, Cisco and Junos models,
+runtime. 10C-2 adds only the reproducible non-root OCI package and bounded
+synthetic API proof. Later 10C increments should add the private persistent
+Oxidized service, Cisco and Junos models,
 NetBox-to-node mapping, OpenBao credential boundary, bounded forced collection,
 and Git reference correlation. It must not change desired-state authority or
 place full configurations in NCDP audit JSON.

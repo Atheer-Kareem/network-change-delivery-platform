@@ -117,6 +117,22 @@ def test_record_uuid_and_serialization_are_stable_and_canonical() -> None:
     assert first.digest == second.digest
 
 
+def test_schema_one_digest_and_artifact_kind_compatibility_are_frozen() -> None:
+    assert record().schema_version == "1"
+    assert record().digest == (
+        "sha256:17fc3778a78a041c6971db04e06ab7deb4ec7a46fcd302a00ce7f9efb58677b3"
+    )
+    assert {item.value for item in AuditArtifactKind} == {
+        "deployment_plan",
+        "fleet_deployment_plan",
+        "plan_assurance_record",
+        "deployment_promotion_manifest",
+        "staging_evidence",
+        "change_record",
+        "fleet_change_record",
+    }
+
+
 def test_record_rejects_non_utc_aware_timestamp() -> None:
     with pytest.raises(ValidationError):
         record(generated_at=datetime(2026, 8, 27))

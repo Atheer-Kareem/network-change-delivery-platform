@@ -277,6 +277,40 @@ in logs or copied into `ChangeAuditRecord`. Only non-secret commit, path, blob,
 time, node, and outcome metadata cross the audit boundary. Oxidized records
 observed actual state; Git/NCDP remains desired-intent authority.
 
+### Append-only observation correlation
+
+Increment 10C-1 adds offline contracts and persistence only. A schema-1
+`ConfigurationObservationRecord` is a separate follow-up correlation record,
+not delivery evidence and not an `AuditArtifactKind`. Existing schema-1
+`ChangeAuditRecord`, `ChangeRecord`, `FleetChangeRecord`, artifact kinds,
+canonical bytes, digests, and `records/` paths remain unchanged.
+
+Observation records are stored at
+`observation-records/<observation-record-id>.json` under the same validated
+external root. Before publication, the observation store reads the parent
+through `AuditStore`, proves the exact parent UUID and digest, and proves the
+stable NetBox device is a parent target. The parent is never rewritten, and
+multiple immutable observation records may reference it.
+
+Each record contains bounded repository, stable node, optional group, request,
+timestamp, status, sanitized failure-category, and Git commit/path/blob
+metadata. It contains no configuration bytes, diffs, command or API output,
+credentials, tokens, or free-form error text. At least one pre- or
+post-observation is required. Successful changed/unchanged claims require
+complete, internally consistent revision metadata; failures and timeouts cannot
+fabricate an after revision.
+
+The relationship may describe temporally bracketed, post-only, or uncorrelated
+pre-only evidence. `TEMPORALLY_BRACKETED` records an ordered pre/post pair that
+the future controller establishes around the parent attempt; it deliberately
+does not treat the parent envelope's `generated_at` as a device-execution
+boundary. Schema-1 causality is fixed to `NOT_PROVEN`: temporal and object
+correlation cannot establish exclusive causation. Oxidized remains
+observed-state chronology only and cannot authorize deployment, recovery, or
+rollback. Runtime installation, private Git history, inventory/credential
+materialization, scheduling, API control, and protected pre/post integration
+remain future 10C work.
+
 ## Implementation sequence and limitations
 
 10B-1 provides the typed envelope/reference models and append-only store.
@@ -284,7 +318,9 @@ observed actual state; Git/NCDP remains desired-intent authority.
 post-outcome persistence failure semantics, and bounded `show`/`find` reads
 without migrating execution schemas or adding Oxidized.
 
-10C should add the private persistent Oxidized runtime, Cisco and Junos models,
+10C-1 adds typed append-only observation correlation without an Oxidized
+runtime. Later 10C increments should add the private persistent Oxidized
+runtime, Cisco and Junos models,
 NetBox-to-node mapping, OpenBao credential boundary, bounded forced collection,
 and Git reference correlation. It must not change desired-state authority or
 place full configurations in NCDP audit JSON.

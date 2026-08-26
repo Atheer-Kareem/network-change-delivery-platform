@@ -52,9 +52,11 @@ ancestry. It excludes credentials and secret-bearing payloads.
 
 Immediate recovery uses the strongest proven mechanism for each vendor and
 supported change; Cisco and Junos do not share identical transaction semantics.
-A delayed rollback is a new reviewed change that considers original state,
-later approved changes, current intent, and live state. It computes a safe
-inverse or blocks on conflict; `git revert` alone never authorizes device writes.
+A later rollback is represented as a new reviewed desired-state change through
+the ordinary validation, staging, approval, deployment, and validation pipeline.
+`git revert` may help produce that Git change, but Git history alone never
+authorizes a device write. Automated historical ancestry reconstruction,
+inverse-plan generation, and later-change conflict handling are deferred.
 Continuous observability operates independently of pipeline completion. The
 eventual reference implementation must route actionable alerts through
 Alertmanager to at least one configured demonstration notification receiver; the

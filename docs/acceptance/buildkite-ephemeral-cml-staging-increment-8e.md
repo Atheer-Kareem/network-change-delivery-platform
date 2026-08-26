@@ -8,8 +8,12 @@ quality and pipeline-contract and before main-only promotion, preserving human
 approval and deploy-gate semantics. It invokes the accepted 8E-2 lifecycle and
 keeps network-intent validation read-only.
 
-External acceptance passed on the hardened implementation. Any later commit
-must receive its own fresh same-repository PR build before final review.
+External acceptance passed on the hardened implementation at runtime commit
+`f9d4593bff4a7966d1a4fd44feac601f5aca55c4`. The operator accepted Build #112
+as the final live acceptance for that exact runtime commit. This subsequent
+evidence-only documentation update changes no executable code, Terraform,
+pipeline configuration, identity logic, provider logic, or agent behavior and
+does not start another implementation or live-acceptance cycle.
 
 Static implementation and prerequisite setup passed before that build. The
 `ncdp-staging` queue exists with concurrency controlled by the pipeline, and its
@@ -255,3 +259,39 @@ the serialized staging queue.
 
 The PR remains unmerged. A later merged-main build is a separate check that the
 same staging gate precedes promotion for the merged commit.
+
+## Final accepted runtime build
+
+Build #112 is the final Increment 8E-3 PR live acceptance. It exercised exact
+runtime commit `f9d4593bff4a7966d1a4fd44feac601f5aca55c4` after local CML
+connectivity was restored, using the sole registered staging-agent process,
+PID 62654. Build #109 was not retried.
+
+- Buildkite build: #112, passed in 5 minutes 9 seconds
+- Build ID: `01a03c1b-0392-45dc-bba6-c3186bd30f01`
+- `cml-staging` job ID: `01a03c1b-19ae-42c5-9cfd-5a17d574fde2`
+- run ID: `bk-01a03c1b-0392-45dc-bba6-c3186bd30f01`
+- fresh lab ID: `e03c7204-6ffd-4f95-a07f-ce28d0e9defa`
+- node IDs: system bridge `a045513a-5bca-49a1-bd35-f3fb5fc605e7`,
+  management switch `c2b6c665-eaec-41c6-9dff-9c1387aa741b`, core-02
+  `44d1e458-3a99-4a1d-96cb-1116073ea2f1`, edge-junos-01
+  `8dc297e2-f176-4283-91b1-2d0643f133a0`, and core-03
+  `21b04dee-2b8d-41f8-ae8c-ed9334057346`
+- fresh topology creation: all 13 resources passed
+- readiness: core-02 passed after 67.6 seconds; edge-junos-01 passed when first
+  polled; ARP, ICMP, TCP/22, and TCP/830 passed for both managed endpoints
+- core-03 unattended CML state: `BOOTED`
+- NCDP read-only validation: core-02 and edge-junos-01 passed on attempt one
+- console operations: zero
+- device writes: zero; NCDP deploy was not run
+- direct destroy from `STARTED`: passed
+- independent CML absence: passed
+- run-scoped Terraform state retirement: passed
+- primary failure and cleanup failure: none
+- sanitized evidence schema: version 2
+- evidence SHA-256:
+  `594ad7144989bd31c52d16e13cf88bf77ca0c74e7988a05ce254664783da3e7f`
+
+This is the accepted PR runtime boundary. The documentation-only closeout
+commit records that evidence without changing the implementation exercised by
+Build #112.

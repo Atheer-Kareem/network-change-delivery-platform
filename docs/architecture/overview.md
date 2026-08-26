@@ -54,8 +54,10 @@ flowchart LR
   how without flattening vendor safety semantics.
 - **Live validation:** future pyATS/Genie for Cisco and JSNAPy/PyEZ for Junos
   normalize into platform-owned results.
-- **Audit/evidence:** a future typed `ChangeRecord` correlates every approved
-  input, artifact, action, validation, outcome, and recovery ancestor.
+- **Audit/evidence:** existing `ChangeRecord` and `FleetChangeRecord` types hold
+  bounded execution evidence. A future top-level record will correlate them
+  with immutable pipeline artifacts by stable identity and digest; see
+  [Audit and configuration history](audit-and-configuration-history.md).
 - **Continuous observability:** future Prometheus, Grafana, Alertmanager, gNMIc,
   OpenConfig/gNMI, SNMP Exporter, and Blackbox Exporter run independently of CI.
   Actionable alerts must pass through Alertmanager to at least one configured

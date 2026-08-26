@@ -44,11 +44,14 @@ reported honestly; the system does not claim multi-device atomicity.
 
 ## Audit, recovery, and observability
 
-A future typed `ChangeRecord` correlates change and PR identity, commit and
-Buildkite build, container digest, inventory snapshot, target fleet, immutable
-plan and digest, approval, assurance and twin results, per-device preflight,
-execution, validation, rollout history, outcome, Oxidized history, and recovery
-ancestry. It excludes credentials and secret-bearing payloads.
+Existing typed `ChangeRecord` and `FleetChangeRecord` evidence describes bounded
+device and fleet execution. A future top-level durable audit record correlates
+those records by identity and digest with change and PR identity, exact commit,
+Buildkite build and trustworthy execution-image identity when available,
+inventory and frozen targets, immutable plans, approval, assurance, staging,
+promotion, outcome, and later Oxidized history. It references large immutable
+artifacts instead of copying their payloads and excludes credentials,
+secret-bearing data, and full device configurations.
 
 Immediate recovery uses the strongest proven mechanism for each vendor and
 supported change; Cisco and Junos do not share identical transaction semantics.

@@ -39,13 +39,20 @@ commit-check, semantic candidate validation, and `commit confirmed 5`. A fresh
 session independently validates the active result. Successful validation permits
 one explicit confirmation of the pending commit.
 
-If validation fails, the transaction cannot be closed safely, or required
-confirmation cannot safely succeed, NCDP does not invent a Cisco-style inverse
-transaction. It leaves the temporary commit unconfirmed so the bounded native
-rollback contract remains the recovery mechanism, and reports states such as
-`AUTO_ROLLBACK_PENDING`, `CONFIRMATION_FAILED`, or
-`CONFIRMATION_AMBIGUOUS`. An ambiguous commit-confirmed operation is not retried,
-confirmed, or manually rolled back by the workflow.
+If independent post-validation fails or the transaction cannot be closed safely,
+NCDP deliberately leaves the temporary commit unconfirmed. The bounded native
+commit-confirmed rollback remains the expected recovery mechanism, and the
+workflow may report `AUTO_ROLLBACK_PENDING`. It does not issue a synthetic
+inverse transaction.
+
+If validation succeeds and explicit confirmation is attempted, a known failed
+confirmation is `CONFIRMATION_FAILED` and an uncertain confirmation result is
+`CONFIRMATION_AMBIGUOUS`. Confirmation is not retried and neither outcome causes
+a synthetic inverse. `CONFIRMATION_AMBIGUOUS` does not establish whether the
+temporary commit was confirmed, remained pending, or later rolled back.
+
+An ambiguous commit-confirmed execution itself is not retried, confirmed, or
+manually rolled back by the workflow.
 
 ## Fleet exposure
 
@@ -82,3 +89,10 @@ Junos providers. They are not full-configuration replacement, a generic inverse
 engine, device-wide rollback, fleet atomicity, or proof that recovery itself
 cannot fail. Provider or transport uncertainty remains an operator-investigation
 condition and is represented honestly in evidence.
+
+The Cisco targeted inverse assumes that no out-of-band actor independently
+changes the managed description between the known-successful execution and the
+immediate validation/recovery window. NCDP and Buildkite serialize
+NCDP-controlled exposure, but this reference-lab baseline has no cross-system or
+device-wide lock and no compare-and-swap ownership mechanism against arbitrary
+external writers.

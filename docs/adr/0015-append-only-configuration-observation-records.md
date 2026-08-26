@@ -37,6 +37,11 @@ metadata, not delivery or device-execution evidence. It contains:
 - a bounded temporal relationship, aggregate status, and schema-1 causality
   fixed to `NOT_PROVEN`.
 
+Operational source, node, authentication, connection, collection, output, and
+history failures map only to `FAILED`; collection timeout maps only to
+`TIMED_OUT`; and concurrent collection or inconsistent evidence maps only to
+`AMBIGUOUS`. Successful statuses carry no failure category.
+
 Observation records are published separately at
 `observation-records/<observation-record-id>.json`. Publication first reads the
 parent through the existing validated `AuditStore`, proves both parent UUID and
@@ -62,6 +67,14 @@ The record may state that revisions were observed before or after an NCDP
 attempt and whether their object identities changed. It may never claim that
 NCDP caused the change. Oxidized cannot authorize deployment, recovery, or
 rollback, and its private Git chronology is not desired-state authority.
+
+`TEMPORALLY_BRACKETED` means the future controller established an ordered pre-
+and post-observation window around the parent NCDP attempt. The record validates
+that the pre-observation completed before the post-observation was requested;
+it does not compare that window to `ChangeAuditRecord.generated_at`, because
+envelope generation time is not a trustworthy device-execution boundary. The
+controller contract and schema-1 `NOT_PROVEN` causality limitation remain part
+of interpreting this relationship.
 
 Configuration bytes, diffs, raw device/API output, credentials, tokens,
 passwords, and free-form errors are excluded from the schema. Oxidized

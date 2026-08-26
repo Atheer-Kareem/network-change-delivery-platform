@@ -159,6 +159,12 @@ def test_target_and_node_identity_are_exact_and_bound(target: str, node: str) ->
 @pytest.mark.parametrize(
     "path",
     [
+        ".",
+        "/",
+        "../x",
+        "./x",
+        "managed/../x",
+        "managed//x",
         "/managed/netbox-device-1",
         "../netbox-device-1",
         "managed/../netbox-device-1",
@@ -206,6 +212,37 @@ def test_all_timestamps_require_utc_and_ordering() -> None:
         OxidizedObservation.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    "status",
+    [
+        ObservationStatus.CHANGED,
+        ObservationStatus.UNCHANGED,
+        ObservationStatus.FAILED,
+        ObservationStatus.TIMED_OUT,
+        ObservationStatus.AMBIGUOUS,
+    ],
+)
+def test_before_revision_must_predate_request(status: ObservationStatus) -> None:
+    payload = unchanged_observation().model_dump(mode="python")
+    payload["status"] = status
+    payload["before_revision"] = revision(
+        collected_at=datetime(2026, 8, 27, 1, 1, 30, tzinfo=UTC)
+    )
+    if status not in {ObservationStatus.CHANGED, ObservationStatus.UNCHANGED}:
+        payload["after_revision"] = None
+        payload["failure_category"] = {
+            ObservationStatus.FAILED: ObservationFailureCategory.COLLECTION_FAILED,
+            ObservationStatus.TIMED_OUT: (
+                ObservationFailureCategory.COLLECTION_TIMED_OUT
+            ),
+            ObservationStatus.AMBIGUOUS: (
+                ObservationFailureCategory.INCONSISTENT_EVIDENCE
+            ),
+        }[status]
+    with pytest.raises(ValidationError, match="after the request"):
+        OxidizedObservation.model_validate(payload)
+
+
 def test_changed_and_unchanged_revision_claims_are_consistent() -> None:
     unchanged = unchanged_observation().model_dump(mode="python")
     unchanged["after_revision"] = revision(blob="d" * 40)
@@ -216,9 +253,36 @@ def test_changed_and_unchanged_revision_claims_are_consistent() -> None:
     changed["status"] = ObservationStatus.CHANGED
     with pytest.raises(ValidationError, match="inconsistent"):
         OxidizedObservation.model_validate(changed)
-    changed["after_revision"] = revision(commit="d" * 40, blob="e" * 40)
+    changed["after_revision"] = revision(
+        commit="d" * 40,
+        blob="e" * 40,
+        collected_at=datetime(2026, 8, 27, 1, 1, 30, tzinfo=UTC),
+    )
     assert (
         OxidizedObservation.model_validate(changed).status is ObservationStatus.CHANGED
+    )
+
+
+def test_changed_after_revision_must_be_observed_during_request_window() -> None:
+    changed = unchanged_observation().model_dump(mode="python")
+    changed["status"] = ObservationStatus.CHANGED
+    changed["after_revision"] = revision(
+        commit="d" * 40,
+        blob="e" * 40,
+        collected_at=datetime(2026, 8, 27, 1, 0, 30, tzinfo=UTC),
+    )
+    with pytest.raises(ValidationError, match="inconsistent revisions"):
+        OxidizedObservation.model_validate(changed)
+
+
+def test_unchanged_revision_may_predate_request() -> None:
+    observed = revision(collected_at=datetime(2026, 8, 26, tzinfo=UTC))
+    unchanged = unchanged_observation().model_dump(mode="python")
+    unchanged["before_revision"] = observed
+    unchanged["after_revision"] = observed
+    assert (
+        OxidizedObservation.model_validate(unchanged).status
+        is ObservationStatus.UNCHANGED
     )
 
 
@@ -261,6 +325,42 @@ def test_failure_category_is_closed_and_required() -> None:
     }
     with pytest.raises(ValidationError):
         OxidizedObservation.model_validate(payload)
+
+
+@pytest.mark.parametrize("status", list(ObservationStatus))
+@pytest.mark.parametrize("category", list(ObservationFailureCategory))
+def test_status_and_failure_category_mapping_is_exact(
+    status: ObservationStatus, category: ObservationFailureCategory
+) -> None:
+    allowed = {
+        ObservationStatus.FAILED: {
+            ObservationFailureCategory.SOURCE_UNAVAILABLE,
+            ObservationFailureCategory.NODE_UNAVAILABLE,
+            ObservationFailureCategory.AUTHENTICATION_FAILED,
+            ObservationFailureCategory.CONNECTION_FAILED,
+            ObservationFailureCategory.COLLECTION_FAILED,
+            ObservationFailureCategory.OUTPUT_FAILED,
+            ObservationFailureCategory.HISTORY_UNAVAILABLE,
+        },
+        ObservationStatus.TIMED_OUT: {ObservationFailureCategory.COLLECTION_TIMED_OUT},
+        ObservationStatus.AMBIGUOUS: {
+            ObservationFailureCategory.CONCURRENT_COLLECTION,
+            ObservationFailureCategory.INCONSISTENT_EVIDENCE,
+        },
+    }
+    payload = {
+        "request_id": REQUEST_ID,
+        "requested_at": datetime(2026, 8, 27, 1, tzinfo=UTC),
+        "completed_at": datetime(2026, 8, 27, 1, 1, tzinfo=UTC),
+        "status": status,
+        "before_revision": revision(),
+        "failure_category": category,
+    }
+    if category in allowed.get(status, set()):
+        assert OxidizedObservation.model_validate(payload).status is status
+    else:
+        with pytest.raises(ValidationError):
+            OxidizedObservation.model_validate(payload)
 
 
 def test_relationship_and_overall_status_are_derived_from_evidence() -> None:

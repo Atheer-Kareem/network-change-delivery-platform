@@ -114,6 +114,7 @@ class OxidizedRevision(BaseModel):
         path = PurePosixPath(self.config_path)
         if (
             len(self.commit) != len(self.blob)
+            or self.config_path == "."
             or path.is_absolute()
             or path.as_posix() != self.config_path
             or any(part in {"", ".", ".."} for part in path.parts)
@@ -149,6 +150,11 @@ class OxidizedObservation(BaseModel):
             raise ValueError("observation timestamps must be timezone-aware UTC")
         if self.completed_at is not None and self.completed_at < self.requested_at:
             raise ValueError("observation completion precedes request")
+        if (
+            self.before_revision is not None
+            and self.before_revision.collected_at > self.requested_at
+        ):
+            raise ValueError("before revision was collected after the request")
         for revision in (self.before_revision, self.after_revision):
             if revision is not None and revision.collected_at > (
                 self.completed_at or self.requested_at
@@ -180,12 +186,25 @@ class OxidizedObservation(BaseModel):
                 before.config_path != after.config_path
                 or before.blob == after.blob
                 or len(before.commit) != len(after.commit)
+                or after.collected_at < self.requested_at
             ):
                 raise ValueError("changed observation has inconsistent revisions")
             return self
 
         if self.failure_category is None:
             raise ValueError("unsuccessful observation requires a failure category")
+        ambiguous_categories = {
+            ObservationFailureCategory.CONCURRENT_COLLECTION,
+            ObservationFailureCategory.INCONSISTENT_EVIDENCE,
+        }
+        if self.status is ObservationStatus.AMBIGUOUS:
+            if self.failure_category not in ambiguous_categories:
+                raise ValueError("ambiguous observation category is inconsistent")
+        elif self.status is ObservationStatus.FAILED and self.failure_category in {
+            ObservationFailureCategory.COLLECTION_TIMED_OUT,
+            *ambiguous_categories,
+        }:
+            raise ValueError("failed observation category is inconsistent")
         if self.status in {ObservationStatus.FAILED, ObservationStatus.TIMED_OUT}:
             if self.after_revision is not None:
                 raise ValueError("failed observation cannot claim an after revision")

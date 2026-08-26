@@ -301,8 +301,11 @@ complete, internally consistent revision metadata; failures and timeouts cannot
 fabricate an after revision.
 
 The relationship may describe temporally bracketed, post-only, or uncorrelated
-pre-only evidence. Schema-1 causality is fixed to `NOT_PROVEN`: temporal and
-object correlation cannot establish exclusive causation. Oxidized remains
+pre-only evidence. `TEMPORALLY_BRACKETED` records an ordered pre/post pair that
+the future controller establishes around the parent attempt; it deliberately
+does not treat the parent envelope's `generated_at` as a device-execution
+boundary. Schema-1 causality is fixed to `NOT_PROVEN`: temporal and object
+correlation cannot establish exclusive causation. Oxidized remains
 observed-state chronology only and cannot authorize deployment, recovery, or
 rollback. Runtime installation, private Git history, inventory/credential
 materialization, scheduling, API control, and protected pre/post integration

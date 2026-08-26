@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
+import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from importlib.metadata import version
 from io import TextIOWrapper
 from pathlib import Path
+from uuid import UUID
 
 import yaml
 from pydantic import ValidationError
@@ -26,6 +30,11 @@ from network_change_delivery.assurance import (
     InvariantResult,
     evaluate_assurance,
     prepare_snapshot,
+)
+from network_change_delivery.audit_store import MAX_AUDIT_RECORD_SCAN, AuditStore
+from network_change_delivery.buildkite_audit import (
+    persist_buildkite_audit,
+    verify_buildkite_audit_inputs,
 )
 from network_change_delivery.buildkite_deployment import (
     BuildkiteOpenBaoDeploymentSecretProvider,
@@ -76,6 +85,26 @@ from network_change_delivery.secrets import (
 )
 from network_change_delivery.vendor_adapter import MultiVendorAdapter
 from network_change_delivery.workflow import SafetyError, deploy_plan, plan_change
+
+MAX_AUDIT_FIND_RESULTS = 100
+
+
+def _audit_change_id(value: str) -> str:
+    if not 1 <= len(value) <= 255 or re.search(r"[\x00-\x1f\x7f]", value):
+        raise argparse.ArgumentTypeError("audit change ID is invalid")
+    return value
+
+
+def _audit_commit(value: str) -> str:
+    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise argparse.ArgumentTypeError("audit commit is invalid")
+    return value
+
+
+def _audit_device_id(value: str) -> str:
+    if re.fullmatch(r"netbox:dcim\.device:[1-9][0-9]*", value) is None:
+        raise argparse.ArgumentTypeError("audit device identity is invalid")
+    return value
 
 
 def _write_json(path: Path, value: str) -> None:
@@ -378,6 +407,120 @@ def _run_verify_buildkite_openbao_identity(arguments: argparse.Namespace) -> int
     print(f"commit: {context.commit}")
     print(f"job: {context.job_id}")
     print(f"OpenBao token lease: {authentication.lease_duration} seconds")
+    return 0
+
+
+def _checkout_root() -> Path:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError("unable to establish repository checkout root") from error
+    value = result.stdout.strip()
+    root = Path(value)
+    if not value or not root.is_absolute() or not root.is_dir():
+        raise ValueError("unable to establish repository checkout root")
+    return root
+
+
+def _audit_store(arguments: argparse.Namespace) -> AuditStore:
+    configured = arguments.store_root or os.environ.get("NCDP_AUDIT_STORE_ROOT")
+    if not configured:
+        raise ValueError("NCDP_AUDIT_STORE_ROOT is required")
+    return AuditStore(Path(configured), checkout=_checkout_root())
+
+
+def _run_audit_verify_store(arguments: argparse.Namespace) -> int:
+    _audit_store(arguments)
+    print("audit store: VERIFIED")
+    return 0
+
+
+def _run_audit_persist_buildkite(arguments: argparse.Namespace) -> int:
+    context = buildkite_deployment_context_from_environment(os.environ)
+    repository = os.environ.get("BUILDKITE_REPO", "")
+    record_id, digest, outcome = persist_buildkite_audit(
+        store=_audit_store(arguments),
+        context=context,
+        repository=repository,
+        promotion=arguments.promotion,
+        staging_evidence_path=arguments.staging_evidence,
+        checkout=_checkout_root(),
+        change_record_path=arguments.change_record,
+    )
+    print(f"audit record ID: {record_id}")
+    print(f"audit record digest: {digest}")
+    print(f"audit final outcome: {outcome}")
+    return 0
+
+
+def _run_audit_verify_buildkite(arguments: argparse.Namespace) -> int:
+    context = buildkite_deployment_context_from_environment(os.environ)
+    _audit_store(arguments)
+    verify_buildkite_audit_inputs(
+        context=context,
+        repository=os.environ.get("BUILDKITE_REPO", ""),
+        promotion=arguments.promotion,
+        staging_evidence_path=arguments.staging_evidence,
+    )
+    print("Buildkite audit pre-write boundary: VERIFIED")
+    return 0
+
+
+def _run_audit_show(arguments: argparse.Namespace) -> int:
+    record = _audit_store(arguments).read_record(arguments.record_id)
+    print(json.dumps(record.model_dump(mode="json"), sort_keys=True, indent=2))
+    return 0
+
+
+def _run_audit_find(arguments: argparse.Namespace) -> int:
+    store = _audit_store(arguments)
+    records = store.iter_records(max_scan=MAX_AUDIT_RECORD_SCAN)
+    if arguments.change_id is not None:
+        matches = [
+            record for record in records if record.change_id == arguments.change_id
+        ]
+    elif arguments.commit is not None:
+        matches = [
+            record for record in records if record.git.commit == arguments.commit
+        ]
+    elif arguments.build_id is not None:
+        matches = [
+            record
+            for record in records
+            if record.buildkite is not None
+            and record.buildkite.build_id == arguments.build_id
+        ]
+    else:
+        matches = [
+            record
+            for record in records
+            if any(target.device == arguments.device_id for target in record.targets)
+        ]
+    matches.sort(key=lambda record: (record.generated_at, str(record.record_id)))
+    if len(matches) > arguments.max_results:
+        raise ValueError("audit query result bound exceeded")
+    summaries = [
+        {
+            "record_id": str(record.record_id),
+            "generated_at": record.generated_at.isoformat(),
+            "change_id": record.change_id,
+            "commit": record.git.commit,
+            "build_id": (
+                str(record.buildkite.build_id) if record.buildkite is not None else None
+            ),
+            "final_outcome": record.final_outcome,
+            "device_ids": [target.device for target in record.targets],
+        }
+        for record in matches
+    ]
+    print(json.dumps(summaries, sort_keys=True, indent=2))
     return 0
 
 
@@ -707,6 +850,65 @@ def build_parser() -> argparse.ArgumentParser:
     buildkite_deploy_parser.add_argument("--promotion", required=True, type=Path)
     buildkite_deploy_parser.add_argument("--report-json", required=True, type=Path)
     buildkite_deploy_parser.set_defaults(handler=_run_deploy_buildkite_promotion)
+
+    audit_parser = subparsers.add_parser(
+        "audit", help="verify, persist, and query durable audit evidence"
+    )
+    audit_subparsers = audit_parser.add_subparsers(dest="audit_command", required=True)
+
+    def add_audit_root(command: argparse.ArgumentParser) -> None:
+        command.add_argument(
+            "--store-root",
+            type=Path,
+            help="external audit root; defaults to NCDP_AUDIT_STORE_ROOT",
+        )
+
+    audit_verify_parser = audit_subparsers.add_parser(
+        "verify-store", help="validate the external audit-store boundary"
+    )
+    add_audit_root(audit_verify_parser)
+    audit_verify_parser.set_defaults(handler=_run_audit_verify_store)
+
+    audit_persist_parser = audit_subparsers.add_parser(
+        "persist-buildkite", help="persist one correlated protected Buildkite audit"
+    )
+    add_audit_root(audit_persist_parser)
+    audit_persist_parser.add_argument("--promotion", required=True, type=Path)
+    audit_persist_parser.add_argument("--staging-evidence", required=True, type=Path)
+    audit_persist_parser.add_argument("--change-record", type=Path)
+    audit_persist_parser.set_defaults(handler=_run_audit_persist_buildkite)
+
+    audit_buildkite_parser = audit_subparsers.add_parser(
+        "verify-buildkite", help="verify protected audit inputs before device access"
+    )
+    add_audit_root(audit_buildkite_parser)
+    audit_buildkite_parser.add_argument("--promotion", required=True, type=Path)
+    audit_buildkite_parser.add_argument("--staging-evidence", required=True, type=Path)
+    audit_buildkite_parser.set_defaults(handler=_run_audit_verify_buildkite)
+
+    audit_show_parser = audit_subparsers.add_parser(
+        "show", help="read one verified audit envelope by UUID"
+    )
+    add_audit_root(audit_show_parser)
+    audit_show_parser.add_argument("record_id", type=UUID)
+    audit_show_parser.set_defaults(handler=_run_audit_show)
+
+    audit_find_parser = audit_subparsers.add_parser(
+        "find", help="scan verified audit envelopes using one bounded filter"
+    )
+    add_audit_root(audit_find_parser)
+    filters = audit_find_parser.add_mutually_exclusive_group(required=True)
+    filters.add_argument("--change-id", type=_audit_change_id)
+    filters.add_argument("--commit", type=_audit_commit)
+    filters.add_argument("--build-id", type=UUID)
+    filters.add_argument("--device-id", type=_audit_device_id)
+    audit_find_parser.add_argument(
+        "--max-results",
+        type=int,
+        choices=range(1, MAX_AUDIT_FIND_RESULTS + 1),
+        default=100,
+    )
+    audit_find_parser.set_defaults(handler=_run_audit_find)
 
     deploy_parser = subparsers.add_parser(
         "deploy",

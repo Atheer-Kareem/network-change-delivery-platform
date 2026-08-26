@@ -32,6 +32,7 @@ from network_change_delivery.promotion import DeploymentPromotionManifest
 
 MAX_AUDIT_RECORD_BYTES = 256 * 1024
 MAX_AUDIT_ARTIFACT_BYTES = 4 * 1024 * 1024
+MAX_AUDIT_RECORD_SCAN = 10_000
 
 type AuditArtifact = (
     DeploymentPlan
@@ -168,6 +169,39 @@ class AuditStore:
         for reference in record.artifacts:
             self.read_artifact(reference)
         return record
+
+    def iter_records(
+        self, *, max_scan: int = MAX_AUDIT_RECORD_SCAN
+    ) -> tuple[ChangeAuditRecord, ...]:
+        """Read every durable record in deterministic order within a hard bound."""
+        self._validate_root_identity()
+        self._validate_managed_directory(self._records)
+        if not 1 <= max_scan <= MAX_AUDIT_RECORD_SCAN:
+            raise AuditStoreError("audit record scan bound is invalid")
+        names: list[str] = []
+        for entry in os.scandir(self._records):
+            if entry.name.startswith(".audit-tmp-"):
+                continue
+            try:
+                record_id = UUID(entry.name.removesuffix(".json"))
+            except ValueError:
+                raise AuditStoreError(
+                    "audit records directory contains an unexpected entry"
+                ) from None
+            if (
+                entry.name != f"{record_id}.json"
+                or entry.is_symlink()
+                or not entry.is_file(follow_symlinks=False)
+            ):
+                raise AuditStoreError(
+                    "audit records directory contains an unexpected entry"
+                )
+            names.append(entry.name)
+            if len(names) > max_scan:
+                raise AuditStoreError("audit record scan bound exceeded")
+        return tuple(
+            self.read_record(UUID(name.removesuffix(".json"))) for name in sorted(names)
+        )
 
     @staticmethod
     def _validate_root(root: Path, checkout: Path) -> Path:

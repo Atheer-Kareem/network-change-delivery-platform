@@ -29,6 +29,38 @@ path—and any mixed, executable, deployment, or unknown path—runs the live pa
 
 This document records the external Buildkite and GitHub acceptance for Increment 7.
 
+## Durable audit root for the deployment agent
+
+Increment 10B-2 requires one agent/operator-owned persistent directory outside
+the repository checkout. Create it from the trusted operator account, for
+example:
+
+```sh
+audit_root="$HOME/.local/state/ncdp/audit"
+mkdir -p "$audit_root"
+chmod 0700 "$audit_root"
+```
+
+The directory must be an absolute, real non-symlink directory owned by the
+deploy-agent operating-system user with mode `0700`. Configure only the
+`ncdp-deploy` agent with the fully expanded absolute value:
+
+```text
+NCDP_AUDIT_STORE_ROOT=<absolute-agent-owned-audit-root>
+```
+
+This value is a path, not a secret. Do not add it to validation or staging
+agents. Restart the deploy agent after changing its environment. From a trusted
+repository checkout running as the same user, verify the boundary without
+creating a record:
+
+```sh
+NCDP_AUDIT_STORE_ROOT="$audit_root" uv run ncdp audit verify-store
+```
+
+The agent and an operator CLI may share this local trust boundary. It does not
+isolate the store from arbitrary processes running as the same workstation UID.
+
 PR-side external acceptance is verified. GitHub pull requests trigger Buildkite,
 the validation-only PR path runs without entering promotion or deployment, and
 GitHub reports the `buildkite/network-change-delivery-platform` status context.

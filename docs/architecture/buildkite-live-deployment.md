@@ -39,6 +39,22 @@ when the deployment outcome is nonzero. The gate then preserves that original
 failure status; an upload failure also fails the job. A failure before evidence
 exists fabricates no artifact and reports that no typed record was produced.
 
+Increment 10B-2 requires an external, private `NCDP_AUDIT_STORE_ROOT` and
+validates `AuditStore`, the exact promotion, and same-build sanitized staging
+evidence before obtaining the second device-capable JWT or allowing a write.
+For an unchanged live request, the approved no-write path durably publishes the
+plan, assurance record, promotion manifest, staging evidence, and a `NO_WRITE`
+audit envelope before succeeding. A real execution additionally publishes the
+semantically plan-bound `ChangeRecord`; the envelope is always published last.
+
+Audit storage is a separate failure domain from device execution. If durable
+publication fails after a known device outcome, the job fails and reports that
+audit failure without retrying deployment, issuing an inverse, invoking native
+recovery, or otherwise causing another device transaction. If deployment also
+failed or was ambiguous, its typed outcome remains primary and both failures
+are reported. If execution fails before a typed `ChangeRecord` exists, the gate
+does not fabricate a durable execution audit record.
+
 7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
 mutation. This foundation has no active live request and has not performed or

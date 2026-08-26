@@ -25,6 +25,13 @@ unrelated work, do not weaken safety policy, and do not introduce features
 outside requested scope. Add concrete files only. Update authoritative docs and
 ADRs when contracts or decisions change; avoid duplicating normative prose.
 
+When adding a new top-level repository path, review Buildkite live-path
+classification. New paths default to runtime-relevant. Add a path to the
+non-runtime exclusion set only with explicit rationale, documentation, and
+pipeline-contract coverage. Do not place runtime-affecting content beneath a
+broadly excluded semantic root such as `docs/**` or `tests/**`; a path whose
+purpose falls outside an existing reviewed boundary defaults to runtime-relevant.
+
 Never include company data, credentials, or secrets. Never expose secrets in
 logs or evidence. Do not commit, push, merge, rebase, force-push, delete branches,
 rewrite history, or perform live network changes unless the task explicitly

@@ -102,35 +102,57 @@ steps:
       manual:
         allowed: false
         reason: "Retained staging state requires explicit operator recovery."
+    if_changed:
+      include: "**"
+      exclude:
+        - "docs/**"
+        - "README.md"
+        - "AGENTS.md"
+        - ".github/CODEOWNERS"
+        - ".github/pull_request_template.md"
+        - "tests/**"
+        - ".gitignore"
 
-  - label: ":package: promotion"
-    key: promotion
+  - group: ":lock: protected delivery"
+    key: protected-delivery
     depends_on: cml-staging
     if: build.branch == "main" && build.pull_request.id == null
-    command: .buildkite/scripts/promotion.sh
-    agents:
-      queue: ncdp-validation
-    concurrency: 1
-    concurrency_group: ncdp/batfish-promotion
+    if_changed:
+      include: "**"
+      exclude:
+        - "docs/**"
+        - "README.md"
+        - "AGENTS.md"
+        - ".github/CODEOWNERS"
+        - ".github/pull_request_template.md"
+        - "tests/**"
+        - ".gitignore"
+    steps:
+      - label: ":package: promotion"
+        key: promotion
+        depends_on: cml-staging
+        command: .buildkite/scripts/promotion.sh
+        agents:
+          queue: ncdp-validation
+        concurrency: 1
+        concurrency_group: ncdp/batfish-promotion
 
-  - block: ":lock: Authorize exact promotion"
-    key: deployment-approval
-    depends_on: promotion
-    if: build.branch == "main" && build.pull_request.id == null
-    prompt: "Authorize the exact immutable promotion verified and recorded by the promotion step."
-    submit: "Authorize exact promotion"
+      - block: ":lock: Authorize exact promotion"
+        key: deployment-approval
+        depends_on: promotion
+        prompt: "Authorize the exact immutable promotion verified and recorded by the promotion step."
+        submit: "Authorize exact promotion"
 
-  - label: ":lock: deployment gate"
-    key: deploy-gate
-    depends_on: deployment-approval
-    if: build.branch == "main" && build.pull_request.id == null
-    command: scripts/buildkite/deployment_gate.sh
-    agents:
-      queue: ncdp-deploy
-    concurrency: 1
-    concurrency_group: ncdp/network-change-deployment
-    retry:
-      automatic: false
-      manual:
-        allowed: false
-        reason: "A fresh deployment authorization is required for another attempt."
+      - label: ":lock: deployment gate"
+        key: deploy-gate
+        depends_on: deployment-approval
+        command: scripts/buildkite/deployment_gate.sh
+        agents:
+          queue: ncdp-deploy
+        concurrency: 1
+        concurrency_group: ncdp/network-change-deployment
+        retry:
+          automatic: false
+          manual:
+            allowed: false
+            reason: "A fresh deployment authorization is required for another attempt."

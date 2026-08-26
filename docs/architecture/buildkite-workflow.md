@@ -1,8 +1,9 @@
 # Buildkite workflow
 
-The current DAG is `quality` plus `pipeline-contract` → serialized
-`cml-staging` → main-only `promotion` → `deployment-approval` → serialized
-`deploy-gate`. `quality` is a visible group:
+The current DAG always begins with `quality` plus `pipeline-contract`. A
+runtime-relevant change then continues through serialized `cml-staging`; on
+main, the protected-delivery group continues through `promotion` →
+`deployment-approval` → serialized `deploy-gate`. `quality` is a visible group:
 one step builds a frozen `quality-base` Docker environment, then separate steps
 run the committed-diff, Ruff, pytest, ansible-lint, and package checks. The five
 tool checks reuse that exact build image. Validation uses `ncdp-validation`; the
@@ -97,3 +98,32 @@ persistent external state, dedicated identities, run-scoped SSH trust, and
 sanitized evidence. It calls the accepted Python state machine; YAML and shell
 do not implement Terraform lifecycle decisions. See
 [Buildkite ephemeral CML staging operations](buildkite-ephemeral-cml-staging-operations.md).
+
+## Live-path change classification
+
+The repository pipeline's native Buildkite `if_changed` exclusion set is the
+executable classification authority. Quality and pipeline-contract checks run
+for every build. Live CML staging and the complete protected-delivery group are
+omitted only when every changed path is one of `docs/**`, `README.md`,
+`AGENTS.md`, `.github/CODEOWNERS`, `.github/pull_request_template.md`,
+`tests/**`, or `.gitignore`. The condition includes `**` first, so any other
+`.github` path, mixed change, and every unknown or unclassified path retain the
+live path. If Buildkite cannot determine changed files, it runs the guarded
+steps rather than skipping them.
+
+New top-level repository files and directories are runtime-relevant by default.
+A maintainer may add one to the exclusion set only after demonstrating that it
+cannot affect application or network-execution behavior, Buildkite or
+deployment behavior, infrastructure, credential/security boundaries,
+dependencies/toolchain, or generated execution/promotion artifacts. That
+change requires explicit rationale, this architecture contract to remain
+accurate, pipeline-contract regression coverage, and normal review. Uncertain
+classification stays runtime-relevant. Documentation and tests describe and
+protect this policy; they do not implement a second classifier.
+
+The broad `docs/**` and `tests/**` exclusions are intentional semantic
+boundaries: their contents must remain documentation and non-runtime test
+material respectively. A new top-level path—or a path whose purpose falls
+outside an already reviewed non-runtime semantic boundary—does not inherit an
+exclusion merely because it appears related or is placed beneath a convenient
+directory. It remains runtime-relevant until explicitly reviewed.

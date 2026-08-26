@@ -80,14 +80,28 @@ Ordering may change when implementation evidence requires it.
    merged commit passed Buildkite build #115, including the ephemeral CML staging
    gate before promotion. Parallel twins require a future isolated management
    network.
-9. **Failure recovery:** vendor-aware immediate recovery, failed-validation
-   handling, honest ambiguous-write behavior, recovery verification, and strict
-   fleet stop semantics. Sophisticated historical rollback with ancestry,
-   automatic inverse planning, and later-change conflict detection is deferred;
-   a later rollback is a new reviewed desired-state change through the ordinary
-   delivery pipeline.
-10. **Audit/configuration history:** typed `ChangeRecord`, durable correlation, and
-    Oxidized Git-backed actual-state chronology.
+9. **Failure recovery — complete:** vendor-aware immediate recovery,
+   failed-validation handling, honest ambiguous-write behavior, recovery
+   verification, and strict fleet stop semantics. Sophisticated historical
+   rollback with ancestry, automatic inverse planning, and later-change conflict
+   detection is deferred; a later rollback is a new reviewed desired-state
+   change through the ordinary delivery pipeline. The subsequent change-aware
+   Buildkite optimization is also complete: known documentation, test, and
+   repository-metadata-only changes retain quality/status checks while live
+   staging and protected delivery remain fail-closed for every runtime-relevant
+   or unknown path.
+10. **Audit/configuration history:** split to preserve existing evidence
+    semantics and separate metadata durability from sensitive actual-state
+    chronology. **10A — audit architecture and durable-correlation contract**
+    defines the evidence inventory, a top-level correlation envelope, external
+    append-only storage, authority boundaries, and the Oxidized integration
+    boundary. **10B — durable audit record/store and Buildkite correlation** will
+    implement the typed envelope, canonical integrity binding, external JSON
+    store, read/query boundary, and sanitized delivery correlation without
+    Oxidized. **10C — Oxidized Git-backed actual-state chronology and audit
+    correlation** will add private external Cisco/Junos configuration history,
+    bounded collection, and non-secret Git references without changing desired
+    intent authority. 10A is complete after review and merge.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

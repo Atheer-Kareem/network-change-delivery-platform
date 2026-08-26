@@ -63,6 +63,15 @@ and reports only whether the mount was newly enabled and whether the non-secret
 backend, role, and no-device-capability contracts were verified. This is an
 operator action, never a Buildkite job action.
 
+Buildkite ephemeral staging uses audience `urn:ncdp:openbao:staging` and
+separate roles `ncdp-buildkite-staging-device-1` and `-2`. Each binds the
+immutable pipeline subject and exact `cml-staging` step and issues one
+five-minute, one-use token with no default policy and only its matching exact
+device-read policy. The application verifies mapped pipeline, build, commit,
+branch, step, and job identity before the single KV-v2 read. One in-memory JWT
+is used for the two independent role logins and discarded. Staging rejects
+AppRole; deployment roles, audiences, policies, and approval remain unchanged.
+
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role
 `ncdp-buildkite-cml-deploy-device-<id>` carries exactly policy

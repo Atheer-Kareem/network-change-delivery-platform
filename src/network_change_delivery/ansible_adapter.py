@@ -11,7 +11,6 @@ import stat
 import subprocess
 import tempfile
 from collections.abc import Mapping
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +36,10 @@ class ProviderError(RuntimeError):
     """Bounded provider failure that never embeds raw Runner output."""
 
 
+class ProviderReadinessError(ProviderError):
+    """Bounded transient read failure eligible for readiness retry."""
+
+
 class HostTrustError(ProviderError):
     """Raised when the candidate lacks an existing trusted host-key entry."""
 
@@ -46,6 +49,47 @@ class DeploymentRuntimeError(ProviderError):
 
     def __init__(self) -> None:
         super().__init__("deployment Ansible runtime prerequisites unavailable")
+
+
+def _bounded_read_failure(result: object) -> str:
+    """Classify a Runner task failure without exposing its provider message."""
+    values = result if isinstance(result, dict) else {}
+    message = "\n".join(
+        str(values.get(key, "")).lower() for key in ("msg", "exception")
+    )
+    categories = (
+        (("connection type", "not valid"), "Cisco connection type was rejected"),
+        (("ssh connection failed",), "Cisco SSH session failed"),
+        (("authentication",), "Cisco authentication was rejected"),
+        (("permission denied",), "Cisco authentication was rejected"),
+        (("host key",), "Cisco host trust was rejected"),
+        (("privilege",), "Cisco privileged read access was rejected"),
+        (("enable",), "Cisco privileged read access was rejected"),
+        (("terminal",), "Cisco terminal initialization failed"),
+        (("timeout",), "Cisco read-only command timed out"),
+        (("timed out",), "Cisco read-only command timed out"),
+        (("couldn't resolve module",), "Cisco collection runtime was unavailable"),
+        (("module", "not found"), "Cisco collection runtime was unavailable"),
+        (("failed to import",), "Cisco collection runtime import failed"),
+        (("modulenotfounderror",), "Cisco collection runtime import failed"),
+        (("importerror",), "Cisco collection runtime import failed"),
+        (("required", "library"), "Cisco collection runtime import failed"),
+        (("ansibleconnectionfailure",), "Cisco SSH session failed"),
+        (("connectionreseterror",), "Cisco SSH session failed"),
+        (("unsupported parameters",), "Cisco collection parameters were rejected"),
+        (("network os", "not supported"), "Cisco network OS plugin was rejected"),
+        (
+            ("automatically determine", "network os"),
+            "Cisco network OS detection failed",
+        ),
+        (("module failure",), "Cisco facts module execution failed"),
+        (("json", "response"), "Cisco facts response decoding failed"),
+        (("invalid input",), "Cisco rejected a read-only CLI command"),
+    )
+    for needles, classification in categories:
+        if all(needle in message for needle in needles):
+            return classification
+    return "Cisco read-only task failed"
 
 
 SYSTEM_ANSIBLE_COLLECTIONS = Path("/opt/ansible/collections")
@@ -180,23 +224,6 @@ def verify_deployment_ansible_runtime(
         raise DeploymentRuntimeError from None
 
 
-@contextmanager
-def _credential_environment(credentials: DeviceCredentials):
-    """Expose credentials only to the child process and restore prior state."""
-    names = ("NCDP_DEVICE_USERNAME", "NCDP_DEVICE_PASSWORD")
-    previous = {name: os.environ.get(name) for name in names}
-    os.environ[names[0]] = credentials.username
-    os.environ[names[1]] = credentials.password
-    try:
-        yield
-    finally:
-        for name, value in previous.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
-
-
 def _known_hosts_query(device: InventoryDevice) -> str:
     return device.host if device.port == 22 else f"[{device.host}]:{device.port}"
 
@@ -217,9 +244,11 @@ def _fingerprint_from_line(line: str) -> str | None:
     return f"SHA256:{digest}"
 
 
-def verify_existing_host_trust(device: InventoryDevice) -> str:
+def verify_existing_host_trust(
+    device: InventoryDevice, known_hosts: Path | None = None
+) -> str:
     """Confirm a known_hosts entry exists without discovering or trusting a key."""
-    known_hosts = _known_hosts_path()
+    known_hosts = known_hosts or _known_hosts_path()
     if not known_hosts.is_file():
         raise HostTrustError("known_hosts file is absent; establish trust separately")
     completed = subprocess.run(
@@ -241,8 +270,14 @@ def verify_existing_host_trust(device: InventoryDevice) -> str:
 class AnsibleRunnerCiscoAdapter:
     """Collect structured state and apply exact artifacts through Runner."""
 
-    def __init__(self, repository_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        repository_root: Path | None = None,
+        *,
+        known_hosts: Path | None = None,
+    ) -> None:
         self._root = deployment_repository_root(repository_root)
+        self._known_hosts = known_hosts
 
     @staticmethod
     def _inventory(device: InventoryDevice) -> dict[str, Any]:
@@ -254,7 +289,7 @@ class AnsibleRunnerCiscoAdapter:
                         "ansible_port": device.port,
                         "ansible_connection": "ansible.netcommon.network_cli",
                         "ansible_network_os": "cisco.ios.ios",
-                        "ansible_network_cli_ssh_type": "libssh",
+                        "ansible_network_cli_ssh_type": "paramiko",
                     }
                 }
             }
@@ -268,8 +303,12 @@ class AnsibleRunnerCiscoAdapter:
         *,
         extravars: dict[str, Any] | None = None,
     ) -> tuple[object, dict[str, dict[str, Any]]]:
-        verify_existing_host_trust(device)
+        if self._known_hosts is None:
+            verify_existing_host_trust(device)
+        else:
+            verify_existing_host_trust(device, self._known_hosts)
         selected: dict[str, dict[str, Any]] = {}
+        inventory = self._inventory(device)
 
         def handle_event(event: dict[str, Any]) -> None:
             event_kind = event.get("event")
@@ -294,25 +333,33 @@ class AnsibleRunnerCiscoAdapter:
         with tempfile.TemporaryDirectory(prefix="ncdp-runner-") as directory:
             private_data = Path(directory)
             private_data.chmod(0o700)
-            with _credential_environment(credentials):
-                result = ansible_runner.run(
-                    private_data_dir=str(private_data),
-                    project_dir=str(self._root / "ansible"),
-                    artifact_dir=str(private_data / "artifacts"),
-                    playbook=playbook,
-                    inventory=self._inventory(device),
-                    extravars=extravars or {},
-                    envvars={
-                        "ANSIBLE_CONFIG": str(self._root / "ansible.cfg"),
-                        "ANSIBLE_COLLECTIONS_PATH": effective_ansible_collection_path(
-                            self._root
-                        ),
-                        "ANSIBLE_HOST_KEY_CHECKING": "True",
-                    },
-                    event_handler=handle_event,
-                    quiet=True,
-                    rotate_artifacts=1,
-                )
+            result = ansible_runner.run(
+                private_data_dir=str(private_data),
+                project_dir=str(self._root / "ansible"),
+                artifact_dir=str(private_data / "artifacts"),
+                playbook=playbook,
+                inventory=inventory,
+                extravars=extravars or {},
+                envvars={
+                    "ANSIBLE_CONFIG": str(self._root / "ansible.cfg"),
+                    "ANSIBLE_COLLECTIONS_PATH": effective_ansible_collection_path(
+                        self._root
+                    ),
+                    "ANSIBLE_HOST_KEY_CHECKING": "True",
+                    "ANSIBLE_PERSISTENT_CONTROL_PATH_DIR": str(private_data / "pc"),
+                    "NCDP_DEVICE_USERNAME": credentials.username,
+                    "NCDP_DEVICE_PASSWORD": credentials.password,
+                    **(
+                        {"HOME": str(self._known_hosts.parents[1])}
+                        if self._known_hosts is not None
+                        and self._known_hosts.parent.name == ".ssh"
+                        else {}
+                    ),
+                },
+                event_handler=handle_event,
+                quiet=True,
+                rotate_artifacts=1,
+            )
             return result, selected
 
     def discover(
@@ -330,6 +377,23 @@ class AnsibleRunnerCiscoAdapter:
             getattr(runner, "status", None) != "successful"
             or getattr(runner, "rc", 1) != 0
         ):
+            identity_event = selected.get(IDENTITY_TASK, {}).get("_ncdp_event")
+            if identity_event == "runner_on_unreachable":
+                raise ProviderReadinessError(
+                    "trusted Cisco SSH collection was unreachable"
+                )
+            if identity_event == "runner_on_failed":
+                classification = _bounded_read_failure(selected[IDENTITY_TASK])
+                if classification in {
+                    "Cisco SSH session failed",
+                    "Cisco read-only command timed out",
+                }:
+                    raise ProviderReadinessError(classification)
+                raise ProviderError(classification)
+            if IDENTITY_TASK not in selected:
+                raise ProviderError(
+                    "Cisco collection failed before a bounded identity result"
+                )
             raise ProviderError("trusted authenticated read-only collection failed")
         try:
             facts = selected[IDENTITY_TASK]["ansible_facts"]

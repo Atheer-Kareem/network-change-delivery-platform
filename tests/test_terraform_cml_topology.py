@@ -119,10 +119,16 @@ def test_router_day0_templates_are_sensitive_and_narrow() -> None:
         assert f"var.{variable}" in edge
 
     core_03 = resource_block("cml2_node", "core_03")
-    assert assignment(core_03, "configuration") == '""'
+    assert "bootstrap/cat8000v-unmanaged.tftpl" in core_03
     assert re.search(r"(?m)^\s*configurations\s*=", core_03) is None
     for forbidden in ("username", "password", "secret", "community"):
         assert forbidden not in core_03.lower()
+
+    bootstrap = (MODULE_ROOT / "bootstrap/cat8000v-unmanaged.tftpl").read_text()
+    assert "hostname core-03" in bootstrap
+    assert "platform console serial" in bootstrap
+    for forbidden in ("username", "password", "secret", "ip address", "netconf"):
+        assert forbidden not in bootstrap.lower()
 
     bridge = resource_block("cml2_node", "system_bridge")
     assert assignment(bridge, "configuration") == (

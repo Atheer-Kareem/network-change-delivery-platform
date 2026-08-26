@@ -282,6 +282,8 @@ class JunosPyEZAdapter:
         self,
         device_factory: Callable[..., Any] | None = None,
         config_factory: Callable[..., Any] = Config,
+        *,
+        known_hosts: Path | None = None,
     ) -> None:
         if device_factory is None:
             from jnpr.junos import Device
@@ -289,15 +291,25 @@ class JunosPyEZAdapter:
             device_factory = Device
         self._device_factory = device_factory
         self._config_factory = config_factory
+        self._known_hosts = known_hosts
 
     @contextmanager
     def _session(self, device: InventoryDevice, credentials: DeviceCredentials) -> Any:
         if device.platform != "junos" or device.port != 830:
             raise ProviderError("Junos requires the approved NETCONF port 830")
-        verify_existing_host_trust(device)
+        if self._known_hosts is None:
+            verify_existing_host_trust(device)
+        else:
+            verify_existing_host_trust(device, self._known_hosts)
         with tempfile.TemporaryDirectory(prefix="ncdp-junos-ssh-") as directory:
             ssh_config = Path(directory) / "config"
-            ssh_config.write_text("Host *\n  ProxyCommand none\n", encoding="utf-8")
+            config = "Host *\n  ProxyCommand none\n"
+            if self._known_hosts is not None:
+                config += (
+                    "  StrictHostKeyChecking yes\n"
+                    f"  UserKnownHostsFile {self._known_hosts}\n"
+                )
+            ssh_config.write_text(config, encoding="utf-8")
             ssh_config.chmod(0o600)
             try:
                 connection = self._device_factory(

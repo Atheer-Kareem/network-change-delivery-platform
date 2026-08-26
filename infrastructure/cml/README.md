@@ -29,11 +29,14 @@ only CML lifecycle staging; they are not NCDP targeting metadata.
 
 `core-02` renders `modules/twin/bootstrap/cat8000v.tftpl`, and
 `edge-junos-01` renders `modules/twin/bootstrap/vjunos-router.tftpl`, into their
-respective `cml2_node.configuration` fields. Each template contains only
+respective `cml2_node.configuration` fields. Their templates contain only
 hostname, management addressing, the local lab account, SSH, NETCONF, and
 minimum platform prerequisites. Neither contains an actual credential or
 address in Git, NCDP-managed interface intent, routing, or interface
-descriptions. `core-03` retains explicit empty configuration.
+descriptions. `core-03` receives a separate deterministic, non-secret
+`cat8000v-unmanaged.tftpl` bootstrap containing only its existing role hostname
+and serial-console platform prerequisite. This prevents the IOS XE first-boot
+setup/security dialog without inventing a management identity or credential.
 
 Every live plan or apply requires these runtime inputs:
 
@@ -155,8 +158,12 @@ sanitized `--evidence` destinations. It admits one fixed-address run, resolves
 authority inputs once, performs only safe-rendered live Terraform operations,
 attempts destroy in `finally`, independently verifies CML absence, and retires
 only the exact run directory after empty state is proven. Failed destroy or
-absence verification retains the directory for recovery. The script is local
-foundation code; no live Buildkite staging job exists yet.
+absence verification retains the directory for recovery. Increment 8E-3 invokes
+the same engine from serialized Buildkite staging. Its build-UUID run has an
+isolated backend, `TF_DATA_DIR`, and strict SSH trust beneath an agent-owned
+persistent state root; only sanitized evidence is uploaded. The retained-state
+operator command can only destroy an exact known run and retires state only
+after independent absence proof.
 
 CML Configuration Customizer Scripts must already be enabled for vJunos Day-0.
 This controller-global prerequisite is verified outside Terraform and is not

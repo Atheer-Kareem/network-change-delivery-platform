@@ -79,7 +79,7 @@ resource "cml2_node" "core_03" {
   lab_id          = var.lab_id
   label           = "core-03"
   nodedefinition  = "cat8000v"
-  configuration   = ""
+  configuration   = file("${path.module}/bootstrap/cat8000v-unmanaged.tftpl")
   imagedefinition = one(local.accepted_cat8000v_images).id
   cpus            = 1
   ram             = 4096

@@ -19,11 +19,27 @@ from typing import Any
 
 import httpx
 
-from network_change_delivery.ansible_adapter import AnsibleRunnerCiscoAdapter
+from network_change_delivery.ansible_adapter import (
+    AnsibleRunnerCiscoAdapter,
+    ProviderError,
+    ProviderReadinessError,
+    verify_deployment_ansible_runtime,
+)
+from network_change_delivery.buildkite_identity import (
+    BuildkiteOIDCJWT,
+    read_buildkite_oidc_jwt,
+)
+from network_change_delivery.buildkite_staging import (
+    BuildkiteStagingContext,
+    BuildkiteStagingSecretProvider,
+    staging_context_from_environment,
+    validate_staging_state_root,
+)
 from network_change_delivery.ephemeral_staging import (
     StagingError,
     StagingEvidence,
     run_staging_lifecycle,
+    validate_recovery_destroy_graph,
     validate_run_directory,
 )
 from network_change_delivery.inventory import NetBoxInventoryProvider
@@ -60,6 +76,21 @@ LEGACY_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
 SCRATCH_LAB = "a824a8b3-bcd1-488a-a791-d0783594ad9a"
 
 
+def retry_provider_read(action: Any, *, timeout: int = 180, interval: int = 15) -> int:
+    """Retry only bounded provider-read failures and return the attempt count."""
+    deadline = time.monotonic() + timeout
+    attempts = 0
+    while True:
+        attempts += 1
+        try:
+            action()
+            return attempts
+        except ProviderReadinessError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(interval)
+
+
 class CachedSecrets:
     """Reuse credentials already resolved once from OpenBao."""
 
@@ -79,7 +110,14 @@ class CachedSecrets:
 
 
 class LocalOperations:
-    def __init__(self, run_id: str, run_directory: Path) -> None:
+    def __init__(
+        self,
+        run_id: str,
+        run_directory: Path,
+        *,
+        buildkite_context: BuildkiteStagingContext | None = None,
+        buildkite_jwt: BuildkiteOIDCJWT | None = None,
+    ) -> None:
         self.run_id = run_id
         self.run_directory = run_directory
         self.data_directory = run_directory / "terraform-data"
@@ -89,7 +127,17 @@ class LocalOperations:
         self._outputs: dict[str, Any] = {}
         self._devices: dict[str, InventoryDevice] = {}
         self._credentials: dict[str, DeviceCredentials] = {}
-        self._client = self._cml_client()
+        self._inventory: NetBoxInventoryProvider | None = None
+        self._buildkite_context = buildkite_context
+        self._buildkite_jwt = buildkite_jwt
+        if (buildkite_context is None) != (buildkite_jwt is None):
+            raise StagingError("staging identity boundary is incomplete")
+        self._client = self._cml_client(buildkite_context is not None)
+        self._known_hosts = (
+            run_directory / ".ssh" / "known_hosts"
+            if buildkite_context is not None
+            else Path.home() / ".ssh" / "known_hosts"
+        )
         self._terraform_env = os.environ.copy()
         authorization = self._client.headers.get("Authorization", "")
         if not authorization.startswith("Bearer "):
@@ -104,27 +152,38 @@ class LocalOperations:
         return self.state_path.exists() and bool(self._state_list())
 
     @staticmethod
-    def _cml_client() -> httpx.Client:
+    def _cml_client(buildkite: bool) -> httpx.Client:
         address = os.environ.get("CML2_ADDRESS")
-        token = os.environ.get("CML2_TOKEN")
         certificate = os.environ.get("CML2_CACERT")
-        if not address or not token or not certificate:
+        token = os.environ.get("CML2_TOKEN")
+        if not address or not certificate:
+            raise StagingError("CML authentication environment is incomplete")
+        if buildkite and token:
+            raise StagingError("ambient CML token is prohibited in Buildkite staging")
+        if not buildkite and not token:
             raise StagingError("CML authentication environment is incomplete")
         context = ssl.create_default_context(cadata=certificate)
         client = httpx.Client(
             base_url=address.rstrip("/"),
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}"} if token else {},
             verify=context,
             timeout=20,
             trust_env=False,
         )
-        try:
-            probe = client.get("/api/v0/labs")
-        except httpx.HTTPError:
-            raise StagingError("CML authentication failed") from None
-        if probe.status_code in {401, 403}:
+        if buildkite:
+            username = os.environ.get("NCDP_CML_STAGING_USERNAME")
+            password = os.environ.get("NCDP_CML_STAGING_PASSWORD")
+            if not username or not password:
+                raise StagingError("dedicated CML staging identity is missing")
+            probe = httpx.Response(401)
+        else:
+            try:
+                probe = client.get("/api/v0/labs")
+            except httpx.HTTPError:
+                raise StagingError("CML authentication failed") from None
             username = os.environ.get("NCDP_CML_CONSOLE_USER")
             password = os.environ.get("NCDP_CML_CONSOLE_PASSWORD")
+        if probe.status_code in {401, 403}:
             if not username or not password:
                 raise StagingError("CML authentication failed")
             try:
@@ -147,8 +206,23 @@ class LocalOperations:
         return client
 
     def _resolve_authority(self) -> None:
-        inventory = NetBoxInventoryProvider()
-        bao = OpenBaoSecretProvider()
+        if self._buildkite_context is not None:
+            token = os.environ.get("NCDP_STAGING_NETBOX_TOKEN")
+            if not token:
+                raise StagingError("dedicated NetBox staging credential is missing")
+            if os.environ.get("NCDP_NETBOX_TOKEN"):
+                raise StagingError(
+                    "ambient NetBox token is prohibited in Buildkite staging"
+                )
+            inventory = NetBoxInventoryProvider(token=token)
+            assert self._buildkite_jwt is not None
+            bao = BuildkiteStagingSecretProvider(
+                self._buildkite_jwt, self._buildkite_context
+            )
+        else:
+            inventory = NetBoxInventoryProvider()
+            bao = OpenBaoSecretProvider()
+        self._inventory = inventory
         targets = {
             "core_02": ("core-02", "192.168.4.14", "cisco_iosxe"),
             "edge_junos_01": ("edge-junos-01", "192.168.4.20", "junos"),
@@ -168,6 +242,8 @@ class LocalOperations:
                 raise StagingError(f"{name} credential reference mismatch")
             self._devices[role] = device
             self._credentials[name] = bao.load(device)
+        if self._buildkite_context is not None:
+            self._buildkite_jwt = None
         edge = self._credentials["edge-junos-01"]
         verifier = subprocess.run(
             ["openssl", "passwd", "-6", "-salt", "ncdpedgejunos01", "-stdin"],
@@ -254,6 +330,9 @@ class LocalOperations:
             if probe.returncode == 0:
                 raise StagingError("fixed staging management address is already active")
         self._resolve_authority()
+        if self._buildkite_context is not None:
+            self.run_directory.parent.mkdir(mode=0o700, exist_ok=True)
+            self.run_directory.parent.chmod(0o700)
         self.run_directory.mkdir(mode=0o700, parents=True)
         self.run_directory.chmod(0o700)
         self.data_directory.mkdir(mode=0o700)
@@ -359,6 +438,15 @@ class LocalOperations:
             role: CachedSecrets.reference(self._devices[role]).reference
             for role in self._devices
         }
+        if self._buildkite_context is not None:
+            context = self._buildkite_context
+            evidence.orchestrator = "buildkite"
+            evidence.pipeline_id = context.pipeline_id
+            evidence.build_id = context.build_id
+            evidence.build_commit = context.commit
+            evidence.build_branch = context.branch
+            evidence.step_key = context.step_key
+            evidence.job_id = context.job_id
         self._verify_creation(evidence)
 
     def _verify_creation(self, evidence: StagingEvidence) -> None:
@@ -377,6 +465,7 @@ class LocalOperations:
                 raise StagingError("created CML node was not DEFINED_ON_CORE")
         self._verify_day0(evidence, "core_02", self._render_core())
         self._verify_day0(evidence, "edge_junos_01", self._render_edge())
+        self._verify_day0(evidence, "core_03", self._render_core_03())
 
     def _configuration(self, lab_id: str, node_id: str) -> str:
         for suffix in ("configuration", "configurations"):
@@ -449,6 +538,12 @@ class LocalOperations:
             template = template.replace("${" + key + "}", value)
         return template
 
+    @staticmethod
+    def _render_core_03() -> str:
+        return (
+            ROOT / "infrastructure/cml/modules/twin/bootstrap/cat8000v-unmanaged.tftpl"
+        ).read_text()
+
     def start(self, evidence: StagingEvidence) -> None:
         self._terraform_env["TF_VAR_twin_lifecycle_state"] = "STARTED"
         changes = self._changes(self._run_safe(["plan"]))
@@ -497,9 +592,19 @@ class LocalOperations:
             time.sleep(10)
         raise StagingError(f"{host} did not reach bounded management readiness")
 
-    @staticmethod
-    def _establish_host_trust(host: str, ports: tuple[int, ...]) -> None:
-        known_hosts = Path.home() / ".ssh" / "known_hosts"
+    def _wait_node_booted(
+        self, lab_id: str, node_id: str, *, timeout: int = 1200
+    ) -> None:
+        started = time.monotonic()
+        while time.monotonic() - started < timeout:
+            node = self._api(f"/api/v0/labs/{lab_id}/nodes/{node_id}")
+            if node.get("state") == "BOOTED":
+                return
+            time.sleep(10)
+        raise StagingError("core_03 did not reach unattended CML BOOTED state")
+
+    def _establish_host_trust(self, host: str, ports: tuple[int, ...]) -> None:
+        known_hosts = self._known_hosts
         known_hosts.parent.mkdir(mode=0o700, exist_ok=True)
         for port in ports:
             query = host if port == 22 else f"[{host}]:{port}"
@@ -508,17 +613,42 @@ class LocalOperations:
                 capture_output=True,
                 check=False,
             )
-            scan = subprocess.run(
-                ["ssh-keyscan", "-H", "-p", str(port), host],
-                text=True,
-                capture_output=True,
-                check=True,
-            ).stdout
+            deadline = time.monotonic() + 60
+            scan = ""
+            previous_keys: frozenset[tuple[str, str]] | None = None
+            stable_samples = 0
+            while time.monotonic() < deadline:
+                completed = subprocess.run(
+                    ["ssh-keyscan", "-H", "-p", str(port), host],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                if completed.returncode == 0 and completed.stdout.strip():
+                    scan = completed.stdout
+                    keys = frozenset(
+                        (fields[1], fields[2])
+                        for line in scan.splitlines()
+                        if not line.startswith("#") and len(fields := line.split()) >= 3
+                    )
+                    if keys:
+                        stable_samples = (
+                            stable_samples + 1 if keys == previous_keys else 1
+                        )
+                        previous_keys = keys
+                        if stable_samples == 3:
+                            break
+                time.sleep(5)
+            if stable_samples != 3:
+                raise StagingError("bounded stable SSH host-key acquisition failed")
             with known_hosts.open("a", encoding="utf-8") as stream:
                 stream.write(scan)
         known_hosts.chmod(0o600)
 
     def validate(self, evidence: StagingEvidence) -> None:
+        self._wait_node_booted(str(evidence.lab_id), evidence.node_ids["core_03"])
+        evidence.node_states["core_03"] = "BOOTED"
+        verify_deployment_ansible_runtime(ROOT)
         for role in ("core_02", "edge_junos_01"):
             device = self._devices[role]
             evidence.readiness_seconds[role] = self._wait_device(device.host)
@@ -528,15 +658,26 @@ class LocalOperations:
                 "tcp22": "passed",
                 "tcp830": "passed",
             }
+        evidence.readiness_outcome = "passed"
+        for role in ("core_02", "edge_junos_01"):
+            device = self._devices[role]
             self._establish_host_trust(
                 device.host, (22, 830) if role == "edge_junos_01" else (22,)
             )
         cached = CachedSecrets(self._credentials)
         targets = {
-            "core_02": ("GigabitEthernet2", AnsibleRunnerCiscoAdapter(ROOT)),
-            "edge_junos_01": ("ge-0/0/2", JunosPyEZAdapter()),
+            "core_02": (
+                "GigabitEthernet2",
+                AnsibleRunnerCiscoAdapter(ROOT, known_hosts=self._known_hosts),
+            ),
+            "edge_junos_01": (
+                "ge-0/0/2",
+                JunosPyEZAdapter(known_hosts=self._known_hosts),
+            ),
         }
-        inventory = NetBoxInventoryProvider()
+        if self._inventory is None:
+            raise StagingError("staging inventory authority was not resolved")
+        inventory = self._inventory
         for role, (interface, adapter) in targets.items():
             device = inventory.resolve(self._devices[role].name, interface)
             if device.inventory_object_id != self._devices[role].inventory_object_id:
@@ -551,10 +692,27 @@ class LocalOperations:
                 ),
             )
             try:
-                plan_change(intent, inventory, cached, adapter)
+                attempts = 0
+
+                def collect(
+                    intent: InterfaceDescriptionIntent = intent,
+                    adapter: Any = adapter,
+                    role: str = role,
+                ) -> None:
+                    nonlocal attempts
+                    attempts += 1
+                    evidence.ncdp_validation_attempts[role] = attempts
+                    plan_change(intent, inventory, cached, adapter)
+
+                evidence.ncdp_validation_attempts[role] = retry_provider_read(collect)
+            except ProviderError as error:
+                evidence.ncdp_validation_outcome = "failed"
+                raise StagingError(
+                    f"{role} NCDP read-only validation failed: {error}"
+                ) from None
             except Exception:
+                evidence.ncdp_validation_outcome = "failed"
                 raise StagingError(f"{role} NCDP read-only validation failed") from None
-        evidence.readiness_outcome = "passed"
         evidence.ncdp_validation_outcome = "passed"
 
     def destroy(self, evidence: StagingEvidence) -> None:
@@ -596,21 +754,118 @@ class LocalOperations:
         if resolved.exists():
             raise StagingError("run-scoped state retirement failed")
 
+    def recover(self, evidence: StagingEvidence) -> None:
+        """Destroy only a known retained run; never create or start resources."""
+        if (
+            not self.run_directory.is_dir()
+            or self.run_directory.is_symlink()
+            or not self.state_path.is_file()
+            or not self.data_directory.is_dir()
+        ):
+            raise StagingError("retained staging run is unknown or incomplete")
+        self._resolve_authority()
+        self._run_plain(
+            [
+                "terraform",
+                f"-chdir={TERRAFORM_ROOT}",
+                "init",
+                "-input=false",
+                "-lockfile=readonly",
+                f"-backend-config=path={self.state_path}",
+            ]
+        )
+        addresses = set(self._state_list())
+        validate_recovery_destroy_graph(
+            addresses, self._expected_addresses(), dict.fromkeys(addresses, "delete")
+        )
+        values = {
+            key: value["value"]
+            for key, value in json.loads(
+                self._run_plain(
+                    ["terraform", f"-chdir={TERRAFORM_ROOT}", "output", "-json"]
+                )
+            ).items()
+        }
+        if (
+            values.get("staging_run_id") != self.run_id
+            or values.get("lab_title") != self.lab_title
+        ):
+            raise StagingError("retained staging output identity mismatch")
+        evidence.lab_id = values.get("lab_id")
+        evidence.node_ids = values.get("node_ids", {})
+        evidence.link_ids = values.get("link_ids", {})
+        changes = self._changes(self._run_safe(["plan", "-destroy"]))
+        validate_recovery_destroy_graph(addresses, self._expected_addresses(), changes)
+        self._managed = True
+        self._run_safe(["destroy", "-auto-approve"])
+        evidence.destroy_outcome = "passed"
+        self.verify_absent(evidence)
+        evidence.absence_verification_outcome = "passed"
+        self.retire_state(evidence)
+        evidence.state_retirement_outcome = "passed"
+        evidence.overall_result = "passed"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--run-directory", required=True, type=Path)
     parser.add_argument("--evidence", required=True, type=Path)
+    parser.add_argument("--identity", choices=("local", "buildkite"), default="local")
     return parser.parse_args()
 
 
 def main() -> int:
+    os.umask(0o077)
     args = parse_args()
     try:
+        buildkite_context = None
+        buildkite_jwt = None
+        if args.identity == "buildkite":
+            for name in ("NCDP_OPENBAO_ROLE_ID", "NCDP_OPENBAO_SECRET_ID"):
+                if os.environ.get(name):
+                    raise StagingError(
+                        "ambient AppRole is prohibited in Buildkite staging"
+                    )
+            buildkite_context = staging_context_from_environment()
+            if args.run_id != buildkite_context.staging_run_id:
+                raise StagingError("Buildkite staging run identity mismatch")
+            state_root_value = os.environ.get("NCDP_STAGING_STATE_ROOT", "")
+            if not state_root_value:
+                raise StagingError("Buildkite staging state root is missing")
+            state_root = validate_staging_state_root(Path(state_root_value), ROOT)
+            expected_run_directory = (
+                state_root / "ephemeral" / buildkite_context.staging_run_id
+            )
+            if args.run_directory.resolve() != expected_run_directory:
+                raise StagingError("Buildkite staging run directory mismatch")
+            buildkite_jwt = read_buildkite_oidc_jwt(sys.stdin)
         validate_run_directory(args.run_id, args.run_directory)
-        operations = LocalOperations(args.run_id, args.run_directory)
-        evidence = run_staging_lifecycle(args.run_id, args.run_directory, operations)
+        operations = LocalOperations(
+            args.run_id,
+            args.run_directory,
+            buildkite_context=buildkite_context,
+            buildkite_jwt=buildkite_jwt,
+        )
+        initial_evidence = None
+        if buildkite_context is not None:
+            initial_evidence = StagingEvidence(
+                schema_version="2",
+                staging_run_id=args.run_id,
+                orchestrator="buildkite",
+                pipeline_id=buildkite_context.pipeline_id,
+                build_id=buildkite_context.build_id,
+                build_commit=buildkite_context.commit,
+                build_branch=buildkite_context.branch,
+                step_key=buildkite_context.step_key,
+                job_id=buildkite_context.job_id,
+            )
+        evidence = run_staging_lifecycle(
+            args.run_id,
+            args.run_directory,
+            operations,
+            evidence=initial_evidence,
+        )
     except Exception as error:
         print(f"ephemeral staging admission failed: {error}", file=sys.stderr)
         return 1

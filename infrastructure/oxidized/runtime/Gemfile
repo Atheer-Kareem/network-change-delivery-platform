@@ -1,0 +1,6 @@
+source "https://rubygems.org"
+
+ruby "3.3.9"
+
+gem "oxidized", "= 0.37.0"
+gem "oxidized-web", "= 0.18.1"

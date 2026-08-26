@@ -109,7 +109,12 @@ Ordering may change when implementation evidence requires it.
     correlation persistence** adds a separate metadata-only follow-up record,
     exact parent UUID/digest linkage, and bounded reads and queries without
     installing or running Oxidized. 10A, 10B-1, and 10B-2 are complete; 10C-1
-    is implemented pending review and acceptance.
+    is complete. **10C-2 — reproducible Oxidized runtime packaging** freezes a
+    digest-pinned, non-root Apple-Silicon OCI runtime for Oxidized 0.37.0 and
+    oxidized-web 0.18.1 and proves a loopback-only synthetic API without device
+    collection. NetBox/OpenBao materialization, private Git chronology,
+    persistent service ownership, scheduling, and forced observation remain
+    later 10C increments.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

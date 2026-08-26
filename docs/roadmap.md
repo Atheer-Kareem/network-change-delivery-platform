@@ -104,9 +104,12 @@ Ordering may change when implementation evidence requires it.
     failures, and bounded `show`/`find` reads without Oxidized. **10C —
     Oxidized Git-backed actual-state chronology and audit correlation** will add
     private external Cisco/Junos configuration history, bounded collection, and
-    non-secret Git references without changing desired intent authority. 10A is
-    complete; 10B-1 is complete after review and merge, while 10B-2 remains in
-    implementation and external acceptance.
+    non-secret Git references without changing desired intent authority.
+    **10C-1 — offline configuration-observation contracts and append-only
+    correlation persistence** adds a separate metadata-only follow-up record,
+    exact parent UUID/digest linkage, and bounded reads and queries without
+    installing or running Oxidized. 10A, 10B-1, and 10B-2 are complete; 10C-1
+    is implemented pending review and acceptance.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

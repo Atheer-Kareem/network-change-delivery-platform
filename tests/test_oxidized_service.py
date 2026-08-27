@@ -199,6 +199,18 @@ def test_netbox_installer_is_external_private_and_pull_free() -> None:
     assert "rm -" not in script
 
 
+def test_oxidized_updater_is_atomic_external_and_minimal() -> None:
+    root = Path(__file__).parents[1]
+    script = (root / "scripts/oxidized/update_service_runtime.sh").read_text()
+    assert "/Users/netdevops/.local/lib/ncdp" in script
+    assert "--no-deps dist/network_change_delivery-*.whl" in script
+    assert "'httpx==0.28.1'" in script
+    assert "'pydantic==2.13.4'" in script
+    assert "'pyyaml==6.0.3'" in script
+    assert 'mv "${ensure_candidate}" "${config_root}/ensure"' in script
+    assert "--editable" not in script
+
+
 def test_missing_docker_inspection_is_treated_as_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -70,7 +70,7 @@ def _docker(*arguments: str, check: bool = True) -> str:
 
 def _inspect() -> dict[str, object] | None:
     output = _docker("container", "inspect", CONTAINER_NAME, check=False)
-    if not output:
+    if output in {"", "[]"}:
         return None
     try:
         values = json.loads(output)

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from network_change_delivery.oxidized_controller import CollectionReady
+from network_change_delivery.oxidized_reconciler import _inspect
 from network_change_delivery.oxidized_service import (
     OxidizedServiceError,
     docker_run_arguments,
@@ -106,3 +107,13 @@ def test_installer_freezes_launchd_and_external_runtime_contract() -> None:
     assert "BAO_TOKEN" not in script
     assert "OPENBAO_TOKEN" not in script
     assert "docker.sock" not in script
+
+
+def test_missing_docker_inspection_is_treated_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_reconciler._docker",
+        lambda *_args, **_kwargs: "[]",
+    )
+    assert _inspect() is None

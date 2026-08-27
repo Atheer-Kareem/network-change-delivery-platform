@@ -68,8 +68,9 @@ This mechanism owns container availability only. It preserves the existing
 PostgreSQL, Redis, media, reports, and scripts volumes and never seeds, migrates,
 repairs, or writes NetBox authority. Missing volumes or an unexpected project,
 container, image, service, or publication fail closed without automatic
-deletion. NCDP inventory semantics and NetBox's authority ownership are
-unchanged.
+deletion. A completely absent expected container set may be recreated against
+those already-verified volumes; a partial or foreign population is rejected.
+NCDP inventory semantics and NetBox's authority ownership are unchanged.
 
 ## Immutable provenance
 

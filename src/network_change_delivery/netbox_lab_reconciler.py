@@ -196,7 +196,11 @@ def _verify_model(root: Path, contract: dict[str, object]) -> None:
 
 
 def _inspect_project(
-    root: Path, contract: dict[str, object], *, allow_legacy_location: bool = False
+    root: Path,
+    contract: dict[str, object],
+    *,
+    allow_legacy_location: bool = False,
+    allow_absent: bool = False,
 ) -> None:
     values = _json_lines(
         [
@@ -210,6 +214,8 @@ def _inspect_project(
             "json",
         ]
     )
+    if not values and allow_absent:
+        return
     if len(values) != len(EXPECTED_SERVICES):
         raise NetBoxLabError("NetBox Compose population rejected")
     expected_names = contract.get("containers")
@@ -281,7 +287,9 @@ def reconcile(root: Path = DEFAULT_ROOT) -> None:
     _verify_images(contract)
     _verify_volumes(contract)
     _verify_model(root, contract)
-    _inspect_project(root, contract, allow_legacy_location=True)
+    _inspect_project(
+        root, contract, allow_legacy_location=True, allow_absent=True
+    )
     _run(
         _compose(root, "up", "--detach", "--pull", "never", "--no-build"),
         timeout=COMMAND_TIMEOUT,

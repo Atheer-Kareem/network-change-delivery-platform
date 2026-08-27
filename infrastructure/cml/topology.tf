@@ -2,10 +2,6 @@ resource "cml2_lab" "twin" {
   title       = "NCDP Terraform Twin"
   description = "Terraform-owned personal CML digital twin; no production configuration."
   notes       = "Personal-lab Day-0 manageability only; stable identity remains NetBox-owned and NCDP-managed intent remains outside Terraform."
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 module "twin" {

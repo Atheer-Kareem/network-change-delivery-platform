@@ -125,7 +125,12 @@ Ordering may change when implementation evidence requires it.
     Git bind mount, source-freshness readiness, minimal OpenBao machine
     bootstrap, and bounded per-node control while interval zero keeps real
     collection disabled. Its reboot acceptance is operator-triggered; real
-    baseline collection remains 10C-6.
+    baseline collection remains 10C-6. **10C-6 — strict live configuration
+    chronology** adds CML-anchored fresh SSH host trust, readiness schema 2,
+    SSH-only secure collection, path-scoped collection/revision binding, the
+    first private Cisco and Junos baseline commits, unchanged-observation
+    suppression, trust retirement, and fixed-address CML cleanup. Protected
+    pre/post change and audit correlation remains 10C-7.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

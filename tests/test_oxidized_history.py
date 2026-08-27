@@ -177,6 +177,14 @@ def test_nonbare_empty_missing_replace_and_alternates_fail_closed(
     missing = tmp_path / "missing.git"
     with pytest.raises(OxidizedHistoryError):
         OxidizedHistoryRepository(missing).latest_revision("netbox-device-1")
+    reservation = tmp_path / "empty-reservation"
+    reservation.mkdir(mode=0o700)
+    assert (
+        OxidizedHistoryRepository(reservation).latest_revision_or_none(
+            "netbox-device-1"
+        )
+        is None
+    )
     empty = tmp_path / "empty.git"
     git("init", "--bare", str(empty))
     empty.chmod(0o700)
@@ -226,7 +234,7 @@ def test_malformed_oid_and_timestamp_fail_closed(
 ) -> None:
     repository, _ = chronology(tmp_path)
     reader = OxidizedHistoryRepository(repository)
-    monkeypatch.setattr(reader, "_validate_repository", lambda: None)
+    monkeypatch.setattr(reader, "_validate_repository", lambda **_kwargs: True)
     monkeypatch.setattr(reader, "_git", lambda *_arguments: log_output)
     with pytest.raises(OxidizedHistoryError, match="unavailable"):
         reader.latest_revision("netbox-device-1")
@@ -237,7 +245,7 @@ def test_malformed_tree_entry_fails_closed(
 ) -> None:
     repository, commits = chronology(tmp_path)
     reader = OxidizedHistoryRepository(repository)
-    monkeypatch.setattr(reader, "_validate_repository", lambda: None)
+    monkeypatch.setattr(reader, "_validate_repository", lambda **_kwargs: True)
     responses = iter(
         [
             f"{commits[-1]}\x002026-08-27T03:00:00Z\n".encode(),

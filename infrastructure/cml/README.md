@@ -11,10 +11,12 @@ network intent or production configuration.
 ADR 0014 makes normal staging ephemeral: absent, fresh create, first boot,
 readiness and validation, sanitized evidence, complete destroy, then proven
 absence. The final Increment 8D twin was destroyed and the external state has no
-managed resources. The operator root retains `prevent_destroy = true`; the
-ephemeral root has no such guard because complete destroy is its normal success
-path. Both consume `modules/twin`. Do not treat a normal create-oriented plan
-against the empty operator state as drift.
+managed resources. Both the operator and ephemeral roots permit complete
+destruction because a fresh, explicitly admitted realization must be retired
+before another fixed-address twin can start. Exact graph validation and the
+safe Terraform UI bound that operation; neither root relies on
+`prevent_destroy`. Both consume `modules/twin`. Do not treat a normal
+create-oriented plan against the empty operator state as drift.
 
 Terraform `1.15.8` and `CiscoDevNet/cml2` `0.9.3-beta1` are exact contracts.
 Provider connection, token, and trusted PEM content are supplied only through

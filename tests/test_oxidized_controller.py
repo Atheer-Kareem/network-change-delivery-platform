@@ -5,6 +5,7 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -19,6 +20,20 @@ from network_change_delivery.oxidized_controller import (
 from network_change_delivery.oxidized_service import publish_readiness
 
 CONTAINER = "a" * 64
+TRUST_DIGEST = "b" * 64
+
+
+@pytest.fixture(autouse=True)
+def accepted_host_trust(monkeypatch: pytest.MonkeyPatch) -> None:
+    def trust(_path: Path) -> SimpleNamespace:
+        return SimpleNamespace(known_hosts_sha256=TRUST_DIGEST)
+
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_service.validate_host_trust", trust
+    )
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_controller.validate_host_trust", trust
+    )
 
 
 @pytest.mark.parametrize(
@@ -49,12 +64,13 @@ def test_readiness_missing_stale_wrong_container_and_wrong_nodes_fail(
     path.write_text(
         json.dumps(
             {
-                "schema_version": "1",
+                "schema_version": "2",
                 "refreshed_at": (now - timedelta(minutes=20)).isoformat(),
                 "expires_at": (now - timedelta(minutes=5)).isoformat(),
                 "nodes": ["netbox-device-1", "netbox-device-2"],
                 "container_id": CONTAINER,
-                "service_contract": "10C-5",
+                "service_contract": "10C-6",
+                "host_trust_sha256": TRUST_DIGEST,
             }
         )
     )
@@ -163,6 +179,79 @@ def test_new_completed_job_is_accepted(
         controller.collect("netbox-device-1", deadline_seconds=10).outcome
         is CollectionOutcome.SUCCEEDED
     )
+
+
+def test_exact_oxidized_web_utc_timestamp_is_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    ready = runtime / "ready.json"
+    publish_readiness(ready, CONTAINER)
+    started = datetime.now(UTC) + timedelta(seconds=1)
+    upstream = {
+        "start": started.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "end": (started + timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "status": "success",
+    }
+    responses = iter([nodes(), nodes(upstream)])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json=["ok"] if request.method == "PUT" else next(responses)
+        )
+
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_controller.time.sleep", lambda _value: None
+    )
+    result = OxidizedController(
+        "http://127.0.0.1:8888",
+        ready,
+        tmp_path / "locks",
+        CONTAINER,
+        transport=httpx.MockTransport(handler),
+    ).collect("netbox-device-1", deadline_seconds=10)
+    assert result.outcome is CollectionOutcome.SUCCEEDED
+    assert result.upstream_started_at == started.replace(microsecond=0)
+
+
+def test_whole_second_upstream_timestamp_is_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    ready = runtime / "ready.json"
+    publish_readiness(ready, CONTAINER)
+    started = datetime.now(UTC).replace(microsecond=0)
+    responses = iter(
+        [
+            nodes(),
+            nodes(
+                {
+                    "start": started.isoformat(),
+                    "end": (started + timedelta(seconds=1)).isoformat(),
+                    "status": "success",
+                }
+            ),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json=["ok"] if request.method == "PUT" else next(responses)
+        )
+
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_controller.time.sleep", lambda _value: None
+    )
+    result = OxidizedController(
+        "http://127.0.0.1:8888",
+        ready,
+        tmp_path / "locks",
+        CONTAINER,
+        transport=httpx.MockTransport(handler),
+    ).collect("netbox-device-1", deadline_seconds=10)
+    assert result.outcome is CollectionOutcome.SUCCEEDED
 
 
 @pytest.mark.parametrize("status", ["no_connection", "timelimit", "fail"])

@@ -380,8 +380,12 @@ Increment 10C-5 runs the pinned image persistently under the host user's
 non-root UID/GID. Launchd invokes a repository-independent installed reconciler
 at login and every five minutes; Docker restart policy remains `no`. The direct
 private Git bind mount is writable by Rugged and readable by the host metadata
-reader without `safe.directory`, root, broad permissions, or a copy-out bridge.
-An empty bare real-history repository contains no actual-state evidence.
+reader without root, broad permissions, or a copy-out bridge. ADR 0020
+supersedes the pre-write ownership assumption: Docker Desktop presents the bind
+as root-owned inside Linux, so a dedicated read-only Git config permits only the
+exact history path as `safe.directory`. The real-history reservation begins as
+a private empty directory; Rugged initializes its bare repository on first
+write.
 
 Oxidized uses interval zero, the exact two-node JSONFile source, Git output, and
 a loopback-only host API. API availability does not authorize collection. A
@@ -414,6 +418,29 @@ before the hard deadline, with no retry. Configuration-returning web endpoints
 are outside the controller contract. Real collection and observation
 publication remain disabled in 10C-5.
 
+### Strict live observation and host trust
+
+Increment 10C-6 explicitly overrides Oxidized 0.37.0's insecure SSH and Telnet
+defaults: input is SSH only, debug is false, secure is true, and Net::SSH resolves
+host verification to `:always`. A dedicated private known-host directory is
+populated only after the fresh Terraform/CML lab and node UUIDs, platform/image,
+BOOTED state, non-printing Day-0 identity markers, legacy stoppage, and staging
+absence are proven. Keyscan alone never authenticates an endpoint.
+
+Readiness schema 2 carries the current known-host SHA-256 digest. Both service
+reconciliation and the controller revalidate exact trust metadata and private
+filesystem properties; missing, changed, ambiguous, or retired trust blocks
+`node.next`. Retirement invalidates readiness before removing current trust and
+preserves `router.json` and the private chronology.
+
+`oxidized_observation` joins one successful bounded collection to the existing
+path-scoped metadata reader. Before/after revisions determine whether the
+observation created a revision; a successful identical observation reuses the
+prior commit/blob. Whole-second upstream job times have a one-second comparison
+tolerance, and a newly created Git revision must fall within the bounded job
+window plus five seconds. Configuration bytes and diffs are never read, and no
+audit or observation record is published yet.
+
 ## Implementation sequence and limitations
 
 10B-1 provides the typed envelope/reference models and append-only store.
@@ -427,8 +454,10 @@ API proof. 10C-3 adds exact NetBox/OpenBao source materialization. 10C-4 proves
 the private bare Git writer and metadata-only path reader without real
 collection. 10C-5 adds persistent service ownership, freshness-gated bounded
 collection control, and an operator-triggered reboot gate without collecting.
-Later 10C increments should add Cisco and Junos collection and runtime
-correlation.
+10C-6 adds strict CML-anchored SSH trust, the first private Cisco/Junos
+baselines, path-scoped collection/revision binding, unchanged suppression, and
+trust retirement before CML cleanup. Later 10C increments should add protected
+pre/post runtime correlation.
 They must not change desired-state authority or place full configurations in
 NCDP audit JSON.
 

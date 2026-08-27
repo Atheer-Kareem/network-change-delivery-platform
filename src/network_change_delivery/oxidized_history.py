@@ -104,7 +104,7 @@ class OxidizedHistoryRepository:
             raise OxidizedHistoryError("Oxidized history unavailable")
         return result.returncode == 0
 
-    def _validate_repository(self) -> None:
+    def _validate_repository(self, *, allow_empty: bool = False) -> bool:
         try:
             validate_oxidized_root(self._path)
             metadata = self._path.lstat()
@@ -117,6 +117,13 @@ class OxidizedHistoryRepository:
             or stat.S_IMODE(metadata.st_mode) & 0o077
         ):
             raise OxidizedHistoryError("Oxidized history repository rejected")
+        try:
+            if not any(self._path.iterdir()):
+                if allow_empty:
+                    return False
+                raise OxidizedHistoryError("Oxidized history unavailable")
+        except OSError:
+            raise OxidizedHistoryError("Oxidized history unavailable") from None
         if self._git("rev-parse", "--is-bare-repository").strip() != b"true":
             raise OxidizedHistoryError("Oxidized history repository rejected")
         object_format = self._git("rev-parse", "--show-object-format").strip()
@@ -144,16 +151,32 @@ class OxidizedHistoryRepository:
             or not local_objects
         ):
             raise OxidizedHistoryError("Oxidized history repository rejected")
-        head = self._git("rev-parse", "--verify", "HEAD^{commit}").strip().decode()
+        try:
+            head = self._git("rev-parse", "--verify", "HEAD^{commit}").strip().decode()
+        except OxidizedHistoryError:
+            if allow_empty:
+                return False
+            raise
         if not _OID_PATTERN.fullmatch(head):
             raise OxidizedHistoryError("Oxidized history unavailable")
+        return True
 
     def latest_revision(
         self, node_name: str, group: str = OXIDIZED_GROUP
     ) -> OxidizedRevision:
         """Return the newest commit affecting one path, without reading its blob."""
+        revision = self.latest_revision_or_none(node_name, group)
+        if revision is None:
+            raise OxidizedHistoryError("Oxidized history unavailable")
+        return revision
+
+    def latest_revision_or_none(
+        self, node_name: str, group: str = OXIDIZED_GROUP
+    ) -> OxidizedRevision | None:
+        """Return path metadata or absence without reading configuration bytes."""
         path = canonical_config_path(node_name, group)
-        self._validate_repository()
+        if not self._validate_repository(allow_empty=True):
+            return None
         log = self._git(
             "log",
             "-1",
@@ -163,6 +186,8 @@ class OxidizedHistoryRepository:
             path,
         )
         fields = log.rstrip(b"\n").split(b"\x00")
+        if fields == [b""]:
+            return None
         if len(fields) != 2:
             raise OxidizedHistoryError("Oxidized history unavailable")
         try:

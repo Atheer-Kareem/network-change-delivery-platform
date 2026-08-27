@@ -11,7 +11,7 @@ plist=/Users/netdevops/Library/LaunchAgents/com.ncdp.oxidized.plist
 [ -n "${NCDP_OXIDIZED_NETBOX_TOKEN:-}" ] || { echo "Oxidized NetBox authority missing" >&2; exit 2; }
 
 umask 077
-for directory in "${root}" "${root}/runtime" "${root}/operator" "${root}/control" "${root}/logs" "${config_root}" "$(dirname "${runtime_root}")"; do
+for directory in "${root}" "${root}/runtime" "${root}/operator" "${root}/control" "${root}/logs" "${config_root}" "${config_root}/ssh" "$(dirname "${runtime_root}")"; do
   mkdir -p "${directory}"
   chmod 0700 "${directory}"
 done
@@ -21,11 +21,13 @@ for logfile in "${root}/logs/service.out.log" "${root}/logs/service.err.log"; do
 done
 
 if [ ! -e "${root}/config-history.git" ]; then
-  /usr/bin/git init --bare --quiet "${root}/config-history.git"
+  mkdir "${root}/config-history.git"
 fi
 chmod 0700 "${root}/config-history.git"
-[ "$(/usr/bin/git --git-dir="${root}/config-history.git" rev-list --all --count)" -eq 0 ]
-[ -z "$(/usr/bin/git --git-dir="${root}/config-history.git" config --local --name-only --get-regexp '^remote\.' 2>/dev/null || true)" ]
+if [ -n "$(find "${root}/config-history.git" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+  [ "$(/usr/bin/git --git-dir="${root}/config-history.git" rev-list --all --count)" -eq 0 ]
+  [ -z "$(/usr/bin/git --git-dir="${root}/config-history.git" config --local --name-only --get-regexp '^remote\.' 2>/dev/null || true)" ]
+fi
 
 image_id=$(docker image inspect "${image}" --format '{{.Id}}')
 case "${image_id}" in sha256:????????????????????????????????????????????????????????????????) ;; *) exit 2 ;; esac
@@ -41,8 +43,10 @@ printf '%s\n' "${image_id}" > "${config_root}/image-id"
 cat > "${config_root}/authority.json" <<EOF
 {"netbox_url":"http://127.0.0.1:8000","openbao_url":"http://127.0.0.1:8200"}
 EOF
-"${runtime_root}/bin/python" -c 'from pathlib import Path; from network_change_delivery.oxidized_service import render_oxidized_config; Path("/Users/netdevops/.config/ncdp/oxidized/config").write_text(render_oxidized_config())'
-chmod 0600 "${config_root}"/*
+"${runtime_root}/bin/python" -c 'from pathlib import Path; from network_change_delivery.oxidized_service import render_oxidized_config, render_oxidized_git_config; root=Path("/Users/netdevops/.config/ncdp/oxidized"); (root / "config").write_text(render_oxidized_config()); (root / "gitconfig").write_text(render_oxidized_git_config())'
+for config_file in authority.json config gitconfig image-id netbox-token; do
+  chmod 0600 "${config_root}/${config_file}"
+done
 
 cat > "${config_root}/ensure" <<EOF
 #!/bin/sh

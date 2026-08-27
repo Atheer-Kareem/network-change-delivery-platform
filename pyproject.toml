@@ -20,6 +20,8 @@ dependencies = [
 ncdp = "network_change_delivery.cli:main"
 ncdp-oxidized-service = "network_change_delivery.oxidized_reconciler:main"
 ncdp-netbox-lab-service = "network_change_delivery.netbox_lab_reconciler:main"
+ncdp-oxidized-observe = "network_change_delivery.oxidized_observation:main"
+ncdp-oxidized-retire-trust = "network_change_delivery.oxidized_host_trust:retire_main"
 
 [dependency-groups]
 dev = [

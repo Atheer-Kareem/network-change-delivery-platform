@@ -16,6 +16,14 @@ uv pip install --python "${runtime}/bin/python" 'httpx==0.28.1' 'pydantic==2.13.
 printf '%s\n' "${commit}" > "${runtime}/source-commit"
 chmod 0600 "${runtime}/source-commit"
 "${runtime}/bin/python" -I -c 'import network_change_delivery; print(network_change_delivery.__file__)' >/dev/null
+config_candidate=${config_root}/.config.candidate
+"${runtime}/bin/python" -I -c 'from pathlib import Path; from network_change_delivery.oxidized_service import render_oxidized_config; Path("/Users/netdevops/.config/ncdp/oxidized/.config.candidate").write_text(render_oxidized_config())'
+chmod 0600 "${config_candidate}"
+mv "${config_candidate}" "${config_root}/config"
+gitconfig_candidate=${config_root}/.gitconfig.candidate
+"${runtime}/bin/python" -I -c 'from pathlib import Path; from network_change_delivery.oxidized_service import render_oxidized_git_config; Path("/Users/netdevops/.config/ncdp/oxidized/.gitconfig.candidate").write_text(render_oxidized_git_config())'
+chmod 0600 "${gitconfig_candidate}"
+mv "${gitconfig_candidate}" "${config_root}/gitconfig"
 ensure_candidate=${config_root}/.ensure.candidate
 cat > "${ensure_candidate}" <<EOF
 #!/bin/sh

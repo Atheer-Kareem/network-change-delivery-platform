@@ -117,7 +117,11 @@ Ordering may change when implementation evidence requires it.
     later 10C increments. **10C-3 — NetBox/OpenBao source materialization** adds
     the host-side exact-population authority resolver, dedicated read-only
     OpenBao identity, atomic private JSONFile cache, and no-collection parser
-    proof. Git chronology and persistent collection remain later increments.
+    proof. **10C-4 — private Git chronology** proves Oxidized's bare Rugged
+    writer, unchanged-byte suppression, multi-node path chronology, and a
+    metadata-only path-scoped `OxidizedRevision` reader in disposable synthetic
+    state. The real chronology, persistent service, and device collection remain
+    later increments.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

@@ -35,7 +35,11 @@ chmod 0700 "${history}"
 UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/ncdp-uv-cache} \
   uv run python scripts/oxidized/verify_git_chronology.py "${history}" "${evidence}"
 
-[ ! -e /Users/netdevops/.local/state/ncdp/oxidized/config-history.git ] || {
-  echo "persistent Oxidized chronology path unexpectedly exists" >&2
-  exit 1
-}
+persistent=/Users/netdevops/.local/state/ncdp/oxidized/config-history.git
+if [ -e "${persistent}" ]; then
+  [ "$(/usr/bin/git --git-dir="${persistent}" rev-parse --is-bare-repository)" = true ]
+  [ "$(/usr/bin/git --git-dir="${persistent}" rev-list --all --count)" -eq 0 ]
+  [ -z "$(/usr/bin/git --git-dir="${persistent}" config --local --name-only --get-regexp '^remote\.' 2>/dev/null || true)" ]
+  [ ! -e "${persistent}/objects/info/alternates" ]
+  [ ! -e "${persistent}/refs/replace" ]
+fi

@@ -360,15 +360,32 @@ def test_comment_only_retry_authorization_changes_blob_not_request(
     path = tmp_path / LIVE_DEPLOYMENT_REQUEST
     path.write_text("# retry-authorization: 1\n" + REQUEST_YAML, encoding="utf-8")
     git(tmp_path, "add", LIVE_DEPLOYMENT_REQUEST.as_posix())
-    git(tmp_path, "commit", "-qm", "authorize retry")
-    retry_commit = git(tmp_path, "rev-parse", "HEAD")
-    retry = load_live_deployment_request_at_commit(retry_commit, root=tmp_path)
-    retry_blob = git(
-        tmp_path, "rev-parse", f"{retry_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}"
+    git(tmp_path, "commit", "-qm", "authorize first retry")
+    first_retry_commit = git(tmp_path, "rev-parse", "HEAD")
+    first_retry = load_live_deployment_request_at_commit(
+        first_retry_commit, root=tmp_path
+    )
+    first_retry_blob = git(
+        tmp_path,
+        "rev-parse",
+        f"{first_retry_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}",
     )
 
-    assert retry == original
-    assert retry_blob != original_blob
+    path.write_text("# retry-authorization: 2\n" + REQUEST_YAML, encoding="utf-8")
+    git(tmp_path, "add", LIVE_DEPLOYMENT_REQUEST.as_posix())
+    git(tmp_path, "commit", "-qm", "authorize second retry")
+    second_retry_commit = git(tmp_path, "rev-parse", "HEAD")
+    second_retry = load_live_deployment_request_at_commit(
+        second_retry_commit, root=tmp_path
+    )
+    second_retry_blob = git(
+        tmp_path,
+        "rev-parse",
+        f"{second_retry_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}",
+    )
+
+    assert first_retry == second_retry == original
+    assert len({original_blob, first_retry_blob, second_retry_blob}) == 3
 
 
 def test_committed_request_requires_exact_lowercase_commit() -> None:

@@ -75,6 +75,16 @@ fallbacks are not authorized. No device write occurred. Build #150 remains
 permanently non-retriable, and retry authorization 1 changes the commit-bound
 request blob for a new merged-main attempt without changing its semantic plan.
 
+Build #152 passed the corrected Ansible runtime check and then failed closed in
+PRE collection-readiness validation. The operator twin intentionally destroyed
+after the prior failed attempt had not been freshly created after merge, so its
+realization trust remained retired and schema-2 readiness remained absent. PRE
+did not submit `node.next`; no deployment, audit mutation, or configuration
+history change occurred. Build #152 is permanently non-retriable. Retry
+authorization 2 changes only the committed request blob; after its merge, a
+fresh operator twin, CML-anchored trust, and bound readiness must be prepared
+before the exact new main build is approved.
+
 7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
 mutation. This foundation has no active live request and has not performed or

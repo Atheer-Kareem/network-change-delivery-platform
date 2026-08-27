@@ -120,8 +120,12 @@ Ordering may change when implementation evidence requires it.
     proof. **10C-4 — private Git chronology** proves Oxidized's bare Rugged
     writer, unchanged-byte suppression, multi-node path chronology, and a
     metadata-only path-scoped `OxidizedRevision` reader in disposable synthetic
-    state. The real chronology, persistent service, and device collection remain
-    later increments.
+    state. **10C-5 — persistent Oxidized service and collection control plane**
+    adds launchd-owned repository-independent reconciliation, a direct private
+    Git bind mount, source-freshness readiness, minimal OpenBao machine
+    bootstrap, and bounded per-node control while interval zero keeps real
+    collection disabled. Its reboot acceptance is operator-triggered; real
+    baseline collection remains 10C-6.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

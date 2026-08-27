@@ -58,6 +58,7 @@ class MaterializedOxidizedSource:
     path: Path
     identities: tuple[str, ...]
     node_names: tuple[str, ...]
+    changed: bool
 
 
 def _validate_existing_source(path: Path) -> None:
@@ -138,6 +139,20 @@ def _publish(path: Path, payload: bytes) -> None:
             temporary.unlink()
 
 
+def _existing_payload_matches(path: Path, payload: bytes) -> bool:
+    """Compare one already-validated private cache without exposing its bytes."""
+    if not path.exists():
+        return False
+    try:
+        validate_private_file(path)
+        if path.stat().st_size != len(payload):
+            return False
+        with path.open("rb") as stream:
+            return stream.read(len(payload) + 1) == payload
+    except (OSError, OxidizedPrivatePathError) as error:
+        raise OxidizedSourceError("Oxidized source comparison failed") from error
+
+
 def materialize_oxidized_source(
     inventory: ManagedInventoryProvider,
     secrets: SecretProvider,
@@ -182,6 +197,8 @@ def materialize_oxidized_source(
     except OxidizedPrivatePathError as error:
         raise OxidizedSourceError("Oxidized runtime directory rejected") from error
     path = runtime / SOURCE_FILENAME
-    _publish(path, payload)
+    changed = not _existing_payload_matches(path, payload)
+    if changed:
+        _publish(path, payload)
     ordered_identities = tuple(device.inventory_object_id or "" for device in ordered)
-    return MaterializedOxidizedSource(path, ordered_identities, names)
+    return MaterializedOxidizedSource(path, ordered_identities, names, changed)

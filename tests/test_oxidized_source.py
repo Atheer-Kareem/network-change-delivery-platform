@@ -80,6 +80,7 @@ def test_exact_population_maps_deterministically_and_forces_ssh_22(
         "netbox:dcim.device:2",
     )
     assert result.node_names == ("netbox-device-1", "netbox-device-2")
+    assert result.changed is True
     assert [(node["name"], node["model"], node["ssh_port"]) for node in payload] == [
         ("netbox-device-1", "ios", 22),
         ("netbox-device-2", "junos", 22),
@@ -94,6 +95,15 @@ def test_exact_population_maps_deterministically_and_forces_ssh_22(
     assert stat.S_IMODE((root / "runtime").stat().st_mode) == 0o700
     assert stat.S_IMODE(result.path.stat().st_mode) == 0o600
     assert result.path.stat().st_uid == os.getuid()
+
+
+def test_identical_source_is_not_republished(tmp_path: Path) -> None:
+    root = tmp_path / "oxidized"
+    first = materialize_oxidized_source(Inventory(), Secrets(), root)
+    inode = first.path.stat().st_ino
+    second = materialize_oxidized_source(Inventory(), Secrets(), root)
+    assert second.changed is False
+    assert second.path.stat().st_ino == inode
 
 
 @pytest.mark.parametrize(
@@ -144,6 +154,10 @@ def test_temporary_fsync_failure_preserves_existing_source(
     root = tmp_path / "oxidized"
     path = materialize_oxidized_source(Inventory(), Secrets(), root).path
     previous = path.read_bytes()
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_source._existing_payload_matches",
+        lambda *_args: False,
+    )
 
     def fail_fsync(_descriptor: int) -> None:
         raise OSError("injected")
@@ -161,6 +175,10 @@ def test_replace_failure_preserves_existing_source(
     root = tmp_path / "oxidized"
     path = materialize_oxidized_source(Inventory(), Secrets(), root).path
     previous = path.read_bytes()
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_source._existing_payload_matches",
+        lambda *_args: False,
+    )
 
     def fail_replace(_source: Path, _target: Path) -> Path:
         raise OSError("injected")

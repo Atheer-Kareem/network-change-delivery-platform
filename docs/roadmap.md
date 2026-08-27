@@ -166,7 +166,17 @@ Ordering may change when implementation evidence requires it.
     readiness were then retired and the exact operator twin destroyed while
     preserving six private-history commits. Increment 10C-7B is complete. No
     later increment has started.
-11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
-    SNMP, and reachability telemetry.
+11. **Continuous observability:** an independent, read-only operational plane,
+    decomposed into bounded increments:
+    - **11A — NetBox-bound management-service reachability:** persistent
+      Prometheus and credential-free Blackbox TCP probes with stable NetBox
+      identity and realization-scoped CML admission. Implementation is prepared;
+      post-merge live CML acceptance remains pending.
+    - **11B — dashboards and operator-only alerts:** bounded visualization,
+      reachability/staleness/service-health rules, and no remediation authority.
+    - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling
+      and bounded interface identity/counter normalization.
+    - **11D — gNMI/OpenConfig streaming telemetry:** reviewed TLS identity,
+      vendor-aware capability admission, and streaming normalization.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure
     cases, recovery, evidence review, security review, and reproducible runbook.

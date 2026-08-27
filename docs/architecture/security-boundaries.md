@@ -29,6 +29,13 @@ Monitoring, configuration history, and telemetry use read-only or minimally
 privileged identities. They operate independently and never reuse ordinary
 deployment write credentials.
 
+Increment 11A narrows the first telemetry boundary further: Prometheus and
+Blackbox receive no credential. A host-side materializer uses private read-only
+NetBox and CML realization authority, then exposes only private TCP targets to
+the containers. Raw endpoints never become durable metric identity, and neither
+Oxidized nor generic user SSH trust is reused. Loss of authority removes probe
+authorization; it never enables a fallback or deployment action.
+
 ## Credential and data boundaries
 
 The personal-lab path uses bounded AppRole bootstrap credentials to obtain a

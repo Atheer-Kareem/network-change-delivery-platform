@@ -1,0 +1,71 @@
+name: ncdp-observability
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
+    container_name: ncdp-prometheus
+    pull_policy: never
+    restart: "no"
+    user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - --config.file=/etc/ncdp/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=1GB
+    ports:
+      - 127.0.0.1:9090:9090
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    volumes:
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/prometheus.yml
+        target: /etc/ncdp/prometheus.yml
+        read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/discovery
+        target: /etc/ncdp/targets
+        read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/prometheus
+        target: /prometheus
+    networks:
+      - telemetry
+    depends_on:
+      - blackbox
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.27.0@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d
+    container_name: ncdp-blackbox-exporter
+    pull_policy: never
+    restart: "no"
+    user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - --config.file=/etc/ncdp/blackbox.yml
+      - --web.listen-address=:9115
+      - --log.level=info
+      - --log.prober=warn
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m
+    volumes:
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/blackbox.yml
+        target: /etc/ncdp/blackbox.yml
+        read_only: true
+    networks:
+      - telemetry
+
+networks:
+  telemetry:
+    name: ncdp-observability-telemetry
+    labels:
+      com.ncdp.service: observability

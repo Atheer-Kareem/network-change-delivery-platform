@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from network_change_delivery import observability_reconciler
 from network_change_delivery.models import InventoryDevice
 from network_change_delivery.observability_service import (
     BLACKBOX_CONTAINER,
@@ -93,6 +94,7 @@ def test_readiness_binds_generation_realization_containers_and_commit(
             generation,
             prometheus_container_id=PROM_CONTAINER,
             blackbox_container_id=BLACKBOX_CONTAINER_ID,
+            source_commit=COMMIT,
             now=now,
         )
         == marker
@@ -125,6 +127,7 @@ def test_readiness_mismatch_expiry_guard_and_retirement_fail_closed(
             generation,
             prometheus_container_id="f" * 64,
             blackbox_container_id=BLACKBOX_CONTAINER_ID,
+            source_commit=COMMIT,
             now=now,
         )
     with pytest.raises(ObservabilityServiceError):
@@ -133,6 +136,7 @@ def test_readiness_mismatch_expiry_guard_and_retirement_fail_closed(
             generation,
             prometheus_container_id=PROM_CONTAINER,
             blackbox_container_id=BLACKBOX_CONTAINER_ID,
+            source_commit=COMMIT,
             now=now + timedelta(minutes=16),
         )
     guard = root / "control/readiness-publication-ambiguous"
@@ -144,10 +148,52 @@ def test_readiness_mismatch_expiry_guard_and_retirement_fail_closed(
             generation,
             prometheus_container_id=PROM_CONTAINER,
             blackbox_container_id=BLACKBOX_CONTAINER_ID,
+            source_commit=COMMIT,
             now=now,
         )
     invalidate_readiness(root / "runtime/observability-ready.json")
     assert not (root / "runtime/observability-ready.json").exists()
+
+
+@pytest.mark.parametrize("source_commit", ["f" * 40, "not-a-commit"])
+def test_readiness_rejects_wrong_or_malformed_expected_source_commit(
+    tmp_path: Path, source_commit: str
+) -> None:
+    root = tmp_path / "external" / "observability"
+    now = datetime(2026, 8, 28, tzinfo=UTC)
+    generation = active_generation(root, now)
+    publish_readiness(
+        root,
+        generation,
+        prometheus_container_id=PROM_CONTAINER,
+        blackbox_container_id=BLACKBOX_CONTAINER_ID,
+        source_commit=COMMIT,
+        now=now,
+    )
+    with pytest.raises(ObservabilityServiceError, match="readiness rejected"):
+        read_readiness(
+            root,
+            generation,
+            prometheus_container_id=PROM_CONTAINER,
+            blackbox_container_id=BLACKBOX_CONTAINER_ID,
+            source_commit=source_commit,
+            now=now,
+        )
+
+
+def test_publish_readiness_rejects_malformed_source_commit(tmp_path: Path) -> None:
+    root = tmp_path / "external" / "observability"
+    now = datetime(2026, 8, 28, tzinfo=UTC)
+    generation = active_generation(root, now)
+    with pytest.raises(ValueError):
+        publish_readiness(
+            root,
+            generation,
+            prometheus_container_id=PROM_CONTAINER,
+            blackbox_container_id=BLACKBOX_CONTAINER_ID,
+            source_commit="not-a-commit",
+            now=now,
+        )
 
 
 def inspection(name: str, image: str, identifier: str, *, prometheus: bool):
@@ -314,6 +360,55 @@ def test_update_runtime_is_external_noneditable_and_preserves_authority() -> Non
     assert "authority.json" not in script
     assert "netbox-token" not in script
     assert "launchctl" not in script
+    assert "runtime-update-in-progress" in script
+    assert "runtime-transition.lock" in script
+    lock = script.index('mkdir "${lock}"')
+    invalidate = script.index('rm -f "${state_root}/runtime/observability-ready.json"')
+    first_switch = script.index('mv "${config_root}/.prometheus.yml.candidate"')
+    ensure_switch = script.index('mv "${config_root}/.ensure.candidate"')
+    unlock = script.index('rmdir "${lock}"')
+    assert lock < invalidate < first_switch < ensure_switch < unlock
+    assert "NCDP_OBSERVABILITY_RUNTIME_COMMIT=${commit}" in script
+    assert "${#commit}" in script
+
+
+def test_runtime_source_commit_binds_entrypoint_private_authority_and_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "external" / "observability"
+    config.mkdir(parents=True, mode=0o700)
+    source = config / "source-commit"
+    source.write_text(f"{COMMIT}\n")
+    source.chmod(0o600)
+    monkeypatch.setattr(observability_reconciler, "CONFIG_ROOT", config)
+    monkeypatch.setenv("NCDP_OBSERVABILITY_RUNTIME_COMMIT", COMMIT)
+    assert observability_reconciler._runtime_source_commit() == COMMIT
+
+    monkeypatch.setenv("NCDP_OBSERVABILITY_RUNTIME_COMMIT", "f" * 40)
+    with pytest.raises(ObservabilityServiceError, match="runtime identity"):
+        observability_reconciler._runtime_source_commit()
+    monkeypatch.setenv("NCDP_OBSERVABILITY_RUNTIME_COMMIT", COMMIT)
+    guard = config / "runtime-update-in-progress"
+    guard.write_text(f"{COMMIT}\n")
+    guard.chmod(0o600)
+    with pytest.raises(ObservabilityServiceError, match="update ambiguous"):
+        observability_reconciler._runtime_source_commit()
+
+
+def test_runtime_transition_lock_is_exclusive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "external" / "observability"
+    config.mkdir(parents=True, mode=0o700)
+    monkeypatch.setattr(observability_reconciler, "CONFIG_ROOT", config)
+    with observability_reconciler._runtime_transition_lock():
+        assert (config / "runtime-transition.lock").is_dir()
+        with (
+            pytest.raises(ObservabilityServiceError, match="transition ambiguous"),
+            observability_reconciler._runtime_transition_lock(),
+        ):
+            pass
+    assert not (config / "runtime-transition.lock").exists()
 
 
 def test_reconciler_uses_no_openbao_ssh_or_configuration_collection() -> None:

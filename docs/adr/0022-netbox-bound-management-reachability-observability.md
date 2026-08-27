@@ -48,6 +48,13 @@ two-node population, current Prometheus and Blackbox containers, source commit,
 and expiry. Authority or ambiguous publication failure removes live targets and
 fails closed rather than retaining an ACTIVE authorization indefinitely.
 
+The source-commit value is enforced, not merely recorded. The executing
+versioned runtime must equal the private installed-runtime `source-commit`, and
+readiness verification receives that expected commit independently. Runtime
+update and reconciliation share an exclusive transition lock; updates invalidate
+readiness before moving live pointers and retain a blocking ambiguity marker
+until the new config and entrypoint are coherent.
+
 Retirement invalidates readiness first, removes realization admission, publishes
 and verifies an empty RETIRED file-discovery generation, and confirms that
 Prometheus schedules no management probes before the CML twin may be destroyed.

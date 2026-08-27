@@ -53,6 +53,15 @@ filesystems, all capabilities dropped, `no-new-privileges`, no Docker socket,
 and only reviewed mounts. Launchd reconciles every 300 seconds; container restart
 policies are `no`.
 
+Runtime updates use one exclusive transition lock shared with reconciliation.
+The updater invalidates readiness before switching any live pointer, retains an
+update-in-progress marker until the config and entrypoint switch completes, and
+leaves both controls fail closed after an interrupted update. The versioned
+entrypoint exports its immutable source commit; reconciliation requires it to
+equal the private `source-commit` before operating and immediately before
+readiness publication. Readiness readers require the expected commit as an
+independent argument and never infer it from the marker.
+
 ## State and failure semantics
 
 ACTIVE means the exact unexpired realization and NetBox population were

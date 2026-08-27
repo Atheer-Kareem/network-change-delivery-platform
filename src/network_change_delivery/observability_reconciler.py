@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
@@ -33,6 +37,26 @@ from network_change_delivery.observability_targets import (
 
 STATE_ROOT = Path("/Users/netdevops/.local/state/ncdp/observability")
 CONFIG_ROOT = Path("/Users/netdevops/.config/ncdp/observability")
+
+
+@contextmanager
+def _runtime_transition_lock() -> Iterator[None]:
+    lock = CONFIG_ROOT / "runtime-transition.lock"
+    try:
+        lock.mkdir(mode=0o700)
+    except OSError:
+        raise ObservabilityServiceError(
+            "observability runtime transition ambiguous"
+        ) from None
+    try:
+        yield
+    finally:
+        try:
+            lock.rmdir()
+        except OSError:
+            raise ObservabilityServiceError(
+                "observability runtime transition ambiguous"
+            ) from None
 
 
 def _private_text(path: Path) -> str:
@@ -73,6 +97,20 @@ def _settings() -> dict[str, str]:
     return payload
 
 
+def _runtime_source_commit() -> str:
+    if (CONFIG_ROOT / "runtime-update-in-progress").exists():
+        raise ObservabilityServiceError("observability runtime update ambiguous")
+    source_commit = _private_text(CONFIG_ROOT / "source-commit")
+    runtime_commit = os.environ.get("NCDP_OBSERVABILITY_RUNTIME_COMMIT", "")
+    if (
+        re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
+        or re.fullmatch(r"[0-9a-f]{40}", runtime_commit) is None
+        or source_commit != runtime_commit
+    ):
+        raise ObservabilityServiceError("observability runtime identity rejected")
+    return source_commit
+
+
 def _refresh_admission(settings: dict[str, str]):
     previous = read_admission(STATE_ROOT)
     node_ids = {item.inventory_object_id: item.cml_node_id for item in previous.nodes}
@@ -90,9 +128,10 @@ def _refresh_admission(settings: dict[str, str]):
     return refreshed
 
 
-def reconcile() -> str:
+def _reconcile_locked() -> str:
     readiness = STATE_ROOT / "runtime/observability-ready.json"
     invalidate_readiness(readiness)
+    source_commit = _runtime_source_commit()
     admission_exists = (
         validate_private_file(STATE_ROOT / "operator/realization.json", missing_ok=True)
         is not None
@@ -158,7 +197,8 @@ def reconcile() -> str:
     wait_service_health(require_device_targets=admission_exists)
     if not admission_exists:
         return generation.state.value
-    source_commit = _private_text(CONFIG_ROOT / "source-commit")
+    if _runtime_source_commit() != source_commit:
+        raise ObservabilityServiceError("observability runtime identity rejected")
     publish_readiness(
         STATE_ROOT,
         generation,
@@ -167,6 +207,11 @@ def reconcile() -> str:
         source_commit=source_commit,
     )
     return generation.digest
+
+
+def reconcile() -> str:
+    with _runtime_transition_lock():
+        return _reconcile_locked()
 
 
 def main() -> int:

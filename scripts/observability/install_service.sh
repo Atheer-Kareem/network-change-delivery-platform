@@ -11,6 +11,8 @@ prometheus='prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f
 blackbox='prom/blackbox-exporter:v0.27.0@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d'
 
 [ "$(id -un)" = netdevops ] || { echo "observability installer user rejected" >&2; exit 2; }
+[ "${#commit}" -eq 40 ] || { echo "observability source commit rejected" >&2; exit 2; }
+case "${commit}" in *[!0-9a-f]*) echo "observability source commit rejected" >&2; exit 2;; esac
 [ -n "${NCDP_OBSERVABILITY_NETBOX_TOKEN:-}" ] || { echo "observability NetBox authority missing" >&2; exit 2; }
 for name in NCDP_OBSERVABILITY_CML_ADDRESS NCDP_OBSERVABILITY_CML_CACERT NCDP_OBSERVABILITY_CML_USERNAME NCDP_OBSERVABILITY_CML_PASSWORD; do
   eval "value=\${${name}:-}"
@@ -52,6 +54,7 @@ NCDP_OBSERVABILITY_STATE_ROOT="${state_root}" "${runtime}/bin/python" -c 'from p
 
 cat > "${config_root}/ensure" <<EOF
 #!/bin/sh
+export NCDP_OBSERVABILITY_RUNTIME_COMMIT=${commit}
 exec ${runtime}/bin/ncdp-observability-service
 EOF
 chmod 0700 "${config_root}/ensure"

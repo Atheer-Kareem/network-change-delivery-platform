@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -127,8 +128,11 @@ def read_readiness(
     *,
     prometheus_container_id: str,
     blackbox_container_id: str,
+    source_commit: str,
     now: datetime | None = None,
 ) -> ObservabilityReady:
+    if re.fullmatch(r"[0-9a-f]{40}", source_commit) is None:
+        raise ObservabilityServiceError("observability readiness rejected")
     try:
         if (root / "control/readiness-publication-ambiguous").exists():
             raise ObservabilityServiceError("observability readiness rejected")
@@ -146,6 +150,7 @@ def read_readiness(
         or marker.realization_digest != generation.realization_digest
         or marker.prometheus_container_id != prometheus_container_id
         or marker.blackbox_container_id != blackbox_container_id
+        or marker.source_commit != source_commit
     ):
         raise ObservabilityServiceError("observability readiness rejected")
     return marker

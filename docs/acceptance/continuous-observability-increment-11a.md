@@ -26,6 +26,23 @@ The implementation must prove without CML or device credentials:
 * the container/image, loopback exposure, mount, privilege, and no-secret
   contracts pass inspection.
 
+## PR staging attempt history
+
+Natural PR Build #162 ran against commit
+`0ff24fce3a17a20bc21d5115669f03a2f2506b95`; its CML staging job was
+`01a0456a-4c6e-4384-94e5-3a8df602888b`. The exact 13-resource realization was
+created successfully, and the START transition plan reported
+`add=0 change=1 destroy=0` for only `module.twin.cml2_lifecycle.twin`.
+Terraform began that lifecycle apply, but repeated sanitized
+`CML2 Provider Error` diagnostics ended the provider/CML operation before
+device readiness or NCDP validation was attempted. The available evidence does
+not support a narrower provider or controller diagnosis.
+
+Mandatory cleanup then passed the exact 13-resource destroy, independent CML
+absence verification, and run-scoped Terraform state retirement. Build #162 is
+not retried. This infrastructure failure is retained as implementation-PR
+staging evidence and does not constitute 11A live acceptance.
+
 ## Pending live acceptance
 
 After the implementation PR is merged, the operator must install/update the

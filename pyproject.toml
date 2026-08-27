@@ -18,6 +18,8 @@ dependencies = [
 
 [project.scripts]
 ncdp = "network_change_delivery.cli:main"
+ncdp-oxidized-service = "network_change_delivery.oxidized_reconciler:main"
+ncdp-netbox-lab-service = "network_change_delivery.netbox_lab_reconciler:main"
 
 [dependency-groups]
 dev = [

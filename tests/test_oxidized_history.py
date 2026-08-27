@@ -282,3 +282,6 @@ def test_real_writer_harness_freezes_reviewed_git_contract() -> None:
     assert "--cap-drop ALL" in verifier
     assert "no-new-privileges" in verifier
     assert "router.json" not in verifier
+    assert "rev-parse --is-bare-repository" in verifier
+    assert "rev-list --all --count" in verifier
+    assert "config --local --name-only --get-regexp '^remote\\.'" in verifier

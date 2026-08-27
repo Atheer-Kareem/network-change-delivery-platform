@@ -213,7 +213,7 @@ def docker_run_arguments(
         "--mount",
         f"type=bind,source={history_path},target=/var/lib/ncdp/config-history.git",
         image_id,
-        "--config",
+        "--config-file",
         "/run/ncdp/config",
     ]
 

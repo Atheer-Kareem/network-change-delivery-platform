@@ -2,8 +2,7 @@
 
 ## Status
 
-Accepted for implementation in Increment 10C-7A; live acceptance requires
-Increment 10C-7B after merge.
+Accepted. Live acceptance completed in Increment 10C-7B through Build #158.
 
 ## Decision
 
@@ -85,9 +84,19 @@ projects its exact `known_hosts` into a private run-scoped Ansible home. Build
 #156 is permanently non-retriable; comment-only retry authorization 4 prepares
 the next semantically identical attempt.
 
+Build #158 at merged-main commit
+`6516983b7b66498776d0c1698c9f2fe53065b79e` completed the live decision.
+PRE produced a settled fresh-realization revision, the protected Cisco attempt
+and independent post-validation succeeded, and POST produced a distinct
+path-scoped revision. The immutable `SUCCEEDED` parent and append-only
+`SUCCEEDED` child preserve the exact PRE/POST chain with relationship
+`TEMPORALLY_BRACKETED` and causality `NOT_PROVEN`. After evidence verification,
+readiness and realization trust were retired and the exact 13-resource operator
+twin was destroyed without changing private history or durable evidence.
+
 ## Consequences
 
-10C-7A can prove orchestration, conversion, correlation, privacy, persistence,
-and failure behavior offline and prepare a commit-bound change. It cannot claim
-real protected pre/write/post acceptance. That evidence belongs to 10C-7B
-after user merge and explicit approval of the new merged-main build.
+10C-7B now supplies the real protected PRE/write/POST evidence. The historical
+failed attempts remain immutable and non-retriable; their retained evidence is
+part of the operational safety record. No later increment is implied by this
+decision.

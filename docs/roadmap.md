@@ -159,8 +159,13 @@ Ordering may change when implementation evidence requires it.
     and successful CHANGED/UNCHANGED temporally bracketed child were persisted.
     Protected deployment now projects validated realization trust into its
     private Ansible runtime; retry authorization 4 prepares the next
-    semantically identical attempt. Real successful-write acceptance remains
-    pending.
+    semantically identical attempt. Build #158 completed that attempt: PRE,
+    protected Cisco execution, independent post-validation, and POST succeeded;
+    the immutable parent and temporally bracketed child validate as
+    `SUCCEEDED`, with causality correctly retained as `NOT_PROVEN`. Trust and
+    readiness were then retired and the exact operator twin destroyed while
+    preserving six private-history commits. Increment 10C-7B is complete. No
+    later increment has started.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

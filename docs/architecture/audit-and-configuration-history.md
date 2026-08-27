@@ -354,6 +354,26 @@ fails closed without claiming either old visibility or durable freshness.
 Persistent-service stale-cache and recovery handling remains deferred to
 10C-5, as do device collection and Git chronology.
 
+### Private observed-state Git chronology
+
+Increment 10C-4 freezes one private local bare repository with stable identity
+`oxidized:ncdp-lab-actual-state`. Oxidized 0.37.0 is its only writer and uses
+Rugged/libgit2, `single_repo: true`, author `NCDP Oxidized`, local email
+`oxidized@ncdp.local`, and canonical `managed/<stable-node>` paths. Identical
+bytes create no commit. The repository has no remote or push behavior, and
+automatic obsolete-node deletion remains disabled.
+
+The NCDP reader validates the private repository and returns only the existing
+`OxidizedRevision`: the latest commit affecting one exact node path, that
+commit's blob OID and path, and its UTC-normalized storage timestamp. It never
+reads configuration bytes and never substitutes repository HEAD for a node's
+path-specific revision. The timestamp records Git storage, not device time,
+collection completion, delivery execution, or causality.
+
+Synthetic acceptance uses a disposable private repository and leaves the
+future persistent `config-history.git` absent. Persistent service ownership and
+all real collection remain later work.
+
 ## Implementation sequence and limitations
 
 10B-1 provides the typed envelope/reference models and append-only store.
@@ -362,12 +382,13 @@ post-outcome persistence failure semantics, and bounded `show`/`find` reads
 without migrating execution schemas or adding Oxidized.
 
 10C-1 adds typed append-only observation correlation without an Oxidized
-runtime. 10C-2 adds only the reproducible non-root OCI package and bounded
-synthetic API proof. Later 10C increments should add the private persistent
-Oxidized service, Cisco and Junos models,
-NetBox-to-node mapping, OpenBao credential boundary, bounded forced collection,
-and Git reference correlation. It must not change desired-state authority or
-place full configurations in NCDP audit JSON.
+runtime. 10C-2 adds the reproducible non-root OCI package and bounded synthetic
+API proof. 10C-3 adds exact NetBox/OpenBao source materialization. 10C-4 proves
+the private bare Git writer and metadata-only path reader without real
+collection. Later 10C increments should add the persistent Oxidized service,
+Cisco and Junos collection, bounded forced collection, and runtime correlation.
+They must not change desired-state authority or place full configurations in
+NCDP audit JSON.
 
 Baseline limitations remain explicit: current evidence was not designed as one
 transaction across systems; Buildkite artifact retention is not durable audit

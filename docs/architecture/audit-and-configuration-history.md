@@ -392,6 +392,21 @@ authorize collection. A dedicated persistent machine AppRole can only issue a
 fresh bounded SecretID for the existing read-only source role and carries no
 device, Buildkite, admin, or general AppRole authority.
 
+The local authority prerequisite is independently lifecycle-owned. A user
+LaunchAgent reconciles the already-established `netbox-docker` project from a
+private external configuration root after Docker Desktop becomes available. It
+requires the accepted local images and all existing named data volumes, disables
+pull and build, preserves loopback-only API publication, and exits successfully
+only after NetBox 4.6.7 is readable. It neither initializes nor writes NetBox.
+Oxidized readiness remains absent while that dependency is unavailable.
+
+Readiness publication uses a private ambiguity guard as a separate authorization
+input. The guard is durably established before readiness replacement and is
+removed only after the marker is durably published. Its mere presence—including
+malformed or incorrectly permissioned state—causes the controller to reject
+collection, covering a successful replace followed by failed parent-directory
+durability.
+
 The controller allows only the two stable node names, serializes per node, and
 uses only node status plus `node.next`. HTTP 200 is submission evidence, not
 acceptance or completion. A new temporally consistent terminal job is required

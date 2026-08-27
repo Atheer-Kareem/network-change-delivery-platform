@@ -50,6 +50,25 @@ or `::1`; a
 local NetBox service should bind only to loopback. Configured URLs must have an
 empty or root path; reverse-proxy subpaths are not supported in this increment.
 
+## Personal-lab lifecycle
+
+The accepted local NetBox 4.6.7 authority remains the existing netbox-docker
+5.0.2 Compose project named `netbox-docker`. Its upstream services do not define
+restart policies, so a user LaunchAgent runs a repository-independent one-shot
+reconciler at login and every five minutes. The reconciler waits boundedly for
+Docker Desktop, verifies the frozen external Compose inputs, accepted local image
+identity, exact service population, existing named volumes, and project
+identity, then runs Compose with pull and build disabled. It verifies that only
+the NetBox application publishes `127.0.0.1:8000` and exits zero only after the
+status API reports NetBox 4.6.7.
+
+This mechanism owns container availability only. It preserves the existing
+PostgreSQL, Redis, media, reports, and scripts volumes and never seeds, migrates,
+repairs, or writes NetBox authority. Missing volumes or an unexpected project,
+container, image, service, or publication fail closed without automatic
+deletion. NCDP inventory semantics and NetBox's authority ownership are
+unchanged.
+
 ## Immutable provenance
 
 Resolved devices carry `inventory_source`, `inventory_object_id`, and

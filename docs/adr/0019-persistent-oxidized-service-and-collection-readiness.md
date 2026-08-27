@@ -38,6 +38,25 @@ before readiness. An ambiguous source publication invalidates readiness and
 requires a later successful forced reload even if bytes subsequently compare
 equal.
 
+The real reboot gate established that authority availability must itself recover
+without checkout or operator intervention. The upstream netbox-docker 5.0.2
+Compose definition carries no restart policy for NetBox, its worker, PostgreSQL,
+or either Redis service. A separate user LaunchAgent therefore owns only the
+personal-lab NetBox container lifecycle. Its repository-independent one-shot
+reconciler preserves the existing `netbox-docker` project and named volumes,
+uses the accepted local images with pull and build disabled, verifies loopback
+publication and API health, and never creates, seeds, migrates, or modifies
+authority data. This operational prerequisite does not move NetBox authority or
+deployment logic into NCDP.
+
+Readiness publication holds a private
+`readiness-publication-ambiguous` guard before replacing
+`collection-ready.json`. The controller rejects readiness whenever that path
+exists, regardless of its contents or mode. Pre-replace failure and
+post-replace directory-fsync ambiguity therefore remain fail closed even if a
+new readiness pathname is visible. Only a later complete reconciliation that
+durably republishes readiness may durably remove the guard.
+
 The persistent controller authenticates through `ncdp-oxidized-bootstrap`, a
 machine AppRole whose only policy permits `update` on the exact SecretID issue
 path for `ncdp-oxidized-source`. Its persistent SecretID has unlimited lifetime
@@ -56,7 +75,10 @@ reported with bounded classifications only.
 ## Consequences
 
 The real source can be loaded safely while every node remains `never` and the
-chronology has zero commits. The operator, not automation, performs the real Mac
-reboot acceptance. Real collection, baseline commits, observation-record
-publication, protected correlation, remotes/backups, and Git maintenance remain
-later work.
+chronology has zero commits. The separate NetBox lifecycle preserves the
+existing local Compose project and authority volumes; it is not a general
+NetBox deployment manager and will not delete unfamiliar containers or recover
+missing volumes by creating replacements. The operator, not automation,
+performs the final real Mac reboot acceptance. Real collection, baseline
+commits, observation-record publication, protected correlation,
+remotes/backups, and Git maintenance remain later work.

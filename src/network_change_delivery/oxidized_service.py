@@ -33,6 +33,10 @@ class OxidizedServiceError(ValueError):
     """Bounded local service failure."""
 
 
+class OxidizedPublicationAmbiguousError(OxidizedServiceError):
+    """Publication replaced its destination but durability is ambiguous."""
+
+
 def render_oxidized_config() -> str:
     return f"""---
 interval: 0
@@ -73,6 +77,7 @@ def publish_private_text(path: Path, value: str, *, mode: int = 0o600) -> None:
         prefix=f".{path.name}.", dir=path.parent
     )
     temporary = Path(temporary_name)
+    replaced = False
     try:
         os.fchmod(descriptor, mode)
         os.write(descriptor, value.encode())
@@ -80,6 +85,7 @@ def publish_private_text(path: Path, value: str, *, mode: int = 0o600) -> None:
         os.close(descriptor)
         descriptor = -1
         temporary.replace(path)
+        replaced = True
         directory = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(directory)
@@ -87,6 +93,10 @@ def publish_private_text(path: Path, value: str, *, mode: int = 0o600) -> None:
             os.close(directory)
         validate_private_file(path)
     except OSError as error:
+        if replaced:
+            raise OxidizedPublicationAmbiguousError(
+                "Oxidized private publication durability ambiguous"
+            ) from error
         raise OxidizedServiceError("Oxidized private publication failed") from error
     finally:
         if descriptor >= 0:
@@ -99,6 +109,21 @@ def invalidate_readiness(path: Path) -> None:
         path.unlink()
 
 
+def readiness_ambiguity_path(path: Path) -> Path:
+    return path.parent.parent / "control" / "readiness-publication-ambiguous"
+
+
+def _clear_readiness_ambiguity(path: Path) -> None:
+    ambiguity = readiness_ambiguity_path(path)
+    with suppress(FileNotFoundError):
+        ambiguity.unlink()
+        directory = os.open(ambiguity.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+
+
 def publish_readiness(
     path: Path, container_id: str, *, now: datetime | None = None
 ) -> CollectionReady:
@@ -109,7 +134,13 @@ def publish_readiness(
         nodes=tuple(sorted(EXPECTED_NODES)),
         container_id=container_id,
     )
-    publish_private_text(path, marker.model_dump_json() + "\n")
+    ambiguity = readiness_ambiguity_path(path)
+    publish_private_text(ambiguity, "AMBIGUOUS\n")
+    try:
+        publish_private_text(path, marker.model_dump_json() + "\n")
+    except (OxidizedServiceError, OSError):
+        raise
+    _clear_readiness_ambiguity(path)
     return marker
 
 

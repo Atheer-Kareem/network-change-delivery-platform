@@ -110,6 +110,15 @@ def validate_loopback_api_url(url: str) -> str:
 def read_collection_ready(
     path: Path, container_id: str, *, now: datetime | None = None
 ) -> CollectionReady:
+    ambiguity = path.parent.parent / "control" / "readiness-publication-ambiguous"
+    try:
+        ambiguity.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        raise OxidizedControlError("Oxidized collection readiness rejected") from None
+    else:
+        raise OxidizedControlError("Oxidized collection readiness rejected")
     try:
         validate_private_file(path)
         if path.stat().st_size > 4096:

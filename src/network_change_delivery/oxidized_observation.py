@@ -38,6 +38,14 @@ class OxidizedObservationError(ValueError):
     """A collection could not be coherently bound to private Git metadata."""
 
 
+class OxidizedRevisionUnavailableError(OxidizedObservationError):
+    """Path-scoped Git metadata was unavailable or disappeared."""
+
+
+class OxidizedChronologyError(OxidizedObservationError):
+    """Path-scoped Git metadata contradicted the collection window."""
+
+
 class OxidizedObservation(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -57,12 +65,24 @@ def observe_configuration(
     collection = controller.collect(node)
     if collection.outcome is not CollectionOutcome.SUCCEEDED:
         raise OxidizedObservationError("Oxidized observation collection failed")
+    return bind_collection_result(history, node, before, collection)
+
+
+def bind_collection_result(
+    history: OxidizedHistoryRepository,
+    node: str,
+    before: OxidizedRevision | None,
+    collection: CollectionResult,
+) -> OxidizedObservation:
+    """Settle one completed successful job against target-path metadata only."""
+    if collection.outcome is not CollectionOutcome.SUCCEEDED:
+        raise OxidizedObservationError("Oxidized observation collection failed")
     deadline = time.monotonic() + REVISION_WAIT_SECONDS
     while True:
         after = history.latest_revision_or_none(node)
         if after is None:
             if before is not None:
-                raise OxidizedObservationError(
+                raise OxidizedRevisionUnavailableError(
                     "Oxidized observation revision unavailable"
                 )
         else:
@@ -80,7 +100,7 @@ def observe_configuration(
                     or after.collected_at
                     > collection.upstream_ended_at + REVISION_CLOCK_TOLERANCE
                 ):
-                    raise OxidizedObservationError(
+                    raise OxidizedChronologyError(
                         "Oxidized observation chronology rejected"
                     )
                 return OxidizedObservation(
@@ -94,7 +114,7 @@ def observe_configuration(
         # for the complete bounded window before it can mean unchanged.
         if time.monotonic() >= deadline:
             if after is None:
-                raise OxidizedObservationError(
+                raise OxidizedRevisionUnavailableError(
                     "Oxidized observation revision unavailable"
                 )
             return OxidizedObservation(
@@ -114,7 +134,7 @@ def _private_text(path: Path) -> str:
     return value
 
 
-def _container_id() -> str:
+def verified_container_id() -> str:
     try:
         result = subprocess.run(
             [DOCKER, "container", "inspect", CONTAINER_NAME],
@@ -151,7 +171,7 @@ def main() -> int:
                 API_URL,
                 STATE_ROOT / "runtime" / "collection-ready.json",
                 STATE_ROOT / "control" / "locks",
-                _container_id(),
+                verified_container_id(),
                 trust_root=DEFAULT_TRUST_ROOT,
             ),
             OxidizedHistoryRepository(STATE_ROOT / "config-history.git"),

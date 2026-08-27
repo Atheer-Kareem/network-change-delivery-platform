@@ -36,6 +36,11 @@ from network_change_delivery.buildkite_audit import (
     persist_buildkite_audit,
     verify_buildkite_audit_inputs,
 )
+from network_change_delivery.buildkite_configuration_observation import (
+    SUCCESS_STATUSES,
+    capture_buildkite_attempt,
+    persist_buildkite_configuration_observation,
+)
 from network_change_delivery.buildkite_deployment import (
     BuildkiteOpenBaoDeploymentSecretProvider,
     load_live_deployment_request_at_commit,
@@ -48,6 +53,10 @@ from network_change_delivery.buildkite_identity import (
 from network_change_delivery.buildkite_policy import (
     buildkite_deployment_context_from_environment,
     compare_promoted_digests,
+)
+from network_change_delivery.configuration_observation_store import (
+    MAX_OBSERVATION_RECORD_SCAN,
+    ConfigurationObservationStore,
 )
 from network_change_delivery.fleet import FleetSafetyError, deploy_fleet, plan_fleet
 from network_change_delivery.inventory import (
@@ -436,6 +445,15 @@ def _audit_store(arguments: argparse.Namespace) -> AuditStore:
     return AuditStore(Path(configured), checkout=_checkout_root())
 
 
+def _configuration_observation_store(
+    arguments: argparse.Namespace,
+) -> ConfigurationObservationStore:
+    configured = arguments.store_root or os.environ.get("NCDP_AUDIT_STORE_ROOT")
+    if not configured:
+        raise ValueError("NCDP_AUDIT_STORE_ROOT is required")
+    return ConfigurationObservationStore(Path(configured), checkout=_checkout_root())
+
+
 def _run_audit_verify_store(arguments: argparse.Namespace) -> int:
     _audit_store(arguments)
     print("audit store: VERIFIED")
@@ -519,6 +537,80 @@ def _run_audit_find(arguments: argparse.Namespace) -> int:
             "device_ids": [target.device for target in record.targets],
         }
         for record in matches
+    ]
+    print(json.dumps(summaries, sort_keys=True, indent=2))
+    return 0
+
+
+def _run_capture_buildkite_configuration(arguments: argparse.Namespace) -> int:
+    attempt = capture_buildkite_attempt(
+        context=buildkite_deployment_context_from_environment(os.environ),
+        promotion=arguments.promotion,
+        checkout=_checkout_root(),
+        output=arguments.output,
+    )
+    print(f"configuration observation status: {attempt.status}")
+    print(f"configuration observation evidence: {arguments.output}")
+    return 0 if attempt.status in SUCCESS_STATUSES else 3
+
+
+def _run_persist_buildkite_configuration_observation(
+    arguments: argparse.Namespace,
+) -> int:
+    record = persist_buildkite_configuration_observation(
+        store=_configuration_observation_store(arguments),
+        context=buildkite_deployment_context_from_environment(os.environ),
+        repository=os.environ.get("BUILDKITE_REPO", ""),
+        promotion=arguments.promotion,
+        checkout=_checkout_root(),
+        pre_path=arguments.pre_observation,
+        post_path=arguments.post_observation,
+    )
+    print(f"configuration observation record ID: {record.observation_record_id}")
+    print(f"configuration observation record digest: {record.digest}")
+    print(f"configuration observation overall status: {record.overall_status}")
+    return 0
+
+
+def _run_audit_find_observations(arguments: argparse.Namespace) -> int:
+    records = _configuration_observation_store(arguments).find_by_parent(
+        arguments.parent_record_id,
+        max_results=arguments.max_results,
+        max_scan=MAX_OBSERVATION_RECORD_SCAN,
+    )
+    summaries = [
+        {
+            "observation_record_id": str(record.observation_record_id),
+            "digest": record.digest,
+            "parent_record_id": str(record.parent_audit.record_id),
+            "target": record.target,
+            "relationship": record.relationship,
+            "causality": record.causality,
+            "overall_status": record.overall_status,
+            "pre_status": (
+                record.pre_observation.status
+                if record.pre_observation is not None
+                else None
+            ),
+            "post_status": (
+                record.post_observation.status
+                if record.post_observation is not None
+                else None
+            ),
+            "pre_revision": (
+                record.pre_observation.after_revision.model_dump(mode="json")
+                if record.pre_observation is not None
+                and record.pre_observation.after_revision is not None
+                else None
+            ),
+            "post_revision": (
+                record.post_observation.after_revision.model_dump(mode="json")
+                if record.post_observation is not None
+                and record.post_observation.after_revision is not None
+                else None
+            ),
+        }
+        for record in records
     ]
     print(json.dumps(summaries, sort_keys=True, indent=2))
     return 0
@@ -909,6 +1001,47 @@ def build_parser() -> argparse.ArgumentParser:
         default=100,
     )
     audit_find_parser.set_defaults(handler=_run_audit_find)
+
+    audit_capture_parser = audit_subparsers.add_parser(
+        "capture-buildkite-configuration",
+        help="capture one protected metadata-only configuration observation",
+    )
+    audit_capture_parser.add_argument("--promotion", required=True, type=Path)
+    audit_capture_parser.add_argument("--output", required=True, type=Path)
+    audit_capture_parser.set_defaults(handler=_run_capture_buildkite_configuration)
+
+    audit_observation_persist_parser = audit_subparsers.add_parser(
+        "persist-buildkite-configuration-observation",
+        help="persist one protected pre/post observation child record",
+    )
+    add_audit_root(audit_observation_persist_parser)
+    audit_observation_persist_parser.add_argument(
+        "--promotion", required=True, type=Path
+    )
+    audit_observation_persist_parser.add_argument(
+        "--pre-observation", required=True, type=Path
+    )
+    audit_observation_persist_parser.add_argument(
+        "--post-observation", required=True, type=Path
+    )
+    audit_observation_persist_parser.set_defaults(
+        handler=_run_persist_buildkite_configuration_observation
+    )
+
+    audit_observation_find_parser = audit_subparsers.add_parser(
+        "find-observations", help="find bounded observation children by parent UUID"
+    )
+    add_audit_root(audit_observation_find_parser)
+    audit_observation_find_parser.add_argument(
+        "--parent-record-id", required=True, type=UUID
+    )
+    audit_observation_find_parser.add_argument(
+        "--max-results",
+        type=int,
+        choices=range(1, MAX_AUDIT_FIND_RESULTS + 1),
+        default=100,
+    )
+    audit_observation_find_parser.set_defaults(handler=_run_audit_find_observations)
 
     deploy_parser = subparsers.add_parser(
         "deploy",

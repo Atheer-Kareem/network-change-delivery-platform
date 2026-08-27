@@ -78,6 +78,18 @@ case "$command" in
     case "$subcommand" in
       verify-buildkite) [[ -n "${NCDP_AUDIT_STORE_ROOT:-}" ]] ;;
       persist-buildkite) exit "$AUDIT_STATUS" ;;
+      capture-buildkite-configuration)
+        output=''
+        while [[ $# -gt 0 ]]; do
+          if [[ "$1" == --output ]]; then output="$2"; break; fi
+          shift
+        done
+        printf '{}\n' > "$output"; chmod 600 "$output"
+        exit "${OBSERVATION_CAPTURE_STATUS:-0}"
+        ;;
+      persist-buildkite-configuration-observation)
+        exit "${OBSERVATION_PERSIST_STATUS:-0}"
+        ;;
       *) exit 92 ;;
     esac
     ;;

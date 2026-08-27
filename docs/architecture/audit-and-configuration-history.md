@@ -292,6 +292,14 @@ through `AuditStore`, proves the exact parent UUID and digest, and proves the
 stable NetBox device is a parent target. The parent is never rewritten, and
 multiple immutable observation records may reference it.
 
+Increment 10C-7A integrates this child into the protected deploy gate without
+changing either schema. The same no-retry job captures a successful PRE before
+execution, attempts POST immediately after the device command returns, then
+persists the existing parent before its child. The child builder derives the
+parent UUID from the current Buildkite job and re-reads and validates its exact
+digest, commit, build, approval, change, target, credential, and ChangeRecord;
+the shell never supplies or parses a parent digest. Parent bytes are unchanged.
+
 Each record contains bounded repository, stable node, optional group, request,
 timestamp, status, sanitized failure-category, and Git commit/path/blob
 metadata. It contains no configuration bytes, diffs, command or API output,
@@ -456,8 +464,8 @@ collection. 10C-5 adds persistent service ownership, freshness-gated bounded
 collection control, and an operator-triggered reboot gate without collecting.
 10C-6 adds strict CML-anchored SSH trust, the first private Cisco/Junos
 baselines, path-scoped collection/revision binding, unchanged suppression, and
-trust retirement before CML cleanup. Later 10C increments should add protected
-pre/post runtime correlation.
+trust retirement before CML cleanup. 10C-7A prepares protected pre/post runtime
+correlation offline; real acceptance remains pending 10C-7B after merge.
 They must not change desired-state authority or place full configurations in
 NCDP audit JSON.
 

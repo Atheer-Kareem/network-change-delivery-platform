@@ -345,6 +345,32 @@ def test_committed_request_added_or_changed_is_loaded_from_commit_object(
     assert changed.change_id == "CHG-2"
 
 
+@requires_git
+def test_comment_only_retry_authorization_changes_blob_not_request(
+    tmp_path: Path,
+) -> None:
+    git_repository(tmp_path)
+    original_commit = commit_request(tmp_path)
+    original = load_live_deployment_request_at_commit(original_commit, root=tmp_path)
+    assert original is not None
+    original_blob = git(
+        tmp_path, "rev-parse", f"{original_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}"
+    )
+
+    path = tmp_path / LIVE_DEPLOYMENT_REQUEST
+    path.write_text("# retry-authorization: 1\n" + REQUEST_YAML, encoding="utf-8")
+    git(tmp_path, "add", LIVE_DEPLOYMENT_REQUEST.as_posix())
+    git(tmp_path, "commit", "-qm", "authorize retry")
+    retry_commit = git(tmp_path, "rev-parse", "HEAD")
+    retry = load_live_deployment_request_at_commit(retry_commit, root=tmp_path)
+    retry_blob = git(
+        tmp_path, "rev-parse", f"{retry_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}"
+    )
+
+    assert retry == original
+    assert retry_blob != original_blob
+
+
 def test_committed_request_requires_exact_lowercase_commit() -> None:
     for commit in ("a" * 39, "A" * 40, "main"):
         with pytest.raises(PromotionError, match="commit rejected"):

@@ -60,6 +60,11 @@ else
   exit 0
 fi
 uv run ncdp verify-buildkite-live-request --promotion "$promotion"
+authorized_ansible_collections=/Users/netdevops/.local/share/ncdp/ansible/collections
+if [[ "${ANSIBLE_COLLECTIONS_PATH:-}" != "$authorized_ansible_collections" ]]; then
+  echo "deployment Ansible collection path is not authorized" >&2
+  exit 2
+fi
 uv run ncdp verify-deployment-ansible-runtime
 observation_dir="$tmpdir/observation"
 mkdir -m 0700 "$observation_dir"

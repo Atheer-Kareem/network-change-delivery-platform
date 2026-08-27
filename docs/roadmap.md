@@ -134,7 +134,11 @@ Ordering may change when implementation evidence requires it.
     observation-correlation preparation** adds the offline adapter, same-job
     PRE/deploy/POST ordering, immutable parent/child persistence, and a new
     commit-bound Cisco change. Real protected execution and durable live
-    correlation remain pending merged-main 10C-7B acceptance.
+    correlation remain pending merged-main 10C-7B acceptance. Build #150 failed
+    safely before PRE or any device write when its reboot-persistent deploy
+    environment omitted the intact accepted Ansible collection root. The
+    corrected path guard and comment-only retry authorization prepare a new
+    reviewed merged-main attempt; Build #150 is permanently non-retriable.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

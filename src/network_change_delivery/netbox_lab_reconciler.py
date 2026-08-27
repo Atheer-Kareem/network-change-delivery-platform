@@ -287,9 +287,7 @@ def reconcile(root: Path = DEFAULT_ROOT) -> None:
     _verify_images(contract)
     _verify_volumes(contract)
     _verify_model(root, contract)
-    _inspect_project(
-        root, contract, allow_legacy_location=True, allow_absent=True
-    )
+    _inspect_project(root, contract, allow_legacy_location=True, allow_absent=True)
     _run(
         _compose(root, "up", "--detach", "--pull", "never", "--no-build"),
         timeout=COMMAND_TIMEOUT,

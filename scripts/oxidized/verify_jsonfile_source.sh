@@ -15,7 +15,21 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-[ -f "${source_file}" ] && [ ! -L "${source_file}" ] || {
+python3 - "${source_file}" <<'PY' || {
+import os
+import stat
+import sys
+
+metadata = os.lstat(sys.argv[1])
+valid = (
+    stat.S_ISREG(metadata.st_mode)
+    and not stat.S_ISLNK(metadata.st_mode)
+    and metadata.st_uid == os.getuid()
+    and stat.S_IMODE(metadata.st_mode) == 0o600
+    and metadata.st_nlink == 1
+)
+raise SystemExit(0 if valid else 1)
+PY
   echo "private Oxidized source rejected" >&2
   exit 1
 }

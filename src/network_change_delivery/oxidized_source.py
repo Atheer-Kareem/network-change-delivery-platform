@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
@@ -16,6 +15,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from network_change_delivery.inventory import InventoryError, ManagedInventoryProvider
 from network_change_delivery.models import InventoryDevice
+from network_change_delivery.oxidized_private_paths import (
+    OxidizedPrivatePathError,
+    ensure_private_directory,
+    validate_oxidized_root,
+    validate_private_file,
+)
 from network_change_delivery.secrets import SecretError, SecretProvider
 
 EXPECTED_IDENTITIES = frozenset({"netbox:dcim.device:1", "netbox:dcim.device:2"})
@@ -26,6 +31,10 @@ SOURCE_FILENAME = "router.json"
 
 class OxidizedSourceError(ValueError):
     """Raised without credential or upstream response content."""
+
+
+class OxidizedSourcePublicationAmbiguousError(OxidizedSourceError):
+    """Raised after publication visibility changed but durability was not proven."""
 
 
 class _PrivateSourceNode(BaseModel):
@@ -51,53 +60,11 @@ class MaterializedOxidizedSource:
     node_names: tuple[str, ...]
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def _is_within(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
-
-
-def _private_directory(path: Path) -> None:
-    try:
-        path.mkdir(mode=0o700)
-    except FileExistsError:
-        pass
-    except OSError as error:
-        raise OxidizedSourceError("Oxidized runtime directory unavailable") from error
-    try:
-        metadata = path.lstat()
-    except OSError as error:
-        raise OxidizedSourceError("Oxidized runtime directory unavailable") from error
-    if (
-        stat.S_ISLNK(metadata.st_mode)
-        or not stat.S_ISDIR(metadata.st_mode)
-        or metadata.st_uid != os.getuid()
-        or stat.S_IMODE(metadata.st_mode) != 0o700
-    ):
-        raise OxidizedSourceError("Oxidized runtime directory rejected")
-
-
 def _validate_existing_source(path: Path) -> None:
     try:
-        metadata = path.lstat()
-    except FileNotFoundError:
-        return
-    except OSError as error:
-        raise OxidizedSourceError("Oxidized source path unavailable") from error
-    if (
-        stat.S_ISLNK(metadata.st_mode)
-        or not stat.S_ISREG(metadata.st_mode)
-        or metadata.st_uid != os.getuid()
-        or stat.S_IMODE(metadata.st_mode) != 0o600
-        or metadata.st_nlink != 1
-    ):
-        raise OxidizedSourceError("Oxidized source path rejected")
+        validate_private_file(path, missing_ok=True)
+    except OxidizedPrivatePathError as error:
+        raise OxidizedSourceError("Oxidized source path rejected") from error
 
 
 def _device_id(device: InventoryDevice) -> int:
@@ -140,6 +107,7 @@ def _publish(path: Path, payload: bytes) -> None:
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     descriptor = -1
+    committed = False
     try:
         descriptor = os.open(temporary, flags, 0o600)
         written = 0
@@ -148,14 +116,20 @@ def _publish(path: Path, payload: bytes) -> None:
         os.fsync(descriptor)
         os.close(descriptor)
         descriptor = -1
+        validate_private_file(temporary)
         temporary.replace(path)
+        committed = True
         directory = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(directory)
         finally:
             os.close(directory)
-        _validate_existing_source(path)
-    except OSError as error:
+        validate_private_file(path)
+    except (OSError, OxidizedPrivatePathError) as error:
+        if committed:
+            raise OxidizedSourcePublicationAmbiguousError(
+                "Oxidized source publication outcome ambiguous"
+            ) from error
         raise OxidizedSourceError("Oxidized source publication failed") from error
     finally:
         if descriptor >= 0:
@@ -170,12 +144,10 @@ def materialize_oxidized_source(
     root: Path,
 ) -> MaterializedOxidizedSource:
     """Resolve both authorities completely, then atomically publish one source."""
-    if (
-        not root.is_absolute()
-        or root.name == "audit"
-        or _is_within(root, _project_root())
-    ):
-        raise OxidizedSourceError("Oxidized runtime root rejected")
+    try:
+        validate_oxidized_root(root)
+    except OxidizedPrivatePathError as error:
+        raise OxidizedSourceError("Oxidized runtime root rejected") from error
     try:
         devices = inventory.resolve_managed_devices()
     except InventoryError as error:
@@ -200,9 +172,15 @@ def materialize_oxidized_source(
         )
         + "\n"
     ).encode()
-    _private_directory(root)
+    try:
+        ensure_private_directory(root)
+    except OxidizedPrivatePathError as error:
+        raise OxidizedSourceError("Oxidized runtime directory rejected") from error
     runtime = root / "runtime"
-    _private_directory(runtime)
+    try:
+        ensure_private_directory(runtime)
+    except OxidizedPrivatePathError as error:
+        raise OxidizedSourceError("Oxidized runtime directory rejected") from error
     path = runtime / SOURCE_FILENAME
     _publish(path, payload)
     ordered_identities = tuple(device.inventory_object_id or "" for device in ordered)

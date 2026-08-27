@@ -34,8 +34,20 @@ short-lived one-use tokens.
 
 All authority resolution and source validation completes in memory before a
 mode-0600 same-directory temporary file is flushed, synchronized, and atomically
-published. A failure leaves the prior valid cache untouched and reports
-failure; whether a future service may consume stale cache is deferred.
+published. Authority, materialization, and filesystem failures before the
+atomic replace preserve the previous source bytes. The replace is the
+publication commit point. Failure to confirm directory durability after that
+point is reported as an explicitly ambiguous publication outcome: neither the
+old visible source nor durable freshness is claimed. Persistent-service stale
+cache and recovery policy remains deferred to 10C-5.
+
+Source and OpenBao bootstrap publication share one private-root boundary. It
+rejects relative paths, the product checkout and descendants, and any path in a
+named `audit` namespace. Existing roots must be current-user-owned real
+mode-0700 directories; credential-bearing files must be current-user-owned
+mode-0600 regular files with one link. This component-based audit exclusion is
+the bounded repository convention, not a claim to discover every arbitrary
+AuditStore path configured outside that convention.
 
 ## Consequences
 

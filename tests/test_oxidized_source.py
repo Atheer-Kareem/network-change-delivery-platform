@@ -11,6 +11,7 @@ from network_change_delivery.inventory import InventoryError
 from network_change_delivery.models import InventoryDevice
 from network_change_delivery.oxidized_source import (
     OxidizedSourceError,
+    OxidizedSourcePublicationAmbiguousError,
     materialize_oxidized_source,
 )
 from network_change_delivery.secrets import (
@@ -137,6 +138,66 @@ def test_failure_before_publication_preserves_existing_source(tmp_path: Path) ->
     assert not list(path.parent.glob(".router.json.tmp-*"))
 
 
+def test_temporary_fsync_failure_preserves_existing_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "oxidized"
+    path = materialize_oxidized_source(Inventory(), Secrets(), root).path
+    previous = path.read_bytes()
+
+    def fail_fsync(_descriptor: int) -> None:
+        raise OSError("injected")
+
+    monkeypatch.setattr(os, "fsync", fail_fsync)
+    with pytest.raises(OxidizedSourceError, match="publication failed"):
+        materialize_oxidized_source(Inventory(), Secrets(), root)
+    assert path.read_bytes() == previous
+    assert not list(path.parent.glob(".router.json.tmp-*"))
+
+
+def test_replace_failure_preserves_existing_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "oxidized"
+    path = materialize_oxidized_source(Inventory(), Secrets(), root).path
+    previous = path.read_bytes()
+
+    def fail_replace(_source: Path, _target: Path) -> Path:
+        raise OSError("injected")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    with pytest.raises(OxidizedSourceError, match="publication failed"):
+        materialize_oxidized_source(Inventory(), Secrets(), root)
+    assert path.read_bytes() == previous
+    assert not list(path.parent.glob(".router.json.tmp-*"))
+
+
+def test_directory_fsync_failure_is_post_commit_ambiguous(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "oxidized"
+    path = materialize_oxidized_source(Inventory(), Secrets(), root).path
+    path.write_bytes(b"previous-source\n")
+    calls = 0
+    real_fsync = os.fsync
+
+    def fail_second_fsync(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail_second_fsync)
+    with pytest.raises(
+        OxidizedSourcePublicationAmbiguousError,
+        match=r"^Oxidized source publication outcome ambiguous$",
+    ):
+        materialize_oxidized_source(Inventory(), Secrets(), root)
+    assert path.read_bytes() != b"previous-source\n"
+    assert not list(path.parent.glob(".router.json.tmp-*"))
+
+
 def test_symlink_root_and_checkout_root_are_rejected(tmp_path: Path) -> None:
     target = tmp_path / "target"
     target.mkdir(mode=0o700)
@@ -173,6 +234,23 @@ def test_operator_script_uses_only_dedicated_authority_variables() -> None:
         "BUILDKITE_AGENT_ACCESS_TOKEN",
     ):
         assert forbidden not in script
+
+
+def test_jsonfile_verifier_checks_private_source_metadata_before_docker() -> None:
+    script = (
+        Path(__file__).parents[1] / "scripts/oxidized/verify_jsonfile_source.sh"
+    ).read_text()
+    metadata_check = script.index("metadata = os.lstat")
+    docker_start = script.index("container=$(docker run")
+    assert metadata_check < docker_start
+    for contract in (
+        "stat.S_ISREG",
+        "stat.S_ISLNK",
+        "metadata.st_uid == os.getuid()",
+        "stat.S_IMODE(metadata.st_mode) == 0o600",
+        "metadata.st_nlink == 1",
+    ):
+        assert contract in script
 
 
 def test_errors_and_reprs_do_not_expose_credentials(tmp_path: Path) -> None:

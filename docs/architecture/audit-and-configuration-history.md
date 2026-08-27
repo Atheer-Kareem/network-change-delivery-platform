@@ -345,11 +345,14 @@ names derive from those object IDs, and device 3 is a fail-closed population
 error. IOS XE maps to `ios`, Junos maps to `junos`, and both collector endpoints
 use SSH port 22. The Junos transactional NETCONF port 830 is not reused.
 
-The cache is credential-bearing but is not authority or evidence. Publication
-uses private owned directories and an atomic complete-file replacement. Failed
-refresh leaves the previous bytes untouched while returning failure. Whether a
-future persistent service may use stale cache remains deferred, as do device
-collection and Git chronology.
+The cache is credential-bearing but is not authority or evidence. Source and
+bootstrap publication share a private external-root contract. Publication uses
+private owned directories and an atomic complete-file replacement. Failures
+before replacement preserve the previous source; replacement is the commit
+point. A subsequent directory-durability failure is explicitly ambiguous and
+fails closed without claiming either old visibility or durable freshness.
+Persistent-service stale-cache and recovery handling remains deferred to
+10C-5, as do device collection and Git chronology.
 
 ## Implementation sequence and limitations
 

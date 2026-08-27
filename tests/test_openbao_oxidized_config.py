@@ -135,3 +135,40 @@ def test_bootstrap_is_persisted_privately(tmp_path: Path) -> None:
         metadata = path.stat()
         assert stat.S_IMODE(metadata.st_mode) == 0o600
         assert metadata.st_uid == os.getuid()
+        assert metadata.st_nlink == 1
+        assert stat.S_ISREG(metadata.st_mode)
+
+
+@pytest.mark.parametrize("relative", [Path(), Path("nested")])
+def test_bootstrap_rejects_checkout_and_descendant(relative: Path) -> None:
+    root = Path(__file__).parents[1] / relative
+    with pytest.raises(SecretError, match="root rejected"):
+        persist_oxidized_bootstrap(
+            root, OxidizedAppRoleBootstrap("private-role-id", "private-secret-id")
+        )
+
+
+def test_bootstrap_rejects_audit_namespace(tmp_path: Path) -> None:
+    with pytest.raises(SecretError, match="root rejected"):
+        persist_oxidized_bootstrap(
+            tmp_path / "audit" / "oxidized",
+            OxidizedAppRoleBootstrap("private-role-id", "private-secret-id"),
+        )
+
+
+def test_bootstrap_rejects_symlink_and_wrong_mode_roots(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir(mode=0o700)
+    link = tmp_path / "oxidized-link"
+    link.symlink_to(target, target_is_directory=True)
+    with pytest.raises(SecretError, match="root rejected"):
+        persist_oxidized_bootstrap(
+            link, OxidizedAppRoleBootstrap("private-role-id", "private-secret-id")
+        )
+    wrong_mode = tmp_path / "oxidized"
+    wrong_mode.mkdir(mode=0o755)
+    with pytest.raises(SecretError, match="root rejected"):
+        persist_oxidized_bootstrap(
+            wrong_mode,
+            OxidizedAppRoleBootstrap("private-role-id", "private-secret-id"),
+        )

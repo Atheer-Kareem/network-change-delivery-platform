@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import stat
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
@@ -11,6 +10,12 @@ from pathlib import Path
 
 import httpx
 
+from network_change_delivery.oxidized_private_paths import (
+    OxidizedPrivatePathError,
+    ensure_private_directory,
+    validate_oxidized_root,
+    validate_private_file,
+)
 from network_change_delivery.secrets import (
     SecretError,
     create_openbao_client,
@@ -155,19 +160,15 @@ def persist_oxidized_bootstrap(
     root: Path, bootstrap: OxidizedAppRoleBootstrap
 ) -> tuple[Path, Path]:
     """Persist dedicated bootstrap values as private files without exposing them."""
-    if not root.is_absolute():
-        raise SecretError("Oxidized operator root rejected")
+    try:
+        validate_oxidized_root(root)
+    except OxidizedPrivatePathError as error:
+        raise SecretError("Oxidized operator root rejected") from error
     for directory in (root, root / "operator"):
-        with suppress(FileExistsError):
-            directory.mkdir(mode=0o700)
-        metadata = directory.lstat()
-        if (
-            stat.S_ISLNK(metadata.st_mode)
-            or not stat.S_ISDIR(metadata.st_mode)
-            or metadata.st_uid != os.getuid()
-            or stat.S_IMODE(metadata.st_mode) != 0o700
-        ):
-            raise SecretError("Oxidized operator root rejected")
+        try:
+            ensure_private_directory(directory)
+        except OxidizedPrivatePathError as error:
+            raise SecretError("Oxidized operator root rejected") from error
     paths = (root / "operator" / "role-id", root / "operator" / "secret-id")
     values = (bootstrap.role_id, bootstrap.secret_id)
     for path, value in zip(paths, values, strict=True):
@@ -182,8 +183,10 @@ def persist_oxidized_bootstrap(
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
+            validate_private_file(temporary)
             temporary.replace(path)
-        except OSError as error:
+            validate_private_file(path)
+        except (OSError, OxidizedPrivatePathError) as error:
             with suppress(FileNotFoundError):
                 temporary.unlink()
             raise SecretError("Oxidized bootstrap persistence failed") from error

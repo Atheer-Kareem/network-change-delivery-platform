@@ -91,6 +91,66 @@ def test_exact_active_managed_device_resolves_with_provenance() -> None:
     assert resolved.protected_interfaces == ("GigabitEthernet1",)
 
 
+def test_managed_population_is_complete_and_ordered_without_interface_reads() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json=page(
+                [
+                    device(id=2, name="edge", platform={"slug": "juniper-junos"}),
+                    device(id=1, name="core"),
+                ]
+            ),
+        )
+
+    resolved = provider(handler=handler).resolve_managed_devices()
+    assert [item.inventory_object_id for item in resolved] == [
+        "netbox:dcim.device:1",
+        "netbox:dcim.device:2",
+    ]
+    assert [item.port for item in resolved] == [22, 830]
+    assert len(requests) == 1
+    assert requests[0].url.params["tag"] == "ncdp-managed"
+    assert requests[0].url.params["status"] == "active"
+    assert requests[0].url.params["ordering"] == "id"
+
+
+@pytest.mark.parametrize(
+    ("results", "message"),
+    [
+        ([], "zero devices"),
+        ([device(), device()], "duplicate identity"),
+        ([device(status={"value": "offline"})], "inactive"),
+        ([device(tags=[])], "missing required tag"),
+        ([device(platform={"slug": "unsupported"})], "unsupported platform"),
+        ([device(primary_ip4=None)], "missing primary IPv4"),
+    ],
+)
+def test_managed_population_rejects_invalid_members(results, message: str) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page(results))
+
+    with pytest.raises(InventoryError, match=message):
+        provider(handler=handler).resolve_managed_devices()
+
+
+def test_managed_population_rejects_pagination_change() -> None:
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(200, json=page([device(id=1)], count=2, next_="next"))
+        return httpx.Response(200, json=page([device(id=2)], count=3))
+
+    with pytest.raises(InventoryError, match="pagination changed"):
+        provider(handler=handler).resolve_managed_devices()
+
+
 def test_exact_requested_interface_resolves_with_stable_identity() -> None:
     resolved = provider().resolve("core-02", "GigabitEthernet2")
     assert resolved.inventory_interface_object_id == "netbox:dcim.interface:100"

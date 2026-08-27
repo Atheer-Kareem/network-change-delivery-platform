@@ -44,6 +44,13 @@ class FleetPreflightInventoryProvider(
     """Inventory boundary supporting selection and exact member re-resolution."""
 
 
+class ManagedInventoryProvider(Protocol):
+    """Boundary for a complete deterministic managed-device population."""
+
+    def resolve_managed_devices(self) -> tuple[InventoryDevice, ...]:
+        """Resolve every active device carrying the ncdp-managed tag."""
+
+
 class LocalYamlInventoryProvider:
     """Temporary YAML-backed inventory implementation."""
 
@@ -405,3 +412,68 @@ class NetBoxInventoryProvider:
                 ),
             )
         )
+
+    def resolve_managed_devices(self) -> tuple[InventoryDevice, ...]:
+        """Resolve the complete active ncdp-managed population without interfaces."""
+        payloads = self._get_all(
+            self._DEVICE_PATH,
+            params={"tag": "ncdp-managed", "status": "active", "ordering": "id"},
+        )
+        if not payloads:
+            raise InventoryError("NetBox managed population matched zero devices")
+        resolved: list[tuple[int, InventoryDevice]] = []
+        identities: set[str] = set()
+        for payload in payloads:
+            object_id = payload.get("id")
+            name = payload.get("name")
+            status = payload.get("status")
+            if (
+                not isinstance(object_id, int)
+                or isinstance(object_id, bool)
+                or object_id <= 0
+                or not isinstance(name, str)
+                or not name.strip()
+            ):
+                raise InventoryError("NetBox managed device identity is invalid")
+            identity = f"netbox:dcim.device:{object_id}"
+            if identity in identities:
+                raise InventoryError(
+                    "NetBox managed population contains duplicate identity"
+                )
+            identities.add(identity)
+            if not isinstance(status, dict) or status.get("value") != "active":
+                raise InventoryError("NetBox managed target is inactive")
+            if "ncdp-managed" not in self._tag_slugs(payload.get("tags")):
+                raise InventoryError("NetBox managed target is missing required tag")
+            platform = payload.get("platform")
+            slug = platform.get("slug") if isinstance(platform, dict) else None
+            if slug not in self._PLATFORM_MAPPING:
+                raise InventoryError("NetBox managed target has unsupported platform")
+            internal_platform, port = self._PLATFORM_MAPPING[slug]
+            primary = payload.get("primary_ip4")
+            address = primary.get("address") if isinstance(primary, dict) else None
+            if not isinstance(address, str):
+                raise InventoryError("NetBox managed target has missing primary IPv4")
+            try:
+                host = str(ipaddress.IPv4Interface(address).ip)
+            except ValueError:
+                raise InventoryError(
+                    "NetBox managed target has missing primary IPv4"
+                ) from None
+            resolved.append(
+                (
+                    object_id,
+                    InventoryDevice(
+                        name=name.strip(),
+                        host=host,
+                        port=port,
+                        platform=internal_platform,
+                        expected_hostname=name.strip(),
+                        protected_interfaces=(),
+                        inventory_source="netbox",
+                        inventory_object_id=identity,
+                        inventory_interface_object_id=None,
+                    ),
+                )
+            )
+        return tuple(device for _, device in sorted(resolved, key=lambda item: item[0]))

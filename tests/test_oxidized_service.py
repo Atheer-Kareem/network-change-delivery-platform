@@ -193,6 +193,8 @@ def test_netbox_installer_is_external_private_and_pull_free() -> None:
     assert "<key>RunAtLoad</key><true/>" in script
     assert "<key>StartInterval</key><integer>300</integer>" in script
     assert "--editable" not in script
+    assert "--no-deps dist/network_change_delivery-*.whl" in script
+    assert "'httpx==0.28.1'" in script
     assert "docker compose down" not in script
     assert "rm -" not in script
 

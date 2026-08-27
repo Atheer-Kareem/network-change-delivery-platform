@@ -30,7 +30,8 @@ mv "${candidate}" "${runtime_root}"
 
 uv venv --python 3.12 "${service_runtime}" >/dev/null
 uv build >/dev/null
-uv pip install --python "${service_runtime}/bin/python" dist/network_change_delivery-*.whl >/dev/null
+uv pip install --python "${service_runtime}/bin/python" --no-deps dist/network_change_delivery-*.whl >/dev/null
+uv pip install --python "${service_runtime}/bin/python" 'httpx==0.28.1' >/dev/null
 printf '%s\n' "${commit}" > "${service_runtime}/source-commit"
 chmod 0600 "${service_runtime}/source-commit"
 

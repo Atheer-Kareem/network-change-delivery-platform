@@ -12,6 +12,8 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 chmod 0700 "${fixture}"
+mkdir "${history}"
+chmod 0700 "${history}"
 
 docker run --rm \
   --network none \
@@ -37,9 +39,13 @@ UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/ncdp-uv-cache} \
 
 persistent=/Users/netdevops/.local/state/ncdp/oxidized/config-history.git
 if [ -e "${persistent}" ]; then
-  [ "$(/usr/bin/git --git-dir="${persistent}" rev-parse --is-bare-repository)" = true ]
-  [ "$(/usr/bin/git --git-dir="${persistent}" rev-list --all --count)" -eq 0 ]
-  [ -z "$(/usr/bin/git --git-dir="${persistent}" config --local --name-only --get-regexp '^remote\.' 2>/dev/null || true)" ]
-  [ ! -e "${persistent}/objects/info/alternates" ]
-  [ ! -e "${persistent}/refs/replace" ]
+  if [ -z "$(find "${persistent}" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    [ "$(stat -f %Lp "${persistent}")" = 700 ]
+  else
+    [ "$(/usr/bin/git --git-dir="${persistent}" rev-parse --is-bare-repository)" = true ]
+    [ "$(/usr/bin/git --git-dir="${persistent}" rev-list --all --count)" -eq 0 ]
+    [ -z "$(/usr/bin/git --git-dir="${persistent}" config --local --name-only --get-regexp '^remote\.' 2>/dev/null || true)" ]
+    [ ! -e "${persistent}/objects/info/alternates" ]
+    [ ! -e "${persistent}/refs/replace" ]
+  fi
 fi

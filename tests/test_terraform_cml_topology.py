@@ -232,7 +232,7 @@ def test_safe_lifecycle_contract_and_increment_guard() -> None:
         r'resource\s+"cml2_lab"\s+"twin"\s*\{',
         (EPHEMERAL_ROOT / "topology.tf").read_text(),
     )
-    assert "prevent_destroy = true" in operator_lab
+    assert "prevent_destroy" not in operator_lab
     assert "prevent_destroy" not in ephemeral_lab
 
 

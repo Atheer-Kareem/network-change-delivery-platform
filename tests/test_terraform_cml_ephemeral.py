@@ -28,7 +28,7 @@ def test_root_owned_lab_policy_and_shared_module_boundary() -> None:
     ephemeral = (EPHEMERAL_ROOT / "topology.tf").read_text()
     operator_lab = block(r'resource\s+"cml2_lab"\s+"twin"\s*\{', operator)
     ephemeral_lab = block(r'resource\s+"cml2_lab"\s+"twin"\s*\{', ephemeral)
-    assert "prevent_destroy = true" in operator_lab
+    assert "prevent_destroy" not in operator_lab
     assert "prevent_destroy" not in ephemeral_lab
     assert 'source = "./modules/twin"' in operator
     assert 'source = "../modules/twin"' in ephemeral

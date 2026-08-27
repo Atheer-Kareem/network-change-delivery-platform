@@ -17,6 +17,11 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from network_change_delivery.oxidized_host_trust import (
+    DEFAULT_TRUST_ROOT,
+    OxidizedHostTrustError,
+    validate_host_trust,
+)
 from network_change_delivery.oxidized_private_paths import (
     ensure_private_directory,
     validate_private_file,
@@ -28,6 +33,7 @@ API_MAX_BYTES = 64 * 1024
 HTTP_TIMEOUT = 3.0
 DEFAULT_DEADLINE = 120.0
 POLL_INTERVAL = 1.0
+UPSTREAM_TIMESTAMP_TOLERANCE = timedelta(seconds=1)
 
 
 class OxidizedControlError(ValueError):
@@ -44,12 +50,13 @@ class CollectionOutcome(StrEnum):
 
 class CollectionReady(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     refreshed_at: datetime
     expires_at: datetime
     nodes: tuple[Literal["netbox-device-1", "netbox-device-2"], ...]
     container_id: str = Field(pattern=r"^[0-9a-f]{64}$")
-    service_contract: Literal["10C-5"] = "10C-5"
+    service_contract: Literal["10C-6"] = "10C-6"
+    host_trust_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @field_validator("refreshed_at", "expires_at")
     @classmethod
@@ -64,6 +71,18 @@ class _LastJob(BaseModel):
     start: datetime
     end: datetime
     status: str = Field(min_length=1, max_length=32)
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def parse_oxidized_utc(cls, value: object) -> object:
+        if isinstance(value, str) and value.endswith(" UTC"):
+            try:
+                return datetime.strptime(value, "%Y-%m-%d %H:%M:%S UTC").replace(
+                    tzinfo=UTC
+                )
+            except ValueError:
+                raise ValueError("job timestamp rejected") from None
+        return value
 
     @field_validator("start", "end")
     @classmethod
@@ -89,6 +108,8 @@ class CollectionResult(BaseModel):
     node: str
     outcome: CollectionOutcome
     upstream_status: str | None = Field(default=None, max_length=32)
+    upstream_started_at: datetime | None = None
+    upstream_ended_at: datetime | None = None
 
 
 def validate_loopback_api_url(url: str) -> str:
@@ -108,7 +129,11 @@ def validate_loopback_api_url(url: str) -> str:
 
 
 def read_collection_ready(
-    path: Path, container_id: str, *, now: datetime | None = None
+    path: Path,
+    container_id: str,
+    *,
+    trust_root: Path = DEFAULT_TRUST_ROOT,
+    now: datetime | None = None,
 ) -> CollectionReady:
     ambiguity = path.parent.parent / "control" / "readiness-publication-ambiguous"
     try:
@@ -124,7 +149,8 @@ def read_collection_ready(
         if path.stat().st_size > 4096:
             raise OxidizedControlError("Oxidized collection readiness rejected")
         marker = CollectionReady.model_validate_json(path.read_bytes())
-    except (OSError, ValidationError, ValueError):
+        trust = validate_host_trust(trust_root)
+    except (OSError, ValidationError, ValueError, OxidizedHostTrustError):
         raise OxidizedControlError("Oxidized collection readiness rejected") from None
     current = now or datetime.now(UTC)
     if (
@@ -133,6 +159,7 @@ def read_collection_ready(
         or set(marker.nodes) != EXPECTED_NODES
         or len(marker.nodes) != 2
         or marker.container_id != container_id
+        or marker.host_trust_sha256 != trust.known_hosts_sha256
     ):
         raise OxidizedControlError("Oxidized collection readiness rejected")
     return marker
@@ -145,6 +172,7 @@ class OxidizedController:
         readiness_path: Path,
         lock_root: Path,
         container_id: str,
+        trust_root: Path = DEFAULT_TRUST_ROOT,
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
@@ -152,6 +180,7 @@ class OxidizedController:
         self._readiness_path = readiness_path
         self._lock_root = lock_root
         self._container_id = container_id
+        self._trust_root = trust_root
         self._client = httpx.Client(
             timeout=HTTP_TIMEOUT,
             follow_redirects=False,
@@ -222,7 +251,10 @@ class OxidizedController:
                     outcome=CollectionOutcome.CONCURRENT_COLLECTION,
                 )
             read_collection_ready(
-                self._readiness_path, self._container_id, now=requested_at
+                self._readiness_path,
+                self._container_id,
+                trust_root=self._trust_root,
+                now=requested_at,
             )
             before = self._nodes()[node].last
             try:
@@ -247,7 +279,10 @@ class OxidizedController:
                 if current is None:
                     saw_transition = True
                 elif current != before:
-                    if current.start < requested_at or current.end < current.start:
+                    if (
+                        current.start < requested_at - UPSTREAM_TIMESTAMP_TOLERANCE
+                        or current.end < current.start
+                    ):
                         return CollectionResult(
                             request_id=request_id,
                             requested_at=requested_at,
@@ -255,6 +290,8 @@ class OxidizedController:
                             node=node,
                             outcome=CollectionOutcome.INCONSISTENT_EVIDENCE,
                             upstream_status=current.status,
+                            upstream_started_at=current.start,
+                            upstream_ended_at=current.end,
                         )
                     if saw_transition or before is None or current != before:
                         outcome = (
@@ -269,6 +306,8 @@ class OxidizedController:
                             node=node,
                             outcome=outcome,
                             upstream_status=current.status,
+                            upstream_started_at=current.start,
+                            upstream_ended_at=current.end,
                         )
                 time.sleep(POLL_INTERVAL)
             return CollectionResult(

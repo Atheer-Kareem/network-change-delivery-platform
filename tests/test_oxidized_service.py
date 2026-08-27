@@ -5,6 +5,7 @@ import stat
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,10 +22,25 @@ from network_change_delivery.oxidized_service import (
     publish_readiness,
     readiness_ambiguity_path,
     render_oxidized_config,
+    render_oxidized_git_config,
     validate_history_reservation,
 )
 
 IMAGE = "sha256:" + "a" * 64
+TRUST_DIGEST = "b" * 64
+
+
+@pytest.fixture(autouse=True)
+def accepted_host_trust(monkeypatch: pytest.MonkeyPatch) -> None:
+    def trust(_path: Path) -> SimpleNamespace:
+        return SimpleNamespace(known_hosts_sha256=TRUST_DIGEST)
+
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_service.validate_host_trust", trust
+    )
+    monkeypatch.setattr(
+        "network_change_delivery.oxidized_controller.validate_host_trust", trust
+    )
 
 
 def test_persistent_config_freezes_no_poll_git_contract() -> None:
@@ -41,9 +57,19 @@ def test_persistent_config_freezes_no_poll_git_contract() -> None:
         "oxidized@ncdp.local",
         "/var/lib/ncdp/config-history.git",
         "type_as_directory: false",
+        "input:\n  default: ssh",
+        "debug: false",
+        "secure: true",
     ):
         assert contract in config
     assert "clean_obsolete_nodes" not in config
+    assert "telnet" not in config
+
+
+def test_git_config_scopes_docker_bind_ownership_exception() -> None:
+    assert render_oxidized_git_config() == (
+        "[safe]\n\tdirectory = /var/lib/ncdp/config-history.git\n"
+    )
 
 
 def test_docker_contract_is_nonroot_private_and_minimal(tmp_path: Path) -> None:
@@ -52,6 +78,7 @@ def test_docker_contract_is_nonroot_private_and_minimal(tmp_path: Path) -> None:
         config_path=tmp_path / "config",
         source_path=tmp_path / "router.json",
         history_path=tmp_path / "history.git",
+        trust_path=tmp_path / "ssh",
         uid=501,
         gid=20,
     )
@@ -64,12 +91,18 @@ def test_docker_contract_is_nonroot_private_and_minimal(tmp_path: Path) -> None:
     assert "127.0.0.1:8888:8888" in rendered
     assert "--restart no" in rendered
     assert "/run/ncdp/home/.config/oxidized/config,readonly" in rendered
+    gitconfig_mount = (
+        f"source={tmp_path / 'gitconfig'},target=/run/ncdp/home/.gitconfig,readonly"
+    )
+    assert gitconfig_mount in rendered
+    assert f"source={tmp_path / 'ssh'},target=/run/ncdp/home/.ssh,readonly" in rendered
     assert "--config-file" not in rendered
     assert "docker.sock" not in rendered
     assert "AuditStore" not in rendered
     assert "operator" not in rendered
     assert "OPENBAO" not in rendered
     assert "NETBOX" not in rendered
+    assert str(Path.home() / ".ssh") not in rendered
 
 
 def test_readiness_is_private_bounded_and_invalidatable(tmp_path: Path) -> None:
@@ -155,6 +188,9 @@ def test_any_readiness_ambiguity_path_fails_closed(tmp_path: Path, mode: int) ->
     not Path("/usr/bin/git").is_file(), reason="fixed host Git CLI unavailable"
 )
 def test_history_reservation_rejects_public_directory(tmp_path: Path) -> None:
+    empty = tmp_path / "empty-reservation"
+    empty.mkdir(mode=0o700)
+    validate_history_reservation(empty)
     history = tmp_path / "history.git"
     subprocess.run(
         ["/usr/bin/git", "init", "--bare", str(history)],
@@ -212,6 +248,7 @@ def test_oxidized_updater_is_atomic_external_and_minimal() -> None:
     assert "'pydantic==2.13.4'" in script
     assert "'pyyaml==6.0.3'" in script
     assert 'mv "${ensure_candidate}" "${config_root}/ensure"' in script
+    assert 'mv "${config_candidate}" "${config_root}/config"' in script
     assert "--editable" not in script
 
 

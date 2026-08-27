@@ -11,6 +11,10 @@ from pathlib import Path
 from network_change_delivery.inventory import NetBoxInventoryProvider
 from network_change_delivery.openbao_oxidized_bootstrap import OpenBaoOxidizedBootstrap
 from network_change_delivery.oxidized_controller import EXPECTED_NODES
+from network_change_delivery.oxidized_host_trust import (
+    DEFAULT_TRUST_ROOT,
+    validate_host_trust,
+)
 from network_change_delivery.oxidized_private_paths import validate_private_file
 from network_change_delivery.oxidized_service import (
     API_URL,
@@ -86,14 +90,42 @@ def _inspect() -> dict[str, object] | None:
 
 
 def _remove_owned(inspect: dict[str, object], image_id: str) -> None:
-    verify_container_definition(
-        inspect,
-        image_id,
-        config_path=CONFIG_ROOT / "config",
-        source_path=STATE_ROOT / "runtime" / "router.json",
-        history_path=STATE_ROOT / "config-history.git",
-        require_running=False,
-    )
+    try:
+        verify_container_definition(
+            inspect,
+            image_id,
+            config_path=CONFIG_ROOT / "config",
+            source_path=STATE_ROOT / "runtime" / "router.json",
+            history_path=STATE_ROOT / "config-history.git",
+            trust_path=DEFAULT_TRUST_ROOT,
+            require_running=False,
+        )
+    except OxidizedServiceError:
+        try:
+            # One-time 10C-6 migration for the strict container created before
+            # Docker Desktop bind ownership was observed on first Git write.
+            verify_container_definition(
+                inspect,
+                image_id,
+                config_path=CONFIG_ROOT / "config",
+                source_path=STATE_ROOT / "runtime" / "router.json",
+                history_path=STATE_ROOT / "config-history.git",
+                trust_path=DEFAULT_TRUST_ROOT,
+                require_git_config=False,
+                require_running=False,
+            )
+        except OxidizedServiceError:
+            # One-time, exact 10C-5 container migration.
+            verify_container_definition(
+                inspect,
+                image_id,
+                config_path=CONFIG_ROOT / "config",
+                source_path=STATE_ROOT / "runtime" / "router.json",
+                history_path=STATE_ROOT / "config-history.git",
+                trust_path=None,
+                require_git_config=False,
+                require_running=False,
+            )
     _docker("rm", "--force", CONTAINER_NAME)
 
 
@@ -115,7 +147,12 @@ def _wait_nodes() -> None:
                     == EXPECTED_NODES
                     and len(data) == 2
                     and all(
-                        item.get("last") is None and item.get("status") == "never"
+                        item.get("group") == "managed"
+                        and isinstance(item.get("status"), str)
+                        and (
+                            item.get("last") is None
+                            or isinstance(item.get("last"), dict)
+                        )
                         for item in data
                     )
                 ):
@@ -159,8 +196,10 @@ def reconcile() -> str:
         publish_private_text(ambiguity, "AMBIGUOUS\n")
         raise
     image_id = _private(CONFIG_ROOT / "image-id")
+    validate_private_file(CONFIG_ROOT / "gitconfig")
     history = STATE_ROOT / "config-history.git"
     validate_history_reservation(history)
+    validate_host_trust(DEFAULT_TRUST_ROOT)
     inspect = _inspect()
     restart = (
         result.changed
@@ -176,10 +215,31 @@ def reconcile() -> str:
                 config_path=CONFIG_ROOT / "config",
                 source_path=result.path,
                 history_path=history,
+                trust_path=DEFAULT_TRUST_ROOT,
             )
         except OxidizedServiceError:
-            raise
-    else:
+            try:
+                verify_container_definition(
+                    inspect,
+                    image_id,
+                    config_path=CONFIG_ROOT / "config",
+                    source_path=result.path,
+                    history_path=history,
+                    trust_path=DEFAULT_TRUST_ROOT,
+                    require_git_config=False,
+                )
+            except OxidizedServiceError:
+                verify_container_definition(
+                    inspect,
+                    image_id,
+                    config_path=CONFIG_ROOT / "config",
+                    source_path=result.path,
+                    history_path=history,
+                    trust_path=None,
+                    require_git_config=False,
+                )
+            restart = True
+    if restart:
         if inspect is not None:
             _remove_owned(inspect, image_id)
         arguments = docker_run_arguments(
@@ -187,6 +247,7 @@ def reconcile() -> str:
             config_path=CONFIG_ROOT / "config",
             source_path=result.path,
             history_path=history,
+            trust_path=DEFAULT_TRUST_ROOT,
         )
         _docker(*arguments[1:])
         inspect = _inspect()
@@ -198,9 +259,10 @@ def reconcile() -> str:
             config_path=CONFIG_ROOT / "config",
             source_path=result.path,
             history_path=history,
+            trust_path=DEFAULT_TRUST_ROOT,
         )
     _wait_nodes()
-    publish_readiness(readiness, container_id)
+    publish_readiness(readiness, container_id, trust_path=DEFAULT_TRUST_ROOT)
     ambiguity.unlink(missing_ok=True)
     return container_id
 

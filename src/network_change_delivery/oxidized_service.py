@@ -15,6 +15,10 @@ from network_change_delivery.oxidized_history import (
     OXIDIZED_GIT_AUTHOR,
     OXIDIZED_GIT_EMAIL,
 )
+from network_change_delivery.oxidized_host_trust import (
+    DEFAULT_TRUST_ROOT,
+    validate_host_trust,
+)
 from network_change_delivery.oxidized_private_paths import (
     ensure_private_directory,
     validate_private_file,
@@ -47,6 +51,11 @@ timelimit: 60
 use_syslog: false
 next_adds_job: true
 rest: 0.0.0.0:8888
+input:
+  default: ssh
+  debug: false
+  ssh:
+    secure: true
 source:
   default: jsonfile
   jsonfile:
@@ -69,6 +78,11 @@ output:
     repo: /var/lib/ncdp/config-history.git
     type_as_directory: false
 """
+
+
+def render_oxidized_git_config() -> str:
+    """Permit only the reviewed Docker Desktop bind mount in libgit2."""
+    return "[safe]\n\tdirectory = /var/lib/ncdp/config-history.git\n"
 
 
 def publish_private_text(path: Path, value: str, *, mode: int = 0o600) -> None:
@@ -125,14 +139,20 @@ def _clear_readiness_ambiguity(path: Path) -> None:
 
 
 def publish_readiness(
-    path: Path, container_id: str, *, now: datetime | None = None
+    path: Path,
+    container_id: str,
+    *,
+    trust_path: Path = DEFAULT_TRUST_ROOT,
+    now: datetime | None = None,
 ) -> CollectionReady:
     refreshed = now or datetime.now(UTC)
+    trust = validate_host_trust(trust_path)
     marker = CollectionReady(
         refreshed_at=refreshed,
         expires_at=refreshed + READINESS_TTL,
         nodes=tuple(sorted(EXPECTED_NODES)),
         container_id=container_id,
+        host_trust_sha256=trust.known_hosts_sha256,
     )
     ambiguity = readiness_ambiguity_path(path)
     publish_private_text(ambiguity, "AMBIGUOUS\n")
@@ -153,6 +173,11 @@ def validate_history_reservation(path: Path) -> None:
         or stat.S_IMODE(metadata.st_mode) & 0o077
     ):
         raise OxidizedServiceError("Oxidized history reservation rejected")
+    try:
+        if not any(path.iterdir()):
+            return
+    except OSError:
+        raise OxidizedServiceError("Oxidized history reservation rejected") from None
     environment = {
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": os.devnull,
@@ -202,6 +227,7 @@ def docker_run_arguments(
     config_path: Path,
     source_path: Path,
     history_path: Path,
+    trust_path: Path,
     uid: int | None = None,
     gid: int | None = None,
 ) -> list[str]:
@@ -242,9 +268,15 @@ def docker_run_arguments(
         f"source={config_path},"
         "target=/run/ncdp/home/.config/oxidized/config,readonly",
         "--mount",
+        "type=bind,"
+        f"source={config_path.parent / 'gitconfig'},"
+        "target=/run/ncdp/home/.gitconfig,readonly",
+        "--mount",
         f"type=bind,source={source_path},target=/run/ncdp/router.json,readonly",
         "--mount",
         f"type=bind,source={history_path},target=/var/lib/ncdp/config-history.git",
+        "--mount",
+        f"type=bind,source={trust_path},target=/run/ncdp/home/.ssh,readonly",
         image_id,
     ]
 
@@ -256,6 +288,8 @@ def verify_container_definition(
     config_path: Path,
     source_path: Path,
     history_path: Path,
+    trust_path: Path | None,
+    require_git_config: bool = True,
     require_running: bool = True,
 ) -> str:
     try:
@@ -274,6 +308,12 @@ def verify_container_definition(
         (str(source_path), "/run/ncdp/router.json", False),
         (str(history_path), "/var/lib/ncdp/config-history.git", True),
     }
+    if require_git_config:
+        expected_mounts.add(
+            (str(config_path.parent / "gitconfig"), "/run/ncdp/home/.gitconfig", False)
+        )
+    if trust_path is not None:
+        expected_mounts.add((str(trust_path), "/run/ncdp/home/.ssh", False))
     actual_mounts = (
         {
             (item.get("Source"), item.get("Destination"), item.get("RW"))

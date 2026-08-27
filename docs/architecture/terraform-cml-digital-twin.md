@@ -278,6 +278,14 @@ Terraform realization currently owns `core-02` or `edge-junos-01`. Future
 ephemeral runs must freshly verify NetBox identity, OpenBao provenance, SSH host
 trust, platform, hostname, and topology before NCDP validation.
 
+Increment 10C-6 uses the operator root for one fresh, fixed-address observation
+realization. That root is intentionally destroyable: exact graph validation and
+the sanitized Terraform UI replace the stale `prevent_destroy` guard. Host trust
+is enrolled only after CML-anchored identity checks, then readiness and trust are
+retired before the exact 13-resource destroy. Independent lab, state,
+legacy-stoppage, staging-absence, and `.14`/`.20` absence proofs are mandatory
+before source changes may be pushed.
+
 Increment 8E-2 accepted the reusable ephemeral root locally: a fresh 13-resource
 realization transitioned from `DEFINED_ON_CORE` to `STARTED`, passed both vendor
 read-only provider chains, and was destroyed directly from STARTED. Independent

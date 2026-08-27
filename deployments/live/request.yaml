@@ -1,4 +1,4 @@
-# retry-authorization: 1
+# retry-authorization: 2
 schema_version: "1"
 action: deploy
 change_id: CHG-NCDP-10C7-001

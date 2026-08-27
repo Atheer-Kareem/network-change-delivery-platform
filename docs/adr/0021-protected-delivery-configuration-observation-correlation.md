@@ -48,8 +48,17 @@ requires the exact external path before retaining its existing offline
 manifest/version verification. It never installs from Galaxy or falls back to
 checkout-local collections. Build #150 performed no device write and is not
 retriable; comment-only retry authorization 1 prepares a distinct commit-bound
-attempt with the same immutable plan. Final live correlation acceptance remains
-pending that new merged-main build and explicit approval.
+attempt with the same immutable plan.
+
+Build #152 then verified that corrected runtime and reached PRE, where it failed
+closed because the required post-merge operator twin, realization-anchored host
+trust, and schema-2 collection readiness had not been prepared before approval.
+It submitted no collection or device transaction, created no audit evidence,
+and is permanently non-retriable. Comment-only retry authorization 2 prepares a
+new commit-bound attempt with the same immutable plan. Its fresh operator twin,
+trust, and readiness must be established after merge and before explicit
+approval of only that new main build. Final live correlation acceptance remains
+pending.
 
 ## Consequences
 

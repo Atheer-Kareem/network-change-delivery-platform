@@ -137,8 +137,14 @@ Ordering may change when implementation evidence requires it.
     correlation remain pending merged-main 10C-7B acceptance. Build #150 failed
     safely before PRE or any device write when its reboot-persistent deploy
     environment omitted the intact accepted Ansible collection root. The
-    corrected path guard and comment-only retry authorization prepare a new
-    reviewed merged-main attempt; Build #150 is permanently non-retriable.
+    corrected path guard and comment-only retry authorization 1 produced Build
+    #152, which reached PRE and failed closed because its required post-merge
+    operator twin, realization trust, and schema-2 readiness had not been
+    prepared before approval. Neither failed build performed a device write or
+    created observation/audit evidence; both are permanently non-retriable.
+    Comment-only retry authorization 2 prepares another semantically identical
+    reviewed attempt. Real acceptance remains pending fresh post-merge runtime
+    preparation and explicit approval of only that new main build.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

@@ -33,7 +33,7 @@ chmod 0600 "${config_root}/netbox-token"
 uv venv --python 3.12 "${service_runtime}" >/dev/null
 uv build >/dev/null
 uv pip install --python "${service_runtime}/bin/python" --no-deps dist/network_change_delivery-*.whl >/dev/null
-uv pip install --python "${service_runtime}/bin/python" 'httpx==0.28.1' >/dev/null
+uv pip install --python "${service_runtime}/bin/python" 'httpx==0.28.1' 'pydantic==2.13.4' 'pyyaml==6.0.3' >/dev/null
 printf '%s\n' "${commit}" > "${service_runtime}/source-commit"
 chmod 0600 "${service_runtime}/source-commit"
 

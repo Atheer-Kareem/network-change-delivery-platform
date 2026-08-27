@@ -12,7 +12,7 @@ umask 077
 uv venv --python 3.12 "${runtime}" >/dev/null
 uv build >/dev/null
 uv pip install --python "${runtime}/bin/python" --no-deps dist/network_change_delivery-*.whl >/dev/null
-uv pip install --python "${runtime}/bin/python" 'httpx==0.28.1' >/dev/null
+uv pip install --python "${runtime}/bin/python" 'httpx==0.28.1' 'pydantic==2.13.4' 'pyyaml==6.0.3' >/dev/null
 printf '%s\n' "${commit}" > "${runtime}/source-commit"
 chmod 0600 "${runtime}/source-commit"
 "${runtime}/bin/python" -I -c 'import network_change_delivery; print(network_change_delivery.__file__)' >/dev/null

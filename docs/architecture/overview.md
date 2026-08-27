@@ -18,7 +18,7 @@ flowchart LR
   EX --> EV
   LV --> EV
   OX[Configuration history\nOxidized] --> EV
-  OBS[Continuous observability\nPrometheus ecosystem] --> EV
+  NB --> OBS[Continuous observability\nPrometheus ecosystem]
   DK[Runtime plane\nDocker] -. isolates .-> BK
   DK -. packages .-> PY
 ```
@@ -58,11 +58,12 @@ flowchart LR
   bounded execution evidence. A future top-level record will correlate them
   with immutable pipeline artifacts by stable identity and digest; see
   [Audit and configuration history](audit-and-configuration-history.md).
-- **Continuous observability:** future Prometheus, Grafana, Alertmanager, gNMIc,
-  OpenConfig/gNMI, SNMP Exporter, and Blackbox Exporter run independently of CI.
-  Actionable alerts must pass through Alertmanager to at least one configured
-  demonstration notification receiver; receiver selection is deferred. Oxidized
-  with Git provides configuration chronology and drift evidence.
+- **Continuous observability:** Increment 11A introduces persistent Prometheus
+  and credential-free Blackbox TCP probes independently of CI. Stable NetBox
+  identity names each series; private CML realization admission controls whether
+  the NetBox-derived management endpoint is scheduled. Dashboards,
+  operator-only alerts, SNMPv3, and gNMI/OpenConfig remain later increments.
+  Oxidized remains the separate configuration chronology boundary.
 
 Dependencies point inward to platform-owned policy and types; integrations
 implement explicit boundary contracts. Provider details must not become domain
@@ -102,3 +103,7 @@ Increment 8 has completed 8A discovery and now implements the accepted 8B
 Terraform foundation and read-only plan. The repository has no
 Terraform-managed CML resource yet; CML topology and lifecycle begin in 8C. See the
 [Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).
+
+Increment 11A implements the first continuous-observability foundation. Its
+offline/container contract is complete while fresh-CML live acceptance remains
+pending after merge. See [Continuous observability](continuous-observability.md).

@@ -1,0 +1,7 @@
+modules:
+  tcp_connect:
+    prober: tcp
+    timeout: 4s
+    tcp:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false

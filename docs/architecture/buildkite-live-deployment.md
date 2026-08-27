@@ -109,6 +109,15 @@ now validates the dedicated CML trust and projects that exact file into a
 private run-scoped Ansible home. Build #156 is permanently non-retriable;
 retry authorization 4 changes only the request blob for a new reviewed build.
 
+Build #158 completed the protected live acceptance at commit
+`6516983b7b66498776d0c1698c9f2fe53065b79e`. The dedicated realization trust
+was exercised by the protected adapter, PRE and POST both settled coherent
+path-scoped revisions, the exact Cisco attempt and fresh post-validation
+succeeded, and immutable `SUCCEEDED` parent/child evidence was persisted. The
+child remains `TEMPORALLY_BRACKETED` with causality `NOT_PROVEN`. Controlled
+cleanup retired readiness and trust before deleting the exact 13-resource
+operator graph while preserving private chronology and durable evidence.
+
 7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
 mutation. This foundation has no active live request and has not performed or

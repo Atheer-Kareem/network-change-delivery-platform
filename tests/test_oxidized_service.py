@@ -102,6 +102,7 @@ def test_installer_freezes_launchd_and_external_runtime_contract() -> None:
     assert "/Users/netdevops/.local/lib/ncdp/oxidized-service" in script
     assert "uv run" not in script
     assert "--editable" not in script
+    assert "oxidized-service.candidate" not in script
     assert "BAO_TOKEN" not in script
     assert "OPENBAO_TOKEN" not in script
     assert "docker.sock" not in script

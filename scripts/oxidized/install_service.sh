@@ -27,12 +27,10 @@ image_id=$(docker image inspect "${image}" --format '{{.Id}}')
 case "${image_id}" in sha256:????????????????????????????????????????????????????????????????) ;; *) exit 2 ;; esac
 
 [ ! -e "${runtime_root}" ] || { echo "Oxidized service runtime already exists" >&2; exit 2; }
-[ ! -e "${runtime_root}.candidate" ] || { echo "Oxidized service candidate already exists" >&2; exit 2; }
-uv venv --python 3.12 "${runtime_root}.candidate" >/dev/null
+uv venv --python 3.12 "${runtime_root}" >/dev/null
 uv build >/dev/null
-uv pip install --python "${runtime_root}.candidate/bin/python" dist/network_change_delivery-*.whl >/dev/null
-printf '%s\n' "${NCDP_SOURCE_COMMIT:?source commit required}" > "${runtime_root}.candidate/source-commit"
-mv "${runtime_root}.candidate" "${runtime_root}"
+uv pip install --python "${runtime_root}/bin/python" dist/network_change_delivery-*.whl >/dev/null
+printf '%s\n' "${NCDP_SOURCE_COMMIT:?source commit required}" > "${runtime_root}/source-commit"
 
 printf '%s' "${NCDP_OXIDIZED_NETBOX_TOKEN}" > "${config_root}/netbox-token"
 printf '%s\n' "${image_id}" > "${config_root}/image-id"

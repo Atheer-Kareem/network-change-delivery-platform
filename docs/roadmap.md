@@ -114,7 +114,10 @@ Ordering may change when implementation evidence requires it.
     oxidized-web 0.18.1 and proves a loopback-only synthetic API without device
     collection. NetBox/OpenBao materialization, private Git chronology,
     persistent service ownership, scheduling, and forced observation remain
-    later 10C increments.
+    later 10C increments. **10C-3 — NetBox/OpenBao source materialization** adds
+    the host-side exact-population authority resolver, dedicated read-only
+    OpenBao identity, atomic private JSONFile cache, and no-collection parser
+    proof. Git chronology and persistent collection remain later increments.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

@@ -332,6 +332,25 @@ history, or persistent service is part of this increment. Inventory and
 credential materialization, external Git output, scheduling, forced collection,
 and reboot-persistent ownership remain later 10C work.
 
+### Authority source materialization
+
+Increment 10C-3 keeps both authority APIs outside the collector. The NCDP host
+materializer resolves the complete active `ncdp-managed` NetBox population and
+loads exact-path credentials through a dedicated OpenBao AppRole, then
+atomically publishes one private JSONFile runtime cache. Oxidized reads that
+file and contacts neither NetBox nor OpenBao.
+
+The initial allowlist is exactly NetBox device IDs 1 and 2; stable Oxidized node
+names derive from those object IDs, and device 3 is a fail-closed population
+error. IOS XE maps to `ios`, Junos maps to `junos`, and both collector endpoints
+use SSH port 22. The Junos transactional NETCONF port 830 is not reused.
+
+The cache is credential-bearing but is not authority or evidence. Publication
+uses private owned directories and an atomic complete-file replacement. Failed
+refresh leaves the previous bytes untouched while returning failure. Whether a
+future persistent service may use stale cache remains deferred, as do device
+collection and Git chronology.
+
 ## Implementation sequence and limitations
 
 10B-1 provides the typed envelope/reference models and append-only store.

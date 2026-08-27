@@ -41,6 +41,16 @@ stays outside Buildkite: the planning twin is destroyed before PR CI, and after
 merge a fresh trusted twin must be prepared before approving only the exact new
 main build. Final live acceptance retires trust and destroys that twin.
 
+Build #150 exposed an operational regression before PRE: recreation of the
+reboot-persistent deploy agent omitted the already accepted external Ansible
+collection path while leaving that runtime intact. The protected gate now
+requires the exact external path before retaining its existing offline
+manifest/version verification. It never installs from Galaxy or falls back to
+checkout-local collections. Build #150 performed no device write and is not
+retriable; comment-only retry authorization 1 prepares a distinct commit-bound
+attempt with the same immutable plan. Final live correlation acceptance remains
+pending that new merged-main build and explicit approval.
+
 ## Consequences
 
 10C-7A can prove orchestration, conversion, correlation, privacy, persistence,

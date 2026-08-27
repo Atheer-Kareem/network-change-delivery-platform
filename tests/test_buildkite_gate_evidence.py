@@ -10,6 +10,9 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 GATE = ROOT / "scripts/buildkite/deployment_gate.sh"
+AUTHORIZED_ANSIBLE_COLLECTIONS = (
+    "/Users/netdevops/.local/share/ncdp/ansible/collections"
+)
 
 
 def executable(path: Path, contents: str) -> None:
@@ -29,6 +32,7 @@ def run_gate(
     audit_status: int = 0,
     audit_root: bool = True,
     retry_count: str | None = "0",
+    ansible_collections_path: str | None = AUTHORIZED_ANSIBLE_COLLECTIONS,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     (tmp_path / "scripts/buildkite").mkdir(parents=True)
     executable(tmp_path / "scripts/buildkite/verify_commit.sh", "#!/bin/sh\nexit 0\n")
@@ -143,6 +147,10 @@ esac
         environment.pop("BUILDKITE_RETRY_COUNT", None)
     else:
         environment["BUILDKITE_RETRY_COUNT"] = retry_count
+    if ansible_collections_path is None:
+        environment.pop("ANSIBLE_COLLECTIONS_PATH", None)
+    else:
+        environment["ANSIBLE_COLLECTIONS_PATH"] = ansible_collections_path
     for prohibited in (
         "NCDP_OPENBAO_ROLE_ID",
         "NCDP_OPENBAO_SECRET_ID",
@@ -256,6 +264,43 @@ def test_runtime_failure_stops_before_privileged_jwt_and_deployment(
     )
     assert "deploy-buildkite-promotion" not in commands
     assert not uploads.exists()
+
+
+@pytest.mark.parametrize("configured", [None, "/tmp/wrong-collections"])
+def test_unauthorized_ansible_path_stops_before_runtime_pre_and_device_boundaries(
+    tmp_path: Path, configured: str | None
+) -> None:
+    result, uploads = run_gate(
+        tmp_path,
+        deployment_status=90,
+        evidence=False,
+        outcome="forbidden",
+        ansible_collections_path=configured,
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 2
+    assert result.stderr == "deployment Ansible collection path is not authorized\n"
+    assert "verify-buildkite-live-request" in commands
+    assert "verify-deployment-ansible-runtime" not in commands
+    assert "audit:capture-buildkite-configuration" not in commands
+    assert commands.count("oidc") == 1
+    assert "deploy-buildkite-promotion" not in commands
+    assert not uploads.exists()
+
+
+def test_authorized_ansible_path_reaches_runtime_verifier(tmp_path: Path) -> None:
+    result, _uploads = run_gate(
+        tmp_path,
+        deployment_status=90,
+        evidence=False,
+        outcome="forbidden",
+        runtime_status=2,
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 2
+    assert "verify-deployment-ansible-runtime" in commands
+    assert "audit:capture-buildkite-configuration" not in commands
+    assert "deploy-buildkite-promotion" not in commands
 
 
 @pytest.mark.parametrize("outcome", ["SUCCEEDED", "RECOVERED"])

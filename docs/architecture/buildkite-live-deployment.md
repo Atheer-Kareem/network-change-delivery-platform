@@ -66,6 +66,15 @@ persistence. Metadata failure never retries or rolls back the device attempt,
 and the original device outcome remains primary. Real acceptance is pending a
 new merged-main build in 10C-7B.
 
+Build #150 failed closed before PRE observation because the reboot-persistent
+deploy-agent environment omitted the intact, previously accepted collection
+root. Protected deploy jobs now require the exact external path
+`/Users/netdevops/.local/share/ncdp/ansible/collections` before the existing
+manifest/version verifier runs; checkout-local, user, system, and Galaxy
+fallbacks are not authorized. No device write occurred. Build #150 remains
+permanently non-retriable, and retry authorization 1 changes the commit-bound
+request blob for a new merged-main attempt without changing its semantic plan.
+
 7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
 mutation. This foundation has no active live request and has not performed or

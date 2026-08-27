@@ -369,6 +369,14 @@ def test_scripts_static_contract() -> None:
     assert gate.index("verify-buildkite-live-request") < gate.index(
         "verify-deployment-ansible-runtime"
     )
+    authorized_path = "/Users/netdevops/.local/share/ncdp/ansible/collections"
+    assert f"authorized_ansible_collections={authorized_path}" in gate
+    assert "deployment Ansible collection path is not authorized" in gate
+    assert gate.index("authorized_ansible_collections=") < gate.index(
+        "verify-deployment-ansible-runtime"
+    )
+    assert "ansible-galaxy" not in gate
+    assert "~/.ansible" not in gate
     assert gate.index("verify-deployment-ansible-runtime") < gate.rindex(
         "oidc request-token"
     )

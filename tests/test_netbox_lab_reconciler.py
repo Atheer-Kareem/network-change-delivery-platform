@@ -83,3 +83,4 @@ def test_source_contains_exact_image_and_no_destructive_compose() -> None:
     assert '"down"' not in source
     assert '"volume", "rm"' not in source
     assert '"pull"' not in source.replace('"--pull"', "")
+    assert "allow_legacy_location=True" in source

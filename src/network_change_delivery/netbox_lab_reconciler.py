@@ -267,7 +267,10 @@ def reconcile(root: Path = DEFAULT_ROOT) -> None:
         _compose(root, "up", "--detach", "--pull", "never", "--no-build"),
         timeout=COMMAND_TIMEOUT,
     )
-    _inspect_project(root, contract)
+    # Compose preserves compatible data-service containers during the one-time
+    # move from the recorded legacy directory. Both locations are contract-bound;
+    # a later necessary recreation converges labels to the external root.
+    _inspect_project(root, contract, allow_legacy_location=True)
     _wait_health()
 
 

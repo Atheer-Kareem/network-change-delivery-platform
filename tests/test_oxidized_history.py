@@ -148,7 +148,30 @@ def test_repository_boundary_rejects_unsafe_roots(
         OxidizedHistoryRepository(candidate).latest_revision("netbox-device-1")
 
 
-def test_nonbare_empty_missing_remote_replace_and_alternates_fail_closed(
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("remote.origin.url", "/private/remote"),
+        ("remote.origin.pushurl", "/private/push-only"),
+        ("remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"),
+    ],
+)
+def test_any_local_remote_namespace_is_rejected(
+    tmp_path: Path, key: str, value: str
+) -> None:
+    repository, _ = chronology(tmp_path)
+    git(f"--git-dir={repository}", "config", "--local", key, value)
+    with pytest.raises(OxidizedHistoryError, match="repository rejected"):
+        OxidizedHistoryRepository(repository).latest_revision("netbox-device-1")
+
+
+def test_clean_repository_without_remote_namespace_is_accepted(tmp_path: Path) -> None:
+    repository, commits = chronology(tmp_path)
+    revision = OxidizedHistoryRepository(repository).latest_revision("netbox-device-1")
+    assert revision.commit == commits[1]
+
+
+def test_nonbare_empty_missing_replace_and_alternates_fail_closed(
     tmp_path: Path,
 ) -> None:
     missing = tmp_path / "missing.git"
@@ -165,11 +188,9 @@ def test_nonbare_empty_missing_remote_replace_and_alternates_fail_closed(
     with pytest.raises(OxidizedHistoryError):
         OxidizedHistoryRepository(nonbare).latest_revision("netbox-device-1")
 
-    for boundary in ("remote", "replace", "alternates"):
+    for boundary in ("replace", "alternates"):
         repository, commits = chronology(tmp_path / boundary)
-        if boundary == "remote":
-            git(f"--git-dir={repository}", "remote", "add", "origin", "/private/remote")
-        elif boundary == "replace":
+        if boundary == "replace":
             git(
                 f"--git-dir={repository}",
                 "update-ref",

@@ -102,6 +102,8 @@ def test_installer_freezes_launchd_and_external_runtime_contract() -> None:
     assert "com.ncdp.oxidized" in script
     assert "<key>RunAtLoad</key><true/>" in script
     assert "<key>StartInterval</key><integer>300</integer>" in script
+    assert "<key>Umask</key><integer>63</integer>" in script
+    assert 'chmod 0600 "${logfile}"' in script
     assert "/Users/netdevops/.local/lib/ncdp/oxidized-service" in script
     assert "uv run" not in script
     assert "--editable" not in script

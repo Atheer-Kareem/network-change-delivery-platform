@@ -15,6 +15,10 @@ for directory in "${root}" "${root}/runtime" "${root}/operator" "${root}/control
   mkdir -p "${directory}"
   chmod 0700 "${directory}"
 done
+for logfile in "${root}/logs/service.out.log" "${root}/logs/service.err.log"; do
+  touch "${logfile}"
+  chmod 0600 "${logfile}"
+done
 
 if [ ! -e "${root}/config-history.git" ]; then
   /usr/bin/git init --bare --quiet "${root}/config-history.git"
@@ -54,6 +58,7 @@ cat > "${plist}" <<EOF
 <key>ProgramArguments</key><array><string>${config_root}/ensure</string></array>
 <key>RunAtLoad</key><true/><key>StartInterval</key><integer>300</integer>
 <key>ThrottleInterval</key><integer>60</integer>
+<key>Umask</key><integer>63</integer>
 <key>StandardOutPath</key><string>${root}/logs/service.out.log</string>
 <key>StandardErrorPath</key><string>${root}/logs/service.err.log</string>
 </dict></plist>

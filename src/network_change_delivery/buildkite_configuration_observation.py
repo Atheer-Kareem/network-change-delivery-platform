@@ -150,7 +150,7 @@ def durable_success(observation: OxidizedObservation) -> DurableOxidizedObservat
     return DurableOxidizedObservation(
         request_id=collection.request_id,
         requested_at=collection.requested_at,
-        completed_at=collection.completed_at,
+        completed_at=observation.settled_at,
         status=(
             ObservationStatus.CHANGED
             if observation.revision_changed

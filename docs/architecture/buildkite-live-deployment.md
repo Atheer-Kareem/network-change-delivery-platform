@@ -85,6 +85,18 @@ authorization 2 changes only the committed request blob; after its merge, a
 fresh operator twin, CML-anchored trust, and bound readiness must be prepared
 before the exact new main build is approved.
 
+Build #154 was correctly prepared and authorized. PRE readiness passed,
+`node.next` was submitted once for the Cisco target, and Oxidized completed the
+job successfully. Its fresh-realization output created a third private Git
+revision one second after the upstream job end. That was within the existing
+five-second chronology tolerance, but durable conversion incorrectly treated
+the upstream end as the completed observation boundary and rejected the Git
+timestamp. The gate stopped before its device-capable OIDC request and
+deployment command, and no parent or child audit record was persisted. Build
+#154 is permanently non-retriable. Successful durable attempts now complete at
+the bounded path-metadata settlement boundary; retry authorization 3 changes
+only the committed request blob for the next reviewed main build.
+
 7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
 mutation. This foundation has no active live request and has not performed or

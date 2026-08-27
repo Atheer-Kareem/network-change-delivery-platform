@@ -80,12 +80,13 @@ def test_success_conversion_preserves_validated_metadata(
         before=before,
         after=after,
         revision_changed=changed,
+        settled_at=NOW + timedelta(seconds=2),
     )
     durable = durable_success(transient)
     assert durable.status is expected
     assert durable.request_id == transient.collection.request_id
     assert durable.requested_at == transient.collection.requested_at
-    assert durable.completed_at == transient.collection.completed_at
+    assert durable.completed_at == transient.settled_at
     assert durable.before_revision == before
     assert durable.after_revision == after
 
@@ -96,9 +97,73 @@ def test_success_requires_existing_baseline() -> None:
         before=None,
         after=revision(collected_at=NOW),
         revision_changed=True,
+        settled_at=NOW + timedelta(seconds=2),
     )
     with pytest.raises(BuildkiteConfigurationObservationError, match="baseline"):
         durable_success(transient)
+
+
+def test_changed_success_completes_at_git_settlement_after_upstream_end() -> None:
+    before = revision(collected_at=NOW - timedelta(hours=1))
+    upstream_completed = collection(CollectionOutcome.SUCCEEDED).model_copy(
+        update={
+            "completed_at": NOW + timedelta(seconds=1),
+            "upstream_ended_at": NOW + timedelta(seconds=1),
+        }
+    )
+    after = revision(
+        commit="d" * 40,
+        blob="e" * 40,
+        collected_at=NOW + timedelta(seconds=2),
+    )
+
+    durable = durable_success(
+        OxidizedObservation(
+            collection=upstream_completed,
+            before=before,
+            after=after,
+            revision_changed=True,
+            settled_at=NOW + timedelta(seconds=2),
+        )
+    )
+
+    assert durable.status is ObservationStatus.CHANGED
+    assert durable.completed_at == NOW + timedelta(seconds=2)
+    assert durable.completed_at > upstream_completed.completed_at
+    assert durable.after_revision == after
+
+
+def test_transient_settlement_cannot_predate_accepted_revision() -> None:
+    before = revision(collected_at=NOW - timedelta(hours=1))
+    with pytest.raises(ValueError, match="settlement is inconsistent"):
+        OxidizedObservation(
+            collection=collection(CollectionOutcome.SUCCEEDED),
+            before=before,
+            after=revision(
+                commit="d" * 40,
+                blob="e" * 40,
+                collected_at=NOW + timedelta(seconds=3),
+            ),
+            revision_changed=True,
+            settled_at=NOW + timedelta(seconds=2),
+        )
+
+
+def test_unchanged_success_uses_bounded_settlement_completion() -> None:
+    existing = revision(collected_at=NOW - timedelta(hours=1))
+    transient = OxidizedObservation(
+        collection=collection(CollectionOutcome.SUCCEEDED),
+        before=existing,
+        after=existing,
+        revision_changed=False,
+        settled_at=NOW + timedelta(seconds=12),
+    )
+
+    durable = durable_success(transient)
+
+    assert durable.status is ObservationStatus.UNCHANGED
+    assert durable.before_revision == durable.after_revision
+    assert durable.completed_at == transient.settled_at
 
 
 @pytest.mark.parametrize(
@@ -319,6 +384,7 @@ def test_child_revalidates_parent_and_preserves_temporal_revision_chain(
             before=before,
             after=after,
             revision_changed=True,
+            settled_at=NOW + timedelta(seconds=2),
         )
     )
     post_collection = collection(CollectionOutcome.SUCCEEDED).model_copy(
@@ -341,6 +407,7 @@ def test_child_revalidates_parent_and_preserves_temporal_revision_chain(
             before=after,
             after=post_after,
             revision_changed=True,
+            settled_at=NOW + timedelta(seconds=5),
         )
     )
     pre_path = tmp_path / "observation" / "pre.json"
@@ -388,6 +455,7 @@ def test_invalid_bracket_or_revision_chain_is_rejected(
             before=observed,
             after=observed,
             revision_changed=False,
+            settled_at=NOW + timedelta(seconds=2),
         )
     )
     post_request = (
@@ -407,6 +475,7 @@ def test_invalid_bracket_or_revision_chain_is_rejected(
             before=post_before,
             after=post_before,
             revision_changed=False,
+            settled_at=NOW + timedelta(seconds=5),
         )
     )
     pre_path = tmp_path / "observation" / "pre.json"

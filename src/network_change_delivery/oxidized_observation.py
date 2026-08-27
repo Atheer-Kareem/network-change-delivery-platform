@@ -6,10 +6,10 @@ import json
 import subprocess
 import sys
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from network_change_delivery.configuration_observation import OxidizedRevision
 from network_change_delivery.oxidized_controller import (
@@ -53,6 +53,39 @@ class OxidizedObservation(BaseModel):
     before: OxidizedRevision | None
     after: OxidizedRevision
     revision_changed: bool
+    settled_at: datetime
+
+    @model_validator(mode="after")
+    def validate_settlement(self) -> OxidizedObservation:
+        completed = self.collection.completed_at
+        if (
+            self.settled_at.utcoffset() != timedelta(0)
+            or completed is None
+            or self.settled_at < completed
+            or self.settled_at < self.after.collected_at
+        ):
+            raise ValueError("Oxidized observation settlement is inconsistent")
+        return self
+
+
+def _settlement_completed_at(
+    collection: CollectionResult, after: OxidizedRevision
+) -> datetime:
+    """Capture the metadata-settlement boundary after accepted Git storage."""
+    completed = collection.completed_at
+    if completed is None:
+        raise OxidizedObservationError("Oxidized observation completion unavailable")
+    evidence_completed = max(completed, after.collected_at)
+    settled = datetime.now(UTC)
+    if evidence_completed > settled:
+        delay = (evidence_completed - settled).total_seconds()
+        if delay > REVISION_CLOCK_TOLERANCE.total_seconds():
+            raise OxidizedChronologyError("Oxidized observation chronology rejected")
+        time.sleep(delay)
+        settled = datetime.now(UTC)
+        if settled < evidence_completed:
+            raise OxidizedChronologyError("Oxidized observation chronology rejected")
+    return settled
 
 
 def observe_configuration(
@@ -108,6 +141,7 @@ def bind_collection_result(
                     before=before,
                     after=after,
                     revision_changed=True,
+                    settled_at=_settlement_completed_at(collection, after),
                 )
         # Oxidized 0.37.0 publishes terminal node.last before its synchronous
         # output.store call. An existing identical path must therefore settle
@@ -122,6 +156,7 @@ def bind_collection_result(
                 before=before,
                 after=after,
                 revision_changed=False,
+                settled_at=_settlement_completed_at(collection, after),
             )
         time.sleep(REVISION_POLL_SECONDS)
 

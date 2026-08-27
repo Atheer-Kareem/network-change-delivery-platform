@@ -142,9 +142,15 @@ Ordering may change when implementation evidence requires it.
     operator twin, realization trust, and schema-2 readiness had not been
     prepared before approval. Neither failed build performed a device write or
     created observation/audit evidence; both are permanently non-retriable.
-    Comment-only retry authorization 2 prepares another semantically identical
-    reviewed attempt. Real acceptance remains pending fresh post-merge runtime
-    preparation and explicit approval of only that new main build.
+    Comment-only retry authorization 2 produced Build #154, which was prepared
+    and authorized. Its successful PRE collection created a legitimate third
+    private-history revision, but durable conversion rejected the Git timestamp
+    because it followed the upstream job end by one second. The gate stopped
+    before deployment and created no audit evidence. Build #154 is permanently
+    non-retriable. The corrected durable completion boundary and comment-only
+    retry authorization 3 prepare another semantically identical attempt. Real
+    acceptance remains pending fresh post-merge runtime preparation and
+    explicit approval of only that new main build.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

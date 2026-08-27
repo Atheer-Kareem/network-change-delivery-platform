@@ -27,6 +27,8 @@ find "${candidate}" -type d -exec chmod 0700 {} \;
 find "${candidate}" -type f -exec chmod 0600 {} \;
 uv run python scripts/netbox/write_contract.py "${source_root}" "${candidate}"
 mv "${candidate}" "${runtime_root}"
+cp "${source_root}/ncdp-netbox-token" "${config_root}/netbox-token"
+chmod 0600 "${config_root}/netbox-token"
 
 uv venv --python 3.12 "${service_runtime}" >/dev/null
 uv build >/dev/null

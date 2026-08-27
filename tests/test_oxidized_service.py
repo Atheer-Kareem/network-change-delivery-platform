@@ -195,6 +195,8 @@ def test_netbox_installer_is_external_private_and_pull_free() -> None:
     assert "--editable" not in script
     assert "--no-deps dist/network_change_delivery-*.whl" in script
     assert "'httpx==0.28.1'" in script
+    assert 'cp "${source_root}/ncdp-netbox-token"' in script
+    assert 'chmod 0600 "${config_root}/netbox-token"' in script
     assert "docker compose down" not in script
     assert "rm -" not in script
 

@@ -11,6 +11,7 @@ from network_change_delivery.netbox_lab_reconciler import (
     NETBOX_IMAGE_ID,
     NetBoxLabError,
     _compose,
+    _private_token,
     _verify_files,
     _verify_model,
 )
@@ -34,6 +35,16 @@ def test_file_contract_detects_change(tmp_path: Path) -> None:
     config.write_text("services:\n  unexpected: {}\n")
     with pytest.raises(NetBoxLabError, match="file contract rejected"):
         _verify_files(tmp_path, contract)
+
+
+def test_authority_token_must_be_private_regular_file(tmp_path: Path) -> None:
+    token = tmp_path / "netbox-token"
+    token.write_text("not-a-real-token")
+    token.chmod(0o600)
+    assert _private_token(token) == "not-a-real-token"
+    token.chmod(0o644)
+    with pytest.raises(NetBoxLabError, match="authority rejected"):
+        _private_token(token)
 
 
 def test_model_requires_exact_service_and_image_population(

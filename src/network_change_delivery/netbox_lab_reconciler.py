@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-import httpx
+from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
 
 PROJECT = "netbox-docker"
 EXPECTED_SERVICES = frozenset(
@@ -24,6 +24,7 @@ NETBOX_IMAGE = "docker.io/netboxcommunity/netbox:v4.6.7-5.0.2"
 API_URL = "http://127.0.0.1:8000"
 DOCKER = "/usr/local/bin/docker"
 DEFAULT_ROOT = Path("/Users/netdevops/.local/lib/ncdp/netbox-lab")
+DEFAULT_TOKEN_PATH = Path("/Users/netdevops/.config/ncdp/netbox-lab/netbox-token")
 COMMAND_TIMEOUT = 120
 
 
@@ -69,6 +70,24 @@ def _private_contract(root: Path) -> dict[str, object]:
     if not isinstance(contract, dict):
         raise NetBoxLabError("NetBox lifecycle contract rejected")
     return contract
+
+
+def _private_token(path: Path) -> str:
+    try:
+        metadata = path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_nlink != 1
+        ):
+            raise NetBoxLabError("NetBox lifecycle authority rejected")
+        token = path.read_text().strip()
+    except OSError:
+        raise NetBoxLabError("NetBox lifecycle authority rejected") from None
+    if not token:
+        raise NetBoxLabError("NetBox lifecycle authority rejected")
+    return token
 
 
 def _verify_files(root: Path, contract: dict[str, object]) -> None:
@@ -238,25 +257,25 @@ def _inspect_project(
             raise NetBoxLabError("NetBox publication contract rejected")
 
 
-def _wait_health() -> None:
-    with httpx.Client(timeout=3, follow_redirects=False, trust_env=False) as client:
-        for _ in range(90):
-            try:
-                response = client.get(f"{API_URL}/api/status/")
-                payload = response.json() if response.status_code == 200 else None
-                version = (
-                    payload.get("netbox-version") if isinstance(payload, dict) else None
-                )
-                if version == "4.6.7":
-                    return
-            except (httpx.HTTPError, ValueError):
-                pass
-            time.sleep(2)
+def _wait_health(token: str) -> None:
+    provider = NetBoxInventoryProvider(API_URL, token)
+    for _ in range(90):
+        try:
+            devices = provider.resolve_managed_devices()
+            if {device.inventory_object_id for device in devices} == {
+                "netbox:dcim.device:1",
+                "netbox:dcim.device:2",
+            } and len(devices) == 2:
+                return
+        except InventoryError:
+            pass
+        time.sleep(2)
     raise NetBoxLabError("NetBox authority health check failed")
 
 
 def reconcile(root: Path = DEFAULT_ROOT) -> None:
     contract = _private_contract(root)
+    token = _private_token(DEFAULT_TOKEN_PATH)
     _verify_files(root, contract)
     _wait_docker()
     _verify_images(contract)
@@ -271,7 +290,7 @@ def reconcile(root: Path = DEFAULT_ROOT) -> None:
     # move from the recorded legacy directory. Both locations are contract-bound;
     # a later necessary recreation converges labels to the external root.
     _inspect_project(root, contract, allow_legacy_location=True)
-    _wait_health()
+    _wait_health(token)
 
 
 def main() -> int:

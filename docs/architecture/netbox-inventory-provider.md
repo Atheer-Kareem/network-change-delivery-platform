@@ -60,7 +60,9 @@ Docker Desktop, verifies the frozen external Compose inputs, accepted local imag
 identity, exact service population, existing named volumes, and project
 identity, then runs Compose with pull and build disabled. It verifies that only
 the NetBox application publishes `127.0.0.1:8000` and exits zero only after the
-status API reports NetBox 4.6.7.
+existing private read-only API token proves the exact two-device managed
+population is readable. The token remains external, mode `0600`, and is neither
+embedded in the LaunchAgent nor changed by lifecycle installation.
 
 This mechanism owns container availability only. It preserves the existing
 PostgreSQL, Redis, media, reports, and scripts volumes and never seeds, migrates,

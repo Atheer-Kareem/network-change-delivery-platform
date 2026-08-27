@@ -45,9 +45,10 @@ or either Redis service. A separate user LaunchAgent therefore owns only the
 personal-lab NetBox container lifecycle. Its repository-independent one-shot
 reconciler preserves the existing `netbox-docker` project and named volumes,
 uses the accepted local images with pull and build disabled, verifies loopback
-publication and API health, and never creates, seeds, migrates, or modifies
-authority data. This operational prerequisite does not move NetBox authority or
-deployment logic into NCDP.
+publication and the exact managed population with the existing private read-only
+token, and never creates, seeds, migrates, or modifies authority data. This
+operational prerequisite does not move NetBox authority or deployment logic
+into NCDP.
 
 Readiness publication holds a private
 `readiness-publication-ambiguous` guard before replacing

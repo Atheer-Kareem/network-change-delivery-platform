@@ -1,6 +1,7 @@
 """Tests for bounded, secret-safe Runner result normalization."""
 
 import os
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -226,7 +227,7 @@ def test_runner_uses_the_shared_effective_collection_path(
 def test_runner_gives_paramiko_the_run_scoped_known_hosts_home(
     tmp_path: Path, monkeypatch
 ) -> None:
-    known_hosts = tmp_path / ".ssh" / "known_hosts"
+    known_hosts = tmp_path / "dedicated-trust" / "known_hosts"
     known_hosts.parent.mkdir()
     known_hosts.write_text("hashed trusted host key\n", encoding="utf-8")
     captured: dict[str, object] = {}
@@ -238,6 +239,9 @@ def test_runner_gives_paramiko_the_run_scoped_known_hosts_home(
 
     def fake_run(**kwargs):
         captured["home"] = kwargs["envvars"]["HOME"]
+        projected = Path(captured["home"]) / ".ssh" / "known_hosts"
+        captured["known_hosts"] = projected.read_text(encoding="utf-8")
+        captured["known_hosts_mode"] = stat.S_IMODE(projected.stat().st_mode)
         captured["inventory"] = kwargs["inventory"]
         return SimpleNamespace(status="successful", rc=0)
 
@@ -256,6 +260,8 @@ def test_runner_gives_paramiko_the_run_scoped_known_hosts_home(
         "collect_interface_state.yml",
     )
 
-    assert captured["home"] == str(tmp_path)
+    assert Path(captured["home"]).name == "home"
+    assert captured["known_hosts"] == "hashed trusted host key\n"
+    assert captured["known_hosts_mode"] == 0o600
     target = captured["inventory"]["all"]["hosts"]["ncdp_target"]
     assert target["ansible_network_cli_ssh_type"] == "paramiko"

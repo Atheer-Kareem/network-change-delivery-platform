@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from network_change_delivery.ansible_adapter import (
     AnsibleRunnerCiscoAdapter,
     ProviderError,
@@ -20,9 +22,9 @@ from network_change_delivery.secrets import DeviceCredentials
 class MultiVendorAdapter:
     """Dispatch only the two explicitly supported platform implementations."""
 
-    def __init__(self) -> None:
-        self._cisco = AnsibleRunnerCiscoAdapter()
-        self._junos = JunosPyEZAdapter()
+    def __init__(self, *, known_hosts: Path | None = None) -> None:
+        self._cisco = AnsibleRunnerCiscoAdapter(known_hosts=known_hosts)
+        self._junos = JunosPyEZAdapter(known_hosts=known_hosts)
 
     def collect(
         self,

@@ -397,9 +397,31 @@ def test_comment_only_retry_authorization_changes_blob_not_request(
         f"{third_retry_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}",
     )
 
-    assert first_retry == second_retry == third_retry == original
+    path.write_text("# retry-authorization: 4\n" + REQUEST_YAML, encoding="utf-8")
+    git(tmp_path, "add", LIVE_DEPLOYMENT_REQUEST.as_posix())
+    git(tmp_path, "commit", "-qm", "authorize fourth retry")
+    fourth_retry_commit = git(tmp_path, "rev-parse", "HEAD")
+    fourth_retry = load_live_deployment_request_at_commit(
+        fourth_retry_commit, root=tmp_path
+    )
+    fourth_retry_blob = git(
+        tmp_path,
+        "rev-parse",
+        f"{fourth_retry_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}",
+    )
+
+    assert first_retry == second_retry == third_retry == fourth_retry == original
     assert (
-        len({original_blob, first_retry_blob, second_retry_blob, third_retry_blob}) == 4
+        len(
+            {
+                original_blob,
+                first_retry_blob,
+                second_retry_blob,
+                third_retry_blob,
+                fourth_retry_blob,
+            }
+        )
+        == 5
     )
 
 

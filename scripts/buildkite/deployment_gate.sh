@@ -61,6 +61,13 @@ else
 fi
 uv run ncdp verify-buildkite-live-request --promotion "$promotion"
 uv run ncdp verify-deployment-ansible-runtime
+observation_dir="$tmpdir/observation"
+mkdir -m 0700 "$observation_dir"
+pre_observation="$observation_dir/pre.json"
+post_observation="$observation_dir/post.json"
+uv run ncdp audit capture-buildkite-configuration \
+  --promotion "$promotion" \
+  --output "$pre_observation"
 report_relative="deployment-evidence/change-record.json"
 report="$tmpdir/$report_relative"
 set +e
@@ -72,6 +79,12 @@ buildkite-agent oidc request-token \
     --promotion "$promotion" \
     --report-json "$report"
 deployment_status=$?
+set -e
+set +e
+uv run ncdp audit capture-buildkite-configuration \
+  --promotion "$promotion" \
+  --output "$post_observation"
+post_observation_status=$?
 set -e
 upload_status=1
 if [[ -f "$report" && ! -L "$report" ]]; then
@@ -93,11 +106,25 @@ if [[ -f "$report" && ! -L "$report" ]]; then
   audit_status=$?
   set -e
 fi
+observation_status=1
+if [[ "$audit_status" -eq 0 \
+  && -f "$pre_observation" && ! -L "$pre_observation" \
+  && -f "$post_observation" && ! -L "$post_observation" ]]; then
+  set +e
+  uv run ncdp audit persist-buildkite-configuration-observation \
+    --promotion "$promotion" \
+    --pre-observation "$pre_observation" \
+    --post-observation "$post_observation"
+  observation_status=$?
+  set -e
+fi
 if [[ "$deployment_status" -ne 0 ]]; then
   if [[ -f "$report" && ! -L "$report" ]]; then
     echo "deployment failed; inspect the uploaded typed ChangeRecord evidence"
     if [[ "$audit_status" -ne 0 ]]; then
       echo "durable audit persistence also failed; deployment outcome remains primary"
+    elif [[ "$observation_status" -ne 0 ]]; then
+      echo "configuration-observation persistence also failed; deployment outcome remains primary"
     fi
   else
     echo "deployment failed before typed ChangeRecord evidence was produced"
@@ -113,8 +140,18 @@ if [[ "$audit_status" -ne 0 ]]; then
   echo "deployment will not be retried or recovered for an audit-only failure" >&2
   exit 1
 fi
+if [[ "$observation_status" -ne 0 ]]; then
+  echo "device outcome occurred, but durable observation persistence failed" >&2
+  echo "deployment will not be retried or recovered for an observation-only failure" >&2
+  exit 1
+fi
 if [[ "$upload_status" -ne 0 ]]; then
   echo "typed ChangeRecord upload failed after durable audit persistence" >&2
   exit "$upload_status"
+fi
+if [[ "$post_observation_status" -ne 0 ]]; then
+  echo "device outcome and evidence were persisted, but post-observation was unsuccessful" >&2
+  echo "deployment will not be retried" >&2
+  exit "$post_observation_status"
 fi
 echo "device write executed: YES"

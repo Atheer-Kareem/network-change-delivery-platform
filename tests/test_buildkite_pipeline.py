@@ -316,6 +316,13 @@ def test_scripts_static_contract() -> None:
     )
     assert "--skip-redaction" not in gate
     assert "set -x" not in gate
+    pre = gate.index("capture-buildkite-configuration")
+    deploy = gate.index("deploy-buildkite-promotion")
+    post = gate.index("capture-buildkite-configuration", pre + 1)
+    parent = gate.index("--change-record")
+    child = gate.index("persist-buildkite-configuration-observation")
+    assert pre < deploy < post < parent < child
+    assert gate.count("capture-buildkite-configuration") == 2
     assert gate.index("verify_commit.sh") < gate.index("oidc request-token")
     assert 'retry_count="${BUILDKITE_RETRY_COUNT:-0}"' in gate
     assert "retried deployment job is not authorized" in gate

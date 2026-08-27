@@ -55,6 +55,17 @@ failed or was ambiguous, its typed outcome remains primary and both failures
 are reported. If execution fails before a typed `ChangeRecord` exists, the gate
 does not fabricate a durable execution audit record.
 
+Increment 10C-7A adds metadata-only configuration bracketing inside the same
+no-retry deploy-gate job. After all existing authorization checks, a successful
+PRE observation is required before the device command. POST is attempted as
+soon as that command returns, including on a nonzero result. Canonical private
+attempt files exist only below the job temporary directory. After typed
+ChangeRecord handling, the immutable parent audit is persisted first; only a
+verified parent permits append-only `ConfigurationObservationRecord`
+persistence. Metadata failure never retries or rolls back the device attempt,
+and the original device outcome remains primary. Real acceptance is pending a
+new merged-main build in 10C-7B.
+
 7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
 mutation. This foundation has no active live request and has not performed or

@@ -8,10 +8,14 @@ from uuid import UUID
 
 import pytest
 from test_audit_store import make_store, plan, record
+from test_configuration_observation_store import linked_record
 
 import network_change_delivery.cli as cli_module
 from network_change_delivery.audit import AuditFinalOutcome, BuildkiteCorrelation
 from network_change_delivery.audit_store import AuditStore, AuditStoreError
+from network_change_delivery.configuration_observation_store import (
+    ConfigurationObservationStore,
+)
 
 
 def populated_store(tmp_path: Path, count: int = 2) -> tuple[AuditStore, list[UUID]]:
@@ -170,3 +174,38 @@ def test_temporary_entries_are_ignored_but_symlinks_fail_closed(tmp_path: Path) 
     link.symlink_to(target)
     with pytest.raises(AuditStoreError, match="unexpected"):
         store.iter_records()
+
+
+def test_find_observations_is_parent_scoped_bounded_and_metadata_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    audit_store, ids = populated_store(tmp_path, 1)
+    cli_root(monkeypatch, audit_store)
+    store = ConfigurationObservationStore(
+        audit_store.root, checkout=audit_store.root.parent / "checkout"
+    )
+    parent = store.read_record(ids[0])
+    child = linked_record(parent)
+    store.persist_observation_record(child)
+
+    assert (
+        cli_module.main(
+            [
+                "audit",
+                "find-observations",
+                "--store-root",
+                str(store.root),
+                "--parent-record-id",
+                str(parent.record_id),
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload) == 1
+    assert payload[0]["parent_record_id"] == str(parent.record_id)
+    assert payload[0]["observation_record_id"] == str(child.observation_record_id)
+    assert payload[0]["pre_revision"] is None
+    assert payload[0]["post_revision"]["commit"] == "b" * 40
+    forbidden = {"configuration", "diff", "error", "credentials"}
+    assert forbidden.isdisjoint(payload[0])

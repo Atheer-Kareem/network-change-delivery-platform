@@ -42,6 +42,14 @@ values exactly. The separation is promotion records → human authorizes → gat
 verifies. Automated metadata is evidence, not authorization, and the gate still
 depends on the human block.
 
+For a commit-bound live request, the same approved `deploy-gate` job captures a
+successful Oxidized PRE observation, performs the single device attempt, and
+then attempts POST before slower artifact and audit work. It has retry count
+zero. The durable observation child is written only after the immutable parent
+audit exists and is revalidated from the current Buildkite job identity;
+temporal bracketing remains `NOT_PROVEN` causality. PR builds cannot reach this
+main-only protected boundary.
+
 The deployment gate reads one bounded Buildkite OIDC JWT from stdin and submits
 it to OpenBao's fixed JWT role. The main, non-PR job requests that JWT with
 audience `urn:ncdp:openbao:deploy`,

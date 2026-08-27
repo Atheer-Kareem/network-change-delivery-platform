@@ -1,4 +1,4 @@
-"""Contracts for the repository-owned 7C single-device promotion input."""
+"""Contracts for the repository-owned 10C-7 single-device promotion input."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ INPUTS = ROOT / "deployments/live/promotion"
 PLAN = INPUTS / "plan.json"
 POLICY = INPUTS / "policy.yaml"
 BASELINE = INPUTS / "baseline"
-PLAN_DIGEST = "sha256:088ce8012958f3eb6fd8165d2a65b9d090d7a9a41e00386c9c914dfc29fc19eb"
+PLAN_DIGEST = "sha256:1df5d5a598cd292f36b67ad18fd841f90932922a642ae88d03f11cc4371648f1"
 
 
 class PassingProvider:
@@ -101,9 +101,11 @@ def test_active_plan_is_single_device_digest_verified_and_exactly_provenanced() 
 def test_sanitized_baseline_contains_exact_plan_precondition() -> None:
     plan = live_plan()
     core = (BASELINE / "configs/core-02.cfg").read_text(encoding="utf-8")
-    assert (
-        f"interface {plan.interface}\n description {plan.current_description}\n" in core
-    )
+    assert plan.current_description is None
+    interface_block = core.split(f"interface {plan.interface}\n", 1)[1].split(
+        "interface ", 1
+    )[0]
+    assert " description " not in interface_block
     assert plan.desired_description not in core
 
 

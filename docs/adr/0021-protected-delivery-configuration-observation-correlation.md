@@ -60,6 +60,19 @@ trust, and readiness must be established after merge and before explicit
 approval of only that new main build. Final live correlation acceptance remains
 pending.
 
+Build #154 passed authorization, runtime, realization trust, and schema-2 PRE
+readiness, then submitted exactly one successful Cisco PRE collection. The
+fresh realization created a legitimate third private-history commit one second
+after upstream `node.last.end`, within ADR 0020's accepted serialization
+tolerance. Durable conversion incorrectly used that upstream end as observation
+`completed_at`, so schema validation rejected the later Git timestamp before
+the device-capable OIDC request or deployment. No device write, parent audit,
+or observation child occurred, and Build #154 is permanently non-retriable.
+Durable completion now means the later metadata-settlement boundary; validation
+remains strict and the five-second chronology bound is unchanged. Comment-only
+retry authorization 3 prepares another distinct commit-bound attempt with the
+same immutable plan.
+
 ## Consequences
 
 10C-7A can prove orchestration, conversion, correlation, privacy, persistence,

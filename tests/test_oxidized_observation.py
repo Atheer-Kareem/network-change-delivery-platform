@@ -146,7 +146,7 @@ def test_delayed_new_revision_outside_job_window_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     existing = revision()
-    late = revision("c", when=NOW + timedelta(minutes=1))
+    late = revision("c", when=NOW + timedelta(seconds=8))
     settlement_clock(monkeypatch, [0.0, 1.0])
     with pytest.raises(OxidizedObservationError, match="chronology rejected"):
         observe_configuration(
@@ -154,6 +154,24 @@ def test_delayed_new_revision_outside_job_window_fails_closed(
             History([existing, existing, late]),
             "netbox-device-1",
         )
+
+
+def test_new_revision_at_serialization_tolerance_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    existing = revision()
+    accepted = revision("c", when=NOW + timedelta(seconds=7))
+    settlement_clock(monkeypatch, [0.0, 1.0])
+
+    result = observe_configuration(
+        Controller(collection()),
+        History([existing, existing, accepted]),
+        "netbox-device-1",
+    )
+
+    assert result.after == accepted
+    assert result.revision_changed is True
+    assert result.settled_at >= accepted.collected_at
 
 
 def test_existing_path_disappearance_fails_closed() -> None:

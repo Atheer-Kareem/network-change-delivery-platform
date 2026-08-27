@@ -384,8 +384,23 @@ def test_comment_only_retry_authorization_changes_blob_not_request(
         f"{second_retry_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}",
     )
 
-    assert first_retry == second_retry == original
-    assert len({original_blob, first_retry_blob, second_retry_blob}) == 3
+    path.write_text("# retry-authorization: 3\n" + REQUEST_YAML, encoding="utf-8")
+    git(tmp_path, "add", LIVE_DEPLOYMENT_REQUEST.as_posix())
+    git(tmp_path, "commit", "-qm", "authorize third retry")
+    third_retry_commit = git(tmp_path, "rev-parse", "HEAD")
+    third_retry = load_live_deployment_request_at_commit(
+        third_retry_commit, root=tmp_path
+    )
+    third_retry_blob = git(
+        tmp_path,
+        "rev-parse",
+        f"{third_retry_commit}:{LIVE_DEPLOYMENT_REQUEST.as_posix()}",
+    )
+
+    assert first_retry == second_retry == third_retry == original
+    assert (
+        len({original_blob, first_retry_blob, second_retry_blob, third_retry_blob}) == 4
+    )
 
 
 def test_committed_request_requires_exact_lowercase_commit() -> None:

@@ -41,7 +41,13 @@ Oxidized 0.37.0 publishes terminal `node.last` metadata before its synchronous
 `output.store` processing. A pre-existing identical path revision therefore
 settles for the complete bounded metadata window before it is classified as
 unchanged; a delayed changed path revision is accepted only after the same
-chronology checks.
+chronology checks. The transient observation records a separate metadata-
+settlement completion after that path-scoped decision. Durable observation
+`completed_at` means this settlement boundary, not the earlier upstream
+`node.last.end`; it is never earlier than either successful upstream completion
+or the accepted Git storage timestamp. The existing five-second serialization
+tolerance remains the only allowance for a new revision after upstream
+completion.
 
 Docker Desktop presents host bind mounts as root-owned inside its Linux VM even
 when the container runs as UID/GID 501:20. Rugged/libgit2 therefore receives a

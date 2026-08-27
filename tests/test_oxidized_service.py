@@ -119,3 +119,10 @@ def test_missing_docker_inspection_is_treated_as_absent(
         lambda *_args, **_kwargs: "[]",
     )
     assert _inspect() is None
+
+
+def test_reconciler_does_not_duplicate_fixed_docker_executable() -> None:
+    source = (
+        Path(__file__).parents[1] / "src/network_change_delivery/oxidized_reconciler.py"
+    ).read_text()
+    assert "_docker(*arguments[1:])" in source

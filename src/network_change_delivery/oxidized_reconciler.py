@@ -182,14 +182,13 @@ def reconcile() -> str:
     else:
         if inspect is not None:
             _remove_owned(inspect, image_id)
-        _docker(
-            *docker_run_arguments(
-                image_id=image_id,
-                config_path=CONFIG_ROOT / "config",
-                source_path=result.path,
-                history_path=history,
-            )
+        arguments = docker_run_arguments(
+            image_id=image_id,
+            config_path=CONFIG_ROOT / "config",
+            source_path=result.path,
+            history_path=history,
         )
+        _docker(*arguments[1:])
         inspect = _inspect()
         if inspect is None:
             raise OxidizedServiceError("Oxidized container unavailable")

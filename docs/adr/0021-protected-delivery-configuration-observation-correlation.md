@@ -73,6 +73,18 @@ remains strict and the five-second chronology bound is unchanged. Comment-only
 retry authorization 3 prepares another distinct commit-bound attempt with the
 same immutable plan.
 
+Build #156 passed PRE and produced a valid fresh-realization Cisco revision.
+The device-capable command then resolved fresh NetBox identity and retrieved
+its one-use OpenBao credential, but its read-only device-state collection used
+the generic user `known_hosts` instead of the realization-anchored trust that
+authorized PRE. The stale generic key was rejected before the executor ran.
+The typed `ChangeRecord` is therefore `BLOCKED`, POST is valid and unchanged,
+and the immutable parent and temporally bracketed child were persisted without
+a device write. Protected deployment now validates the dedicated trust and
+projects its exact `known_hosts` into a private run-scoped Ansible home. Build
+#156 is permanently non-retriable; comment-only retry authorization 4 prepares
+the next semantically identical attempt.
+
 ## Consequences
 
 10C-7A can prove orchestration, conversion, correlation, privacy, persistence,

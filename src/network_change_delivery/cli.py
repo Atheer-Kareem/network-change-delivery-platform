@@ -73,6 +73,11 @@ from network_change_delivery.models import (
     FleetMemberClassification,
     InterfaceDescriptionIntent,
 )
+from network_change_delivery.oxidized_host_trust import (
+    DEFAULT_TRUST_ROOT,
+    KNOWN_HOSTS_NAME,
+    validate_host_trust,
+)
 from network_change_delivery.plan_assurance import (
     BatfishAssurancePolicy,
     PlanAssuranceError,
@@ -373,10 +378,11 @@ def _run_deploy_buildkite_promotion(arguments: argparse.Namespace) -> int:
     _manifest, plan, _request = _verified_live_request(arguments.promotion, context)
     if arguments.report_json.exists() or arguments.report_json.is_symlink():
         raise OSError("deployment evidence path already exists")
+    validate_host_trust(DEFAULT_TRUST_ROOT)
     jwt = read_buildkite_oidc_jwt(sys.stdin)
     inventory = NetBoxInventoryProvider()
     secrets = BuildkiteOpenBaoDeploymentSecretProvider(jwt, context)
-    adapter = MultiVendorAdapter()
+    adapter = MultiVendorAdapter(known_hosts=DEFAULT_TRUST_ROOT / KNOWN_HOSTS_NAME)
     record = deploy_plan(
         plan,
         plan.digest,

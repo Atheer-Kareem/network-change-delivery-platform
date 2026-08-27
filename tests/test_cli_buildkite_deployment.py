@@ -81,6 +81,7 @@ def test_deploy_command_reads_jwt_from_stdin_reuses_deploy_plan_and_writes_evide
         lambda _promotion, _context: (object(), approved, request),
     )
     observed: dict[str, object] = {}
+    monkeypatch.setattr(cli_module, "validate_host_trust", lambda _root: object())
 
     class Inventory:
         pass
@@ -91,7 +92,8 @@ def test_deploy_command_reads_jwt_from_stdin_reuses_deploy_plan_and_writes_evide
             observed["pipeline"] = context.pipeline_id
 
     class Adapter:
-        pass
+        def __init__(self, *, known_hosts):
+            observed["known_hosts"] = known_hosts
 
     class Record:
         final_outcome = FinalOutcome.SUCCEEDED
@@ -133,10 +135,47 @@ def test_deploy_command_reads_jwt_from_stdin_reuses_deploy_plan_and_writes_evide
     assert observed["plan"] is approved
     assert observed["digest"] == approved.digest
     assert observed["same_adapter"] is True
+    assert observed["known_hosts"] == (
+        cli_module.DEFAULT_TRUST_ROOT / cli_module.KNOWN_HOSTS_NAME
+    )
     assert stat.S_IMODE(report.stat().st_mode) == 0o600
     output = capsys.readouterr()
     assert JWT not in output.out + output.err
     assert "sensitive-netbox-token" not in output.out + output.err
+
+
+def test_deploy_command_rejects_missing_realization_trust_before_consuming_jwt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environment(monkeypatch)
+    approved = promoted_plan()
+    request = request_for(approved)
+    monkeypatch.setattr(
+        cli_module,
+        "_verified_live_request",
+        lambda _promotion, _context: (object(), approved, request),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "validate_host_trust",
+        lambda _root: (_ for _ in ()).throw(ValueError("trust rejected")),
+    )
+    stream = StringIO(JWT + "\n")
+    monkeypatch.setattr(sys, "stdin", stream)
+
+    with pytest.raises(SystemExit) as error:
+        cli_module.main(
+            [
+                "deploy-buildkite-promotion",
+                "--promotion",
+                str(tmp_path / "promotion"),
+                "--report-json",
+                str(tmp_path / "record.json"),
+            ]
+        )
+
+    assert error.value.code == 2
+    assert stream.tell() == 0
 
 
 def test_verify_live_request_uses_no_inventory_secret_or_adapter(

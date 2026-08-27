@@ -333,6 +333,14 @@ class AnsibleRunnerCiscoAdapter:
         with tempfile.TemporaryDirectory(prefix="ncdp-runner-") as directory:
             private_data = Path(directory)
             private_data.chmod(0o700)
+            runner_home: Path | None = None
+            if self._known_hosts is not None:
+                runner_home = private_data / "home"
+                ssh_directory = runner_home / ".ssh"
+                ssh_directory.mkdir(parents=True, mode=0o700)
+                projected_known_hosts = ssh_directory / "known_hosts"
+                projected_known_hosts.write_bytes(self._known_hosts.read_bytes())
+                projected_known_hosts.chmod(0o600)
             result = ansible_runner.run(
                 private_data_dir=str(private_data),
                 project_dir=str(self._root / "ansible"),
@@ -349,12 +357,7 @@ class AnsibleRunnerCiscoAdapter:
                     "ANSIBLE_PERSISTENT_CONTROL_PATH_DIR": str(private_data / "pc"),
                     "NCDP_DEVICE_USERNAME": credentials.username,
                     "NCDP_DEVICE_PASSWORD": credentials.password,
-                    **(
-                        {"HOME": str(self._known_hosts.parents[1])}
-                        if self._known_hosts is not None
-                        and self._known_hosts.parent.name == ".ssh"
-                        else {}
-                    ),
+                    **({"HOME": str(runner_home)} if runner_home is not None else {}),
                 },
                 event_handler=handle_event,
                 quiet=True,

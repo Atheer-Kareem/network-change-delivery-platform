@@ -97,6 +97,18 @@ deployment command, and no parent or child audit record was persisted. Build
 the bounded path-metadata settlement boundary; retry authorization 3 changes
 only the committed request blob for the next reviewed main build.
 
+Build #156 completed PRE and persisted a valid fresh-realization revision, then
+failed closed during deployment preflight device-state collection. The
+protected adapter still selected the generic user `known_hosts`, whose Cisco
+key was stale, rather than the realization-anchored trust already required by
+PRE. Fresh NetBox resolution and the one-use OpenBao credential boundary had
+succeeded, but the executor was never called and no configuration write
+occurred. POST was unchanged, and one immutable `BLOCKED` parent plus its valid
+`TEMPORALLY_BRACKETED`, `NOT_PROVEN` child were persisted. Protected deployment
+now validates the dedicated CML trust and projects that exact file into a
+private run-scoped Ansible home. Build #156 is permanently non-retriable;
+retry authorization 4 changes only the request blob for a new reviewed build.
+
 7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
 unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
 mutation. This foundation has no active live request and has not performed or

@@ -150,7 +150,17 @@ Ordering may change when implementation evidence requires it.
     non-retriable. The corrected durable completion boundary and comment-only
     retry authorization 3 prepare another semantically identical attempt. Real
     acceptance remains pending fresh post-merge runtime preparation and
-    explicit approval of only that new main build.
+    explicit approval of only that new main build. Build #156 then completed
+    PRE, created a legitimate fourth private-history commit, and reached the
+    device-capable boundary. Fresh NetBox and one-use OpenBao resolution
+    succeeded, but read-only deployment preflight used a stale generic-user SSH
+    key instead of the accepted realization trust, so execution remained
+    unattempted and device writes remained zero. Its immutable `BLOCKED` parent
+    and successful CHANGED/UNCHANGED temporally bracketed child were persisted.
+    Protected deployment now projects validated realization trust into its
+    private Ansible runtime; retry authorization 4 prepares the next
+    semantically identical attempt. Real successful-write acceptance remains
+    pending.
 11. **Continuous observability:** independent metrics, dashboards, alerts, gNMI,
     SNMP, and reachability telemetry.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

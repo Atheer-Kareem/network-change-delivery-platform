@@ -37,6 +37,12 @@ never reads a blob or diff. An initial observation requires a revision;
 identical later observations may correctly reuse the same commit and blob.
 Repository HEAD is never substituted for node revision identity.
 
+Oxidized 0.37.0 publishes terminal `node.last` metadata before its synchronous
+`output.store` processing. A pre-existing identical path revision therefore
+settles for the complete bounded metadata window before it is classified as
+unchanged; a delayed changed path revision is accepted only after the same
+chronology checks.
+
 Docker Desktop presents host bind mounts as root-owned inside its Linux VM even
 when the container runs as UID/GID 501:20. Rugged/libgit2 therefore receives a
 dedicated read-only Git config whose sole `safe.directory` entry is

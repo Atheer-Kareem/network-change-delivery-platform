@@ -58,28 +58,52 @@ def observe_configuration(
     if collection.outcome is not CollectionOutcome.SUCCEEDED:
         raise OxidizedObservationError("Oxidized observation collection failed")
     deadline = time.monotonic() + REVISION_WAIT_SECONDS
-    after = history.latest_revision_or_none(node)
-    while after is None and time.monotonic() < deadline:
-        time.sleep(REVISION_POLL_SECONDS)
+    while True:
         after = history.latest_revision_or_none(node)
-    if after is None:
-        raise OxidizedObservationError("Oxidized observation revision unavailable")
-    changed = (
-        before is None or after.commit != before.commit or after.blob != before.blob
-    )
-    if changed and (
-        collection.upstream_started_at is None
-        or collection.upstream_ended_at is None
-        or after.collected_at < collection.requested_at - REVISION_CLOCK_TOLERANCE
-        or after.collected_at > collection.upstream_ended_at + REVISION_CLOCK_TOLERANCE
-    ):
-        raise OxidizedObservationError("Oxidized observation chronology rejected")
-    return OxidizedObservation(
-        collection=collection,
-        before=before,
-        after=after,
-        revision_changed=changed,
-    )
+        if after is None:
+            if before is not None:
+                raise OxidizedObservationError(
+                    "Oxidized observation revision unavailable"
+                )
+        else:
+            changed = (
+                before is None
+                or after.commit != before.commit
+                or after.blob != before.blob
+            )
+            if changed:
+                if (
+                    collection.upstream_started_at is None
+                    or collection.upstream_ended_at is None
+                    or after.collected_at
+                    < collection.requested_at - REVISION_CLOCK_TOLERANCE
+                    or after.collected_at
+                    > collection.upstream_ended_at + REVISION_CLOCK_TOLERANCE
+                ):
+                    raise OxidizedObservationError(
+                        "Oxidized observation chronology rejected"
+                    )
+                return OxidizedObservation(
+                    collection=collection,
+                    before=before,
+                    after=after,
+                    revision_changed=True,
+                )
+        # Oxidized 0.37.0 publishes terminal node.last before its synchronous
+        # output.store call. An existing identical path must therefore settle
+        # for the complete bounded window before it can mean unchanged.
+        if time.monotonic() >= deadline:
+            if after is None:
+                raise OxidizedObservationError(
+                    "Oxidized observation revision unavailable"
+                )
+            return OxidizedObservation(
+                collection=collection,
+                before=before,
+                after=after,
+                revision_changed=False,
+            )
+        time.sleep(REVISION_POLL_SECONDS)
 
 
 def _private_text(path: Path) -> str:

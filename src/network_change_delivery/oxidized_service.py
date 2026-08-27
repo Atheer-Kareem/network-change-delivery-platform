@@ -205,21 +205,27 @@ def docker_run_arguments(
         "--tmpfs",
         f"/tmp:rw,noexec,nosuid,nodev,size=16m,uid={os.getuid()},gid={os.getgid()}",
         "--tmpfs",
-        f"/run/ncdp:rw,noexec,nosuid,nodev,size=32m,mode=0700,uid={os.getuid()},gid={os.getgid()}",
+        f"/run/ncdp/home/.config/oxidized:rw,noexec,nosuid,nodev,size=32m,mode=0700,uid={os.getuid()},gid={os.getgid()}",
         "--mount",
-        f"type=bind,source={config_path},target=/run/ncdp/config,readonly",
+        "type=bind,"
+        f"source={config_path},"
+        "target=/run/ncdp/home/.config/oxidized/config,readonly",
         "--mount",
         f"type=bind,source={source_path},target=/run/ncdp/router.json,readonly",
         "--mount",
         f"type=bind,source={history_path},target=/var/lib/ncdp/config-history.git",
         image_id,
-        "--config-file",
-        "/run/ncdp/config",
     ]
 
 
 def verify_container_definition(
-    inspect: dict[str, object], image_id: str, *, require_running: bool = True
+    inspect: dict[str, object],
+    image_id: str,
+    *,
+    config_path: Path,
+    source_path: Path,
+    history_path: Path,
+    require_running: bool = True,
 ) -> str:
     try:
         config = inspect["Config"]
@@ -227,10 +233,25 @@ def verify_container_definition(
         state = inspect["State"]
         identifier = inspect["Id"]
         labels = config["Labels"]
+        mounts = inspect["Mounts"]
     except (KeyError, TypeError):
         raise OxidizedServiceError("Oxidized container definition rejected") from None
     environments = config.get("Env", [])
     bindings = host.get("PortBindings", {}).get("8888/tcp", [])
+    expected_mounts = {
+        (str(config_path), "/run/ncdp/home/.config/oxidized/config", False),
+        (str(source_path), "/run/ncdp/router.json", False),
+        (str(history_path), "/var/lib/ncdp/config-history.git", True),
+    }
+    actual_mounts = (
+        {
+            (item.get("Source"), item.get("Destination"), item.get("RW"))
+            for item in mounts
+            if isinstance(item, dict) and item.get("Type") == "bind"
+        }
+        if isinstance(mounts, list)
+        else set()
+    )
     if (
         labels.get("com.ncdp.service") != "oxidized"
         or config.get("Image") != image_id
@@ -242,6 +263,7 @@ def verify_container_definition(
         or "no-new-privileges" not in (host.get("SecurityOpt") or [])
         or host.get("RestartPolicy", {}).get("Name") not in {"", "no"}
         or bindings != [{"HostIp": "127.0.0.1", "HostPort": "8888"}]
+        or actual_mounts != expected_mounts
         or not isinstance(environments, list)
         or any(
             any(

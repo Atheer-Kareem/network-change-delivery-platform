@@ -86,7 +86,14 @@ def _inspect() -> dict[str, object] | None:
 
 
 def _remove_owned(inspect: dict[str, object], image_id: str) -> None:
-    verify_container_definition(inspect, image_id, require_running=False)
+    verify_container_definition(
+        inspect,
+        image_id,
+        config_path=CONFIG_ROOT / "config",
+        source_path=STATE_ROOT / "runtime" / "router.json",
+        history_path=STATE_ROOT / "config-history.git",
+        require_running=False,
+    )
     _docker("rm", "--force", CONTAINER_NAME)
 
 
@@ -163,7 +170,13 @@ def reconcile() -> str:
     )
     if inspect is not None and not restart:
         try:
-            container_id = verify_container_definition(inspect, image_id)
+            container_id = verify_container_definition(
+                inspect,
+                image_id,
+                config_path=CONFIG_ROOT / "config",
+                source_path=result.path,
+                history_path=history,
+            )
         except OxidizedServiceError:
             raise
     else:
@@ -180,7 +193,13 @@ def reconcile() -> str:
         inspect = _inspect()
         if inspect is None:
             raise OxidizedServiceError("Oxidized container unavailable")
-        container_id = verify_container_definition(inspect, image_id)
+        container_id = verify_container_definition(
+            inspect,
+            image_id,
+            config_path=CONFIG_ROOT / "config",
+            source_path=result.path,
+            history_path=history,
+        )
     _wait_nodes()
     publish_readiness(readiness, container_id)
     ambiguity.unlink(missing_ok=True)

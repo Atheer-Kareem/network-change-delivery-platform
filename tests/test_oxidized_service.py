@@ -57,7 +57,8 @@ def test_docker_contract_is_nonroot_private_and_minimal(tmp_path: Path) -> None:
     assert "no-new-privileges" in rendered
     assert "127.0.0.1:8888:8888" in rendered
     assert "--restart no" in rendered
-    assert "--config-file /run/ncdp/config" in rendered
+    assert "/run/ncdp/home/.config/oxidized/config,readonly" in rendered
+    assert "--config-file" not in rendered
     assert "docker.sock" not in rendered
     assert "AuditStore" not in rendered
     assert "operator" not in rendered

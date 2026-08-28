@@ -1,5 +1,16 @@
 # Buildkite protected live deployment
 
+## Current architecture transition
+
+ADR 0023 preserves every protected identity, immutable-plan, approval,
+PRE/write/POST, validation, no-retry, and evidence control in this document. It
+supersedes only the future use of a newly created disposable operator twin as
+the live endpoint. After the phased migration, staging validates separate
+NetBox homologs and the protected job independently verifies the already-running
+manually owned brownfield live realization of the canonical NetBox target. No
+ordinary deployment creates, starts, stops, or destroys CML infrastructure.
+Historical Build #150--#158 evidence below remains unchanged.
+
 7C-A adds a fail-closed, single-device composition boundary without changing the
 existing vendor execution lifecycle. Every protected-main build still performs
 the accepted zero-policy 7B identity exchange and exact promotion verification.

@@ -4,6 +4,12 @@ Increment 11A establishes an independent read-only observability plane for the
 automation management service selected by NetBox. It does not participate in
 planning, approval, deployment, recovery, or audit authority.
 
+ADR 0023 changes the eventual live realization from a disposable Terraform
+operator twin to the admitted, manually owned brownfield live/reference pair.
+Increment 11A remains paused while staging identity/address separation and live
+rehabilitation/onboarding are implemented. Its accepted runtime, target,
+readiness, source-binding, TSDB, and failure-diagnostic contracts remain valid.
+
 ## Data and authority flow
 
 ```text
@@ -22,11 +28,14 @@ private `host:port` only through `__param_target`; relabeling preserves
 connection acceptance.
 
 CML admission independently proves that those addresses belong to the current
-reviewed operator realization. Admission uses private CML API authority, exact
-lab/node UUIDs, definitions, images, BOOTED state, Day-0 identity markers,
-legacy-off state, and staging/fixed-address absence. These values do not become
-metric labels. No device credential, OpenBao device secret, SSH key, NETCONF
-session, CLI command, or Oxidized trust is involved.
+reviewed brownfield live realization. Admission uses private CML API authority,
+an explicit private onboarding record, exact lab/node UUIDs, definitions,
+images, BOOTED state, management identity markers, and exclusive ownership of
+the canonical live endpoints. After staging is isolated, staging may coexist;
+its existence alone is not a failure. A competing claim to canonical live
+identity, `.14`/`.20`, or protected-live authority fails closed. Realization
+values do not become metric labels. No device credential, OpenBao device
+secret, SSH key, NETCONF session, CLI command, or Oxidized trust is involved.
 
 ## Runtime and private state
 
@@ -70,7 +79,7 @@ RETIRED means probe scheduling is intentionally empty. FAILED and AMBIGUOUS use
 closed classifications and an empty target file; arbitrary provider responses
 are never persisted or logged.
 
-When no operator realization exists, reconciliation preserves Prometheus history
+When no admitted live realization exists, reconciliation preserves Prometheus history
 while publishing RETIRED empty discovery. NetBox or CML failure invalidates
 readiness and removes live targets. A changed realization cannot inherit prior
 authorization: a new admission and generation are required.
@@ -81,7 +90,13 @@ Retirement order is safety-significant:
 2. retire realization admission;
 3. publish and verify empty RETIRED discovery;
 4. verify Prometheus has no management-service targets;
-5. only then destroy the disposable CML operator twin.
+5. block further probes before any separately authorized manual live
+   infrastructure action.
+
+Successful final 11A acceptance does not invoke that retirement path. It leaves
+the brownfield live lab running, two targets ACTIVE, readiness valid, and the
+persistent TSDB intact. Retirement/failure behavior is tested without destroying
+the live network.
 
 ## Boundaries
 

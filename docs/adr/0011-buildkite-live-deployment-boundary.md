@@ -4,6 +4,10 @@
 
 Accepted for 7C-A implementation; external live acceptance pending.
 
+ADR 0023 clarifies the future live target as an explicitly admitted, manually
+owned brownfield CML realization of the canonical NetBox identity. This does not
+change this ADR's protected credential, plan, approval, or write controls.
+
 ## Decision
 
 The accepted zero-policy role `ncdp-buildkite-deploy` remains the ordinary-main

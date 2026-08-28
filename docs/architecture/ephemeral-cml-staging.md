@@ -2,6 +2,13 @@
 
 ## Scope
 
+ADR 0023 preserves the ephemeral lifecycle but changes its future authority
+inputs: staging will use separate NetBox identities, management addressing,
+credentials, and preferably an isolated management network. The current
+operator root, shared live addresses, and five-node/six-link topology remain
+migration-era implementation. Terraform has no authority over the brownfield
+live/reference lab.
+
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.
 Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary
 and thin operator entry point. Increment 8E-3 invokes that same boundary from a
@@ -16,6 +23,11 @@ Same-realization restart is not part of normal readiness; reboot behavior is an
 explicit scenario test.
 
 ## Terraform ownership
+
+The current layout below is historical implementation authority until Phase B
+of ADR 0023. The target layout has Terraform roots only for staging and explicit
+scenarios, with reusable structure centered on a two-router homolog pair. There
+will be no Terraform live root and no ordinary operator-twin environment.
 
 There are two root modules and one shared child module:
 
@@ -55,6 +67,12 @@ The fixed NetBox-authoritative management addresses `192.168.4.14` and
 `192.168.4.20` require one admitted CML staging run at a time. Initial Buildkite
 integration must use a dedicated staging concurrency group. Parallel twins are
 blocked until an isolated management-network and addressing design is accepted.
+
+ADR 0023 supersedes this shared-live-address design after Phase B. Staging then
+uses separate stable NetBox objects and separate addresses. A dedicated
+isolated staging management network is preferred; distinct addresses on the
+existing reachable fabric are the explicit fallback. No subnet or connector is
+selected until read-only feasibility and capacity evidence are accepted.
 
 ## State lifecycle and secret boundary
 

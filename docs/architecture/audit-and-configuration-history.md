@@ -428,6 +428,14 @@ publication remain disabled in 10C-5.
 
 ### Strict live observation and host trust
 
+ADR 0023 changes the future realization prerequisite from Terraform ownership
+and blanket staging absence to explicit admission of the manually owned
+brownfield live realization. Separate staging may coexist once it has distinct
+identity and addressing. Strict host-key verification, private chronology,
+stable NetBox source identity, readiness binding, and invalidation plus trust
+renewal after manual node replacement remain unchanged. The paragraph below
+records the accepted Increment 10C-6 disposable-realization procedure.
+
 Increment 10C-6 explicitly overrides Oxidized 0.37.0's insecure SSH and Telnet
 defaults: input is SSH only, debug is false, secure is true, and Net::SSH resolves
 host verification to `:always`. A dedicated private known-host directory is

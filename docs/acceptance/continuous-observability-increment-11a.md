@@ -109,26 +109,32 @@ readiness publication and verification, and target retirement. Those components
 receive no device credential and perform no device authentication, CLI or RPC
 command, configuration read, or device write.
 
-ADR 0013 separately permits the operator CML infrastructure lifecycle to
-retrieve the exact Cisco and Junos credentials freshly from OpenBao for its
-minimum Day-0 management bootstrap. Those reads are infrastructure
-initialization, not observability credential use or NCDP-managed intent. Final
-evidence reports each operator-wrapper invocation separately, including its
-bootstrap/source-login operations and the two reviewed device-secret
-materializations performed by `_environment()`. Status evidence should use
-credential-free CML, Terraform-state, or read-only inspection paths instead of
-unnecessarily invoking that wrapper. Bootstrap values remain excluded from
-Prometheus, Blackbox, metrics, labels, logs, and acceptance evidence.
+ADR 0013 separately permitted the historical operator CML lifecycle to retrieve
+the Cisco and Junos credentials for minimum Day-0 bootstrap. The retained live
+attempt history above accounts for those infrastructure reads separately from
+observability. ADR 0024 final acceptance uses the already-running `NCDP Live`
+realization and therefore performs no CML creation or Day-0 credential read.
+Bootstrap values remain excluded from Prometheus, Blackbox, metrics, labels,
+logs, and acceptance evidence.
 
 ## Pending live acceptance
 
-After the implementation PR is merged, the operator must install/update the
-repository-independent runtime from that exact commit without starting devices.
-After independent staging/address collision admission, create a fresh exact
-13-resource operator twin, transition it to STARTED, and prove the exact BOOTED
-Cisco and Junos identities. Admit that realization, materialize the exact
-NetBox-owned targets, and allow normal launchd reconciliation to publish fresh
-readiness.
+After PR #80 is merged, the operator must install/update the
+repository-independent observability runtime from that exact merged-main commit.
+The final acceptance uses the already-running, manually owned persistent lab:
+
+- UUID `09605569-0468-4fc4-8684-beb5a1342b9c`;
+- title `NCDP Live`;
+- NetBox device 1 `core-02` at `192.168.4.14`, with the accepted CAT8000V
+  definition/image and BOOTED state; and
+- NetBox device 2 `edge-junos-01` at `192.168.4.20`, with the accepted vJunos
+  definition/image and BOOTED state.
+
+Read-only admission must verify those exact identities and reject any foreign
+active realization that claims `.14/.20`. A valid ephemeral staging lab at
+`.30/.40` may coexist and is never an observability target. Materialize the
+exact NetBox-owned TCP targets and allow normal launchd reconciliation to
+publish fresh ACTIVE readiness.
 
 Live acceptance requires repeated successful TCP probes for
 `netbox:dcim.device:1` on its derived SSH service and
@@ -138,13 +144,19 @@ container binding, interval reconciliation, and TSDB persistence. It must also
 prove zero device authentication, commands, configuration reads and writes by
 the observability plane; zero OpenBao device-secret reads by the observability
 plane; zero Oxidized collections/history mutation; and zero AuditStore mutation.
-ADR 0013 CML Day-0 bootstrap reads are permitted and accounted separately.
+The acceptance must also prove readiness freshness across normal reconciliation
+intervals and persistent Prometheus TSDB behavior. Successful final acceptance
+does not stop, destroy, or otherwise change `NCDP Live`, and does not retire the
+live targets. Safe retirement remains a separately testable capability: it may
+invalidate readiness, remove admission, publish an empty RETIRED generation,
+prove that no probes remain scheduled, and preserve historical TSDB data without
+stopping or destroying the persistent lab.
 
-Before destroying the twin, invalidate readiness, retire admission, publish an
-empty target generation, and prove no management probes remain scheduled.
-Destroy the exact 13-resource graph, independently prove fixed-address absence,
-and preserve historical Prometheus data. Only that complete evidence may mark:
+Only the complete evidence may mark:
 
 `11A ACCEPTANCE: PASS`
 
-This implementation PR does not claim live acceptance.
+The intended state after PASS is that `NCDP Live` remains running, Prometheus
+and Blackbox remain ACTIVE under normal reconciliation, and `.14/.20` remain
+the live targets. This stable state is the prerequisite for 11B. PR #80 does
+not itself claim final live acceptance.

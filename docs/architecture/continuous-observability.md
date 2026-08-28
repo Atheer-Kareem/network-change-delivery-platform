@@ -9,7 +9,7 @@ planning, approval, deployment, recovery, or audit authority.
 ```text
 NetBox managed population ─┐
                            ├─> bounded materializer ─> private file_sd targets
-CML operator admission ────┘                              │
+CML live admission ────────┘                              │
                                                           v
 Prometheus (stable NetBox labels) ─> Blackbox TCP connect ─> admitted endpoint
 ```
@@ -21,20 +21,14 @@ private `host:port` only through `__param_target`; relabeling preserves
 `instance="netbox:dcim.device:<id>"`. TCP success has no stronger meaning than
 connection acceptance.
 
-CML admission independently proves that those addresses belong to the current
-reviewed operator realization. Admission uses private CML API authority, exact
-lab/node UUIDs, definitions, images, BOOTED state, Day-0 identity markers,
-legacy-off state, and staging/fixed-address absence. These values do not become
-metric labels. No device credential, OpenBao device secret, SSH key, NETCONF
-session, CLI command, or Oxidized trust is involved.
-
-ADR 0024 establishes the persistent, manually owned `NCDP Live` two-router lab
-as the current live realization. The existing 11A realization-admission record
-and service mechanics were built for the earlier disposable operator twin and
-do not automatically authorize the renamed or topologically changed live lab.
-They require a fresh, separately reviewed live-realization admission before 11A
-can publish `.14`/`.20` targets for this realization. Ephemeral staging at
-`.30`/`.40` is never an observability target.
+CML admission independently proves that those addresses belong to exact lab
+UUID `09605569-0468-4fc4-8684-beb5a1342b9c`, titled `NCDP Live`, in running
+state. Admission uses private CML API authority, exact node UUIDs, definitions,
+images, BOOTED state, and stored Day-0 identity markers. A valid ephemeral
+`NCDP Staging ...` lab at `.30/.40` may coexist; every other active router
+realization is still inspected and rejected if it claims live `.14/.20`.
+These values do not become metric labels. No device credential, OpenBao device
+secret, SSH key, NETCONF session, CLI command, or Oxidized trust is involved.
 
 ## Runtime and private state
 
@@ -78,18 +72,22 @@ RETIRED means probe scheduling is intentionally empty. FAILED and AMBIGUOUS use
 closed classifications and an empty target file; arbitrary provider responses
 are never persisted or logged.
 
-When no operator realization exists, reconciliation preserves Prometheus history
-while publishing RETIRED empty discovery. NetBox or CML failure invalidates
-readiness and removes live targets. A changed realization cannot inherit prior
-authorization: a new admission and generation are required.
+When no admitted live realization exists, reconciliation preserves Prometheus
+history while publishing RETIRED empty discovery. NetBox or CML failure
+invalidates readiness and removes live targets. A changed realization cannot
+inherit prior authorization: a new admission and generation are required.
 
-Retirement order is safety-significant:
+Safe retirement remains independently testable and its order is
+safety-significant:
 
 1. invalidate readiness;
 2. retire realization admission;
 3. publish and verify empty RETIRED discovery;
 4. verify Prometheus has no management-service targets;
-5. only then destroy the disposable CML operator twin.
+5. verify durable TSDB history remains available.
+
+Successful final 11A acceptance does not retire these targets or stop
+`NCDP Live`; ACTIVE reconciliation is the intended steady state.
 
 ## Boundaries
 

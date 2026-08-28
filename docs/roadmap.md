@@ -172,8 +172,10 @@ Ordering may change when implementation evidence requires it.
     decomposed into bounded increments:
     - **11A — NetBox-bound management-service reachability:** persistent
       Prometheus and credential-free Blackbox TCP probes with stable NetBox
-      identity and realization-scoped CML admission. Implementation is prepared;
-      post-merge live CML acceptance remains pending.
+      identity and realization-scoped CML admission. Implementation exists, and
+      PR #80 establishes its final persistent `NCDP Live` prerequisite alongside
+      separate ephemeral staging. Final merged-main 11A acceptance against that
+      running `.14/.20` realization is next. 11B starts only after it passes.
     - **11B — dashboards and operator-only alerts:** bounded visualization,
       reachability/staleness/service-health rules, and no remediation authority.
     - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling

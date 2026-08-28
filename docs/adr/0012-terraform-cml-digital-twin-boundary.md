@@ -7,7 +7,10 @@ supersedes only this ADR's prohibition on credential-bearing Terraform/CML
 Day-0 configuration inside the personal CML digital twin; the historical
 rationale and all other authority boundaries remain accepted. ADR 0014
 supersedes the persistent operational staging-lifecycle assumption: normal CML
-staging now creates, validates, and destroys a fresh twin per run.
+staging now creates, validates, and destroys a fresh twin per run. ADR 0024
+supersedes this ADR's active three-router, shared-address coexistence, and
+stopped-legacy assumptions. The Increment 8 discovery and acceptance below
+remain historical evidence.
 
 ## Context
 
@@ -108,15 +111,16 @@ intent remain outside that exception.
 
 ## Consequences
 
-The accepted legacy lab remains deliberately STOPPED so it cannot conflict with
-stable management addresses. Personal-twin recreation uses the Day-0 boundary
-defined by ADR 0013, while NCDP continues to independently verify inventory
-identity, credential provenance, SSH host trust, platform, hostname, and
-expected topology. ADR 0014 makes those Terraform realizations ephemeral; no
-persistent Terraform twin currently owns a stable NetBox identity.
+Historically, the accepted legacy lab remained deliberately STOPPED so it could
+not conflict with the then-shared management addresses. ADR 0024 replaces that
+operating model: manually owned `NCDP Live` remains running on `.14/.20`, while
+ephemeral Terraform staging uses `.30/.40`. Personal-twin recreation continues
+to use the Day-0 boundary defined by ADR 0013, and NCDP still independently
+verifies inventory identity, credential provenance, SSH host trust, platform,
+hostname, and expected topology.
 
 Reset/recreate is proven on infrastructure Terraform owns from birth, beta
 provider risk stays bounded, CML UUIDs remain realization identifiers rather
-than NCDP inventory identities, and rollback remains clear while the accepted
-legacy lab exists. No Terraform implementation, CML change, or cutover is part
-of Increment 8A.
+than NCDP inventory identities. No Terraform implementation, CML change, or
+cutover was part of Increment 8A. Under ADR 0024, Terraform never imports,
+adopts, changes, or destroys the persistent live lab.

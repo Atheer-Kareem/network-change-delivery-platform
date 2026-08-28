@@ -3,6 +3,10 @@
 - Status: Accepted
 - Date: 2026-08-29
 
+The number 0023 is intentionally not reused. Historical ADR 0023 was accepted,
+later reverted by the explicit PR #66 baseline rollback, and remains available
+in Git history only.
+
 ## Context
 
 The personal lab needs one continuously available live environment and one

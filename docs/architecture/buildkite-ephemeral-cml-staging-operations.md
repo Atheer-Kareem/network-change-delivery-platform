@@ -71,6 +71,12 @@ authority. It owns the run state path and applies only the exact saved plan that
 passed trusted structural parsing. B3-2B owns installation from exact clean
 merged main; B4 owns the later hook cutover and re-enable.
 
+The protected OIDC request is fixed to audience
+`urn:ncdp:openbao:staging`, lifetime 300 seconds, `pipeline_id` as the subject
+claim, and explicit `build_id`. No caller can select these values. Protected CML
+discovery follows the proven 2.10 API: the lab collection returns UUID strings,
+and each exact lab detail is read separately for identity/title validation.
+
 Historically, the job requests one five-minute Buildkite JWT with audience
 `urn:ncdp:openbao:staging`, immutable pipeline UUID in `sub`, and explicit
 `build_id`. The application validates pipeline, build, commit, branch, step,

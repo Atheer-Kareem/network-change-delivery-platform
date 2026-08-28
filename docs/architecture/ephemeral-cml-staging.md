@@ -121,13 +121,16 @@ The manifest binds staging devices 6/7 and homologs 1/2, `.30/.31`, exact
 OpenBao roles/references, System Bridge and image definitions, the ten-address
 Terraform graph, source commit, and per-file bundle digests. The staging
 resolver reads devices by stable ID and validates exact status, role, platform,
-interface, primary IP, environment, homolog, and tag absence; the live
+matching homolog device type, interface, primary IP, environment, an exactly
+empty staging tag set, and unique reverse homolog mapping through bounded native
+custom-field queries; the live
 `NetBoxInventoryProvider` remains unchanged. Privileged Terraform uses only
 saved, mode-`0600` plans whose sanitized structural actions match the phase
 allowlist, then applies that exact plan.
 
-B3-2A does not install or activate this bundle. B3-2B must install the exact
-merged artifact and validate external authority while preserving the freeze.
+B3-2A does not create a runnable standing controller or install or activate a
+bundle. B3-2B must construct and verify the isolated executable runtime from
+exact merged authority and validate external authority while preserving the freeze.
 B4 separately owns command-hook cutover and agent re-enable.
 
 ## State lifecycle and secret boundary

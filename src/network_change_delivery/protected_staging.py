@@ -88,7 +88,13 @@ class CMLAuthority(BaseModel):
         parsed = urlparse(self.controller_url)
         if parsed.scheme != "https" or not parsed.hostname:
             raise ValueError("protected CML controller URL is invalid")
-        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        if (
+            parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+            or parsed.path not in {"", "/"}
+        ):
             raise ValueError("protected CML controller URL is invalid")
         if self.denied_lab_uuids != (BROWNFIELD_LAB_UUID,):
             raise ValueError("brownfield CML denial authority changed")
@@ -220,7 +226,6 @@ class ProtectedStagingInventoryResolver:
 
     _DEVICE_PATH = "/api/dcim/devices/{device_id}/"
     _INTERFACE_PATH = "/api/dcim/interfaces/"
-    _LIVE_TAGS = frozenset({"ncdp-managed", "ncdp-fleet", "ncdp-live"})
 
     def __init__(
         self,
@@ -257,7 +262,40 @@ class ProtectedStagingInventoryResolver:
         )
         if len({target.live_homolog_id for target in targets}) != 2:
             raise InventoryError("protected staging homolog mapping is ambiguous")
+        for authority in (self._manifest.cisco, self._manifest.junos):
+            self._validate_unique_reverse_homolog(authority)
         return targets
+
+    def _validate_unique_reverse_homolog(
+        self, authority: StagingTargetAuthority
+    ) -> None:
+        response = self._client.get(
+            self._DEVICE_PATH.removesuffix("{device_id}/"),
+            params={
+                "cf_ncdp_live_homolog": authority.live_homolog_id,
+                "limit": 2,
+            },
+        )
+        if response.status_code != 200:
+            raise InventoryError("protected staging reverse homolog unavailable")
+        try:
+            payload = response.json()
+        except ValueError:
+            raise InventoryError(
+                "protected staging reverse homolog response invalid"
+            ) from None
+        if not isinstance(payload, dict):
+            raise InventoryError("protected staging reverse homolog response invalid")
+        results = payload.get("results")
+        if (
+            payload.get("count") != 1
+            or payload.get("next") is not None
+            or not isinstance(results, list)
+            or len(results) != 1
+            or not isinstance(results[0], dict)
+            or results[0].get("id") != authority.device_id
+        ):
+            raise InventoryError("protected staging reverse homolog is ambiguous")
 
     def _device(self, device_id: int) -> dict[str, object]:
         response = self._client.get(self._DEVICE_PATH.format(device_id=device_id))
@@ -315,13 +353,8 @@ class ProtectedStagingInventoryResolver:
         if self._nested_value(device, "platform", "slug") != authority.platform_slug:
             raise InventoryError("protected staging device platform changed")
         tags = device.get("tags")
-        if not isinstance(tags, list) or any(
-            not isinstance(tag, Mapping) for tag in tags
-        ):
+        if not isinstance(tags, list) or tags:
             raise InventoryError("protected staging device tags invalid")
-        tag_slugs = {tag.get("slug") for tag in tags}
-        if tag_slugs & self._LIVE_TAGS:
-            raise InventoryError("protected staging device has live selector tag")
         fields = self._custom_fields(device)
         if fields.get("ncdp_environment") != authority.environment:
             raise InventoryError("protected staging environment changed")
@@ -331,10 +364,20 @@ class ProtectedStagingInventoryResolver:
         live_fields = self._custom_fields(live)
         if (
             live.get("name") != authority.live_homolog_name
+            or self._nested_value(live, "status", "value") != "active"
+            or self._nested_value(live, "platform", "slug") != authority.platform_slug
             or live_fields.get("ncdp_environment") != "live"
             or live_fields.get("ncdp_live_homolog") is not None
         ):
             raise InventoryError("protected live homolog authority changed")
+        staging_type = self._nested_value(device, "device_type", "id")
+        live_type = self._nested_value(live, "device_type", "id")
+        if (
+            not isinstance(staging_type, int)
+            or isinstance(staging_type, bool)
+            or staging_type != live_type
+        ):
+            raise InventoryError("protected staging device type changed")
         primary = self._nested_value(device, "primary_ip4", "address")
         try:
             host = str(ipaddress.IPv4Interface(str(primary)).ip)
@@ -356,7 +399,9 @@ class ProtectedStagingInventoryResolver:
             raise InventoryError(
                 "protected staging interface response invalid"
             ) from None
-        interfaces = result.get("results") if isinstance(result, dict) else None
+        if not isinstance(result, dict):
+            raise InventoryError("protected staging interface response invalid")
+        interfaces = result.get("results")
         if (
             response.status_code != 200
             or result.get("count") != 1
@@ -370,6 +415,12 @@ class ProtectedStagingInventoryResolver:
         interface_id = interfaces[0].get("id")
         if not isinstance(interface_id, int) or isinstance(interface_id, bool):
             raise InventoryError("protected staging interface identity invalid")
+        interface_device = interfaces[0].get("device")
+        if interface_device is not None and (
+            not isinstance(interface_device, Mapping)
+            or interface_device.get("id") != authority.device_id
+        ):
+            raise InventoryError("protected staging interface device changed")
         return ProtectedStagingTarget(
             device_id=authority.device_id,
             name=authority.name,
@@ -490,7 +541,9 @@ class ProtectedCMLClient:
             payload = response.json()
         except ValueError:
             raise ProtectedStagingError("protected CML authentication failed") from None
-        token = payload.get("token") if isinstance(payload, dict) else None
+        token = payload if isinstance(payload, str) else None
+        if isinstance(payload, dict):
+            token = payload.get("token")
         if not isinstance(token, str) or not token:
             raise ProtectedStagingError("protected CML authentication failed")
         self._token = token
@@ -508,14 +561,38 @@ class ProtectedCMLClient:
         except ValueError:
             raise ProtectedStagingError("protected CML lab admission failed") from None
         if not isinstance(payload, list) or any(
-            not isinstance(item, dict) for item in payload
+            not isinstance(item, str) for item in payload
         ):
             raise ProtectedStagingError("protected CML lab admission failed")
-        observations = []
-        for item in payload:
-            lab_id = item.get("id")
-            title = item.get("lab_title", item.get("title"))
-            if not isinstance(lab_id, str) or not isinstance(title, str):
+        if len(payload) != len(set(payload)):
+            raise ProtectedStagingError("protected CML lab admission failed")
+        observations: list[CMLLabObservation] = []
+        for lab_id in payload:
+            try:
+                UUID(lab_id)
+            except ValueError:
+                raise ProtectedStagingError(
+                    "protected CML lab admission failed"
+                ) from None
+            detail_response = self._client.get(
+                f"/api/v0/labs/{lab_id}",
+                headers={"Authorization": f"Bearer {self._token}"},
+            )
+            if detail_response.status_code != 200:
+                raise ProtectedStagingError("protected CML lab admission failed")
+            try:
+                detail = detail_response.json()
+            except ValueError:
+                raise ProtectedStagingError(
+                    "protected CML lab admission failed"
+                ) from None
+            if not isinstance(detail, dict):
+                raise ProtectedStagingError("protected CML lab admission failed")
+            returned_id = detail.get("id", detail.get("lab_id"))
+            if returned_id is not None and returned_id != lab_id:
+                raise ProtectedStagingError("protected CML lab admission failed")
+            title = detail.get("lab_title", detail.get("title"))
+            if not isinstance(title, str) or not title:
                 raise ProtectedStagingError("protected CML lab admission failed")
             observations.append(CMLLabObservation(lab_id, title))
         return tuple(observations)
@@ -538,6 +615,12 @@ def request_staging_oidc_jwt(runner: OIDCCommandRunner) -> BuildkiteOIDCJWT:
             "request-token",
             "--audience",
             "urn:ncdp:openbao:staging",
+            "--lifetime",
+            "300",
+            "--subject-claim",
+            "pipeline_id",
+            "--claim",
+            "build_id",
         )
     )
     return read_buildkite_oidc_jwt(StringIO(value))

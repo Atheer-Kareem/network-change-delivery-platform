@@ -40,6 +40,8 @@ manifest binds the exact ten Terraform addresses and lifecycle-only update
 address. It stores sensitive saved plans only under protected run state,
 validates their structural actions, and applies the exact admitted plan. The
 B3-2A repository content is installation source, not installed authority.
+It does not yet create a runnable isolated runtime; B3-2B must construct and
+verify that runtime from the exact accepted merged-main source before admission.
 
 ADR 0014 makes normal staging ephemeral: absent, fresh create, first boot,
 readiness and validation, sanitized evidence, complete destroy, then proven

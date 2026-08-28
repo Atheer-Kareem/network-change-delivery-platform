@@ -38,7 +38,12 @@ Manifest schema 1 rejects unknown fields and binds:
 The related NetBox object filter remains convenience metadata, not protected
 authorization. The independent resolver reads stable IDs 1/2/6/7 and validates
 exact identity, environment, homolog, status, role, platform, interface,
-primary IP, and absence of live selector tags. The normal live
+primary IP, matching device type, and an exactly empty staging tag collection.
+Live homologs must remain `active`, use the compatible platform, have
+environment `live`, and have no homolog value. For each live ID the resolver
+also issues a bounded native `cf_ncdp_live_homolog=<id>` query and requires one
+complete result containing only its accepted staging ID. Zero, duplicate,
+alternate, malformed, or paginated reverse mappings fail closed. The normal live
 `NetBoxInventoryProvider` is unchanged and is not weakened to admit `staged`
 devices.
 
@@ -51,8 +56,15 @@ and reference. IDs 1/2/3, arbitrary IDs, roles, and references fail closed. The
 administrative configurator now describes only the standing B2 roles/policies
 6/7; it was not executed and OpenBao was not mutated.
 
+The controller requests its in-memory Buildkite JWT with the exact accepted
+audience, 300-second lifetime, `pipeline_id` subject claim, and explicit
+`build_id` claim. These values are constants rather than caller inputs.
+
 The protected CML client accepts credentials only through protected controller
-configuration and keeps its minted bearer in memory. Admission rejects the
+configuration and keeps its minted bearer in memory. CML 2.10 discovery first
+requires `GET /api/v0/labs` to return only unique UUID strings, then reads each
+exact `/api/v0/labs/<uuid>` detail and validates identity and title. Dictionary
+or mixed lab lists and malformed details fail with sanitized errors. Admission rejects the
 brownfield lab, unexplained NCDP staging realizations, alternate endpoints,
 connector, or images. It never cleans an unknown or foreign lab.
 
@@ -74,18 +86,20 @@ and environment dumps are excluded.
 
 ## Installation and migration state
 
-The installer source requires a clean exact `main` checkout whose HEAD and
+The source-bundle installer contract requires a clean exact `main` checkout whose HEAD and
 `origin/main` match the authorized merged commit, copies only the reviewed
 controller/Terraform/bootstrap/runtime source to a new private external bundle,
 and writes per-file SHA-256 inventory plus the external manifest. Tests execute
 it only in temporary directories.
 
 Nothing was installed under staging-agent configuration, data, hook, or state
-paths in B3-2A. B3-2B must run the installer from the exact reviewed and
-Buildkite-passed merged commit, validate the standing reader and external
-configuration, and keep execution frozen. B4 separately owns agent-hook cutover
-and re-enable. The protected controller never imports or executes checkout
-Python, shell wrappers, or Terraform while privileged.
+paths in B3-2A, and no runnable standing protected controller exists. B3-2B
+must construct and verify the isolated executable runtime from the exact
+reviewed and Buildkite-passed merged commit before installation admission,
+validate the standing reader and external configuration, and keep execution
+frozen. B4 separately owns agent-hook cutover and re-enable. The protected
+controller never imports or executes checkout Python, shell wrappers, or
+Terraform while privileged.
 
 ## Verification and negative proof
 

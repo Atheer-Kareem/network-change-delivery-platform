@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
@@ -159,6 +160,7 @@ def netbox_device(device_id: int, **changes) -> dict[str, object]:
         "status": {"value": "staged" if staging else "active"},
         "role": {"slug": "ncdp-staging" if staging else "router"},
         "platform": {"slug": "cisco-ios-xe" if cisco else "juniper-junos"},
+        "device_type": {"id": 1 if cisco else 2},
         "primary_ip4": {"address": f"192.168.4.{30 if device_id == 6 else 31}/24"}
         if staging
         else {"address": f"192.168.4.{14 if device_id == 1 else 20}/24"},
@@ -176,6 +178,19 @@ def netbox_transport(overrides: dict[int, dict[str, object]] | None = None):
     overrides = overrides or {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            assert set(request.url.params) == {"cf_ncdp_live_homolog", "limit"}
+            assert request.url.params["limit"] == "2"
+            homolog_id = int(request.url.params["cf_ncdp_live_homolog"])
+            staging_id = homolog_id + 5
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "results": [netbox_device(staging_id)],
+                },
+            )
         if request.url.path.startswith("/api/dcim/devices/"):
             device_id = int(request.url.path.rstrip("/").split("/")[-1])
             return httpx.Response(
@@ -191,6 +206,7 @@ def netbox_transport(overrides: dict[int, dict[str, object]] | None = None):
                     {
                         "id": 9 if device_id == 6 else 10,
                         "name": "GigabitEthernet1" if device_id == 6 else "fxp0",
+                        "device": {"id": device_id},
                     }
                 ],
             },
@@ -225,7 +241,8 @@ def test_protected_resolver_accepts_exact_staging_pair() -> None:
         {"role": {"slug": "router"}},
         {"platform": {"slug": "juniper-junos"}},
         {"primary_ip4": {"address": "192.168.4.14/24"}},
-        {"tags": [{"slug": "ncdp-managed"}]},
+        {"tags": [{"slug": "unrelated"}]},
+        {"tags": ["malformed"]},
         {"custom_fields": {"ncdp_environment": None, "ncdp_live_homolog": {"id": 1}}},
         {"custom_fields": {"ncdp_environment": "live", "ncdp_live_homolog": {"id": 1}}},
         {
@@ -264,6 +281,16 @@ def test_protected_resolver_rejects_endpoint_identity_substitution() -> None:
 
 def test_protected_resolver_rejects_ambiguous_interface() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            homolog_id = int(request.url.params["cf_ncdp_live_homolog"])
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "results": [netbox_device(homolog_id + 5)],
+                },
+            )
         if request.url.path.startswith("/api/dcim/devices/"):
             device_id = int(request.url.path.rstrip("/").split("/")[-1])
             return httpx.Response(200, json=netbox_device(device_id))
@@ -273,6 +300,165 @@ def test_protected_resolver_rejects_ambiguous_interface() -> None:
         )
 
     with pytest.raises(InventoryError, match="ambiguous"):
+        ProtectedStagingInventoryResolver(
+            manifest(),
+            "https://netbox.example",
+            "reader",
+            transport=httpx.MockTransport(handler),
+        ).resolve()
+
+
+@pytest.mark.parametrize(
+    "live_change",
+    [
+        {"status": {"value": "staged"}},
+        {"platform": {"slug": "juniper-junos"}},
+        {"device_type": {"id": 999}},
+    ],
+)
+def test_protected_resolver_rejects_incompatible_live_homolog(live_change) -> None:
+    with pytest.raises(InventoryError, match=r"homolog|device type"):
+        ProtectedStagingInventoryResolver(
+            manifest(),
+            "https://netbox.example",
+            "reader",
+            transport=netbox_transport({1: netbox_device(1, **live_change)}),
+        ).resolve()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"count": 0, "next": None, "results": []},
+        {
+            "count": 2,
+            "next": None,
+            "results": [netbox_device(6), netbox_device(7)],
+        },
+        {"count": 1, "next": None, "results": [netbox_device(7)]},
+        {"count": 1, "next": "next", "results": [netbox_device(6)]},
+        [netbox_device(6)],
+    ],
+)
+def test_protected_resolver_rejects_invalid_reverse_mapping(payload) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            return httpx.Response(200, json=payload)
+        if request.url.path.startswith("/api/dcim/devices/"):
+            device_id = int(request.url.path.rstrip("/").split("/")[-1])
+            return httpx.Response(200, json=netbox_device(device_id))
+        device_id = int(request.url.params["device_id"])
+        return httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "next": None,
+                "results": [
+                    {
+                        "id": 9,
+                        "name": "GigabitEthernet1" if device_id == 6 else "fxp0",
+                        "device": {"id": device_id},
+                    }
+                ],
+            },
+        )
+
+    with pytest.raises(InventoryError, match="reverse homolog"):
+        ProtectedStagingInventoryResolver(
+            manifest(),
+            "https://netbox.example",
+            "reader",
+            transport=httpx.MockTransport(handler),
+        ).resolve()
+
+
+def test_protected_resolver_rejects_duplicate_reverse_mapping_for_live_two() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            homolog_id = int(request.url.params["cf_ncdp_live_homolog"])
+            results = [{"id": 6}] if homolog_id == 1 else [{"id": 7}, {"id": 99}]
+            return httpx.Response(
+                200,
+                json={"count": len(results), "next": None, "results": results},
+            )
+        if request.url.path.startswith("/api/dcim/devices/"):
+            device_id = int(request.url.path.rstrip("/").split("/")[-1])
+            return httpx.Response(200, json=netbox_device(device_id))
+        device_id = int(request.url.params["device_id"])
+        return httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "next": None,
+                "results": [
+                    {
+                        "id": 9 if device_id == 6 else 10,
+                        "name": "GigabitEthernet1" if device_id == 6 else "fxp0",
+                        "device": {"id": device_id},
+                    }
+                ],
+            },
+        )
+
+    with pytest.raises(InventoryError, match="reverse homolog"):
+        ProtectedStagingInventoryResolver(
+            manifest(),
+            "https://netbox.example",
+            "reader",
+            transport=httpx.MockTransport(handler),
+        ).resolve()
+
+
+def test_protected_resolver_rejects_non_dictionary_interface_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            homolog_id = int(request.url.params["cf_ncdp_live_homolog"])
+            return httpx.Response(
+                200,
+                json={"count": 1, "next": None, "results": [{"id": homolog_id + 5}]},
+            )
+        if request.url.path.startswith("/api/dcim/devices/"):
+            device_id = int(request.url.path.rstrip("/").split("/")[-1])
+            return httpx.Response(200, json=netbox_device(device_id))
+        return httpx.Response(200, json=[])
+
+    with pytest.raises(InventoryError, match="interface response invalid"):
+        ProtectedStagingInventoryResolver(
+            manifest(),
+            "https://netbox.example",
+            "reader",
+            transport=httpx.MockTransport(handler),
+        ).resolve()
+
+
+def test_protected_resolver_rejects_interface_owned_by_another_device() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/dcim/devices/":
+            homolog_id = int(request.url.params["cf_ncdp_live_homolog"])
+            return httpx.Response(
+                200,
+                json={"count": 1, "next": None, "results": [{"id": homolog_id + 5}]},
+            )
+        if request.url.path.startswith("/api/dcim/devices/"):
+            device_id = int(request.url.path.rstrip("/").split("/")[-1])
+            return httpx.Response(200, json=netbox_device(device_id))
+        device_id = int(request.url.params["device_id"])
+        return httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "next": None,
+                "results": [
+                    {
+                        "id": 9,
+                        "name": "GigabitEthernet1" if device_id == 6 else "fxp0",
+                        "device": {"id": 999},
+                    }
+                ],
+            },
+        )
+
+    with pytest.raises(InventoryError, match="interface device changed"):
         ProtectedStagingInventoryResolver(
             manifest(),
             "https://netbox.example",
@@ -399,6 +585,7 @@ def test_rejected_plan_is_never_applied(tmp_path: Path) -> None:
 
 def test_protected_cml_client_uses_only_explicit_credentials(monkeypatch) -> None:
     requests = []
+    lab_id = "11111111-1111-1111-1111-111111111111"
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -409,7 +596,10 @@ def test_protected_cml_client_uses_only_explicit_credentials(monkeypatch) -> Non
             }
             return httpx.Response(200, json={"token": "in-memory-token"})
         assert request.headers["Authorization"] == "Bearer in-memory-token"
-        return httpx.Response(200, json=[])
+        if request.url.path == "/api/v0/labs":
+            return httpx.Response(200, json=[lab_id])
+        assert request.url.path == f"/api/v0/labs/{lab_id}"
+        return httpx.Response(200, json={"id": lab_id, "lab_title": "Exact lab"})
 
     monkeypatch.setenv("CML2_TOKEN", "ambient-rejected-by-construction")
     credentials = ProtectedCMLCredentials("protected-user", "protected-password")
@@ -420,9 +610,104 @@ def test_protected_cml_client_uses_only_explicit_credentials(monkeypatch) -> Non
     )
     assert "protected-password" not in repr(credentials)
     client.authenticate()
-    assert client.labs() == ()
+    assert client.labs() == (CMLLabObservation(lab_id, "Exact lab"),)
     client.close()
-    assert len(requests) == 2
+    assert len(requests) == 3
+
+
+@pytest.mark.parametrize(
+    "list_payload",
+    [
+        [{"id": "11111111-1111-1111-1111-111111111111"}],
+        ["11111111-1111-1111-1111-111111111111", {"id": "mixed"}],
+        ["not-a-uuid"],
+        [
+            "11111111-1111-1111-1111-111111111111",
+            "11111111-1111-1111-1111-111111111111",
+        ],
+    ],
+)
+def test_protected_cml_client_rejects_invalid_lab_list(list_payload) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("authenticate"):
+            return httpx.Response(200, json={"token": "token"})
+        return httpx.Response(200, json=list_payload)
+
+    client = ProtectedCMLClient(
+        manifest().cml,
+        ProtectedCMLCredentials("user", "password"),
+        transport=httpx.MockTransport(handler),
+    )
+    client.authenticate()
+    with pytest.raises(ProtectedStagingError, match="lab admission"):
+        client.labs()
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        [],
+        {"id": "22222222-2222-2222-2222-222222222222", "title": "Wrong"},
+        {"id": "11111111-1111-1111-1111-111111111111"},
+        {"id": "11111111-1111-1111-1111-111111111111", "title": ""},
+    ],
+)
+def test_protected_cml_client_rejects_invalid_lab_detail(detail) -> None:
+    lab_id = "11111111-1111-1111-1111-111111111111"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("authenticate"):
+            return httpx.Response(200, json={"token": "token"})
+        if request.url.path == "/api/v0/labs":
+            return httpx.Response(200, json=[lab_id])
+        return httpx.Response(200, json=detail)
+
+    client = ProtectedCMLClient(
+        manifest().cml,
+        ProtectedCMLCredentials("user", "password"),
+        transport=httpx.MockTransport(handler),
+    )
+    client.authenticate()
+    with pytest.raises(ProtectedStagingError, match="lab admission"):
+        client.labs()
+
+
+@pytest.mark.parametrize("failure_path", ["/api/v0/labs", "/api/v0/labs/detail"])
+def test_protected_cml_client_rejects_lab_http_errors(failure_path) -> None:
+    lab_id = "11111111-1111-1111-1111-111111111111"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("authenticate"):
+            return httpx.Response(200, json="token")
+        if request.url.path == "/api/v0/labs":
+            if failure_path == "/api/v0/labs":
+                return httpx.Response(503)
+            return httpx.Response(200, json=[lab_id])
+        return httpx.Response(503)
+
+    client = ProtectedCMLClient(
+        manifest().cml,
+        ProtectedCMLCredentials("user", "password"),
+        transport=httpx.MockTransport(handler),
+    )
+    client.authenticate()
+    with pytest.raises(ProtectedStagingError, match="lab admission"):
+        client.labs()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://cml.example",
+        "https://user@cml.example",
+        "https://cml.example/api",
+        "https://cml.example/?query=yes",
+        "https://cml.example/#fragment",
+    ],
+)
+def test_cml_authority_rejects_non_root_or_unsafe_url(url) -> None:
+    with pytest.raises(ValidationError):
+        CMLAuthority(controller_identity="personal-cml", controller_url=url)
 
 
 def test_bundle_validation_rejects_checkout_symlink_and_digest_drift(
@@ -513,8 +798,15 @@ def test_oidc_request_is_exact_and_jwt_is_never_a_path() -> None:
             "request-token",
             "--audience",
             "urn:ncdp:openbao:staging",
+            "--lifetime",
+            "300",
+            "--subject-claim",
+            "pipeline_id",
+            "--claim",
+            "build_id",
         )
     ]
+    assert tuple(inspect.signature(request_staging_oidc_jwt).parameters) == ("runner",)
 
 
 def test_evidence_is_allowlisted_and_rejects_secret_fields() -> None:

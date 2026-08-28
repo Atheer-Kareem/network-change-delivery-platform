@@ -79,10 +79,14 @@ Shared-fabric staging requires defense in depth: protected staging identity and
 address allowlists, dynamic canonical-live endpoint denial, separate
 credentials, exact connector binding, pre-create collision observation,
 post-boot identity validation, finally-style cleanup, and concurrent live-health
-evidence. Phase B1-1 found no NetBox Prefix object or authoritative external
-DHCP range for the `/24`, so exact staging addresses remain unselected until
-prefix and allocator authority are established. Network silence is never IPAM
-authority.
+evidence. Phase B1-1 found no NetBox Prefix object and could not establish the
+external allocator boundary, so it correctly proposed no staging addresses.
+The operator subsequently established that the LAN is static/manual and has no
+DHCP pool or reservations; a bounded follow-up created the authoritative
+`192.168.4.0/24` Prefix and recorded the known infrastructure and live
+allocations. Exact staging addresses remain unselected pending a separate
+read-only candidate and collision discovery plus human selection. Network
+silence is never IPAM authority.
 
 ## State lifecycle and secret boundary
 

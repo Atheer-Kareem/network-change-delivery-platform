@@ -179,7 +179,11 @@ Ordering may change when implementation evidence requires it.
     - **Phase B — staging separation:** perform management-network feasibility,
       establish staging NetBox identities and homolog authority, staging IPAM
       and credentials, reduce the Terraform baseline to the Cisco/Junos pair,
-      and accept isolated ephemeral staging.
+      and accept isolated ephemeral staging. Phase B1-1 correctly stopped when
+      external allocation authority was unavailable. A later bounded follow-up
+      recorded the operator-confirmed static/no-DHCP policy and established the
+      `192.168.4.0/24` NetBox Prefix plus known infrastructure allocations;
+      staging address candidates and B1-2 inventory remain unstarted.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
       and privately protect recovery evidence, manually remove only approved
       obsolete resources, observe before remediation, reconcile authority,

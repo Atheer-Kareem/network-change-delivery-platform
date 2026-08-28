@@ -4,10 +4,6 @@
 
 Accepted. Live acceptance completed in Increment 10C-7B through Build #158.
 
-ADR 0023 preserves the accepted PRE/write/POST, no-retry, immutable evidence,
-`TEMPORALLY_BRACKETED`, and `NOT_PROVEN` contracts. It supersedes per-build
-operator-twin preparation and destruction for future protected deployment.
-
 ## Decision
 
 Schema-1 `ChangeAuditRecord` remains the immutable protected-attempt parent and

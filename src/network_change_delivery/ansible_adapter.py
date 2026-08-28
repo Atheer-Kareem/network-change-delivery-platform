@@ -245,17 +245,14 @@ def _fingerprint_from_line(line: str) -> str | None:
 
 
 def verify_existing_host_trust(
-    device: InventoryDevice,
-    known_hosts: Path | None = None,
-    *,
-    ssh_keygen: str | Path = "ssh-keygen",
+    device: InventoryDevice, known_hosts: Path | None = None
 ) -> str:
     """Confirm a known_hosts entry exists without discovering or trusting a key."""
     known_hosts = known_hosts or _known_hosts_path()
     if not known_hosts.is_file():
         raise HostTrustError("known_hosts file is absent; establish trust separately")
     completed = subprocess.run(
-        [str(ssh_keygen), "-F", _known_hosts_query(device), "-f", str(known_hosts)],
+        ["ssh-keygen", "-F", _known_hosts_query(device), "-f", str(known_hosts)],
         check=False,
         capture_output=True,
         text=True,
@@ -278,13 +275,9 @@ class AnsibleRunnerCiscoAdapter:
         repository_root: Path | None = None,
         *,
         known_hosts: Path | None = None,
-        ssh_keygen: str | Path = "ssh-keygen",
-        collections_path: Path | None = None,
     ) -> None:
         self._root = deployment_repository_root(repository_root)
         self._known_hosts = known_hosts
-        self._ssh_keygen = ssh_keygen
-        self._collections_path = collections_path
 
     @staticmethod
     def _inventory(device: InventoryDevice) -> dict[str, Any]:
@@ -310,13 +303,10 @@ class AnsibleRunnerCiscoAdapter:
         *,
         extravars: dict[str, Any] | None = None,
     ) -> tuple[object, dict[str, dict[str, Any]]]:
-        trust_arguments = () if self._known_hosts is None else (self._known_hosts,)
-        if self._ssh_keygen == "ssh-keygen":
-            verify_existing_host_trust(device, *trust_arguments)
+        if self._known_hosts is None:
+            verify_existing_host_trust(device)
         else:
-            verify_existing_host_trust(
-                device, *trust_arguments, ssh_keygen=self._ssh_keygen
-            )
+            verify_existing_host_trust(device, self._known_hosts)
         selected: dict[str, dict[str, Any]] = {}
         inventory = self._inventory(device)
 
@@ -360,10 +350,8 @@ class AnsibleRunnerCiscoAdapter:
                 extravars=extravars or {},
                 envvars={
                     "ANSIBLE_CONFIG": str(self._root / "ansible.cfg"),
-                    "ANSIBLE_COLLECTIONS_PATH": (
-                        str(self._collections_path)
-                        if self._collections_path is not None
-                        else effective_ansible_collection_path(self._root)
+                    "ANSIBLE_COLLECTIONS_PATH": effective_ansible_collection_path(
+                        self._root
                     ),
                     "ANSIBLE_HOST_KEY_CHECKING": "True",
                     "ANSIBLE_PERSISTENT_CONTROL_PATH_DIR": str(private_data / "pc"),

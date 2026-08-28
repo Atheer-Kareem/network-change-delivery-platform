@@ -89,9 +89,6 @@ steps:
 
   - label: ":cloud: ephemeral CML staging"
     key: cml-staging
-    # ADR 0023 migration freeze: the simplified consumer now targets staging
-    # devices 6/7, but a separate cutover must explicitly review and replace
-    # this false condition with the merged-main-only execution guard.
     if: "false"
     depends_on:
       - quality
@@ -120,9 +117,6 @@ steps:
   - group: ":lock: protected delivery"
     key: protected-delivery
     depends_on: cml-staging
-    # Protected delivery cannot proceed without staging assurance during the
-    # ADR 0023 half-migrated window. Preserve the historical main-only guard
-    # while making the migration freeze independently explicit.
     if: false && build.branch == "main" && build.pull_request.id == null
     if_changed:
       include: "**"

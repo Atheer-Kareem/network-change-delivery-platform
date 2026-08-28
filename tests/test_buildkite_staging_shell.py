@@ -24,8 +24,6 @@ def run_script(
     evidence: bool = True,
     upload_status: int = 0,
     retry_count: str = "0",
-    branch: str = "main",
-    pull_request: str = "false",
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     work = tmp_path / "work"
     work.mkdir()
@@ -82,8 +80,6 @@ exit "$STAGING_STATUS"
         "BUILDKITE_STEP_KEY": "cml-staging",
         "BUILDKITE_AGENT_META_DATA_QUEUE": "ncdp-staging",
         "BUILDKITE_RETRY_COUNT": retry_count,
-        "BUILDKITE_BRANCH": branch,
-        "BUILDKITE_PULL_REQUEST": pull_request,
         "BUILDKITE_BUILD_ID": "79c012df-23bf-49b3-a6dd-f28799c4bb24",
         "NCDP_STAGING_STATE_ROOT": str(state_root),
         "COMMAND_LOG": str(command_log),
@@ -120,8 +116,8 @@ def test_shell_requests_exact_oidc_and_uploads_evidence(tmp_path: Path) -> None:
     assert "--lifetime 300" in logged
     assert "--subject-claim pipeline_id" in logged
     assert "--claim build_id" in logged
-    assert "ncdp-staging-controller" in logged
-    assert "scripts/run_ephemeral_cml_staging.py" not in logged
+    assert "--identity buildkite" in logged
+    assert "bk-79c012df-23bf-49b3-a6dd-f28799c4bb24" in logged
     assert uploads.read_text().strip() == "staging-evidence/staging-run.json"
     evidence = tmp_path / "work/staging-evidence/staging-run.json"
     assert stat.S_IMODE(evidence.stat().st_mode) == 0o600
@@ -149,20 +145,6 @@ def test_wrong_step_or_queue_is_rejected_before_oidc(tmp_path: Path) -> None:
     )
     assert rejected.returncode == 2
     assert "step or queue" in rejected.stderr
-
-
-@pytest.mark.parametrize(
-    ("branch", "pull_request"), (("feature", "false"), ("main", "73"))
-)
-def test_non_main_or_pull_request_is_rejected_before_oidc(
-    tmp_path: Path, branch: str, pull_request: str
-) -> None:
-    rejected, commands, _uploads = run_script(
-        tmp_path, branch=branch, pull_request=pull_request
-    )
-    assert rejected.returncode == 2
-    assert "reviewed merged main" in rejected.stderr
-    assert not commands.exists()
 
 
 def test_primary_failure_preserved_when_evidence_upload_succeeds(

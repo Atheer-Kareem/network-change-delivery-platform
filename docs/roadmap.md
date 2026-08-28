@@ -166,86 +166,12 @@ Ordering may change when implementation evidence requires it.
     readiness were then retired and the exact operator twin destroyed while
     preserving six private-history commits. Increment 10C-7B is complete. No
     later increment has started.
-11. **Continuous observability:** an independent, read-only operational plane.
-    Architecture evidence during 11A reordered its live-acceptance dependency:
-    ADR 0023 now requires a persistent manually owned brownfield live/reference
-    pair and separately identified, addressed, credentialed, Terraform-owned
-    ephemeral staging. This migration is a bounded prerequisite rather than a
-    restart or failure of 11A:
-    - **Phase A — architecture authority:** ADR 0023 defines brownfield live,
-      isolated ephemeral staging, explicit scenarios, partial managed-intent
-      ownership, admission without Terraform ownership, and phased migration.
-      It changes documentation only.
-    - **Phase B — staging separation:** perform management-network feasibility,
-      establish staging NetBox identities and homolog authority, staging IPAM
-      and credentials, reduce the Terraform baseline to the Cisco/Junos pair,
-      and accept separated ephemeral staging. Phase B1-1 correctly stopped when
-      external allocation authority was unavailable. A later bounded follow-up
-      recorded the operator-confirmed static/no-DHCP policy and established the
-      `192.168.4.0/24` NetBox Prefix plus known infrastructure allocations;
-      subsequent read-only collision discovery and human selection admitted
-      `.30`/`.31`. B1-2 is complete: stable
-      staged devices 6 and 7 use a dedicated role, explicit `staging` environment
-      and live-homolog fields, separate primary IPs, and no live selector tags;
-      canonical devices 1 and 2 are explicitly `live`, while device 3 remains
-      unclassified. Native NetBox provenance records both bounded writer episodes,
-      and both temporary writers were retired with zero standing privilege. B2
-      is externally complete pending repository review: separate KV-v2 secrets,
-      exact policies, and staging JWT roles now belong to devices 6/7; bounded
-      administrative capability matrices deny live and sibling paths; and the
-      historical staging roles/policies for live devices 1/2 are retired. Live
-      secrets and deployment authority remain unchanged. The checked-in staging
-      consumer still targets 1/2 and is deliberately fail-closed. Before any B3
-      source or Terraform commit, a reviewed Buildkite migration execution guard
-      or freeze must prevent legacy `cml-staging` execution. B2-G establishes
-      that prerequisite through a persistently disabled/unloaded external
-      staging LaunchAgent and independent explicit-false pipeline guards for
-      `cml-staging` and protected delivery. B3-1 now provides the non-executing
-      static ten-resource managed-pair graph (one lab, four nodes, four links,
-      one lifecycle) while retaining the historical operator twin and leaving
-      devices 1/2 authority deliberately fail closed. B3-2A now supplies the
-      non-executing protected controller contract: immutable devices 6/7 and
-      live-deny authority, independent staging inventory resolution, exact
-      OpenBao mapping, digest-bound installed Terraform, exact saved-plan
-      application, protected state/cleanup, and allowlisted evidence. It is not
-      installed or active. B3-2B1 composes the executable lifecycle,
-      partial-state recovery, isolated-runtime contract, and safe evidence in
-      repository tests. B3-2B2 owns exact merged-main installation and external
-      admission, including proof that checkout validation and protected staging
-      do not share filesystem authority or a Unix UID; absence is a pre-install
-      hard stop. B3-2B2B0-R models schema-4 root-owned immutable authority,
-      a root-controlled service-root entry with only exact mutable children,
-      dedicated equal-number service UID/GID authority, startup native/Ansible
-      re-admission, protected native-build inputs, root-descriptor
-      agent-token bootstrap, queue-paused registration, root-owned canonical
-      bootstrap source/runtime, and complete transitive Mach-O authority. That
-      checkout-independent design is now retained as deferred production
-      hardening for the lab. The active simplified boundary is reviewed merged
-      main plus separate devices 6/7 credentials, exact disposable ten-resource
-      Terraform authority, and persistent-lab denial. A separate cutover owns
-      the main-only condition and agent re-enable; protected delivery remains
-      frozen. B4 owns later reviewed consumer cutover, unfreeze,
-      and agent re-enable.
-    - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
-      and privately protect recovery evidence, manually remove only approved
-      obsolete resources, observe before remediation, reconcile authority,
-      establish realization admission and strict trust, and capture the live
-      actual-state baseline.
-    - **Phase E/F — consumer cutover and obsolete-contract retirement:** move
-      11A, Oxidized continuous operation, then protected deployment; afterward
-      remove disposable operator-lifecycle and shared-address assumptions.
-    Every phase remains fail closed with an explicit stop boundary. No migration
-    implementation or infrastructure mutation is part of Phase A.
-
-    Phase 11 remains decomposed into these bounded increments:
+11. **Continuous observability:** an independent, read-only operational plane,
+    decomposed into bounded increments:
     - **11A — NetBox-bound management-service reachability:** persistent
       Prometheus and credential-free Blackbox TCP probes with stable NetBox
-      identity and realization-scoped CML admission. Implementation is complete
-      through its current reviewed contracts, including persistent runtime,
-      source binding, CML 2.10 parsing, TSDB retention, and bounded refresh
-      diagnostics. Final acceptance is explicitly paused for the ADR 0023
-      environment migration; no further disposable operator-twin attempt is
-      authorized.
+      identity and realization-scoped CML admission. Implementation is prepared;
+      post-merge live CML acceptance remains pending.
     - **11B — dashboards and operator-only alerts:** bounded visualization,
       reachability/staleness/service-health rules, and no remediation authority.
     - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling

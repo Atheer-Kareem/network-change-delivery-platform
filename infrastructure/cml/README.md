@@ -1,71 +1,21 @@
-# CML Terraform environments
+# CML Terraform digital twin
 
-The active lab trust boundary is reviewed merged `main` plus separate staging
-credentials. `ephemeral/` and `modules/managed-pair/` remain the exact
-ten-resource disposable target. The schema-4 checkout-independent host/runtime
-design is retained as deferred production-hardening reference, not an active
-prerequisite. Persistent brownfield CML remains outside Terraform authority.
-
-ADR 0023 separates the Terraform implementations in this directory:
-
-- `ephemeral/` plus `modules/managed-pair/` is the target staging structure. It
-  owns one disposable lab, four nodes, four links, and one lifecycle resource:
-  exactly ten resources. Its Cisco/Junos data-plane link is staging integration
-  topology, not a claim about brownfield live wiring.
-- the directory root plus `modules/twin/` is the frozen historical
-  pre-ADR-0023 operator-twin implementation. It remains for migration and
-  historical recovery continuity. It is neither live/reference authority nor
-  authorized for execution during the migration.
-
-Terraform never owns or adopts the brownfield live/reference lab. Phase B3-1
-changes only the static staging graph. The checked-in orchestration still uses
-historical devices 1/2 authority and is intentionally fail closed after B2;
-B3-2A supplies the non-executing protected devices 6/7 controller and bundle
-contract. B3-2B owns installation from exact merged main, and B4 owns cutover.
-
-## Historical operator-twin contract
-
-Before Phase B3-1, the historical operator/local and ephemeral staging roots
-both consumed `modules/twin`. That module discovered controller metadata, the
-unique `System Bridge` connector and accepted images, and realized the
-five-node, six-link, 13-resource topology used by Increment 8 staging
-acceptance. Historical evidence below describes that pre-B3-1 implementation.
-Its only device configuration was the ADR 0013 personal-lab minimum Day-0
-exception; it never owned NCDP-managed network intent or production
-configuration.
-
-In the current tree, only the frozen operator/local root continues to consume
-`modules/twin`. The current `ephemeral/` root consumes `modules/managed-pair`
-and represents the ADR 0023 ten-resource staging target. The historical root
-and module remain only for migration and recovery continuity; they are neither
-live/reference authority nor authorized for execution.
-
-The future protected controller may execute `ephemeral/` only from an
-agent-owned, digest-verified installation outside every checkout. Its immutable
-manifest binds the exact ten Terraform addresses and lifecycle-only update
-address. It stores sensitive saved plans only under protected run state,
-validates their structural actions, and applies the exact admitted plan. The
-B3-2A repository content is installation source, not installed authority.
-It does not yet create a runnable isolated runtime; B3-2B must construct and
-verify that runtime from the exact accepted merged-main source before admission.
-
-B3-2B1 now supplies the repository-side executable composition and tests its
-isolated Python 3.12 wheel/lock/runtime contract in temporary directories. It
-does not install a standing runtime. B3-2B2 still owns exact merged-main
-construction, host tool/collection admission, and external installation.
-The B3-2B2B0-R correction models that future installation as root-owned
-immutable authority consumed by an exact non-root staging service identity;
-only run state is service-owned. It also requires protected libssh and rejects
-runtime native linkage into user-controlled Homebrew or checkout paths.
+This directory contains the protected operator/local root, the reusable
+`modules/twin` realization module, and the intentionally destroyable
+`ephemeral` staging root. Each root owns its CML lab. The shared module discovers
+controller metadata, the unique `System Bridge` connector, accepted images,
+five nodes, six links, and explicit lifecycle. Its only device configuration is
+the ADR 0013 personal-lab minimum Day-0 exception; it never owns NCDP-managed
+network intent or production configuration.
 
 ADR 0014 makes normal staging ephemeral: absent, fresh create, first boot,
 readiness and validation, sanitized evidence, complete destroy, then proven
 absence. The final Increment 8D twin was destroyed and the external state has no
-managed resources. At that time, both the operator and ephemeral roots
-permitted complete destruction because a fresh, explicitly admitted realization
-must be retired before another fixed-address twin can start. Exact graph
-validation and the safe Terraform UI bound that operation; neither root relied on
-`prevent_destroy`, and both consumed `modules/twin`. Do not treat a normal
+managed resources. Both the operator and ephemeral roots permit complete
+destruction because a fresh, explicitly admitted realization must be retired
+before another fixed-address twin can start. Exact graph validation and the
+safe Terraform UI bound that operation; neither root relies on
+`prevent_destroy`. Both consume `modules/twin`. Do not treat a normal
 create-oriented plan against the empty operator state as drift.
 
 Terraform `1.15.8` and `CiscoDevNet/cml2` `0.9.3-beta1` are exact contracts.
@@ -190,8 +140,8 @@ destroyed through an exact 13-resource Terraform graph.
 
 ### Ephemeral run contract
 
-The target ephemeral root requires a unique non-secret `staging_run_id`, explicit
-`lifecycle_state`, and every authority-derived Day-0 input. It has no
+The ephemeral root requires a unique non-secret `staging_run_id`, explicit
+`twin_lifecycle_state`, and every NetBox/OpenBao-derived Day-0 input. It has no
 credential defaults or committed tfvars. Initialize it with a unique backend
 path supplied externally for that run:
 

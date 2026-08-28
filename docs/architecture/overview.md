@@ -44,11 +44,9 @@ flowchart LR
 - **Assurance:** Batfish performs offline multi-vendor behavioral checks; the
   plan-bound 6B path derives candidates from validated plans and remains a
   verification primitive until Increment 7 workflow enforcement.
-- **CML environments:** ADR 0023 assigns the persistent brownfield
-  live/reference lab to manual CML-operator ownership and confines Terraform
-  with CiscoDevNet CML2 to ephemeral staging and explicit scenarios. NetBox
-  identity and explicit Git/NCDP managed scopes remain independent of either
-  realization. See the
+- **Digital twin:** Increment 8 uses Terraform with CiscoDevNet CML2 to own a
+  separate personal-CML twin's infrastructure lifecycle, never production
+  device configuration. See the
   [Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).
 - **Execution:** Ansible Runner with `cisco.ios` remains the Cisco provider.
   Direct PyEZ/NETCONF preserves one Junos exclusive candidate session across
@@ -107,7 +105,5 @@ Terraform-managed CML resource yet; CML topology and lifecycle begin in 8C. See 
 [Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).
 
 Increment 11A implements the first continuous-observability foundation. Its
-offline/container contract is complete; final acceptance is paused while ADR
-0023 separates staging and rehabilitates/admits the manually owned brownfield
-live realization through explicit admission, never Terraform import. See
-[Continuous observability](continuous-observability.md).
+offline/container contract is complete while fresh-CML live acceptance remains
+pending after merge. See [Continuous observability](continuous-observability.md).

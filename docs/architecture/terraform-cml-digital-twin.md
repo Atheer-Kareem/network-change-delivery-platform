@@ -2,14 +2,6 @@
 
 ## Scope
 
-ADR 0023 now separates a manually owned brownfield live/reference lab from
-Terraform-owned ephemeral staging and explicit scenarios. Terraform will never
-import, adopt, converge, or own the accepted manual lab. This document retains
-the historical Increment 8 topology and lifecycle evidence; its five-node
-shared module and local operator root are migration-era implementation, not the
-future live ownership model. Phase B will reduce baseline staging to a
-Cisco/Junos homolog pair with separate inventory, addressing, and credentials.
-
 Increment 8 establishes reproducible personal-CML infrastructure lifecycle for
 digital-twin testing. Under ADR 0014, staging is ephemeral integration
 infrastructure: a run creates a fresh Terraform-owned CML lab, validates its
@@ -29,12 +21,6 @@ persistent operational staging assumption. Increment 8E-1 establishes the
 8E-3 retain local lifecycle acceptance and Buildkite orchestration respectively.
 
 ## Authority boundary
-
-The table below describes the Terraform-owned staging/scenario boundary. Under
-ADR 0023 it does not apply to brownfield live infrastructure. Brownfield live
-lab/node/link existence and lifecycle belong to the CML operator; NetBox,
-OpenBao, explicit Git/NCDP managed scopes, Oxidized private Git, Prometheus, and
-AuditStore retain their separate authorities.
 
 | Property | Authority |
 | --- | --- |
@@ -66,12 +52,6 @@ device-name handling are required for the narrow personal-lab lifecycle and
 reset contract.
 
 ## Separate-twin topology
-
-This section records the accepted historical three-router twin. It is not the
-future baseline staging graph. ADR 0023 directs later migration to a two-router
-homolog pair, expected to contain one lab, four nodes, four links, and one
-lifecycle resource. The direct Cisco--Junos link is staging/integration
-topology, not evidence of exact live-topology fidelity.
 
 Terraform creates a new lab rather than importing the accepted running lab. The
 new lab may coexist in CML while stopped, preserving the externally accepted

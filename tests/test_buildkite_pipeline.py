@@ -105,7 +105,6 @@ def test_pipeline_contract() -> None:
     assert steps["pipeline-contract"]["agents"]["queue"] == "ncdp-validation"
     staging = steps["cml-staging"]
     assert staging["agents"]["queue"] == "ncdp-staging"
-    assert staging["if"] == "false"
     assert staging["depends_on"] == ["quality", "pipeline-contract"]
     assert staging["command"] == "scripts/buildkite/ephemeral_staging.sh"
     assert staging["concurrency"] == 1
@@ -169,10 +168,12 @@ def test_pr_and_main_conditions() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
     steps = _steps_by_key(pipeline)
     protected = steps["protected-delivery"]
+    # Temporary PR #66 rollback interlock; this test is restored exactly from
+    # a029120... in the final baseline-restoration PR.
+    assert steps["cml-staging"]["if"] == "false"
     assert protected["if"] == (
         'false && build.branch == "main" && build.pull_request.id == null'
     )
-    assert steps["cml-staging"]["if"] == "false"
     for key in ("promotion", "deployment-approval", "deploy-gate"):
         assert "if" not in steps[key]
 

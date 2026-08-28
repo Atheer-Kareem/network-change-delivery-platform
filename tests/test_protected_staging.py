@@ -139,17 +139,19 @@ def manifest(**changes) -> ProtectedStagingManifest:
             NativeDependencyAuthority(
                 name="libssh",
                 version="0.11.3",
-                root="/protected/native/libssh",
+                root="/private/var/db/ncdp-staging/authority/native/libssh",
                 inventory_sha256=SHA256,
             ),
             NativeDependencyAuthority(
                 name="openssl",
                 version="3.6.3",
-                root="/protected/native/openssl",
+                root="/private/var/db/ncdp-staging/authority/native/openssl",
                 inventory_sha256=SHA256,
             ),
         ),
-        "protected_native_files": {"/protected/native/libssh.dylib": SHA256},
+        "protected_native_files": {
+            "/private/var/db/ncdp-staging/authority/native/libssh/libssh.dylib": SHA256
+        },
         "native_dependency_admission_sha256": SHA256,
         "build_sdk_identity": "macos-sdk-test",
         "controller_artifact_digest": SHA256,

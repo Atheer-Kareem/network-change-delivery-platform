@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -132,6 +133,9 @@ def validate_service_identity(
 
 MetadataReader = Callable[[Path], os.stat_result]
 
+PROTECTED_SERVICE_ROOT = Path("/private/var/db/ncdp-staging")
+PROTECTED_SYSTEM_PARENT = Path("/private/var/db")
+
 
 def _lstat(path: Path) -> os.stat_result:
     return path.lstat()
@@ -157,12 +161,41 @@ def _validate_controlled_ancestry(
         current = current.parent
 
 
+def _validate_service_root_ancestry(
+    authority: ServiceIdentityAuthority,
+    *,
+    service_root: Path = PROTECTED_SERVICE_ROOT,
+    system_parent: Path = PROTECTED_SYSTEM_PARENT,
+    metadata_reader: MetadataReader = _lstat,
+) -> None:
+    """Require the root-owned service entry and its controlling system parent."""
+    root = service_root.resolve(strict=True)
+    parent = system_parent.resolve(strict=True)
+    if root.parent != parent:
+        raise ProtectedStagingError("protected service root ancestry rejected")
+    for path in (root, parent):
+        metadata = metadata_reader(path)
+        if (
+            metadata.st_uid != authority.immutable_owner_uid
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+        ):
+            raise ProtectedStagingError("protected service root ancestry rejected")
+    root_metadata = metadata_reader(root)
+    if (
+        root_metadata.st_gid != authority.service_gid
+        or stat.S_IMODE(root_metadata.st_mode) != 0o750
+    ):
+        raise ProtectedStagingError("protected service root ancestry rejected")
+
+
 def read_root_owned_service_file(
     path: Path,
     checkout: Path,
     authority: ServiceIdentityAuthority,
     *,
     authority_root: Path = PROTECTED_AUTHORITY_ROOT,
+    service_root: Path = PROTECTED_SERVICE_ROOT,
+    system_parent: Path = PROTECTED_SYSTEM_PARENT,
     metadata_reader: MetadataReader = _lstat,
     maximum_bytes: int = MAX_PROTECTED_FILE_BYTES,
 ) -> bytes:
@@ -170,6 +203,11 @@ def read_root_owned_service_file(
     if not path.is_absolute() or path.is_symlink():
         raise ProtectedStagingError("protected immutable file rejected")
     resolved = path.resolve(strict=True)
+    if (
+        authority_root.resolve(strict=True)
+        != service_root.resolve(strict=True) / "authority"
+    ):
+        raise ProtectedStagingError("protected authority root rejected")
     checkout_resolved = checkout.resolve(strict=True)
     metadata = metadata_reader(path)
     mode = stat.S_IMODE(metadata.st_mode)
@@ -184,8 +222,14 @@ def read_root_owned_service_file(
         or metadata.st_size > maximum_bytes
     ):
         raise ProtectedStagingError("protected immutable file rejected")
+    _validate_service_root_ancestry(
+        authority,
+        service_root=service_root,
+        system_parent=system_parent,
+        metadata_reader=metadata_reader,
+    )
     _validate_controlled_ancestry(
-        resolved, authority_root, metadata_reader=metadata_reader
+        resolved, service_root, metadata_reader=metadata_reader
     )
     return path.read_bytes()
 
@@ -196,12 +240,19 @@ def validate_root_owned_service_directory(
     authority: ServiceIdentityAuthority,
     *,
     authority_root: Path = PROTECTED_AUTHORITY_ROOT,
+    service_root: Path = PROTECTED_SERVICE_ROOT,
+    system_parent: Path = PROTECTED_SYSTEM_PARENT,
     metadata_reader: MetadataReader = _lstat,
 ) -> Path:
     """Admit an immutable root-owned, service-readable directory."""
     if not path.is_absolute() or path.is_symlink() or not path.is_dir():
         raise ProtectedStagingError("protected immutable directory rejected")
     resolved = path.resolve(strict=True)
+    if (
+        authority_root.resolve(strict=True)
+        != service_root.resolve(strict=True) / "authority"
+    ):
+        raise ProtectedStagingError("protected authority root rejected")
     checkout_resolved = checkout.resolve(strict=True)
     metadata = metadata_reader(path)
     if (
@@ -212,8 +263,14 @@ def validate_root_owned_service_directory(
         or stat.S_IMODE(metadata.st_mode) not in {0o550, 0o750}
     ):
         raise ProtectedStagingError("protected immutable directory rejected")
+    _validate_service_root_ancestry(
+        authority,
+        service_root=service_root,
+        system_parent=system_parent,
+        metadata_reader=metadata_reader,
+    )
     _validate_controlled_ancestry(
-        resolved, authority_root, metadata_reader=metadata_reader
+        resolved, service_root, metadata_reader=metadata_reader
     )
     return resolved
 
@@ -223,7 +280,9 @@ def validate_service_owned_private_path(
     checkout: Path,
     authority: ServiceIdentityAuthority,
     *,
-    mutable_root: Path = Path("/private/var/db/ncdp-staging"),
+    mutable_root: Path = PROTECTED_SERVICE_ROOT,
+    mutable_class: Literal["builds", "state", "logs"] = "state",
+    system_parent: Path = PROTECTED_SYSTEM_PARENT,
     metadata_reader: MetadataReader = _lstat,
 ) -> Path:
     """Admit the exact service-owned private mutable state boundary."""
@@ -238,12 +297,14 @@ def validate_service_owned_private_path(
         or metadata.st_uid != authority.service_uid
         or metadata.st_gid != authority.service_gid
         or stat.S_IMODE(metadata.st_mode) != 0o700
-        or not resolved.is_relative_to(mutable_root.resolve(strict=True))
+        or resolved != mutable_root.resolve(strict=True) / mutable_class
     ):
         raise ProtectedStagingError("protected mutable directory rejected")
-    controlling_parent = mutable_root.resolve(strict=True).parent
-    _validate_controlled_ancestry(
-        controlling_parent, controlling_parent, metadata_reader=metadata_reader
+    _validate_service_root_ancestry(
+        authority,
+        service_root=mutable_root,
+        system_parent=system_parent,
+        metadata_reader=metadata_reader,
     )
     return resolved
 
@@ -340,6 +401,8 @@ def validate_root_owned_executable(
     tool: ExecutionToolAuthority,
     *,
     authority_root: Path = PROTECTED_AUTHORITY_ROOT,
+    service_root: Path = PROTECTED_SERVICE_ROOT,
+    system_parent: Path = PROTECTED_SYSTEM_PARENT,
     metadata_reader: MetadataReader = _lstat,
     observed_version: str | None = None,
 ) -> Path:
@@ -368,10 +431,20 @@ def validate_root_owned_executable(
             resolved.parent, Path("/usr"), metadata_reader=metadata_reader
         )
     else:
-        if metadata.st_gid != authority.service_gid:
+        if (
+            metadata.st_gid != authority.service_gid
+            or authority_root.resolve(strict=True)
+            != service_root.resolve(strict=True) / "authority"
+        ):
             raise ProtectedStagingError("protected executable rejected")
+        _validate_service_root_ancestry(
+            authority,
+            service_root=service_root,
+            system_parent=system_parent,
+            metadata_reader=metadata_reader,
+        )
         _validate_controlled_ancestry(
-            resolved, authority_root, metadata_reader=metadata_reader
+            resolved, service_root, metadata_reader=metadata_reader
         )
     return resolved
 
@@ -398,6 +471,41 @@ def terraform_version_runner(executable: Path, arguments: Sequence[str]) -> str:
     return version
 
 
+def execution_tool_version_runner(executable: Path, tool: str) -> str:
+    """Read a bounded normalized version from one admitted execution tool."""
+    arguments = {
+        "buildkite-agent": ("--version",),
+        "openssl": ("version",),
+        "ssh-keyscan": ("-V",),
+        "ssh-keygen": ("-V",),
+        "uv": ("--version",),
+    }.get(tool)
+    if arguments is None:
+        raise ProtectedStagingError("protected executable version unavailable")
+    version_executable = (
+        Path("/usr/bin/ssh") if tool in {"ssh-keyscan", "ssh-keygen"} else executable
+    )
+    result = subprocess.run(
+        [str(version_executable), *arguments],
+        env={"PATH": str(version_executable.parent)},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    output = f"{result.stdout}\n{result.stderr}".strip()
+    patterns = {
+        "buildkite-agent": r"(?:version\s+)?([0-9]+(?:\.[0-9]+)+(?:\+[^\s]+)?)",
+        "openssl": r"(?:OpenSSL|LibreSSL)\s+([^\s]+)",
+        "ssh-keyscan": r"(OpenSSH_[^,\s]+)",
+        "ssh-keygen": r"(OpenSSH_[^,\s]+)",
+        "uv": r"uv\s+([^\s]+)",
+    }
+    match = re.search(patterns[tool], output)
+    if result.returncode not in {0, 1} or match is None:
+        raise ProtectedStagingError("protected executable version unavailable")
+    return match.group(1)
+
+
 def validate_macho_dependencies(
     dependency_map: Mapping[str, Sequence[str]],
     *,
@@ -421,6 +529,38 @@ def validate_macho_dependencies(
                 raise ProtectedStagingError("protected native dependency invalid")
 
 
+def inspect_runtime_native_dependencies(runtime: Path) -> dict[str, tuple[str, ...]]:
+    """Read Mach-O dependency paths with system-protected inspection tools."""
+    observed: dict[str, tuple[str, ...]] = {}
+    for path in sorted(value for value in runtime.rglob("*") if value.is_file()):
+        kind = subprocess.run(
+            ["/usr/bin/file", "-b", str(path)],
+            env={},
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if kind.returncode != 0:
+            raise ProtectedStagingError("protected native inspection failed")
+        if "Mach-O" not in kind.stdout:
+            continue
+        linked = subprocess.run(
+            ["/usr/bin/otool", "-L", str(path)],
+            env={},
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if linked.returncode != 0:
+            raise ProtectedStagingError("protected native inspection failed")
+        observed[str(path)] = tuple(
+            line.strip().split(" ", 1)[0]
+            for line in linked.stdout.splitlines()[1:]
+            if line.strip()
+        )
+    return observed
+
+
 def directory_inventory_sha256(root: Path) -> str:
     """Digest exact relative names, file digests, modes and symlink denial."""
     entries: dict[str, dict[str, object]] = {}
@@ -442,6 +582,151 @@ def directory_inventory_sha256(root: Path) -> str:
     return hashlib.sha256(
         json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def validate_root_owned_immutable_tree(
+    root: Path,
+    checkout: Path,
+    authority: ServiceIdentityAuthority,
+    expected_inventory_sha256: str,
+    *,
+    expected_collections: Mapping[str, str] | None = None,
+    authority_root: Path = PROTECTED_AUTHORITY_ROOT,
+    service_root: Path = PROTECTED_SERVICE_ROOT,
+    system_parent: Path = PROTECTED_SYSTEM_PARENT,
+    metadata_reader: MetadataReader = _lstat,
+) -> None:
+    """Re-admit every object in a root-owned immutable authority tree."""
+    validate_root_owned_service_directory(
+        root,
+        checkout,
+        authority,
+        authority_root=authority_root,
+        service_root=service_root,
+        system_parent=system_parent,
+        metadata_reader=metadata_reader,
+    )
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ProtectedStagingError("protected immutable tree rejected")
+        metadata = metadata_reader(path)
+        mode = stat.S_IMODE(metadata.st_mode)
+        if (
+            metadata.st_uid != authority.immutable_owner_uid
+            or metadata.st_gid != authority.service_gid
+            or mode & 0o022
+            or not (stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode))
+        ):
+            raise ProtectedStagingError("protected immutable tree rejected")
+    if directory_inventory_sha256(root) != expected_inventory_sha256:
+        raise ProtectedStagingError("protected immutable tree inventory rejected")
+    if expected_collections is not None:
+        actual: dict[str, str] = {}
+        for name in expected_collections:
+            namespace, collection = name.split(".", 1)
+            metadata_path = (
+                root / "ansible_collections" / namespace / collection / "MANIFEST.json"
+            )
+            try:
+                payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+                info = payload["collection_info"]
+                actual[name] = info["version"]
+            except (OSError, KeyError, TypeError, json.JSONDecodeError):
+                raise ProtectedStagingError(
+                    "protected Ansible collection metadata rejected"
+                ) from None
+        if actual != dict(expected_collections):
+            raise ProtectedStagingError("protected Ansible collection version rejected")
+
+
+def validate_system_rooted_directory(
+    path: Path,
+    checkout: Path,
+    *,
+    metadata_reader: MetadataReader = _lstat,
+) -> Path:
+    """Admit a root-owned system directory with non-writable ancestry."""
+    if not path.is_absolute() or path.is_symlink() or not path.is_dir():
+        raise ProtectedStagingError("protected system directory rejected")
+    resolved = path.resolve(strict=True)
+    checkout_resolved = checkout.resolve(strict=True)
+    if resolved == checkout_resolved or resolved.is_relative_to(checkout_resolved):
+        raise ProtectedStagingError("protected system directory rejected")
+    current = resolved
+    while current != Path("/"):
+        metadata = metadata_reader(current)
+        if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & 0o022:
+            raise ProtectedStagingError("protected system directory rejected")
+        current = current.parent
+    return resolved
+
+
+def validate_native_runtime_authority(
+    manifest: ProtectedStagingManifest,
+    runtime_root: Path,
+    checkout: Path,
+    *,
+    dependency_inspector: Callable[[Path], Mapping[str, Sequence[str]]],
+    authority_root: Path = PROTECTED_AUTHORITY_ROOT,
+    service_root: Path = PROTECTED_SERVICE_ROOT,
+    system_parent: Path = PROTECTED_SYSTEM_PARENT,
+    metadata_reader: MetadataReader = _lstat,
+) -> None:
+    """Re-admit native trees, files and fresh Mach-O linkage at startup."""
+    native_root = authority_root / "native"
+    admitted_roots: list[Path] = []
+    for dependency in manifest.native_dependencies:
+        root = Path(dependency.root)
+        if root.parent != native_root or root.name != dependency.name:
+            raise ProtectedStagingError("protected native dependency root rejected")
+        validate_root_owned_immutable_tree(
+            root,
+            checkout,
+            manifest.service_identity,
+            dependency.inventory_sha256,
+            authority_root=authority_root,
+            service_root=service_root,
+            system_parent=system_parent,
+            metadata_reader=metadata_reader,
+        )
+        version_file = root / "VERSION"
+        try:
+            observed_version = version_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            raise ProtectedStagingError(
+                "protected native dependency version rejected"
+            ) from None
+        if observed_version != dependency.version:
+            raise ProtectedStagingError("protected native dependency version rejected")
+        admitted_roots.append(root.resolve(strict=True))
+    protected_files: dict[Path, str] = {}
+    for value, digest in manifest.protected_native_files.items():
+        path = Path(value)
+        resolved = path.resolve(strict=True)
+        if not any(resolved.is_relative_to(root) for root in admitted_roots):
+            raise ProtectedStagingError("protected native file root rejected")
+        metadata = metadata_reader(path)
+        if (
+            path.is_symlink()
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != 0
+            or metadata.st_gid != manifest.service_identity.service_gid
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or hashlib.sha256(path.read_bytes()).hexdigest() != digest
+        ):
+            raise ProtectedStagingError("protected native file rejected")
+        protected_files[resolved] = digest
+    dependency_map = dict(dependency_inspector(runtime_root))
+    validate_macho_dependencies(
+        dependency_map,
+        protected_native_files=protected_files,
+        digest_reader=lambda path: hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+    admission = hashlib.sha256(
+        json.dumps(dependency_map, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if admission != manifest.native_dependency_admission_sha256:
+        raise ProtectedStagingError("protected native dependency admission changed")
 
 
 def build_protected_terraform_environment(

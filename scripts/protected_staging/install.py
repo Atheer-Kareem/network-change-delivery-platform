@@ -26,8 +26,6 @@ def main() -> int:
     parser.add_argument("--netbox-url", required=True)
     parser.add_argument("--openbao-url", required=True)
     parser.add_argument("--cml-ca-pem-sha256", required=True)
-    parser.add_argument("--uv-executable", required=True, type=Path)
-    parser.add_argument("--uv-cache-directory", required=True, type=Path)
     parser.add_argument("--installation-authority", required=True, type=Path)
     arguments = parser.parse_args()
     authority_path = arguments.installation_authority
@@ -66,9 +64,11 @@ def main() -> int:
         arguments.openbao_url,
         arguments.cml_ca_pem_sha256,
         SubprocessRuntimeBuildRunner(
-            arguments.uv_executable, arguments.uv_cache_directory
+            Path(authority.uv.path),
+            authority.uv_cache_root,
+            build_environment=authority.build_environment(),
         ),
-        arguments.uv_executable,
+        Path(authority.uv.path),
         authority,
         standing=True,
     )

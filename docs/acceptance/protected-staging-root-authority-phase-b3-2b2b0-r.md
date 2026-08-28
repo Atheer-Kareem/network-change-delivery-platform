@@ -20,7 +20,9 @@ Manifest schema 4 replaces the temporary schema-3 assumption that protected
 ownership equals the controller's effective UID. It binds a non-root service
 UID/GID, immutable owner UID 0, and an empty supplementary-group set. Startup
 requires the exact service UID/GID, rejects root and UID 501, and rejects any
-supplementary group.
+supplementary group. The service UID and primary GID must be the same dedicated
+number; `staff`, `admin`, `_developer`, and other shared groups are not valid
+service authority.
 
 Immutable policy, credentials, source, runtime, artifacts, tools, and Ansible
 content are root-owned and service-group-readable but never service-writable.
@@ -30,6 +32,12 @@ root-only `0400` bootstrap authority and are not controller-readable. Only
 build workspaces, state, saved plans, recovery metadata, known-hosts, and
 bounded logs are service-owned private data (`0700` directories and `0600`
 files).
+
+The top-level `/private/var/db/ncdp-staging` service root remains
+`root:ncdpstaging 0750`; it is never service-owned. Admission proves the entire
+controlling chain through `/private/var/db`. Only the exact `builds`, `state`,
+and `logs` children may be service-owned `0700`, preventing the service from
+replacing its own `authority/` directory entry.
 
 The controller configuration is fixed at
 `/private/var/db/ncdp-staging/authority/config/protected-controller.json`.
@@ -46,6 +54,14 @@ authority, finalizes immutable source/runtime/artifact ownership before runtime
 inventory, then writes root-owned inventories and the final manifest. Temporary
 non-root construction remains a test-only simulation.
 
+The reviewed installation authority supplies the exact protected uv executable,
+root-controlled uv cache, protected libssh root, and system SDK identity. The
+installer derives `SDKROOT`, `CPATH`, `LIBRARY_PATH`, `LDFLAGS`, `CPPFLAGS`, and
+`PKG_CONFIG_PATH` internally and does not inherit ambient native-build flags.
+It revalidates tools, Python, SDK, native trees/files, and the Ansible tree
+before constructing the runtime; the final manifest records verified facts
+rather than unchecked operator assertions.
+
 Schema 4 additionally binds exact paths, versions and SHA-256 digests for uv,
 Buildkite Agent, Terraform, OpenSSL, `ssh-keyscan`, and `ssh-keygen`; the exact
 Ansible collection root, versions and inventory digest; and explicit protected
@@ -57,6 +73,14 @@ system-protected tooling. Dependencies beneath `/Users/netdevops`, the checkout,
 `/opt/homebrew`, temporary build roots, or another validation-writable location
 are rejected. Only Apple system libraries or exact digest-bound files in
 root-owned protected native roots are accepted.
+
+Controller startup repeats this admission before privileged integration: it
+recursively validates each native root and version record, rehashes every
+admitted dylib, freshly inspects runtime Mach-O linkage, and requires the exact
+native-admission digest. It also recursively revalidates the Ansible tree's
+ownership, modes, symlink absence, inventory digest, and the exact collection
+metadata versions `ansible.netcommon 8.6.0`, `ansible.utils 6.1.0`, and
+`cisco.ios 11.4.2`.
 
 ## Buildkite remediation and B4 gates
 

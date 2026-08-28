@@ -22,11 +22,11 @@ from network_change_delivery.protected_staging_install import (
     StandingInstallationAuthority,
     SubprocessRuntimeBuildRunner,
     construct_isolated_runtime,
-    inspect_runtime_native_dependencies,
     install_source_bundle,
     inventory_runtime,
 )
 from network_change_delivery.protected_staging_runtime import (
+    inspect_runtime_native_dependencies,
     validate_macho_dependencies,
 )
 
@@ -43,6 +43,8 @@ def _install_authority(
     return StandingInstallationAuthority(
         service_identity=ServiceIdentityAuthority(service_uid=420, service_gid=420),
         protected_python=python,
+        uv_cache_root=Path("/opt/protected/cache/uv"),
+        build_sdk_root=Path("/opt/protected/sdk"),
         python_version="3.12",
         python_sha256=SHA256,
         uv=tool(str(uv), "0.12.2"),
@@ -62,19 +64,21 @@ def _install_authority(
             NativeDependencyAuthority(
                 name="libssh",
                 version="0.11.3",
-                root="/opt/protected/native/libssh",
+                root="/private/var/db/ncdp-staging/authority/native/libssh",
                 inventory_sha256=SHA256,
             ),
             NativeDependencyAuthority(
                 name="openssl",
                 version="3.6.3",
-                root="/opt/protected/native/openssl",
+                root="/private/var/db/ncdp-staging/authority/native/openssl",
                 inventory_sha256=SHA256,
             ),
         ),
-        protected_native_files={"/opt/protected/native/libssh.dylib": SHA256},
+        protected_native_files={
+            "/private/var/db/ncdp-staging/authority/native/libssh/libssh.dylib": SHA256
+        },
         native_dependency_admission_sha256=SHA256,
-        build_sdk_identity="macos-sdk-test",
+        build_sdk_identity="/opt/protected/sdk",
     )
 
 
@@ -289,6 +293,49 @@ def test_runtime_subprocess_runner_accepts_only_admitted_uv(
             tmp_path / "cache",
             build_environment={"PYTHONPATH": "/checkout"},
         )
+
+
+def test_standing_builder_environment_is_derived_and_not_ambient(
+    monkeypatch,
+) -> None:
+    authority = _install_authority()
+    monkeypatch.setenv("CPATH", "/opt/homebrew/include")
+    monkeypatch.setenv("LDFLAGS", "-L/Users/netdevops/lib")
+    expected = {
+        "SDKROOT": "/opt/protected/sdk",
+        "CPATH": "/private/var/db/ncdp-staging/authority/native/libssh/include",
+        "LIBRARY_PATH": ("/private/var/db/ncdp-staging/authority/native/libssh/lib"),
+        "LDFLAGS": ("-L/private/var/db/ncdp-staging/authority/native/libssh/lib"),
+        "CPPFLAGS": ("-I/private/var/db/ncdp-staging/authority/native/libssh/include"),
+        "PKG_CONFIG_PATH": (
+            "/private/var/db/ncdp-staging/authority/native/libssh/lib/pkgconfig"
+        ),
+    }
+    assert authority.build_environment() == expected
+    runner = SubprocessRuntimeBuildRunner(
+        Path(authority.uv.path),
+        authority.uv_cache_root,
+        build_environment=expected,
+    )
+    runner.validate_authority(authority)
+    with pytest.raises(ProtectedStagingError, match="builder authority"):
+        SubprocessRuntimeBuildRunner(
+            Path(authority.uv.path),
+            Path("/Users/netdevops/cache"),
+            build_environment=expected,
+        ).validate_authority(authority)
+    homebrew = authority.model_copy(
+        update={
+            "native_dependencies": (
+                authority.native_dependencies[0].model_copy(
+                    update={"root": "/opt/homebrew/opt/libssh"}
+                ),
+                authority.native_dependencies[1],
+            )
+        }
+    )
+    with pytest.raises(ProtectedStagingError, match="libssh build authority"):
+        homebrew.build_environment()
 
 
 @pytest.mark.parametrize("tamper", ["module", "entrypoint", "unexpected"])

@@ -46,13 +46,16 @@ from network_change_delivery.protected_staging_runtime import (
     build_protected_terraform_environment,
     derive_junos_password_verifier,
     derive_run_directory,
-    directory_inventory_sha256,
+    execution_tool_version_runner,
+    inspect_runtime_native_dependencies,
     load_protected_staging_credentials,
     read_root_owned_service_file,
     recover_protected_run,
     run_protected_lifecycle,
     terraform_version_runner,
+    validate_native_runtime_authority,
     validate_root_owned_executable,
+    validate_root_owned_immutable_tree,
     validate_root_owned_service_directory,
     validate_service_identity,
     validate_service_owned_private_path,
@@ -210,6 +213,24 @@ class ProtectedStagingController:
         validate_service_owned_private_path(
             config.state_root, checkout, manifest.service_identity
         )
+        validate_native_runtime_authority(
+            manifest,
+            config.runtime_root,
+            checkout,
+            dependency_inspector=inspect_runtime_native_dependencies,
+        )
+        if (
+            str(config.tools.ansible_collections_root)
+            != manifest.ansible_collections_root
+        ):
+            raise ProtectedStagingError("protected Ansible authority mismatch")
+        validate_root_owned_immutable_tree(
+            config.tools.ansible_collections_root,
+            checkout,
+            manifest.service_identity,
+            manifest.ansible_inventory_sha256,
+            expected_collections=manifest.ansible_collections,
+        )
         netbox_token = read_root_owned_service_file(
             config.netbox_token_file, checkout, manifest.service_identity
         )
@@ -228,6 +249,9 @@ class ProtectedStagingController:
             checkout,
             manifest.service_identity,
             manifest.buildkite_agent,
+            observed_version=execution_tool_version_runner(
+                config.tools.buildkite_agent, "buildkite-agent"
+            ),
         )
         validate_root_owned_executable(
             config.tools.terraform,
@@ -242,23 +266,12 @@ class ProtectedStagingController:
             (config.tools.ssh_keygen, manifest.ssh_keygen),
         ):
             validate_root_owned_executable(
-                path, checkout, manifest.service_identity, authority
+                path,
+                checkout,
+                manifest.service_identity,
+                authority,
+                observed_version=execution_tool_version_runner(path, path.name),
             )
-        if (
-            str(config.tools.ansible_collections_root)
-            != manifest.ansible_collections_root
-        ):
-            raise ProtectedStagingError("protected Ansible authority mismatch")
-        validate_root_owned_service_directory(
-            config.tools.ansible_collections_root,
-            checkout,
-            manifest.service_identity,
-        )
-        if (
-            directory_inventory_sha256(config.tools.ansible_collections_root)
-            != manifest.ansible_inventory_sha256
-        ):
-            raise ProtectedStagingError("protected Ansible inventory mismatch")
         context = None if recovery else staging_context_from_environment()
         if context is not None:
             if context.commit != manifest.source_commit:
@@ -285,7 +298,7 @@ class ProtectedStagingController:
         if self.context is None:
             raise ProtectedStagingError("normal staging context missing")
         return {
-            "schema_version": 2,
+            "schema_version": self.manifest.schema_version,
             "run_id": self.context.staging_run_id,
             "source_commit": self.manifest.source_commit,
             "bundle_digest": self.manifest.bundle_digest,

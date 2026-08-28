@@ -79,6 +79,12 @@ inventories, constructs a non-inherited privileged environment, applies only exa
 saved plans, supports exact-subset cleanup/recovery, and emits allowlisted
 evidence. No standing runtime or command hook is changed by B3-2B1.
 
+The service root itself remains root-owned `0750`; only named mutable children
+are staging-owned `0700`. Standing construction derives its native build
+environment from the admitted SDK and protected libssh roots, uses a reviewed
+root-controlled uv cache, and verifies native plus Ansible authority both before
+manifest finalization and again at controller startup.
+
 Runtime construction copies every packaging-required local asset, installs the
 non-editable wheel with uv bytecode compilation enabled, inventories the final
 bytecode-bearing runtime, then starts the real controller and requires the

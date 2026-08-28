@@ -29,8 +29,14 @@ from network_change_delivery.protected_staging import (
     validate_runtime_inventory,
 )
 from network_change_delivery.protected_staging_runtime import (
+    execution_tool_version_runner,
+    inspect_runtime_native_dependencies,
+    terraform_version_runner,
     validate_macho_dependencies,
     validate_root_owned_executable,
+    validate_root_owned_immutable_tree,
+    validate_root_owned_service_directory,
+    validate_system_rooted_directory,
 )
 
 PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
@@ -76,6 +82,8 @@ class StandingInstallationAuthority(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     service_identity: ServiceIdentityAuthority
     protected_python: Path
+    uv_cache_root: Path
+    build_sdk_root: Path
     python_version: str
     python_sha256: str
     uv: ExecutionToolAuthority
@@ -96,6 +104,8 @@ class StandingInstallationAuthority(BaseModel):
     def exact_paths(self) -> StandingInstallationAuthority:
         if (
             not self.protected_python.is_absolute()
+            or not self.uv_cache_root.is_absolute()
+            or not self.build_sdk_root.is_absolute()
             or self.uv.path == str(self.protected_python)
             or str(self.ansible_collections_root) == ""
             or self.python_version != "3.12"
@@ -109,44 +119,31 @@ class StandingInstallationAuthority(BaseModel):
             raise ValueError("standing installation authority is invalid")
         return self
 
+    def native_dependency(self, name: str) -> NativeDependencyAuthority:
+        matches = tuple(
+            value for value in self.native_dependencies if value.name == name
+        )
+        if len(matches) != 1:
+            raise ProtectedStagingError("standing native dependency authority invalid")
+        return matches[0]
+
+    def build_environment(self) -> dict[str, str]:
+        """Derive the sole native build environment from admitted roots."""
+        libssh = Path(self.native_dependency("libssh").root)
+        if libssh != Path("/private/var/db/ncdp-staging/authority/native/libssh"):
+            raise ProtectedStagingError("protected libssh build authority rejected")
+        return {
+            "SDKROOT": str(self.build_sdk_root),
+            "CPATH": str(libssh / "include"),
+            "LIBRARY_PATH": str(libssh / "lib"),
+            "LDFLAGS": f"-L{libssh / 'lib'}",
+            "CPPFLAGS": f"-I{libssh / 'include'}",
+            "PKG_CONFIG_PATH": str(libssh / "lib/pkgconfig"),
+        }
+
 
 class RuntimeBuildRunner(Protocol):
     def run(self, arguments: Sequence[str], *, cwd: Path) -> None: ...
-
-
-def inspect_runtime_native_dependencies(
-    runtime: Path,
-) -> dict[str, tuple[str, ...]]:
-    """Read Mach-O dependency paths with system-protected inspection tools."""
-    observed: dict[str, tuple[str, ...]] = {}
-    for path in sorted(value for value in runtime.rglob("*") if value.is_file()):
-        kind = subprocess.run(
-            ["/usr/bin/file", "-b", str(path)],
-            env={},
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if kind.returncode != 0:
-            raise ProtectedStagingError("protected native inspection failed")
-        if "Mach-O" not in kind.stdout:
-            continue
-        linked = subprocess.run(
-            ["/usr/bin/otool", "-L", str(path)],
-            env={},
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if linked.returncode != 0:
-            raise ProtectedStagingError("protected native inspection failed")
-        dependencies = tuple(
-            line.strip().split(" ", 1)[0]
-            for line in linked.stdout.splitlines()[1:]
-            if line.strip()
-        )
-        observed[str(path)] = dependencies
-    return observed
 
 
 def _apply_immutable_ownership(root: Path, service_gid: int) -> None:
@@ -202,6 +199,17 @@ class SubprocessRuntimeBuildRunner:
             "UV_NO_PROGRESS": "1",
             **build_values,
         }
+
+    def validate_authority(self, authority: StandingInstallationAuthority) -> None:
+        """Require the builder to match the reviewed standing authority exactly."""
+        expected = {
+            "PATH": str(Path(authority.uv.path).parent),
+            "UV_CACHE_DIR": str(authority.uv_cache_root),
+            "UV_NO_PROGRESS": "1",
+            **authority.build_environment(),
+        }
+        if self._uv != Path(authority.uv.path) or self._environment != expected:
+            raise ProtectedStagingError("protected runtime builder authority rejected")
 
     def run(self, arguments: Sequence[str], *, cwd: Path) -> None:
         if not arguments or arguments[0] != str(self._uv):
@@ -393,11 +401,30 @@ def install_source_bundle(
     ):
         raise ProtectedStagingError("protected Python authority rejected")
     if standing:
+        authority_root = Path("/private/var/db/ncdp-staging/authority")
+        if (
+            installation_authority.uv_cache_root != authority_root / "cache/uv"
+            or Path(installation_authority.uv.path).parent != authority_root / "tools"
+            or not installation_authority.protected_python.resolve(
+                strict=True
+            ).is_relative_to(authority_root / "tools")
+            or installation_authority.ansible_collections_root
+            != authority_root / "ansible"
+            or any(
+                Path(value.root).parent != authority_root / "native"
+                for value in installation_authority.native_dependencies
+            )
+        ):
+            raise ProtectedStagingError("standing installation layout rejected")
+        if not isinstance(runtime_runner, SubprocessRuntimeBuildRunner):
+            raise ProtectedStagingError("standing runtime builder rejected")
+        runtime_runner.validate_authority(installation_authority)
         validate_root_owned_executable(
             uv_executable,
             source,
             installation_authority.service_identity,
             installation_authority.uv,
+            observed_version=execution_tool_version_runner(uv_executable, "uv"),
         )
         validate_root_owned_executable(
             installation_authority.protected_python,
@@ -409,12 +436,89 @@ def install_source_bundle(
                 version=installation_authority.python_version,
             ),
         )
+        for tool in (
+            installation_authority.buildkite_agent,
+            installation_authority.terraform,
+            installation_authority.openssl,
+            installation_authority.ssh_keyscan,
+            installation_authority.ssh_keygen,
+        ):
+            validate_root_owned_executable(
+                Path(tool.path),
+                source,
+                installation_authority.service_identity,
+                tool,
+                observed_version=(
+                    terraform_version_runner(Path(tool.path), ())
+                    if tool is installation_authority.terraform
+                    else execution_tool_version_runner(
+                        Path(tool.path), Path(tool.path).name
+                    )
+                ),
+            )
+        validate_root_owned_service_directory(
+            installation_authority.uv_cache_root,
+            source,
+            installation_authority.service_identity,
+        )
+        validate_system_rooted_directory(installation_authority.build_sdk_root, source)
+        if (
+            str(installation_authority.build_sdk_root)
+            != installation_authority.build_sdk_identity
+        ):
+            raise ProtectedStagingError("protected SDK authority rejected")
+        validate_root_owned_immutable_tree(
+            installation_authority.ansible_collections_root,
+            source,
+            installation_authority.service_identity,
+            installation_authority.ansible_inventory_sha256,
+            expected_collections=installation_authority.ansible_collections,
+        )
+        admitted_native_roots: list[Path] = []
+        for dependency in installation_authority.native_dependencies:
+            root = Path(dependency.root)
+            validate_root_owned_immutable_tree(
+                root,
+                source,
+                installation_authority.service_identity,
+                dependency.inventory_sha256,
+            )
+            try:
+                observed_version = (
+                    (root / "VERSION").read_text(encoding="utf-8").strip()
+                )
+            except OSError:
+                raise ProtectedStagingError(
+                    "protected native dependency version rejected"
+                ) from None
+            if observed_version != dependency.version:
+                raise ProtectedStagingError(
+                    "protected native dependency version rejected"
+                )
+            admitted_native_roots.append(root.resolve(strict=True))
+        for value, digest in installation_authority.protected_native_files.items():
+            path = Path(value)
+            if (
+                not any(
+                    path.resolve(strict=True).is_relative_to(root)
+                    for root in admitted_native_roots
+                )
+                or hashlib.sha256(path.read_bytes()).hexdigest() != digest
+            ):
+                raise ProtectedStagingError("protected native file authority rejected")
     if (
         destination.exists()
         or destination.is_symlink()
         or not destination.is_absolute()
     ):
         raise ProtectedStagingError("protected installation destination rejected")
+    if standing:
+        install_parent = Path("/private/var/db/ncdp-staging/authority/install")
+        if destination.parent != install_parent:
+            raise ProtectedStagingError("standing installation destination rejected")
+        validate_root_owned_service_directory(
+            install_parent, source, installation_authority.service_identity
+        )
     if destination.resolve(strict=False).is_relative_to(source):
         raise ProtectedStagingError("protected installation destination rejected")
     destination.mkdir(mode=0o700, parents=False)

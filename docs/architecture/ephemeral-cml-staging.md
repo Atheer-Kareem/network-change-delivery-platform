@@ -26,10 +26,14 @@ one Unix UID, installation is prohibited.
 Schema 4 binds the exact non-root staging UID/GID and empty supplementary
 groups while immutable configuration, credentials, source, runtime, artifacts,
 tools, Ansible collections, and native dependencies remain root-owned. Only
-build and run state is service-owned. The controller uses a fixed configuration
+the exact `builds`, `state`, and `logs` children are service-owned; their
+top-level service root remains root-controlled so the service cannot replace
+`authority/`. The controller uses a fixed configuration
 path independent of `HOME`, construction requires an exact protected Python,
 and native admission rejects linkage into Homebrew, checkout, user-home, or
 temporary authority. Protected libssh is an explicit supply-chain dependency.
+Every startup recursively revalidates native and Ansible ownership, inventories,
+versions, and fresh Mach-O linkage before privileged integration.
 
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.
 Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary

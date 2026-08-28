@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import stat
 from pathlib import Path
@@ -10,6 +11,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from network_change_delivery.buildkite_staging import BuildkiteStagingContext
 from network_change_delivery.protected_staging import (
     EXPECTED_TERRAFORM_ADDRESSES,
     CMLAuthority,
@@ -22,6 +24,9 @@ from network_change_delivery.protected_staging import (
     ProtectedTerraformOutputs,
     ServiceIdentityAuthority,
     StagingTargetAuthority,
+)
+from network_change_delivery.protected_staging_controller import (
+    ProtectedStagingController,
 )
 from network_change_delivery.protected_staging_runtime import (
     FailureCode,
@@ -39,8 +44,10 @@ from network_change_delivery.protected_staging_runtime import (
     recover_protected_run,
     run_protected_lifecycle,
     validate_macho_dependencies,
+    validate_native_runtime_authority,
     validate_protected_executable,
     validate_root_owned_executable,
+    validate_root_owned_immutable_tree,
     validate_root_owned_service_directory,
     validate_service_identity,
     validate_service_owned_private_path,
@@ -135,17 +142,19 @@ def manifest(**changes) -> ProtectedStagingManifest:
             NativeDependencyAuthority(
                 name="libssh",
                 version="0.11.3",
-                root="/protected/native/libssh",
+                root="/private/var/db/ncdp-staging/authority/native/libssh",
                 inventory_sha256=SHA256,
             ),
             NativeDependencyAuthority(
                 name="openssl",
                 version="3.6.3",
-                root="/protected/native/openssl",
+                root="/private/var/db/ncdp-staging/authority/native/openssl",
                 inventory_sha256=SHA256,
             ),
         ),
-        "protected_native_files": {"/protected/native/libssh.dylib": SHA256},
+        "protected_native_files": {
+            "/private/var/db/ncdp-staging/authority/native/libssh/libssh.dylib": SHA256
+        },
         "native_dependency_admission_sha256": SHA256,
         "build_sdk_identity": "macos-sdk-test",
         "controller_artifact_digest": SHA256,
@@ -268,6 +277,31 @@ def test_schema_four_binds_pipeline_endpoints_source_runtime_and_service() -> No
         manifest(openbao_url="http://bao.example")
 
 
+def test_sanitized_admission_uses_manifest_schema() -> None:
+    controller = object.__new__(ProtectedStagingController)
+    controller.manifest = manifest()
+    controller.context = BuildkiteStagingContext(
+        pipeline_id=str(PIPELINE),
+        build_id=str(BUILD),
+        commit=SHA1,
+        branch="main",
+        step_key="cml-staging",
+        job_id=str(JOB),
+        queue_key="ncdp-staging",
+        retry_count="0",
+    )
+    assert controller.admit()["schema_version"] == 4
+
+
+def test_controller_revalidates_native_and_ansible_before_secret_reads() -> None:
+    source = inspect.getsource(ProtectedStagingController.load.__func__)
+    native = source.index("validate_native_runtime_authority")
+    ansible = source.index("validate_root_owned_immutable_tree")
+    secret = source.index("netbox_token = read_root_owned_service_file")
+    assert native < secret
+    assert ansible < secret
+
+
 def _metadata(uid: int, gid: int, mode: int, size: int = 1):
     return SimpleNamespace(st_uid=uid, st_gid=gid, st_mode=mode, st_size=size)
 
@@ -283,11 +317,20 @@ def test_exact_service_identity_rejects_root_validation_and_groups() -> None:
     ):
         with pytest.raises(ProtectedStagingError):
             validate_service_identity(authority, identity)
+    for uid, gid in ((420, 20), (420, 80), (501, 501)):
+        with pytest.raises(ValidationError):
+            ServiceIdentityAuthority(service_uid=uid, service_gid=gid)
+    with pytest.raises(ValidationError):
+        ServiceIdentityAuthority(
+            service_uid=420, service_gid=420, supplementary_gids=(20,)
+        )
 
 
 def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> None:
     checkout = tmp_path / "checkout"
     authority_root = tmp_path / "protected/authority"
+    service_root = tmp_path / "protected"
+    system_parent = tmp_path
     config_dir = authority_root / "config"
     state_root = tmp_path / "protected/state"
     checkout.mkdir()
@@ -304,6 +347,8 @@ def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> N
             return _metadata(0, 420, stat.S_IFDIR | 0o750)
         if path == state_root:
             return _metadata(420, 420, stat.S_IFDIR | 0o700)
+        if path == service_root:
+            return _metadata(0, 420, stat.S_IFDIR | 0o750)
         return _metadata(0, 0, stat.S_IFDIR | 0o755)
 
     assert (
@@ -312,6 +357,8 @@ def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> N
             checkout,
             authority,
             authority_root=authority_root,
+            service_root=service_root,
+            system_parent=system_parent,
             metadata_reader=admitted,
         )
         == b"{}"
@@ -322,6 +369,8 @@ def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> N
             checkout,
             authority,
             authority_root=authority_root,
+            service_root=service_root,
+            system_parent=system_parent,
             metadata_reader=admitted,
         )
         == config_dir
@@ -332,6 +381,7 @@ def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> N
             checkout,
             authority,
             mutable_root=tmp_path / "protected",
+            system_parent=system_parent,
             metadata_reader=admitted,
         )
         == state_root
@@ -362,6 +412,8 @@ def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> N
             checkout,
             authority,
             authority_root=authority_root,
+            service_root=service_root,
+            system_parent=system_parent,
             metadata_reader=staging_owned,
         )
     with pytest.raises(ProtectedStagingError):
@@ -370,6 +422,8 @@ def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> N
             checkout,
             authority,
             authority_root=authority_root,
+            service_root=service_root,
+            system_parent=system_parent,
             metadata_reader=lambda path: (
                 _metadata(420, 420, stat.S_IFDIR | 0o550)
                 if path == config_dir
@@ -377,10 +431,54 @@ def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> N
             ),
         )
 
+    for unsafe in (
+        _metadata(420, 420, stat.S_IFDIR | 0o750),
+        _metadata(0, 420, stat.S_IFDIR | 0o770),
+        _metadata(0, 420, stat.S_IFDIR | 0o757),
+    ):
+        unsafe_parent = lambda path, unsafe=unsafe: (  # noqa: E731
+            unsafe if path == service_root else admitted(path)
+        )
+        with pytest.raises(ProtectedStagingError):
+            read_root_owned_service_file(
+                config,
+                checkout,
+                authority,
+                authority_root=authority_root,
+                service_root=service_root,
+                system_parent=system_parent,
+                metadata_reader=unsafe_parent,
+            )
+        with pytest.raises(ProtectedStagingError):
+            validate_service_owned_private_path(
+                state_root,
+                checkout,
+                authority,
+                mutable_root=service_root,
+                system_parent=system_parent,
+                metadata_reader=unsafe_parent,
+            )
+    arbitrary = service_root / "arbitrary"
+    arbitrary.mkdir()
+    with pytest.raises(ProtectedStagingError):
+        validate_service_owned_private_path(
+            arbitrary,
+            checkout,
+            authority,
+            mutable_root=service_root,
+            system_parent=system_parent,
+            metadata_reader=lambda path: (
+                _metadata(420, 420, stat.S_IFDIR | 0o700)
+                if path == arbitrary
+                else admitted(path)
+            ),
+        )
+
 
 def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
     checkout = tmp_path / "checkout"
-    authority_root = tmp_path / "authority"
+    service_root = tmp_path / "protected"
+    authority_root = service_root / "authority"
     tool_dir = authority_root / "tools"
     checkout.mkdir()
     tool_dir.mkdir(parents=True)
@@ -395,6 +493,8 @@ def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
     def metadata(path: Path):
         if path == tool:
             return _metadata(0, 420, stat.S_IFREG | 0o550, len(b"terraform"))
+        if path == service_root:
+            return _metadata(0, 420, stat.S_IFDIR | 0o750)
         return _metadata(0, 0, stat.S_IFDIR | 0o755)
 
     validate_root_owned_executable(
@@ -403,6 +503,8 @@ def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
         authority,
         tool_authority,
         authority_root=authority_root,
+        service_root=service_root,
+        system_parent=tmp_path,
         metadata_reader=metadata,
         observed_version="1.15.8",
     )
@@ -413,6 +515,8 @@ def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
             authority,
             tool_authority,
             authority_root=authority_root,
+            service_root=service_root,
+            system_parent=tmp_path,
             metadata_reader=lambda path: (
                 _metadata(0, 0, stat.S_IFDIR | 0o775)
                 if path == tool_dir
@@ -426,6 +530,8 @@ def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
             authority,
             tool_authority.model_copy(update={"sha256": "0" * 64}),
             authority_root=authority_root,
+            service_root=service_root,
+            system_parent=tmp_path,
             metadata_reader=metadata,
         )
     with pytest.raises(ProtectedStagingError):
@@ -435,6 +541,8 @@ def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
             authority,
             tool_authority,
             authority_root=authority_root,
+            service_root=service_root,
+            system_parent=tmp_path,
             metadata_reader=metadata,
             observed_version="1.16.0",
         )
@@ -456,6 +564,9 @@ def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
         "/opt/homebrew/lib/libssh.dylib",
         "/Users/netdevops/libssh.dylib",
         "/private/tmp/build/libssh.dylib",
+        "@rpath/libssh.dylib",
+        "@loader_path/libssh.dylib",
+        "@executable_path/libssh.dylib",
     ):
         with pytest.raises(ProtectedStagingError):
             validate_macho_dependencies(
@@ -471,6 +582,186 @@ def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
     before = directory_inventory_sha256(collections)
     metadata_file.write_text('{"version":"8.6.1"}', encoding="utf-8")
     assert directory_inventory_sha256(collections) != before
+
+
+def test_native_authority_is_revalidated_from_exact_roots(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    service_root = tmp_path / "protected"
+    authority_root = service_root / "authority"
+    native_root = authority_root / "native"
+    runtime = authority_root / "install/runtime"
+    checkout.mkdir()
+    runtime.mkdir(parents=True)
+    native_dependencies = []
+    protected_files = {}
+    for name, version in (("libssh", "0.11.3"), ("openssl", "3.6.3")):
+        root = native_root / name
+        root.mkdir(parents=True)
+        (root / "VERSION").write_text(version + "\n", encoding="utf-8")
+        library = root / f"lib{name}.dylib"
+        library.write_bytes(name.encode())
+        for path in (root / "VERSION", library):
+            path.chmod(0o440)
+        root.chmod(0o550)
+        native_dependencies.append(
+            NativeDependencyAuthority(
+                name=name,
+                version=version,
+                root=str(root),
+                inventory_sha256=directory_inventory_sha256(root),
+            )
+        )
+        protected_files[str(library)] = hashlib.sha256(library.read_bytes()).hexdigest()
+    dependency_map = {
+        str(runtime / "module.so"): (
+            "/usr/lib/libSystem.B.dylib",
+            str(native_root / "libssh/liblibssh.dylib"),
+        )
+    }
+    admission = hashlib.sha256(
+        json.dumps(dependency_map, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    admitted_manifest = manifest().model_copy(
+        update={
+            "native_dependencies": tuple(native_dependencies),
+            "protected_native_files": protected_files,
+            "native_dependency_admission_sha256": admission,
+        }
+    )
+
+    def metadata(path: Path):
+        if path == service_root:
+            return _metadata(0, 420, stat.S_IFDIR | 0o750)
+        if path == tmp_path:
+            return _metadata(0, 0, stat.S_IFDIR | 0o755)
+        if path.is_dir():
+            return _metadata(0, 420, stat.S_IFDIR | stat.S_IMODE(path.stat().st_mode))
+        return _metadata(
+            0,
+            420,
+            stat.S_IFREG | stat.S_IMODE(path.stat().st_mode),
+            path.stat().st_size,
+        )
+
+    validate_native_runtime_authority(
+        admitted_manifest,
+        runtime,
+        checkout,
+        dependency_inspector=lambda _root: dependency_map,
+        authority_root=authority_root,
+        service_root=service_root,
+        system_parent=tmp_path,
+        metadata_reader=metadata,
+    )
+    library = native_root / "libssh/liblibssh.dylib"
+    library.chmod(0o600)
+    library.write_bytes(b"tampered")
+    library.chmod(0o440)
+    with pytest.raises(ProtectedStagingError):
+        validate_native_runtime_authority(
+            admitted_manifest,
+            runtime,
+            checkout,
+            dependency_inspector=lambda _root: dependency_map,
+            authority_root=authority_root,
+            service_root=service_root,
+            system_parent=tmp_path,
+            metadata_reader=metadata,
+        )
+    library.chmod(0o600)
+    library.write_bytes(b"libssh")
+    library.chmod(0o440)
+    with pytest.raises(ProtectedStagingError, match="admission changed"):
+        validate_native_runtime_authority(
+            admitted_manifest,
+            runtime,
+            checkout,
+            dependency_inspector=lambda _root: {
+                **dependency_map,
+                str(runtime / "other.so"): ("/usr/lib/libSystem.B.dylib",),
+            },
+            authority_root=authority_root,
+            service_root=service_root,
+            system_parent=tmp_path,
+            metadata_reader=metadata,
+        )
+
+
+def test_ansible_tree_requires_exact_versions_ownership_and_inventory(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    service_root = tmp_path / "protected"
+    authority_root = service_root / "authority"
+    collections = authority_root / "ansible"
+    checkout.mkdir()
+    expected = {
+        "ansible.netcommon": "8.6.0",
+        "ansible.utils": "6.1.0",
+        "cisco.ios": "11.4.2",
+    }
+    for name, version in expected.items():
+        namespace, collection = name.split(".")
+        root = collections / "ansible_collections" / namespace / collection
+        root.mkdir(parents=True)
+        (root / "MANIFEST.json").write_text(
+            json.dumps({"collection_info": {"version": version}}), encoding="utf-8"
+        )
+    for path in collections.rglob("*"):
+        path.chmod(0o550 if path.is_dir() else 0o440)
+    collections.chmod(0o550)
+    inventory = directory_inventory_sha256(collections)
+
+    def metadata(path: Path):
+        if path == service_root:
+            return _metadata(0, 420, stat.S_IFDIR | 0o750)
+        if path == tmp_path:
+            return _metadata(0, 0, stat.S_IFDIR | 0o755)
+        mode = stat.S_IMODE(path.stat().st_mode)
+        return _metadata(
+            0, 420, (stat.S_IFDIR if path.is_dir() else stat.S_IFREG) | mode
+        )
+
+    validate_root_owned_immutable_tree(
+        collections,
+        checkout,
+        manifest().service_identity,
+        inventory,
+        expected_collections=expected,
+        authority_root=authority_root,
+        service_root=service_root,
+        system_parent=tmp_path,
+        metadata_reader=metadata,
+    )
+    with pytest.raises(ProtectedStagingError, match="version"):
+        validate_root_owned_immutable_tree(
+            collections,
+            checkout,
+            manifest().service_identity,
+            inventory,
+            expected_collections={**expected, "cisco.ios": "11.4.3"},
+            authority_root=authority_root,
+            service_root=service_root,
+            system_parent=tmp_path,
+            metadata_reader=metadata,
+        )
+    nested = next(path for path in collections.rglob("MANIFEST.json"))
+    with pytest.raises(ProtectedStagingError, match="immutable tree"):
+        validate_root_owned_immutable_tree(
+            collections,
+            checkout,
+            manifest().service_identity,
+            inventory,
+            expected_collections=expected,
+            authority_root=authority_root,
+            service_root=service_root,
+            system_parent=tmp_path,
+            metadata_reader=lambda path: (
+                _metadata(0, 420, stat.S_IFREG | 0o460)
+                if path == nested
+                else metadata(path)
+            ),
+        )
 
 
 def test_protected_file_rejects_mode_symlink_empty_and_checkout(tmp_path: Path) -> None:

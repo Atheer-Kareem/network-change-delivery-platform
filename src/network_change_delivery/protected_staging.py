@@ -129,7 +129,7 @@ class ServiceIdentityAuthority(BaseModel):
 
     @model_validator(mode="after")
     def validate_identity(self) -> ServiceIdentityAuthority:
-        if self.service_uid == 501 or self.service_gid == 501:
+        if self.service_uid == 501 or self.service_gid != self.service_uid:
             raise ValueError("protected service identity overlaps validation")
         if self.supplementary_gids:
             raise ValueError("protected service supplementary groups are forbidden")
@@ -302,6 +302,8 @@ class ProtectedStagingManifest(BaseModel):
             "ansible.utils": "6.1.0",
             "cisco.ios": "11.4.2",
         }
+        native_root = Path("/private/var/db/ncdp-staging/authority/native")
+        admitted_native_roots = {Path(value.root) for value in self.native_dependencies}
         if (
             not Path(self.ansible_collections_root).is_absolute()
             or self.ansible_collections != expected_collections
@@ -310,6 +312,13 @@ class ProtectedStagingManifest(BaseModel):
             or not self.protected_native_files
             or any(not Path(path).is_absolute() for path in self.protected_native_files)
             or not self.build_sdk_identity
+            or any(root.parent != native_root for root in admitted_native_roots)
+            or any(
+                not any(
+                    Path(path).is_relative_to(root) for root in admitted_native_roots
+                )
+                for path in self.protected_native_files
+            )
         ):
             raise ValueError("protected runtime dependency authority changed")
         controller_path = "src/network_change_delivery/protected_staging_controller.py"

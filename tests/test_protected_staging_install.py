@@ -18,12 +18,15 @@ from network_change_delivery.protected_staging_controller import (
     PROTECTED_CONTROLLER_CONFIG,
 )
 from network_change_delivery.protected_staging_install import (
+    CANONICAL_ORIGIN_URL,
     PROTECTED_SOURCE_FILES,
+    SYSTEM_GIT,
     StandingInstallationAuthority,
     SubprocessRuntimeBuildRunner,
     construct_isolated_runtime,
     install_source_bundle,
     inventory_runtime,
+    verify_merged_source,
 )
 from network_change_delivery.protected_staging_runtime import (
     inspect_runtime_native_dependencies,
@@ -31,6 +34,98 @@ from network_change_delivery.protected_staging_runtime import (
 )
 
 SHA256 = "b" * 64
+
+
+def test_standing_git_verification_uses_system_git_and_sanitized_environment(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    commit = "a" * 40
+    observed = []
+    outputs = {
+        ("rev-parse", "HEAD"): commit,
+        ("branch", "--show-current"): "",
+        ("status", "--porcelain", "--untracked-files=all"): "",
+        ("rev-parse", "origin/main"): commit,
+        ("remote", "get-url", "origin"): CANONICAL_ORIGIN_URL,
+    }
+
+    def runner(arguments, cwd, environment):
+        observed.append((tuple(arguments), cwd, dict(environment)))
+        key = tuple(arguments[5:])
+        return subprocess.CompletedProcess(arguments, 0, outputs[key], "")
+
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install."
+        "validate_root_owned_bootstrap_source",
+        lambda *_args, **_kwargs: source,
+    )
+    verify_merged_source(
+        source,
+        commit,
+        standing=True,
+        service_identity=ServiceIdentityAuthority(service_uid=420, service_gid=420),
+        git_runner=runner,
+    )
+    assert all(call[0][0] == str(SYSTEM_GIT) for call in observed)
+    assert all(
+        call[0][1:5] == ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
+        for call in observed
+    )
+    assert all(
+        set(environment)
+        == {
+            "PATH",
+            "HOME",
+            "GIT_CONFIG_NOSYSTEM",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_CONFIG_COUNT",
+            "GIT_OPTIONAL_LOCKS",
+        }
+        and environment["HOME"] == "/var/empty"
+        for _, _, environment in observed
+    )
+
+
+@pytest.mark.parametrize("field", ["origin", "head", "dirty"])
+def test_standing_git_verification_rejects_authority_drift(
+    tmp_path: Path, monkeypatch, field: str
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    commit = "a" * 40
+
+    def runner(arguments, _cwd, _environment):
+        command = tuple(arguments[5:])
+        output = {
+            ("rev-parse", "HEAD"): "b" * 40 if field == "head" else commit,
+            ("branch", "--show-current"): "",
+            ("status", "--porcelain", "--untracked-files=all"): (
+                " M README.md" if field == "dirty" else ""
+            ),
+            ("rev-parse", "origin/main"): commit,
+            ("remote", "get-url", "origin"): (
+                "https://example.invalid/repository.git"
+                if field == "origin"
+                else CANONICAL_ORIGIN_URL
+            ),
+        }[command]
+        return subprocess.CompletedProcess(arguments, 0, output, "")
+
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install."
+        "validate_root_owned_bootstrap_source",
+        lambda *_args, **_kwargs: source,
+    )
+    with pytest.raises(ProtectedStagingError, match="source rejected"):
+        verify_merged_source(
+            source,
+            commit,
+            standing=True,
+            service_identity=ServiceIdentityAuthority(service_uid=420, service_gid=420),
+            git_runner=runner,
+        )
 
 
 def _install_authority(
@@ -77,7 +172,6 @@ def _install_authority(
         protected_native_files={
             "/private/var/db/ncdp-staging/authority/native/libssh/libssh.dylib": SHA256
         },
-        native_dependency_admission_sha256=SHA256,
         build_sdk_identity="/opt/protected/sdk",
     )
 
@@ -116,7 +210,7 @@ def test_installer_copies_only_exact_private_source_set(
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -152,7 +246,7 @@ def test_installer_refuses_checkout_destination(monkeypatch) -> None:
     source = Path(__file__).parents[1]
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     with pytest.raises(ProtectedStagingError, match="destination"):
         install_source_bundle(
@@ -177,7 +271,7 @@ def test_standing_install_requires_root_and_exact_protected_python(
     source = Path(__file__).parents[1]
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.os.geteuid", lambda: 501
@@ -218,6 +312,23 @@ def test_controller_sources_never_execute_checkout_runtime() -> None:
         "--terraform-root",
     ):
         assert forbidden not in sources
+
+
+def test_standing_installer_is_packaged_and_checkout_wrapper_is_not_authority() -> None:
+    root = Path(__file__).parents[1]
+    project = (root / "pyproject.toml").read_text(encoding="utf-8")
+    wrapper = (root / "scripts/protected_staging/install.py").read_text(
+        encoding="utf-8"
+    )
+    acceptance = (
+        root / "docs/acceptance/protected-staging-root-authority-phase-b3-2b2b0-r.md"
+    ).read_text(encoding="utf-8")
+    assert (
+        "ncdp-protected-staging-install = "
+        '"network_change_delivery.protected_staging_installer_cli:main"' in project
+    )
+    assert "install_source_bundle" not in wrapper
+    assert "sudo scripts/protected_staging/install.py" not in acceptance
 
 
 def test_controller_config_authority_is_fixed_and_home_independent(
@@ -346,7 +457,7 @@ def test_final_runtime_inventory_rejects_tamper(
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -387,7 +498,7 @@ def test_runtime_inventory_rejects_escaping_and_entrypoint_symlinks(
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -420,7 +531,7 @@ def test_runtime_inventory_file_tamper_is_rejected(tmp_path: Path, monkeypatch) 
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -450,7 +561,7 @@ def test_retained_wheel_and_requirements_are_manifest_bound(
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -501,7 +612,7 @@ def test_actual_reduced_source_builds_immutable_protected_runtime(
     destination = tmp_path / "actual-installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     build_environment = {}
     if sys.platform == "darwin":

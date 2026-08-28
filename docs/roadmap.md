@@ -217,7 +217,8 @@ Ordering may change when implementation evidence requires it.
       a root-controlled service-root entry with only exact mutable children,
       dedicated equal-number service UID/GID authority, startup native/Ansible
       re-admission, protected native-build inputs, root-descriptor
-      agent-token bootstrap, and queue-paused registration. B4 owns later
+      agent-token bootstrap, queue-paused registration, root-owned canonical
+      bootstrap source/runtime, and complete transitive Mach-O authority. B4 owns later
       reviewed consumer cutover, unfreeze,
       and agent re-enable.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect

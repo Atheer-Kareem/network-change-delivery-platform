@@ -47,7 +47,7 @@ from network_change_delivery.protected_staging_runtime import (
     derive_junos_password_verifier,
     derive_run_directory,
     execution_tool_version_runner,
-    inspect_runtime_native_dependencies,
+    inspect_combined_native_dependency_graph,
     load_protected_staging_credentials,
     read_root_owned_service_file,
     recover_protected_run,
@@ -217,7 +217,7 @@ class ProtectedStagingController:
             manifest,
             config.runtime_root,
             checkout,
-            dependency_inspector=inspect_runtime_native_dependencies,
+            dependency_inspector=inspect_combined_native_dependency_graph,
         )
         if (
             str(config.tools.ansible_collections_root)

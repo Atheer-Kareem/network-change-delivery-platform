@@ -35,6 +35,15 @@ temporary authority. Protected libssh is an explicit supply-chain dependency.
 Every startup recursively revalidates native and Ansible ownership, inventories,
 versions, and fresh Mach-O linkage before privileged integration.
 
+Standing installation source is a fixed root-owned bootstrap class, not a clean
+UID-501 checkout. The future operator transaction obtains the canonical origin
+and exact accepted commit below
+`/private/var/db/ncdp-staging/bootstrap/source/`, verifies it with sanitized
+system Git, builds a root-owned installer runtime, and invokes only its packaged
+installer entry point. The native-admission digest covers the transitive,
+scope-qualified graph for runtime, Python, protected native trees, protected
+execution tools, and installation-time uv rather than only direct runtime edges.
+
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.
 Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary
 and thin operator entry point. Increment 8E-3 invokes that same boundary from a

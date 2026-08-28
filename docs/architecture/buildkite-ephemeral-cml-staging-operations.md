@@ -85,6 +85,20 @@ environment from the admitted SDK and protected libssh roots, uses a reviewed
 root-controlled uv cache, and verifies native plus Ansible authority both before
 manifest finalization and again at controller startup.
 
+Standing construction never elevates the active checkout. B3-2B2B1 must first
+obtain the canonical repository's exact accepted commit into the root-owned
+`/private/var/db/ncdp-staging/bootstrap/source/<commit>` class, verify it with
+sanitized `/usr/bin/git`, construct a root-owned installer runtime, and only then
+invoke `ncdp-protected-staging-install`. Repository Python under UID 501 is
+review input, not privileged execution authority.
+
+Native admission is transitive. One scope-qualified graph covers the runtime,
+Python, libssh/OpenSSL trees, OpenSSL executable, Terraform, Buildkite Agent,
+and installation-time uv. Each dependency of each protected dylib is itself
+admitted; the combined graph digest rejects a protected libssh or OpenSSL object
+that delegates loading to Homebrew, user, checkout, temporary, unresolved
+loader-relative, or other unbound authority.
+
 Runtime construction copies every packaging-required local asset, installs the
 non-editable wheel with uv bytecode compilation enabled, inventories the final
 bytecode-bearing runtime, then starts the real controller and requires the

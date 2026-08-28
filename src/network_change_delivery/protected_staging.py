@@ -175,6 +175,12 @@ class ProtectedStagingManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal[4] = 4
+    canonical_repository: Literal["Atheer-Kareem/network-change-delivery-platform"] = (
+        "Atheer-Kareem/network-change-delivery-platform"
+    )
+    canonical_origin_url: Literal[
+        "https://github.com/Atheer-Kareem/network-change-delivery-platform.git"
+    ] = "https://github.com/Atheer-Kareem/network-change-delivery-platform.git"
     service_identity: ServiceIdentityAuthority
     buildkite_pipeline_id: UUID
     source_commit: str

@@ -49,10 +49,22 @@ owner, group, exact mode, symlink, controlled ancestry and digest checks.
 
 The standing installer now requires explicit service identity and exact
 protected Python authority. It invokes `uv venv --python <exact-path>` rather
-than ambient Python discovery. A standing installation requires root operator
-authority, finalizes immutable source/runtime/artifact ownership before runtime
-inventory, then writes root-owned inventories and the final manifest. Temporary
-non-root construction remains a test-only simulation.
+than ambient Python discovery. Its sole production entry point runs from the
+root-owned bootstrap runtime, and its source must be the exact canonical commit
+at `/private/var/db/ncdp-staging/bootstrap/source/<commit>`. A UID-501 checkout,
+user home, Buildkite checkout, Homebrew tree, or temporary source is never
+standing installation authority. Future B3-2B2B1 bootstraps the canonical
+repository and installer runtime under root control before executing project
+Python as root. `/usr/bin/git` runs with hooks, fsmonitor, user configuration,
+alternate object authority, and inherited Git environment disabled; it requires
+the canonical origin, exact HEAD/origin-main commit, and clean tree.
+
+A standing installation requires root operator authority, finalizes immutable
+source/runtime/artifact ownership before runtime inventory, then writes
+root-owned inventories and the final manifest. Temporary non-root construction
+remains a test-only simulation. The historical repository script is only a
+development wrapper; production uses `ncdp-protected-staging-install` from the
+admitted bootstrap runtime and rejects checkout execution.
 
 The reviewed installation authority supplies the exact protected uv executable,
 root-controlled uv cache, protected libssh root, and system SDK identity. The
@@ -68,16 +80,22 @@ Ansible collection root, versions and inventory digest; and explicit protected
 libssh/OpenSSL native roots. B3-2B2B1 must acquire libssh independently rather
 than link against UID-501-controlled Homebrew.
 
-Before final runtime inventory, every Mach-O object must be inspected with
-system-protected tooling. Dependencies beneath `/Users/netdevops`, the checkout,
-`/opt/homebrew`, temporary build roots, or another validation-writable location
-are rejected. Only Apple system libraries or exact digest-bound files in
-root-owned protected native roots are accepted.
+Before final runtime inventory, system-protected tooling inspects a single
+scope-qualified graph covering every Mach-O object in the Python runtime,
+protected libssh and OpenSSL trees, protected Python interpreter, OpenSSL tool,
+Terraform, Buildkite Agent, and build-time uv. Every edge is admitted, including
+libssh/OpenSSL dependencies of already protected dylibs. Dependencies beneath
+`/Users/netdevops`, the checkout, `/opt/homebrew`, temporary build roots, or
+another validation-writable location are rejected. Loader-relative or unknown
+edges fail closed. Only Apple system libraries or exact digest-bound files in
+root-owned protected native roots are accepted. The canonical combined graph
+digest binds scope plus full source/destination identity.
 
 Controller startup repeats this admission before privileged integration: it
 recursively validates each native root and version record, rehashes every
-admitted dylib, freshly inspects runtime Mach-O linkage, and requires the exact
-native-admission digest. It also recursively revalidates the Ansible tree's
+admitted dylib, freshly rebuilds the complete transitive native graph, and
+requires the exact combined native-admission digest. It also recursively
+revalidates the Ansible tree's
 ownership, modes, symlink absence, inventory digest, and the exact collection
 metadata versions `ansible.netcommon 8.6.0`, `ansible.utils 6.1.0`, and
 `cisco.ios 11.4.2`.

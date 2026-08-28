@@ -58,6 +58,7 @@ from network_change_delivery.workflow import plan_change
 
 MAX_PROTECTED_FILE_BYTES = 1024 * 1024
 PROTECTED_AUTHORITY_ROOT = Path("/private/var/db/ncdp-staging/authority")
+PROTECTED_BOOTSTRAP_ROOT = Path("/private/var/db/ncdp-staging/bootstrap")
 
 
 class FailureCode(StrEnum):
@@ -186,6 +187,47 @@ def _validate_service_root_ancestry(
         or stat.S_IMODE(root_metadata.st_mode) != 0o750
     ):
         raise ProtectedStagingError("protected service root ancestry rejected")
+
+
+def validate_root_owned_bootstrap_source(
+    source: Path,
+    expected_commit: str,
+    authority: ServiceIdentityAuthority,
+    *,
+    bootstrap_root: Path = PROTECTED_BOOTSTRAP_ROOT,
+    service_root: Path = PROTECTED_SERVICE_ROOT,
+    system_parent: Path = PROTECTED_SYSTEM_PARENT,
+    metadata_reader: MetadataReader = _lstat,
+) -> Path:
+    """Admit the sole root-owned canonical source class used by standing install."""
+    expected = bootstrap_root / "source" / expected_commit
+    if (
+        not source.is_absolute()
+        or source.is_symlink()
+        or source.resolve(strict=True) != expected.resolve(strict=True)
+    ):
+        raise ProtectedStagingError("protected bootstrap source rejected")
+    _validate_service_root_ancestry(
+        authority,
+        service_root=service_root,
+        system_parent=system_parent,
+        metadata_reader=metadata_reader,
+    )
+    _validate_controlled_ancestry(
+        source.resolve(strict=True), service_root, metadata_reader=metadata_reader
+    )
+    for path in (source, *sorted(source.rglob("*"))):
+        if path.is_symlink():
+            raise ProtectedStagingError("protected bootstrap source rejected")
+        metadata = metadata_reader(path)
+        if (
+            metadata.st_uid != authority.immutable_owner_uid
+            or metadata.st_gid != authority.service_gid
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or not (stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode))
+        ):
+            raise ProtectedStagingError("protected bootstrap source rejected")
+    return source.resolve(strict=True)
 
 
 def read_root_owned_service_file(
@@ -513,7 +555,11 @@ def validate_macho_dependencies(
     digest_reader: Callable[[Path], str],
 ) -> None:
     """Reject native linkage outside Apple or exact protected dependency roots."""
-    forbidden_prefixes = ("/Users/netdevops", "/opt/homebrew", "/private/tmp")
+    forbidden_prefixes = (
+        "/Users/netdevops",
+        "/opt/homebrew",
+        "/private/tmp",
+    )
     system_prefixes = ("/usr/lib/", "/System/Library/")
     for binary, dependencies in dependency_map.items():
         if not Path(binary).is_absolute():
@@ -529,10 +575,11 @@ def validate_macho_dependencies(
                 raise ProtectedStagingError("protected native dependency invalid")
 
 
-def inspect_runtime_native_dependencies(runtime: Path) -> dict[str, tuple[str, ...]]:
-    """Read Mach-O dependency paths with system-protected inspection tools."""
+def inspect_native_dependencies(root: Path) -> dict[str, tuple[str, ...]]:
+    """Read every Mach-O dependency below one admitted authority root."""
     observed: dict[str, tuple[str, ...]] = {}
-    for path in sorted(value for value in runtime.rglob("*") if value.is_file()):
+    paths = (root,) if root.is_file() else tuple(root.rglob("*"))
+    for path in sorted(value for value in paths if value.is_file()):
         kind = subprocess.run(
             ["/usr/bin/file", "-b", str(path)],
             env={},
@@ -559,6 +606,63 @@ def inspect_runtime_native_dependencies(runtime: Path) -> dict[str, tuple[str, .
             if line.strip()
         )
     return observed
+
+
+def inspect_runtime_native_dependencies(runtime: Path) -> dict[str, tuple[str, ...]]:
+    """Compatibility wrapper for inspecting the isolated runtime."""
+    return inspect_native_dependencies(runtime)
+
+
+def inspect_combined_native_dependency_graph(
+    scopes: Mapping[str, Path],
+    *,
+    inspector: Callable[[Path], Mapping[str, Sequence[str]]] = (
+        inspect_native_dependencies
+    ),
+) -> dict[str, dict[str, tuple[str, ...]]]:
+    """Inspect one canonical, scope-qualified native authority graph."""
+    if not scopes or any(not name or "/" in name for name in scopes):
+        raise ProtectedStagingError("protected native dependency scope rejected")
+    return {
+        scope: {
+            binary: tuple(dependencies)
+            for binary, dependencies in sorted(inspector(path).items())
+        }
+        for scope, path in sorted(scopes.items())
+    }
+
+
+def native_dependency_graph_sha256(
+    graph: Mapping[str, Mapping[str, Sequence[str]]],
+) -> str:
+    """Digest the canonical graph with scope and full path identity."""
+    canonical = {
+        scope: {
+            binary: tuple(dependencies)
+            for binary, dependencies in sorted(dependency_map.items())
+        }
+        for scope, dependency_map in sorted(graph.items())
+    }
+    return hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def validate_combined_native_dependency_graph(
+    graph: Mapping[str, Mapping[str, Sequence[str]]],
+    *,
+    protected_native_files: Mapping[Path, str],
+    digest_reader: Callable[[Path], str],
+) -> None:
+    """Admit every edge, including edges from protected dependencies themselves."""
+    if not graph:
+        raise ProtectedStagingError("protected native dependency graph rejected")
+    for dependency_map in graph.values():
+        validate_macho_dependencies(
+            dependency_map,
+            protected_native_files=protected_native_files,
+            digest_reader=digest_reader,
+        )
 
 
 def directory_inventory_sha256(root: Path) -> str:
@@ -666,7 +770,9 @@ def validate_native_runtime_authority(
     runtime_root: Path,
     checkout: Path,
     *,
-    dependency_inspector: Callable[[Path], Mapping[str, Sequence[str]]],
+    dependency_inspector: Callable[
+        [Mapping[str, Path]], Mapping[str, Mapping[str, Sequence[str]]]
+    ],
     authority_root: Path = PROTECTED_AUTHORITY_ROOT,
     service_root: Path = PROTECTED_SERVICE_ROOT,
     system_parent: Path = PROTECTED_SYSTEM_PARENT,
@@ -716,15 +822,27 @@ def validate_native_runtime_authority(
         ):
             raise ProtectedStagingError("protected native file rejected")
         protected_files[resolved] = digest
-    dependency_map = dict(dependency_inspector(runtime_root))
-    validate_macho_dependencies(
-        dependency_map,
+    scopes = {
+        "runtime": runtime_root,
+        "python": Path(manifest.python_interpreter_path),
+        "openssl-tool": Path(manifest.openssl.path),
+        "terraform": Path(manifest.terraform.path),
+        "buildkite-agent": Path(manifest.buildkite_agent.path),
+        "uv-install-time": Path(manifest.uv.path),
+        **{
+            dependency.name: Path(dependency.root)
+            for dependency in manifest.native_dependencies
+        },
+    }
+    graph = dict(dependency_inspector(scopes))
+    if set(graph) != set(scopes):
+        raise ProtectedStagingError("protected native dependency scope changed")
+    validate_combined_native_dependency_graph(
+        graph,
         protected_native_files=protected_files,
         digest_reader=lambda path: hashlib.sha256(path.read_bytes()).hexdigest(),
     )
-    admission = hashlib.sha256(
-        json.dumps(dependency_map, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    admission = native_dependency_graph_sha256(graph)
     if admission != manifest.native_dependency_admission_sha256:
         raise ProtectedStagingError("protected native dependency admission changed")
 

@@ -39,13 +39,16 @@ from network_change_delivery.protected_staging_runtime import (
     build_protected_terraform_environment,
     derive_run_directory,
     directory_inventory_sha256,
+    native_dependency_graph_sha256,
     read_protected_file,
     read_root_owned_service_file,
     recover_protected_run,
     run_protected_lifecycle,
+    validate_combined_native_dependency_graph,
     validate_macho_dependencies,
     validate_native_runtime_authority,
     validate_protected_executable,
+    validate_root_owned_bootstrap_source,
     validate_root_owned_executable,
     validate_root_owned_immutable_tree,
     validate_root_owned_service_directory,
@@ -618,9 +621,17 @@ def test_native_authority_is_revalidated_from_exact_roots(tmp_path: Path) -> Non
             str(native_root / "libssh/liblibssh.dylib"),
         )
     }
-    admission = hashlib.sha256(
-        json.dumps(dependency_map, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    dependency_graph = {
+        "runtime": dependency_map,
+        "python": {},
+        "openssl-tool": {},
+        "terraform": {},
+        "buildkite-agent": {},
+        "uv-install-time": {},
+        "libssh": {},
+        "openssl": {},
+    }
+    admission = native_dependency_graph_sha256(dependency_graph)
     admitted_manifest = manifest().model_copy(
         update={
             "native_dependencies": tuple(native_dependencies),
@@ -647,7 +658,7 @@ def test_native_authority_is_revalidated_from_exact_roots(tmp_path: Path) -> Non
         admitted_manifest,
         runtime,
         checkout,
-        dependency_inspector=lambda _root: dependency_map,
+        dependency_inspector=lambda _scopes: dependency_graph,
         authority_root=authority_root,
         service_root=service_root,
         system_parent=tmp_path,
@@ -662,7 +673,7 @@ def test_native_authority_is_revalidated_from_exact_roots(tmp_path: Path) -> Non
             admitted_manifest,
             runtime,
             checkout,
-            dependency_inspector=lambda _root: dependency_map,
+            dependency_inspector=lambda _scopes: dependency_graph,
             authority_root=authority_root,
             service_root=service_root,
             system_parent=tmp_path,
@@ -676,14 +687,95 @@ def test_native_authority_is_revalidated_from_exact_roots(tmp_path: Path) -> Non
             admitted_manifest,
             runtime,
             checkout,
-            dependency_inspector=lambda _root: {
-                **dependency_map,
-                str(runtime / "other.so"): ("/usr/lib/libSystem.B.dylib",),
+            dependency_inspector=lambda _scopes: {
+                **dependency_graph,
+                "runtime": {
+                    **dependency_map,
+                    str(runtime / "other.so"): ("/usr/lib/libSystem.B.dylib",),
+                },
             },
             authority_root=authority_root,
             service_root=service_root,
             system_parent=tmp_path,
             metadata_reader=metadata,
+        )
+
+
+def test_bootstrap_source_requires_exact_root_controlled_commit_tree(
+    tmp_path: Path,
+) -> None:
+    service_root = tmp_path / "ncdp-staging"
+    bootstrap_root = service_root / "bootstrap"
+    source = bootstrap_root / "source" / SHA1
+    source.mkdir(parents=True)
+    (source / "README.md").write_text("reviewed\n", encoding="utf-8")
+    authority = ServiceIdentityAuthority(service_uid=420, service_gid=420)
+
+    def metadata(path: Path):
+        mode = stat.S_IFDIR | (0o750 if path == service_root else 0o550)
+        if path == tmp_path:
+            return _metadata(0, 0, stat.S_IFDIR | 0o755)
+        if path.is_file():
+            mode = stat.S_IFREG | 0o440
+        return _metadata(0, 420, mode)
+
+    assert (
+        validate_root_owned_bootstrap_source(
+            source,
+            SHA1,
+            authority,
+            bootstrap_root=bootstrap_root,
+            service_root=service_root,
+            system_parent=tmp_path,
+            metadata_reader=metadata,
+        )
+        == source.resolve()
+    )
+
+    def unsafe_metadata(path: Path):
+        if path == service_root:
+            return _metadata(501, 420, stat.S_IFDIR | 0o750)
+        return metadata(path)
+
+    with pytest.raises(ProtectedStagingError, match="service root ancestry"):
+        validate_root_owned_bootstrap_source(
+            source,
+            SHA1,
+            authority,
+            bootstrap_root=bootstrap_root,
+            service_root=service_root,
+            system_parent=tmp_path,
+            metadata_reader=unsafe_metadata,
+        )
+
+
+def test_combined_native_graph_rejects_transitive_homebrew_edge() -> None:
+    libssh = Path("/private/var/db/ncdp-staging/authority/native/libssh/libssh.dylib")
+    libcrypto = Path(
+        "/private/var/db/ncdp-staging/authority/native/openssl/libcrypto.dylib"
+    )
+    protected = {libssh: SHA256, libcrypto: SHA256}
+    accepted = {
+        "runtime": {"/protected/runtime.so": (str(libssh),)},
+        "libssh": {str(libssh): (str(libcrypto), "/usr/lib/libSystem.B.dylib")},
+        "openssl-native": {str(libcrypto): ("/usr/lib/libSystem.B.dylib",)},
+    }
+    validate_combined_native_dependency_graph(
+        accepted,
+        protected_native_files=protected,
+        digest_reader=lambda _path: SHA256,
+    )
+    rejected = {
+        **accepted,
+        "libssh": {
+            str(libssh): ("/opt/homebrew/lib/libcrypto.3.dylib",),
+        },
+    }
+    with pytest.raises(ProtectedStagingError, match="native dependency invalid"):
+        validate_combined_native_dependency_graph(
+            rejected,
+            protected_native_files=protected,
+            digest_reader=lambda _path: SHA256,
         )
 
 

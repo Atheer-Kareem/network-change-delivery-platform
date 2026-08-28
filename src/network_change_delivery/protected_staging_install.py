@@ -8,7 +8,7 @@ import os
 import shutil
 import stat
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final, Protocol
 from uuid import UUID
@@ -30,14 +30,22 @@ from network_change_delivery.protected_staging import (
 )
 from network_change_delivery.protected_staging_runtime import (
     execution_tool_version_runner,
-    inspect_runtime_native_dependencies,
+    inspect_combined_native_dependency_graph,
+    native_dependency_graph_sha256,
     terraform_version_runner,
-    validate_macho_dependencies,
+    validate_combined_native_dependency_graph,
+    validate_root_owned_bootstrap_source,
     validate_root_owned_executable,
     validate_root_owned_immutable_tree,
     validate_root_owned_service_directory,
     validate_system_rooted_directory,
 )
+
+CANONICAL_REPOSITORY = "Atheer-Kareem/network-change-delivery-platform"
+CANONICAL_ORIGIN_URL = (
+    "https://github.com/Atheer-Kareem/network-change-delivery-platform.git"
+)
+SYSTEM_GIT = Path("/usr/bin/git")
 
 PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
     "README.md",
@@ -52,6 +60,8 @@ PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
     "src/network_change_delivery/protected_staging.py",
     "src/network_change_delivery/protected_staging_controller.py",
     "src/network_change_delivery/protected_staging_runtime.py",
+    "src/network_change_delivery/protected_staging_install.py",
+    "src/network_change_delivery/protected_staging_installer_cli.py",
     "src/network_change_delivery/secrets.py",
     "src/network_change_delivery/workflow.py",
     "src/network_change_delivery/ansible_adapter.py",
@@ -97,7 +107,6 @@ class StandingInstallationAuthority(BaseModel):
     ansible_inventory_sha256: str
     native_dependencies: tuple[NativeDependencyAuthority, ...]
     protected_native_files: dict[str, str]
-    native_dependency_admission_sha256: str
     build_sdk_identity: str
 
     @model_validator(mode="after")
@@ -343,26 +352,70 @@ def inventory_runtime(runtime: Path) -> tuple[dict[str, dict[str, object]], str]
     return entries, hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def verify_merged_source(source: Path, expected_commit: str) -> None:
-    """Require an exact, clean, non-detached main checkout before installation."""
+GitRunner = Callable[
+    [Sequence[str], Path, Mapping[str, str]], subprocess.CompletedProcess[str]
+]
+
+
+def _system_git_runner(
+    arguments: Sequence[str], cwd: Path, environment: Mapping[str, str]
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        list(arguments),
+        cwd=cwd,
+        env=dict(environment),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def verify_merged_source(
+    source: Path,
+    expected_commit: str,
+    *,
+    standing: bool = False,
+    service_identity: ServiceIdentityAuthority | None = None,
+    git_runner: GitRunner = _system_git_runner,
+) -> None:
+    """Require exact canonical merged source with sanitized system Git authority."""
+    if standing:
+        if service_identity is None:
+            raise ProtectedStagingError("protected bootstrap identity missing")
+        validate_root_owned_bootstrap_source(source, expected_commit, service_identity)
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": "/var/empty",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_COUNT": "0",
+        "GIT_OPTIONAL_LOCKS": "0",
+    }
+    prefix = (
+        str(SYSTEM_GIT),
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+    )
     commands = {
-        "head": ["git", "rev-parse", "HEAD"],
-        "branch": ["git", "branch", "--show-current"],
-        "status": ["git", "status", "--porcelain", "--untracked-files=all"],
-        "origin": ["git", "rev-parse", "origin/main"],
+        "head": (*prefix, "rev-parse", "HEAD"),
+        "branch": (*prefix, "branch", "--show-current"),
+        "status": (*prefix, "status", "--porcelain", "--untracked-files=all"),
+        "origin_head": (*prefix, "rev-parse", "origin/main"),
+        "origin_url": (*prefix, "remote", "get-url", "origin"),
     }
     values: dict[str, str] = {}
     for name, command in commands.items():
-        result = subprocess.run(
-            command, cwd=source, check=False, capture_output=True, text=True
-        )
+        result = git_runner(command, source, environment)
         if result.returncode != 0:
             raise ProtectedStagingError("protected installation source rejected")
         values[name] = result.stdout.strip()
     if (
         values["head"] != expected_commit
-        or values["origin"] != expected_commit
-        or values["branch"] != "main"
+        or values["origin_head"] != expected_commit
+        or values["origin_url"] != CANONICAL_ORIGIN_URL
+        or (not standing and values["branch"] != "main")
         or values["status"]
     ):
         raise ProtectedStagingError("protected installation source rejected")
@@ -386,7 +439,14 @@ def install_source_bundle(
     standing: bool = False,
 ) -> ProtectedStagingManifest:
     """Copy an exact reviewed source set into a new private versioned bundle."""
-    verify_merged_source(source, expected_commit)
+    verify_merged_source(
+        source,
+        expected_commit,
+        standing=standing,
+        service_identity=(
+            installation_authority.service_identity if standing else None
+        ),
+    )
     source = source.resolve(strict=True)
     if str(uv_executable) != installation_authority.uv.path:
         raise ProtectedStagingError("protected uv authority mismatch")
@@ -555,9 +615,23 @@ def install_source_bundle(
             protected_python=installation_authority.protected_python,
         )
         if standing:
-            dependency_map = inspect_runtime_native_dependencies(runtime)
-            validate_macho_dependencies(
-                dependency_map,
+            native_scopes = {
+                "runtime": runtime,
+                "python": installation_authority.protected_python,
+                "openssl-tool": Path(installation_authority.openssl.path),
+                "terraform": Path(installation_authority.terraform.path),
+                "buildkite-agent": Path(installation_authority.buildkite_agent.path),
+                "uv-install-time": Path(installation_authority.uv.path),
+                **{
+                    dependency.name: Path(dependency.root)
+                    for dependency in installation_authority.native_dependencies
+                },
+            }
+            native_graph = inspect_combined_native_dependency_graph(native_scopes)
+            if set(native_graph) != set(native_scopes):
+                raise ProtectedStagingError("protected native dependency scope changed")
+            validate_combined_native_dependency_graph(
+                native_graph,
                 protected_native_files={
                     Path(path): digest
                     for path, digest in (
@@ -568,19 +642,32 @@ def install_source_bundle(
                     path.read_bytes()
                 ).hexdigest(),
             )
-            admission = hashlib.sha256(
-                json.dumps(
-                    dependency_map, sort_keys=True, separators=(",", ":")
-                ).encode()
-            ).hexdigest()
-            if admission != installation_authority.native_dependency_admission_sha256:
-                raise ProtectedStagingError(
-                    "protected native dependency admission changed"
-                )
+            admission = native_dependency_graph_sha256(native_graph)
             for immutable_root in (source_root, runtime, destination / "artifacts"):
                 _apply_immutable_ownership(
                     immutable_root, installation_authority.service_identity.service_gid
                 )
+            final_native_graph = inspect_combined_native_dependency_graph(native_scopes)
+            if set(final_native_graph) != set(native_scopes):
+                raise ProtectedStagingError("protected native dependency scope changed")
+            validate_combined_native_dependency_graph(
+                final_native_graph,
+                protected_native_files={
+                    Path(path): digest
+                    for path, digest in (
+                        installation_authority.protected_native_files.items()
+                    )
+                },
+                digest_reader=lambda path: hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest(),
+            )
+            if native_dependency_graph_sha256(final_native_graph) != admission:
+                raise ProtectedStagingError(
+                    "protected native dependency admission changed"
+                )
+        else:
+            admission = native_dependency_graph_sha256({"runtime": {}})
         runtime_entries, runtime_digest = inventory_runtime(runtime)
         python_interpreter = (runtime / "bin/python").resolve(strict=True)
         runtime_inventory = json.dumps(
@@ -601,6 +688,8 @@ def install_source_bundle(
         requirements = destination / "artifacts/production-requirements.txt"
         controller_path = "src/network_change_delivery/protected_staging_controller.py"
         manifest = ProtectedStagingManifest(
+            canonical_repository=CANONICAL_REPOSITORY,
+            canonical_origin_url=CANONICAL_ORIGIN_URL,
             service_identity=installation_authority.service_identity,
             buildkite_pipeline_id=buildkite_pipeline_id,
             source_commit=expected_commit,
@@ -633,9 +722,7 @@ def install_source_bundle(
             ansible_inventory_sha256=(installation_authority.ansible_inventory_sha256),
             native_dependencies=installation_authority.native_dependencies,
             protected_native_files=installation_authority.protected_native_files,
-            native_dependency_admission_sha256=(
-                installation_authority.native_dependency_admission_sha256
-            ),
+            native_dependency_admission_sha256=admission,
             build_sdk_identity=installation_authority.build_sdk_identity,
             controller_artifact_digest=digests[controller_path],
             file_digests=digests,

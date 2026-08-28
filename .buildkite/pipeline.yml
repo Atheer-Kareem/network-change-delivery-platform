@@ -89,7 +89,6 @@ steps:
 
   - label: ":cloud: ephemeral CML staging"
     key: cml-staging
-    if: "false"
     depends_on:
       - quality
       - pipeline-contract
@@ -117,7 +116,7 @@ steps:
   - group: ":lock: protected delivery"
     key: protected-delivery
     depends_on: cml-staging
-    if: false && build.branch == "main" && build.pull_request.id == null
+    if: build.branch == "main" && build.pull_request.id == null
     if_changed:
       include: "**"
       exclude:

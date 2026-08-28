@@ -100,6 +100,10 @@ The checked-in consumer still selects historical devices 1/2, so it is
 intentionally fail-closed after B2. No `cml-staging` execution is authorized
 until B3/B4 migrate the consumer. A reviewed Buildkite migration execution guard
 or freeze is required before the first B3 source or Terraform commit is pushed.
+Phase B2-G provides that prerequisite through a disabled and unloaded external
+staging LaunchAgent plus independent explicit-false pipeline conditions for
+legacy staging and protected delivery. B4 alone owns reviewed removal and agent
+re-enable after the devices 6/7 consumer is migrated.
 
 ## State lifecycle and secret boundary
 

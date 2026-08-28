@@ -197,8 +197,11 @@ Ordering may change when implementation evidence requires it.
       secrets and deployment authority remain unchanged. The checked-in staging
       consumer still targets 1/2 and is deliberately fail-closed. Before any B3
       source or Terraform commit, a reviewed Buildkite migration execution guard
-      or freeze must prevent legacy `cml-staging` execution. Terraform/Buildkite
-      consumer migration remains unstarted.
+      or freeze must prevent legacy `cml-staging` execution. B2-G establishes
+      that prerequisite through a persistently disabled/unloaded external
+      staging LaunchAgent and independent explicit-false pipeline guards for
+      `cml-staging` and protected delivery. B4 owns later reviewed unfreeze and
+      agent re-enable; Terraform/Buildkite consumer migration remains unstarted.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
       and privately protect recovery evidence, manually remove only approved
       obsolete resources, observe before remediation, reconcile authority,

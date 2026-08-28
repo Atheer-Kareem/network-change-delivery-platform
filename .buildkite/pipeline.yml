@@ -89,6 +89,10 @@ steps:
 
   - label: ":cloud: ephemeral CML staging"
     key: cml-staging
+    # ADR 0023 migration freeze: B2 moved standing staging authority to NetBox
+    # devices 6/7 while this consumer still targets 1/2. B4 must explicitly
+    # review and remove this false condition during the protected cutover.
+    if: "false"
     depends_on:
       - quality
       - pipeline-contract
@@ -116,7 +120,10 @@ steps:
   - group: ":lock: protected delivery"
     key: protected-delivery
     depends_on: cml-staging
-    if: build.branch == "main" && build.pull_request.id == null
+    # Protected delivery cannot proceed without staging assurance during the
+    # ADR 0023 half-migrated window. Preserve the historical main-only guard
+    # while making the migration freeze independently explicit.
+    if: false && build.branch == "main" && build.pull_request.id == null
     if_changed:
       include: "**"
       exclude:

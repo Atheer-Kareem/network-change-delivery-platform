@@ -49,11 +49,18 @@ invented.
 
 ## Bounded NetBox mutation
 
-The established local NetBox administrative boundary executed one explicit
-Django ORM transaction inside the NetBox application container. It used no API
-bearer or application token, persisted no administrator credential, and did not
-change any existing NCDP reader. Before saving, the transaction reasserted zero
-Prefixes, zero IPRanges, and the exact three existing device assignments above.
+An operator executed one explicit Django ORM transaction inside the NetBox
+application container as a bounded, one-time administrative bootstrap outside
+normal NCDP execution. It used no API bearer or application token, persisted no
+administrator credential, and did not change any existing NCDP reader. Before
+saving, the transaction reasserted zero Prefixes, zero IPRanges, and the exact
+three existing device assignments above.
+
+The Prefix was instantiated with `Prefix(...)`, validated with `full_clean()`,
+and then persisted with `save()`. Each of the three IP addresses was separately
+instantiated with `IPAddress(...)`, validated with `full_clean()`, and persisted
+with `save()`. The transaction did not use `objects.create()`, `bulk_create()`,
+raw SQL, queryset `update()`, or another bulk/validation-bypassing write path.
 
 The transaction created only:
 
@@ -83,12 +90,36 @@ Neither proposed staging device name (`stg-core-02` or
 object counts changed only by one Prefix and three IPAddress objects; Device,
 Interface, Site, VRF, IPAM-role, and IPRange counts did not change.
 
+## Validation and native change provenance
+
+A later read-only forensic check called `full_clean()` without saving on Prefix
+ID 1 and IPAddress IDs 4, 5, and 6. All four persisted objects validated
+successfully.
+
+NetBox's native ObjectChange table contained no change record for any of these
+four object creations. There is consequently no ObjectChange ID, action,
+timestamp, user, request ID, or changelog message to attribute. No retrospective
+ObjectChange was fabricated or backfilled. The absence is retained as evidence
+about this direct administrative ORM mechanism; repository review and Git/PR
+history provide the reviewed provenance for the bounded bootstrap, not a
+nonexistent native NetBox change record.
+
+The valid resulting Prefix and IPAddress state remains authoritative because it
+was independently read back and subsequently revalidated. The mechanism is not
+a standing NetBox write interface: it created no standing writer, does not
+authorize B1-2 or other NCDP work to reuse arbitrary ORM/container-admin access,
+and does not define the future protected mutation boundary. Any later
+authoritative NetBox writer requires separate review of its model validation,
+bounded authorization, and native audit/change provenance before use.
+
 ## Safety and next authority
 
 This increment made no CML, OpenBao, Terraform, Buildkite, device,
 Prometheus/Blackbox, Oxidized, AuditStore, or live-network configuration change.
 It did not deactivate device 3 or alter `.15`. No temporary NetBox identity or
-token was needed, so no new standing privilege exists.
+token was needed, so no new standing privilege exists. The subsequent forensic
+check was read-only and did not save, recreate, delete, or backfill any NetBox
+object.
 
 After this evidence is reviewed and merged, a separate read-only increment may
 use the authoritative Prefix, its explicit allocations, the operator-confirmed

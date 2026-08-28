@@ -150,6 +150,7 @@ closed on the pre-existing device 3 because it is fleet-tagged but lacks
 changed. It does not make either staging identity eligible for a canonical live
 target path.
 
-This increment made zero CML, OpenBao, Terraform, Buildkite-configuration,
-device, persistent-service, Oxidized, AuditStore, or observability mutation.
-It opened no device session. B2 and 11B did not start, and 11A remains paused.
+Aside from the bounded authoritative NetBox mutations documented above, this
+increment made zero CML, OpenBao, Terraform, Buildkite-configuration,
+live-network device/session/configuration, Oxidized, AuditStore, or
+observability mutation. B2 and 11B did not start, and 11A remains paused.

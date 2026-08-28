@@ -42,11 +42,11 @@ def context(**changes: str) -> BuildkiteStagingContext:
 
 def device(device_id: int) -> InventoryDevice:
     return InventoryDevice(
-        name="core-02" if device_id == 1 else "edge-junos-01",
-        host="192.168.4.14" if device_id == 1 else "192.168.4.20",
-        port=22 if device_id == 1 else 830,
-        platform="cisco_iosxe" if device_id == 1 else "junos",
-        expected_hostname="core-02" if device_id == 1 else "edge-junos-01",
+        name="stg-core-02" if device_id == 6 else "stg-edge-junos-01",
+        host="192.168.4.30" if device_id == 6 else "192.168.4.31",
+        port=22 if device_id == 6 else 830,
+        platform="cisco_iosxe" if device_id == 6 else "junos",
+        expected_hostname="stg-core-02" if device_id == 6 else "stg-edge-junos-01",
         inventory_source="netbox",
         inventory_object_id=f"netbox:dcim.device:{device_id}",
     )
@@ -92,7 +92,7 @@ def handler(requests: list[httpx.Request]):
         body = json.loads(request.content) if request.content else {}
         if request.url.path == "/v1/auth/jwt/login":
             role = body["role"]
-            device_id = 1 if role.endswith("-1") else 2
+            device_id = 6 if role.endswith("-6") else 7
             policy = staging_policy_name(device_id)
             return httpx.Response(
                 200,
@@ -132,14 +132,14 @@ def test_one_jwt_authenticates_separately_to_both_exact_roles() -> None:
         "https://openbao.example",
         transport=httpx.MockTransport(handler(requests)),
     )
-    for device_id in (1, 2):
+    for device_id in (6, 7):
         target = device(device_id)
         assert provider.reference(target).reference.endswith(f"/{device_id}/ssh")
         assert provider.load(target).username == "user"
     logins = [request for request in requests if request.url.path.endswith("login")]
     assert [json.loads(request.content)["role"] for request in logins] == [
-        staging_role_name(1),
-        staging_role_name(2),
+        staging_role_name(6),
+        staging_role_name(7),
     ]
     assert all(json.loads(request.content)["jwt"] == JWT for request in logins)
 
@@ -151,11 +151,11 @@ def test_staging_secret_provider_rejects_repeat_and_unknown_device() -> None:
         "https://openbao.example",
         transport=httpx.MockTransport(handler([])),
     )
-    provider.load(device(1))
+    provider.load(device(6))
     with pytest.raises(SecretError, match="already consumed"):
-        provider.load(device(1))
+        provider.load(device(6))
     with pytest.raises(SecretError, match="identity rejected"):
-        provider.reference(device(3))
+        provider.reference(device(1))
 
 
 def test_state_root_requires_owned_private_external_directory(

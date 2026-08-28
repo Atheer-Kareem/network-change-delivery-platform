@@ -42,7 +42,7 @@ def handler(requests: list[httpx.Request], *, broaden: str | None = None):
             )
         if path == "/v1/auth/jwt/config":
             return httpx.Response(200, json={"data": JWT_CONFIG_READ})
-        for device_id in (1, 2):
+        for device_id in (6, 7):
             if path == f"/v1/sys/policies/acl/{staging_policy_name(device_id)}":
                 if request.method == "PUT":
                     return httpx.Response(204)
@@ -71,11 +71,11 @@ def test_configures_and_verifies_exact_two_staging_roles() -> None:
         transport=httpx.MockTransport(handler(requests)),
     ).configure()
     assert configured == (
-        (staging_policy_name(1), staging_role_name(1)),
-        (staging_policy_name(2), staging_role_name(2)),
+        (staging_policy_name(6), staging_role_name(6)),
+        (staging_policy_name(7), staging_role_name(7)),
     )
     assert all(request.headers["X-Vault-Token"] == ADMIN_TOKEN for request in requests)
-    for device_id in (1, 2):
+    for device_id in (6, 7):
         role = staging_role_config(PIPELINE_ID, device_id)
         assert role["bound_audiences"] == ["urn:ncdp:openbao:staging"]
         assert role["bound_claims"] == {"step_key": "cml-staging"}
@@ -115,3 +115,11 @@ def test_configurator_does_not_modify_deployment_roles() -> None:
         json.dumps([request.content.decode() for request in requests]).find(ADMIN_TOKEN)
         == -1
     )
+
+
+@pytest.mark.parametrize("device_id", [1, 2, 3, 8])
+def test_staging_configuration_rejects_non_staging_ids(device_id: int) -> None:
+    with pytest.raises(SecretError, match="device ID rejected"):
+        staging_policy(device_id)
+    with pytest.raises(SecretError, match="device ID rejected"):
+        staging_role_config(PIPELINE_ID, device_id)

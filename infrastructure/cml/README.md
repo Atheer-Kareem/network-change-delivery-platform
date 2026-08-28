@@ -14,7 +14,8 @@ ADR 0023 separates the Terraform implementations in this directory:
 Terraform never owns or adopts the brownfield live/reference lab. Phase B3-1
 changes only the static staging graph. The checked-in orchestration still uses
 historical devices 1/2 authority and is intentionally fail closed after B2;
-B3-2 owns the protected devices 6/7 authority boundary.
+B3-2A supplies the non-executing protected devices 6/7 controller and bundle
+contract. B3-2B owns installation from exact merged main, and B4 owns cutover.
 
 ## Historical operator-twin contract
 
@@ -32,6 +33,13 @@ In the current tree, only the frozen operator/local root continues to consume
 and represents the ADR 0023 ten-resource staging target. The historical root
 and module remain only for migration and recovery continuity; they are neither
 live/reference authority nor authorized for execution.
+
+The future protected controller may execute `ephemeral/` only from an
+agent-owned, digest-verified installation outside every checkout. Its immutable
+manifest binds the exact ten Terraform addresses and lifecycle-only update
+address. It stores sensitive saved plans only under protected run state,
+validates their structural actions, and applies the exact admitted plan. The
+B3-2A repository content is installation source, not installed authority.
 
 ADR 0014 makes normal staging ephemeral: absent, fresh create, first boot,
 readiness and validation, sanitized evidence, complete destroy, then proven

@@ -61,6 +61,16 @@ Cisco, Junos, four links, and one lifecycle. It deliberately does not change
 the historical devices 1/2 authority selection or restore runtime execution.
 The external and pipeline freezes therefore remain mandatory for B3-2.
 
+Phase B3-2A implements the future controller as installation source without
+installing or activating it. Privileged execution will use an agent-owned,
+digest-verified bundle outside the checkout and an external immutable manifest
+binding devices 6/7, homologs 1/2, `.30/.31`, exact staging OpenBao authority,
+the CML connector/images, the brownfield-lab denial, and the ten-resource graph.
+The controller never executes checkout Python or Terraform with protected
+authority. It owns the run state path and applies only the exact saved plan that
+passed trusted structural parsing. B3-2B owns installation from exact clean
+merged main; B4 owns the later hook cutover and re-enable.
+
 Historically, the job requests one five-minute Buildkite JWT with audience
 `urn:ncdp:openbao:staging`, immutable pipeline UUID in `sub`, and explicit
 `build_id`. The application validates pipeline, build, commit, branch, step,
@@ -96,7 +106,8 @@ not claim that migration has occurred.
 
 ## Execution and evidence
 
-Pipeline YAML calls only `scripts/buildkite/ephemeral_staging.sh`. The wrapper
+The frozen historical pipeline command calls
+`scripts/buildkite/ephemeral_staging.sh`. The wrapper
 verifies job/checkout identity, pipes the JWT to the existing Python driver, and
 uploads only `staging-evidence/staging-run.json`. The authoritative state machine
 remains `network_change_delivery.ephemeral_staging.run_staging_lifecycle`.
@@ -111,6 +122,12 @@ credential references, timings, and outcomes. Tokens, credentials, Day-0,
 device configuration, provider bodies, and state are excluded. The wrapper
 preserves the staging status when artifact upload succeeds; upload failure also
 fails the job.
+
+After B4, the agent-owned command hook will validate the exact step, queue,
+command, and canonical repository, then invoke the installed protected
+controller without sourcing protected authority into the checkout. Normal
+controller invocation accepts only the bounded `run` operation, not target,
+credential, lab, Terraform-root, address, or state-path overrides.
 
 ## Retained-state recovery
 

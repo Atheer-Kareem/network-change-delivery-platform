@@ -68,11 +68,21 @@ The fixed NetBox-authoritative management addresses `192.168.4.14` and
 integration must use a dedicated staging concurrency group. Parallel twins are
 blocked until an isolated management-network and addressing design is accepted.
 
-ADR 0023 supersedes this shared-live-address design after Phase B. Staging then
-uses separate stable NetBox objects and separate addresses. A dedicated
-isolated staging management network is preferred; distinct addresses on the
-existing reachable fabric are the explicit fallback. No subnet or connector is
-selected until read-only feasibility and capacity evidence are accepted.
+ADR 0023 supersedes this shared-live-address design after Phase B. Phase B-0
+accepted the fallback architecture: staging will use separate stable NetBox
+objects and distinct addresses through the existing CML `System Bridge` on the
+reachable `192.168.4.0/24` management fabric. This is identity, address, and
+credential separation on a shared L2 and failure domain, not network isolation.
+It avoids unproven controller VLAN/bridge, host-route, and NAT/PAT changes.
+
+Shared-fabric staging requires defense in depth: protected staging identity and
+address allowlists, dynamic canonical-live endpoint denial, separate
+credentials, exact connector binding, pre-create collision observation,
+post-boot identity validation, finally-style cleanup, and concurrent live-health
+evidence. Phase B1-1 found no NetBox Prefix object or authoritative external
+DHCP range for the `/24`, so exact staging addresses remain unselected until
+prefix and allocator authority are established. Network silence is never IPAM
+authority.
 
 ## State lifecycle and secret boundary
 

@@ -84,9 +84,15 @@ external allocator boundary, so it correctly proposed no staging addresses.
 The operator subsequently established that the LAN is static/manual and has no
 DHCP pool or reservations; a bounded follow-up created the authoritative
 `192.168.4.0/24` Prefix and recorded the known infrastructure and live
-allocations. Exact staging addresses remain unselected pending a separate
-read-only candidate and collision discovery plus human selection. Network
-silence is never IPAM authority.
+allocations. A separate read-only candidate discovery found no conflicting
+authority or bounded secondary evidence for `.30`/`.31`, and the operator then
+selected them. Phase B1-2 created stable NetBox staging devices 6 and 7,
+`stg-core-02` and `stg-edge-junos-01`, assigned `.30` and `.31`, classified the
+canonical pair as `live` and staging pair as `staging`, and bound each staging
+device explicitly to its live homolog. The staging devices are `staged`, have a
+dedicated role, and carry no live selector tags. Network silence was not IPAM
+authority. Credentials and Terraform/Buildkite consumption remain later Phase B
+work.
 
 ## State lifecycle and secret boundary
 

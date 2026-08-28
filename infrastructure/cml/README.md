@@ -18,22 +18,29 @@ B3-2 owns the protected devices 6/7 authority boundary.
 
 ## Historical operator-twin contract
 
-The historical implementation contains the protected operator/local root, the reusable
-`modules/twin` realization module, and the intentionally destroyable
-`ephemeral` staging root. Each root owns its CML lab. The shared module discovers
-controller metadata, the unique `System Bridge` connector, accepted images,
-five nodes, six links, and explicit lifecycle. Its only device configuration is
-the ADR 0013 personal-lab minimum Day-0 exception; it never owns NCDP-managed
-network intent or production configuration.
+Before Phase B3-1, the historical operator/local and ephemeral staging roots
+both consumed `modules/twin`. That module discovered controller metadata, the
+unique `System Bridge` connector and accepted images, and realized the
+five-node, six-link, 13-resource topology used by Increment 8 staging
+acceptance. Historical evidence below describes that pre-B3-1 implementation.
+Its only device configuration was the ADR 0013 personal-lab minimum Day-0
+exception; it never owned NCDP-managed network intent or production
+configuration.
+
+In the current tree, only the frozen operator/local root continues to consume
+`modules/twin`. The current `ephemeral/` root consumes `modules/managed-pair`
+and represents the ADR 0023 ten-resource staging target. The historical root
+and module remain only for migration and recovery continuity; they are neither
+live/reference authority nor authorized for execution.
 
 ADR 0014 makes normal staging ephemeral: absent, fresh create, first boot,
 readiness and validation, sanitized evidence, complete destroy, then proven
 absence. The final Increment 8D twin was destroyed and the external state has no
-managed resources. Both the operator and ephemeral roots permit complete
-destruction because a fresh, explicitly admitted realization must be retired
-before another fixed-address twin can start. Exact graph validation and the
-safe Terraform UI bound that operation; neither root relies on
-`prevent_destroy`. Both consume `modules/twin`. Do not treat a normal
+managed resources. At that time, both the operator and ephemeral roots
+permitted complete destruction because a fresh, explicitly admitted realization
+must be retired before another fixed-address twin can start. Exact graph
+validation and the safe Terraform UI bound that operation; neither root relied on
+`prevent_destroy`, and both consumed `modules/twin`. Do not treat a normal
 create-oriented plan against the empty operator state as drift.
 
 Terraform `1.15.8` and `CiscoDevNet/cml2` `0.9.3-beta1` are exact contracts.

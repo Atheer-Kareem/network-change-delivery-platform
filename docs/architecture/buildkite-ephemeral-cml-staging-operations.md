@@ -47,6 +47,14 @@ roles, so `cml-staging` is intentionally unauthorized and must not run. Before
 any B3 source or Terraform commit is pushed, a reviewed Buildkite execution
 guard or freeze must prevent this legacy path during the half-migrated window.
 
+Phase B2-G establishes that guard. The user LaunchAgent
+`com.buildkite.ncdp-staging` is persistently disabled and unloaded, while the
+pipeline independently applies explicit false conditions to `cml-staging` and
+the protected-delivery group. The agent-owned hook and protected environments
+remain installed for a separately reviewed B4 cutover. Neither freeze may be
+removed, and the agent may not be re-enabled, before that cutover authorizes the
+migrated devices 6/7 consumer.
+
 Historically, the job requests one five-minute Buildkite JWT with audience
 `urn:ncdp:openbao:staging`, immutable pipeline UUID in `sub`, and explicit
 `build_id`. The application validates pipeline, build, commit, branch, step,

@@ -168,9 +168,12 @@ def test_pr_and_main_conditions() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
     steps = _steps_by_key(pipeline)
     protected = steps["protected-delivery"]
-    assert 'build.branch == "main"' in protected["if"]
-    assert "build.pull_request.id == null" in protected["if"]
-    assert "if" not in steps["cml-staging"]
+    # Temporary PR #66 rollback interlock; this test is restored exactly from
+    # a029120... in the final baseline-restoration PR.
+    assert steps["cml-staging"]["if"] == "false"
+    assert protected["if"] == (
+        'false && build.branch == "main" && build.pull_request.id == null'
+    )
     for key in ("promotion", "deployment-approval", "deploy-gate"):
         assert "if" not in steps[key]
 

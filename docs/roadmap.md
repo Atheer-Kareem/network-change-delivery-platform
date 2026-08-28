@@ -218,8 +218,13 @@ Ordering may change when implementation evidence requires it.
       dedicated equal-number service UID/GID authority, startup native/Ansible
       re-admission, protected native-build inputs, root-descriptor
       agent-token bootstrap, queue-paused registration, root-owned canonical
-      bootstrap source/runtime, and complete transitive Mach-O authority. B4 owns later
-      reviewed consumer cutover, unfreeze,
+      bootstrap source/runtime, and complete transitive Mach-O authority. That
+      checkout-independent design is now retained as deferred production
+      hardening for the lab. The active simplified boundary is reviewed merged
+      main plus separate devices 6/7 credentials, exact disposable ten-resource
+      Terraform authority, and persistent-lab denial. A separate cutover owns
+      the main-only condition and agent re-enable; protected delivery remains
+      frozen. B4 owns later reviewed consumer cutover, unfreeze,
       and agent re-enable.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
       and privately protect recovery evidence, manually remove only approved

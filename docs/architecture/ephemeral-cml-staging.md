@@ -2,6 +2,24 @@
 
 ## Scope
 
+### Active lab trust boundary
+
+The current ADR 0023 staging design trusts reviewed merged `main`, not pull
+request or non-main checkout code. The active controller uses the existing
+`netdevops` staging agent and ordinary reviewed project runtime while preserving
+separate staging credentials and strict disposable-resource authority. It
+resolves only NetBox devices 6/7, loads only OpenBao authority 6/7, denies live
+IDs 1/2/3 and `.14/.15/.20`, denies the persistent brownfield CML UUID, and
+admits only the ten-resource managed-pair Terraform graph. Exact saved-plan
+application, partial-state cleanup, independent absence proof, and sanitized
+evidence remain active.
+
+The checkout-independent schema-4 OS/toolchain architecture described below is
+retained as **deferred production-hardening architecture**. It is historical
+engineering context, not a prerequisite or runtime authority for the current
+lab. The active migration remains frozen until a separate reviewed cutover
+makes `cml-staging` merged-main-only; protected delivery remains frozen.
+
 ADR 0023 preserves the ephemeral lifecycle but changes its authority
 inputs: staging will use separate NetBox identities, management addressing,
 credentials, and preferably an isolated management network. Terraform has no
@@ -99,8 +117,8 @@ hyphens and beginning with a letter or digit. The lab title is
 changing device targeting. Buildkite derives it as
 `bk-${BUILDKITE_BUILD_ID}` from the immutable build UUID.
 
-The fixed NetBox-authoritative management addresses `192.168.4.14` and
-`192.168.4.20` require one admitted CML staging run at a time. Initial Buildkite
+The historical fixed management addresses `192.168.4.14` and
+`192.168.4.20` required one admitted CML staging run at a time. Initial Buildkite
 integration must use a dedicated staging concurrency group. Parallel twins are
 blocked until an isolated management-network and addressing design is accepted.
 
@@ -132,9 +150,9 @@ policies/JWT roles for staging devices 6/7 and retired the historical staging
 roles/policies that read live devices 1/2. Live secrets and deployment authority
 were preserved. Terraform/Buildkite consumption remains later Phase B work.
 
-The checked-in consumer still selects historical devices 1/2, so it is
-intentionally fail-closed after B2. No `cml-staging` execution is authorized
-until B3/B4 migrate the consumer. A reviewed Buildkite migration execution guard
+The historical consumer selected devices 1/2 and was intentionally fail-closed
+after B2. The simplified controller now selects devices 6/7, but no
+`cml-staging` execution is authorized until the separate cutover. A reviewed Buildkite migration execution guard
 or freeze is required before the first B3 source or Terraform commit is pushed.
 Phase B2-G provides that prerequisite through a disabled and unloaded external
 staging LaunchAgent plus independent explicit-false pipeline conditions for

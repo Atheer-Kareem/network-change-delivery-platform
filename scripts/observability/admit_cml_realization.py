@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Admit one already-created operator CML realization without probing devices."""
+"""Admit the exact persistent live CML realization without probing devices."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from network_change_delivery.observability_realization import (
+    LIVE_LAB_ID,
     CmlRealizationAuthority,
     ObservabilityRealizationError,
     publish_admission,
@@ -19,7 +20,7 @@ STATE_ROOT = Path("/Users/netdevops/.local/state/ncdp/observability")
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lab-id", required=True)
+    parser.add_argument("--lab-id", required=True, choices=(LIVE_LAB_ID,))
     parser.add_argument("--core-id", required=True)
     parser.add_argument("--junos-id", required=True)
     arguments = parser.parse_args()

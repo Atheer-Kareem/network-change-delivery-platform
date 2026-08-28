@@ -16,25 +16,30 @@ from network_change_delivery.observability_realization import (
     retire_admission,
 )
 
-LAB = "11111111-1111-1111-1111-111111111111"
-LEGACY = "09605569-0468-4fc4-8684-beb5a1342b9c"
+LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
 CORE = "22222222-2222-2222-2222-222222222222"
 JUNOS = "33333333-3333-3333-3333-333333333333"
+BRIDGE = "66666666-6666-6666-6666-666666666666"
+SWITCH = "77777777-7777-7777-7777-777777777777"
 
 
 def transport(
     *,
     staging: bool = False,
-    legacy_running: bool = False,
+    staging_conflict: bool = False,
+    live_started: bool = True,
+    live_title: str = "NCDP Live",
     booted: bool = True,
+    extra_managed: bool = False,
     foreign_conflict: bool = False,
     configuration_shape: str = "endpoint-string",
     list_payload: object | None = None,
 ):
     foreign = "55555555-5555-5555-5555-555555555555"
+    staging_lab = "44444444-4444-4444-4444-444444444444"
     labs = (
-        [LAB, LEGACY]
-        + (["44444444-4444-4444-4444-444444444444"] if staging else [])
+        [LAB]
+        + ([staging_lab] if staging else [])
         + ([foreign] if foreign_conflict else [])
     )
 
@@ -45,32 +50,64 @@ def transport(
         if path == "/api/v0/labs":
             return httpx.Response(200, json=labs)
         if path == f"/api/v0/labs/{LAB}":
-            return httpx.Response(200, json={"lab_title": "NCDP Terraform Twin"})
-        if path == f"/api/v0/labs/{LEGACY}":
-            return httpx.Response(200, json={"lab_title": "legacy"})
-        if staging and path.endswith("44444444-4444-4444-4444-444444444444"):
-            return httpx.Response(200, json={"lab_title": "NCDP Staging test"})
+            return httpx.Response(
+                200,
+                json={
+                    "lab_title": live_title,
+                    "state": "STARTED" if live_started else "STOPPED",
+                },
+            )
+        if staging and path == f"/api/v0/labs/{staging_lab}":
+            return httpx.Response(
+                200, json={"lab_title": "NCDP Staging test", "state": "STARTED"}
+            )
+        if staging and path == f"/api/v0/labs/{staging_lab}/nodes":
+            return httpx.Response(200, json=["staging-core", "staging-switch"])
+        if staging and path == f"/api/v0/labs/{staging_lab}/nodes/staging-core":
+            return httpx.Response(
+                200, json={"state": "BOOTED", "node_definition": "cat8000v"}
+            )
+        if staging and path == (
+            f"/api/v0/labs/{staging_lab}/nodes/staging-core/configuration"
+        ):
+            address = "192.168.4.14" if staging_conflict else "192.168.4.30"
+            return httpx.Response(200, json=f"hostname core-02 {address}")
+        if staging and path == f"/api/v0/labs/{staging_lab}/nodes/staging-switch":
+            return httpx.Response(
+                200, json={"state": "BOOTED", "node_definition": "unmanaged_switch"}
+            )
         if foreign_conflict and path == f"/api/v0/labs/{foreign}":
             return httpx.Response(200, json={"lab_title": "foreign"})
         if foreign_conflict and path == f"/api/v0/labs/{foreign}/nodes":
             return httpx.Response(200, json=["foreign-node"])
         if foreign_conflict and path == f"/api/v0/labs/{foreign}/nodes/foreign-node":
-            return httpx.Response(200, json={"state": "BOOTED"})
+            return httpx.Response(
+                200, json={"state": "BOOTED", "node_definition": "cat8000v"}
+            )
         if foreign_conflict and path == (
             f"/api/v0/labs/{foreign}/nodes/foreign-node/configuration"
         ):
             return httpx.Response(200, json="foreign 192.168.4.14")
-        if path == f"/api/v0/labs/{LEGACY}/nodes":
-            return httpx.Response(200, json=["legacy-node"])
-        if path == f"/api/v0/labs/{LEGACY}/nodes/legacy-node":
-            return httpx.Response(
-                200, json={"state": "BOOTED" if legacy_running else "STOPPED"}
-            )
         if path == f"/api/v0/labs/{LAB}/nodes":
-            return httpx.Response(200, json=[CORE, JUNOS])
+            nodes = [BRIDGE, SWITCH, CORE, JUNOS]
+            if extra_managed:
+                nodes.append("extra-router")
+            return httpx.Response(200, json=nodes)
+        if extra_managed and path == f"/api/v0/labs/{LAB}/nodes/extra-router":
+            return httpx.Response(
+                200, json={"state": "BOOTED", "node_definition": "cat8000v"}
+            )
+        if path == f"/api/v0/labs/{LAB}/nodes/{BRIDGE}":
+            return httpx.Response(
+                200, json={"state": "BOOTED", "node_definition": "external_connector"}
+            )
+        if path == f"/api/v0/labs/{LAB}/nodes/{SWITCH}":
+            return httpx.Response(
+                200, json={"state": "BOOTED", "node_definition": "unmanaged_switch"}
+            )
         if path == f"/api/v0/labs/{LAB}/nodes/{CORE}":
             payload = {
-                "label": "core-02",
+                "label": "cat8000v-0",
                 "node_definition": "cat8000v",
                 "image_definition": "cat8000v-17-18-02",
                 "state": "BOOTED" if booted else "STOPPED",
@@ -86,7 +123,7 @@ def transport(
             return httpx.Response(200, json=payload)
         if path == f"/api/v0/labs/{LAB}/nodes/{JUNOS}":
             payload = {
-                "label": "edge-junos-01",
+                "label": "vjunos-router-0",
                 "node_definition": "vjunos-router",
                 "image_definition": "vjunos-router-23-2r1-15",
                 "state": "BOOTED" if booted else "STOPPED",
@@ -180,6 +217,10 @@ def test_exact_realization_admission_is_digest_bound_and_private(
     record = admit(client, now)
     client.close()
     assert record.expires_at == now + ADMISSION_TTL
+    assert record.schema_version == "2"
+    assert record.lab_id == LAB
+    assert record.lab_title == "NCDP Live"
+    assert record.lab_state == "STARTED"
     assert [item.cml_node_id for item in record.nodes] == [CORE, JUNOS]
     root = tmp_path / "external" / "observability"
     path = publish_admission(root, record)
@@ -290,25 +331,55 @@ def test_oversized_configuration_cannot_be_bypassed_by_valid_fallback(
     client.close()
 
 
+def test_ephemeral_staging_may_coexist_with_live_admission() -> None:
+    client = authority(staging=True)
+    record = admit(client)
+    client.close()
+    assert record.lab_id == LAB
+
+
+def test_staging_that_claims_live_address_fails_closed() -> None:
+    client = authority(staging=True, staging_conflict=True)
+    with pytest.raises(ObservabilityRealizationError, match="address ownership"):
+        admit(client)
+    client.close()
+
+
 @pytest.mark.parametrize(
     "kwargs,match",
     [
-        ({"staging": True}, "staging"),
-        ({"legacy_running": True}, "legacy"),
+        ({"live_started": False}, "persistent live"),
+        ({"live_title": "foreign"}, "persistent live"),
         ({"booted": False}, "node admission"),
+        ({"extra_managed": True}, "node population"),
         ({"foreign_conflict": True}, "address ownership"),
     ],
 )
-def test_staging_legacy_and_unbooted_ambiguity_fail_closed(kwargs, match) -> None:
+def test_stopped_live_unbooted_node_and_foreign_collision_fail_closed(
+    kwargs, match
+) -> None:
     client = authority(**kwargs)
     with pytest.raises(ObservabilityRealizationError, match=match):
         admit(client)
     client.close()
 
 
+def test_arbitrary_lab_id_is_rejected() -> None:
+    client = authority()
+    with pytest.raises(ObservabilityRealizationError, match="node population"):
+        client.admit(
+            "11111111-1111-1111-1111-111111111111",
+            {
+                "netbox:dcim.device:1": CORE,
+                "netbox:dcim.device:2": JUNOS,
+            },
+        )
+    client.close()
+
+
 def test_wrong_node_identity_fails_closed() -> None:
     client = authority()
-    with pytest.raises(ObservabilityRealizationError, match="node identity"):
+    with pytest.raises(ObservabilityRealizationError, match="node population"):
         client.admit(
             LAB,
             {

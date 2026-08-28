@@ -45,7 +45,6 @@ output "node_ids" {
     management_switch = cml2_node.management_switch.id
     core_02           = cml2_node.core_02.id
     edge_junos_01     = cml2_node.edge_junos_01.id
-    core_03           = cml2_node.core_03.id
   }
 }
 
@@ -55,8 +54,6 @@ output "link_ids" {
     system_bridge_management = cml2_link.system_bridge_management.id
     management_core_02       = cml2_link.management_core_02.id
     management_edge_junos_01 = cml2_link.management_edge_junos_01.id
-    management_core_03       = cml2_link.management_core_03.id
     core_02_edge_junos_01    = cml2_link.core_02_edge_junos_01.id
-    edge_junos_01_core_03    = cml2_link.edge_junos_01_core_03.id
   }
 }

@@ -39,10 +39,10 @@ def assignment(body: str, name: str) -> str:
 
 def test_exact_resource_type_counts_and_no_structural_escape_hatches() -> None:
     resources = re.findall(r'(?m)^resource\s+"([^"]+)"\s+"[^"]+"\s*\{', TOPOLOGY)
-    assert resources.count("cml2_node") == 5
-    assert resources.count("cml2_link") == 6
+    assert resources.count("cml2_node") == 4
+    assert resources.count("cml2_link") == 4
     assert resources.count("cml2_lifecycle") == 1
-    assert len(resources) == 12
+    assert len(resources) == 9
     assert ROOT_TOPOLOGY.count('resource "cml2_lab" "twin"') == 1
     assert ROOT_TOPOLOGY.count('module "twin"') == 1
     ephemeral = (EPHEMERAL_ROOT / "topology.tf").read_text()
@@ -71,7 +71,6 @@ def test_exact_node_contract_and_fail_closed_discovery() -> None:
             "4",
             "6144",
         ),
-        "core_03": ("core-03", "cat8000v", "accepted_cat8000v_images", "1", "4096"),
     }
     for name, (label, nodedef, image_local, cpus, ram) in expected.items():
         body = resource_block("cml2_node", name)
@@ -118,17 +117,7 @@ def test_router_day0_templates_are_sensitive_and_narrow() -> None:
     ):
         assert f"var.{variable}" in edge
 
-    core_03 = resource_block("cml2_node", "core_03")
-    assert "bootstrap/cat8000v-unmanaged.tftpl" in core_03
-    assert re.search(r"(?m)^\s*configurations\s*=", core_03) is None
-    for forbidden in ("username", "password", "secret", "community"):
-        assert forbidden not in core_03.lower()
-
-    bootstrap = (MODULE_ROOT / "bootstrap/cat8000v-unmanaged.tftpl").read_text()
-    assert "hostname core-03" in bootstrap
-    assert "platform console serial" in bootstrap
-    for forbidden in ("username", "password", "secret", "ip address", "netconf"):
-        assert forbidden not in bootstrap.lower()
+    assert not (MODULE_ROOT / "bootstrap/cat8000v-unmanaged.tftpl").exists()
 
     bridge = resource_block("cml2_node", "system_bridge")
     assert assignment(bridge, "configuration") == (
@@ -138,7 +127,13 @@ def test_router_day0_templates_are_sensitive_and_narrow() -> None:
     assert re.search(r"(?m)^\s*configurations?\s*=", management_switch) is None
 
     all_hcl = "\n".join(path.read_text() for path in TF_ROOT.rglob("*.tf"))
-    for address in ("192.168.4.14", "192.168.4.15", "192.168.4.20"):
+    for address in (
+        "192.168.4.14",
+        "192.168.4.15",
+        "192.168.4.20",
+        "192.168.4.30",
+        "192.168.4.40",
+    ):
         assert address not in all_hcl
 
     template = (MODULE_ROOT / "bootstrap/cat8000v.tftpl").read_text()
@@ -176,9 +171,7 @@ def test_exact_link_slots_and_reserved_interfaces_remain_unlinked() -> None:
             "edge_junos_01",
             0,
         ),
-        "management_core_03": ("management_switch", 3, "core_03", 0),
         "core_02_edge_junos_01": ("core_02", 3, "edge_junos_01", 1),
-        "edge_junos_01_core_03": ("edge_junos_01", 2, "core_03", 2),
     }
     endpoints = set()
     for name, (node_a, slot_a, node_b, slot_b) in expected.items():
@@ -189,7 +182,7 @@ def test_exact_link_slots_and_reserved_interfaces_remain_unlinked() -> None:
         assert assignment(body, "slot_b") == str(slot_b)
         endpoints.update(((node_a, slot_a), (node_b, slot_b)))
     assert not endpoints.intersection(
-        {("core_02", 1), ("core_02", 2), ("edge_junos_01", 3), ("core_03", 1)}
+        {("core_02", 1), ("core_02", 2), ("edge_junos_01", 2), ("edge_junos_01", 3)}
     )
 
 
@@ -220,7 +213,6 @@ def test_safe_lifecycle_contract_and_increment_guard() -> None:
         "management_switch",
         "core_02",
         "edge_junos_01",
-        "core_03",
     ):
         trigger = f'"${{cml2_node.{name}.id}}:${{cml2_node.{name}.generation}}"'
         assert trigger in lifecycle

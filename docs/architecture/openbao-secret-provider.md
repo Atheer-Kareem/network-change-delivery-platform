@@ -71,6 +71,9 @@ device-read policy. The application verifies mapped pipeline, build, commit,
 branch, step, and job identity before the single KV-v2 read. One in-memory JWT
 is used for the two independent role logins and discarded. Staging rejects
 AppRole; deployment roles, audiences, policies, and approval remain unchanged.
+Under ADR 0024 these roles read the same device 1/2 secrets used for live
+management. A credential belongs to the logical NetBox device, not its live or
+staging management IP; no `.30/.40`-specific secrets exist.
 
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role

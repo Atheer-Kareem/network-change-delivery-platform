@@ -53,44 +53,14 @@ reset contract.
 
 ## Separate-twin topology
 
-Terraform creates a new lab rather than importing the accepted running lab. The
-new lab may coexist in CML while stopped, preserving the externally accepted
-Increment 7 environment and proving reset/recreate only on objects Terraform
-created.
+ADR 0024 establishes two environments with the same two logical routers.
+`NCDP Live` is a manually owned, continuously running CML lab and is never
+imported or managed by Terraform. The ephemeral root creates a separate
+`NCDP Staging <run-id>` lab, validates it, and destroys only resources recorded
+in its run-scoped state.
 
-The accepted live CML nodes `cat8000v-0`, `vjunos-router-0`, and `cat8000v-1`
-currently connect only through the shared management fabric. They have no CML
-data-plane links and therefore are not an exact data-plane twin.
-
-The sanitized Batfish assurance scenario models:
-
-```text
-core-02 GigabitEthernet1 -- edge-junos-01 ge-0/0/0
-edge-junos-01 ge-0/0/1 -- core-03 GigabitEthernet1
-```
-
-That model is synthetic behavioral-assurance input, not observed CML wiring. In
-the live CML lab, Cisco `GigabitEthernet1` is the management interface.
-Terraform must not translate those sanitized interface names into CML links.
-Every future CML data-plane scenario must explicitly select non-management
-interfaces and define its own topology contract. Management interfaces remain
-protected.
-
-An equivalent twin consumes 6 vCPUs and 14,336 MiB RAM. Increment 8A measured
-the then-current 10-node legacy lab and found that simultaneous operation of
-both complete router sets would leave only approximately 1.1–1.5 GiB RAM
-margin. Since that discovery, the operator has manually removed unrelated and
-passive nodes from the legacy lab. The exact margin is therefore historical and
-must not be used as current admission evidence or as proof that concurrent heavy
-runtime is now safe. Before the first 8C `STARTED` transition, a fresh read-only
-CML capacity check must fail closed unless sufficient capacity is demonstrated.
-Initial `DEFINED_ON_CORE` creation remains distinct from that future operational
-capacity decision.
-
-### Increment 8C physical topology
-
-The selected twin uses an explicit management fabric and two explicit
-data-plane links. Every endpoint is bound by slot; no link uses next-free
+The Terraform twin uses an explicit management fabric and one explicit
+data-plane link. Every endpoint is bound by slot; no link uses next-free
 interface selection.
 
 | Link purpose | Endpoint A | Endpoint B |
@@ -98,25 +68,21 @@ interface selection.
 | Management | `system-bridge` port/slot 0 | `management-switch` port 0 |
 | Management | `management-switch` port 1 | `core-02` slot 0 (`GigabitEthernet1`) |
 | Management | `management-switch` port 2 | `edge-junos-01` slot 0 (`fxp0`) |
-| Management | `management-switch` port 3 | `core-03` slot 0 (`GigabitEthernet1`) |
 | Data plane | `core-02` slot 3 (`GigabitEthernet4`) | `edge-junos-01` slot 1 (`ge-0/0/0`) |
-| Data plane | `edge-junos-01` slot 2 (`ge-0/0/1`) | `core-03` slot 2 (`GigabitEthernet3`) |
 
 The reserved, deliberately unlinked change-target interfaces are
 `core-02 GigabitEthernet2`, `core-02 GigabitEthernet3`,
-`edge-junos-01 ge-0/0/2`, and `core-03 GigabitEthernet2`. CML tags stage
+`edge-junos-01 ge-0/0/1`, and `edge-junos-01 ge-0/0/2`. CML tags stage
 infrastructure before routers and do not provide NCDP target selection.
 
 Canvas placement is deterministic: `system-bridge` at `(-400, -200)`,
 `management-switch` at `(-150, -200)`, `core-02` at `(100, -400)`,
-`edge-junos-01` at `(400, -200)`, and `core-03` at `(700, -400)`.
+and `edge-junos-01` at `(400, -200)`.
 
-The managed `core-02` and `edge-junos-01` nodes retain their ADR 0013
-credential-bearing Day-0 management boundary. The unmanaged `core-03` node has
-only a deterministic non-secret CAT8000V startup configuration containing its
-existing role hostname and serial-console platform prerequisite. It prevents
-the IOS XE 17.18 initial setup/security dialogue without assigning core-03 a
-management identity or credential.
+The managed nodes retain their ADR 0013 credential-bearing Day-0 management
+boundary. Live uses NetBox primary addresses `.14/.20`; staging uses secondary
+addresses `.30/.40` assigned to the same management interfaces. Both
+realizations use the existing OpenBao device 1/2 credentials.
 
 ### Provider lifecycle state machine
 
@@ -271,22 +237,26 @@ transition `STARTED` to `STOPPED`; no Junos configuration was involved. This is
 an operational-state normalization detail, not an NCDP configuration
 dependency.
 
-The accepted legacy lab remains deliberately STOPPED to prevent duplicate
-ownership of stable NetBox-managed endpoints. It has not been deleted or
-retired. The final Increment 8D Terraform twin was completely destroyed, so no
-Terraform realization currently owns `core-02` or `edge-junos-01`. Future
-ephemeral runs must freshly verify NetBox identity, OpenBao provenance, SSH host
-trust, platform, hostname, and topology before NCDP validation.
+ADR 0024 supersedes the stopped-legacy operating assumption. The persistent
+lab is now `NCDP Live`, is manually owned, remains running at the primary
+`.14/.20` endpoints, and contains only the two managed routers plus management
+infrastructure and their direct link. Terraform does not own it. Ephemeral runs
+use `.30/.40` and must freshly verify NetBox identity, secondary-IP assignment,
+OpenBao provenance, SSH host trust, platform, hostname, and topology before
+NCDP validation.
 
-Increment 10C-6 uses the operator root for one fresh, fixed-address observation
+Increment 10C-6 historically used the operator root for one fresh, fixed-address observation
 realization. That root is intentionally destroyable: exact graph validation and
 the sanitized Terraform UI replace the stale `prevent_destroy` guard. Host trust
 is enrolled only after CML-anchored identity checks, then readiness and trust are
 retired before the exact 13-resource destroy. Independent lab, state,
 legacy-stoppage, staging-absence, and `.14`/`.20` absence proofs are mandatory
-before source changes may be pushed.
+before source changes could be pushed. ADR 0024 replaces that temporary
+fixed-address realization model; its historical acceptance evidence is retained.
 
-Increment 8E-2 accepted the reusable ephemeral root locally: a fresh 13-resource
+Increment 8E-2 historically accepted the reusable ephemeral root locally with
+the former 13-resource graph. The current ADR 0024 graph has ten resources:
+one lab, four nodes, four links, and one lifecycle. The accepted lifecycle
 realization transitioned from `DEFINED_ON_CORE` to `STARTED`, passed both vendor
 read-only provider chains, and was destroyed directly from STARTED. Independent
 CML absence and empty Terraform state were required before run-specific state
@@ -334,8 +304,8 @@ was destroyed completely and its managed state is empty. See the
 
 ### 8E — ephemeral CML staging pipeline
 
-In progress. 8E-1 statically separates root-owned lab policy from a reusable
-five-node/six-link realization module and adds an intentionally destroyable
+Complete. 8E-1 statically separates root-owned lab policy from a reusable
+realization module and adds an intentionally destroyable
 ephemeral root with required run identity, externally configured per-run state,
 and safe structural outputs. 8E-2 accepts the local real lifecycle, reusable
 finally-style orchestration, sanitized evidence, direct destroy from STARTED,

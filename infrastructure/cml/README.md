@@ -4,7 +4,7 @@ This directory contains the protected operator/local root, the reusable
 `modules/twin` realization module, and the intentionally destroyable
 `ephemeral` staging root. Each root owns its CML lab. The shared module discovers
 controller metadata, the unique `System Bridge` connector, accepted images,
-five nodes, six links, and explicit lifecycle. Its only device configuration is
+four nodes, four links, and explicit lifecycle. Its only device configuration is
 the ADR 0013 personal-lab minimum Day-0 exception; it never owns NCDP-managed
 network intent or production configuration.
 
@@ -13,8 +13,9 @@ readiness and validation, sanitized evidence, complete destroy, then proven
 absence. The final Increment 8D twin was destroyed and the external state has no
 managed resources. Both the operator and ephemeral roots permit complete
 destruction because a fresh, explicitly admitted realization must be retired
-before another fixed-address twin can start. Exact graph validation and the
-safe Terraform UI bound that operation; neither root relies on
+before another staging twin can start. The persistent `NCDP Live` lab uses
+different `.14/.20` addresses and remains outside Terraform. Exact graph
+validation and the safe Terraform UI bound that operation; neither root relies on
 `prevent_destroy`. Both consume `modules/twin`. Do not treat a normal
 create-oriented plan against the empty operator state as drift.
 
@@ -25,8 +26,8 @@ enabled, provider `skip_verify` is explicitly `false`, and token caching is
 explicitly disabled in HCL.
 
 The deterministic canvas places the external connector at `(-400, -200)`, the
-management switch at `(-150, -200)`, `core-02` at `(100, -400)`,
-`edge-junos-01` at `(400, -200)`, and `core-03` at `(700, -400)`. Tags control
+management switch at `(-150, -200)`, `core-02` at `(100, -400)`, and
+`edge-junos-01` at `(400, -200)`. Tags control
 only CML lifecycle staging; they are not NCDP targeting metadata.
 
 `core-02` renders `modules/twin/bootstrap/cat8000v.tftpl`, and
@@ -35,21 +36,24 @@ respective `cml2_node.configuration` fields. Their templates contain only
 hostname, management addressing, the local lab account, SSH, NETCONF, and
 minimum platform prerequisites. Neither contains an actual credential or
 address in Git, NCDP-managed interface intent, routing, or interface
-descriptions. `core-03` receives a separate deterministic, non-secret
-`cat8000v-unmanaged.tftpl` bootstrap containing only its existing role hostname
-and serial-console platform prerequisite. This prevents the IOS XE first-boot
-setup/security dialog without inventing a management identity or credential.
+descriptions. Staging supplies the NetBox secondary management addresses
+`.30/.40`; the live primary `.14/.20` endpoints remain in `NCDP Live`.
+
+The operator/local root is retained for historical tooling and static module
+validation; it does not represent `NCDP Live` and must not be used to import,
+adopt, change, or destroy that manually owned lab. Normal staging execution uses
+only `infrastructure/cml/ephemeral` and its run-scoped state.
 
 Every live plan or apply requires these runtime inputs:
 
 - `TF_VAR_core_02_bootstrap_hostname` from the freshly verified NetBox device;
-- `TF_VAR_core_02_bootstrap_management_cidr` from its NetBox primary IPv4;
+- `TF_VAR_core_02_bootstrap_management_cidr` from its NetBox secondary staging IPv4;
 - `TF_VAR_core_02_bootstrap_username` from the existing OpenBao credential; and
 - `TF_VAR_core_02_bootstrap_password` from the same OpenBao credential.
 - `TF_VAR_edge_junos_01_bootstrap_hostname` from the freshly verified NetBox
   device;
-- `TF_VAR_edge_junos_01_bootstrap_management_cidr` from its NetBox primary
-  IPv4;
+- `TF_VAR_edge_junos_01_bootstrap_management_cidr` from its NetBox secondary
+  staging IPv4;
 - `TF_VAR_edge_junos_01_bootstrap_username` from the existing non-root OpenBao
   credential; and
 - `TF_VAR_edge_junos_01_bootstrap_password_hash`, derived locally from the
@@ -132,11 +136,12 @@ existing NCDP read-only planning. A recreated link may remain
 device configuration.
 
 Increment 8D later proved exact 740-byte vJunos Day-0 delivery and manageable
-fresh first boot, then recreated the complete 13-resource twin. A restart of the
+fresh first boot, then recreated the historical 13-resource twin. A restart of the
 same accepted vJunos UUID did not restore management connectivity; it was not
 fixed. ADR 0014 therefore makes restart persistence an explicit scenario test,
 not a normal staging-readiness requirement. The whole twin was subsequently
-destroyed through an exact 13-resource Terraform graph.
+destroyed through its exact historical 13-resource Terraform graph. ADR 0024
+now defines the ten-resource two-router graph.
 
 ### Ephemeral run contract
 

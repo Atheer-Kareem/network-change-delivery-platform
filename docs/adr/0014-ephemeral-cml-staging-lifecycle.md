@@ -4,7 +4,9 @@
 
 Accepted. ADR 0012's authority boundaries and ADR 0013's personal-lab Day-0
 boundary remain valid. This ADR supersedes the persistent operational staging
-lifecycle assumed by the earlier Increment 8 work.
+lifecycle assumed by the earlier Increment 8 work. ADR 0024 supersedes the
+historical 13-resource topology and shared `.14/.20` address model; the
+create-first-boot-validate-destroy lifecycle remains accepted.
 
 ## Context
 
@@ -50,7 +52,7 @@ network intent, planning, validation, approval, execution, evidence, and
 recovery. ADR 0013 continues to permit only the minimum personal-lab Day-0
 manageability configuration in Terraform/CML.
 
-The current fixed management addresses require serialized CML staging runs.
+The current fixed `.30/.40` staging addresses require serialized CML staging runs.
 Parallel ephemeral twins require a future isolated management-network design;
 duplicate fixed-address realizations are not accepted.
 
@@ -67,3 +69,7 @@ retention.
 The observed vJunos restart limitation remains recorded evidence. This decision
 does not claim that it was corrected, and explicit reboot scenarios may still
 investigate it independently.
+
+The historical 13-resource evidence above is not the current topology contract;
+ADR 0024 defines the active two-router, ten-resource staging graph and a
+separately owned persistent live lab.

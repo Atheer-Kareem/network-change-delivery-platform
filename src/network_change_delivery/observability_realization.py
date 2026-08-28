@@ -22,19 +22,20 @@ from network_change_delivery.observability_private_paths import (
     validate_private_file,
 )
 
-LEGACY_LAB_ID = "09605569-0468-4fc4-8684-beb5a1342b9c"
-OPERATOR_LAB_TITLE = "NCDP Terraform Twin"
-STAGING_LAB_PREFIX = "NCDP Staging "
+LIVE_LAB_ID = "09605569-0468-4fc4-8684-beb5a1342b9c"
+LIVE_LAB_TITLE = "NCDP Live"
 ADMISSION_TTL = timedelta(minutes=15)
 EXPECTED_NODES = {
     "netbox:dcim.device:1": {
         "name": "core-02",
+        "cml_label": "cat8000v-0",
         "address": "192.168.4.14",
         "definition": "cat8000v",
         "image": "cat8000v-17-18-02",
     },
     "netbox:dcim.device:2": {
         "name": "edge-junos-01",
+        "cml_label": "vjunos-router-0",
         "address": "192.168.4.20",
         "definition": "vjunos-router",
         "image": "vjunos-router-23-2r1-15",
@@ -60,17 +61,16 @@ class RealizationNode(BaseModel):
 
 
 class RealizationAdmission(BaseModel):
-    """Private, expiring authorization for one exact operator realization."""
+    """Private, expiring authorization for the exact persistent live realization."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1"] = "1"
-    lab_id: str = Field(pattern=_UUID_PATTERN)
-    lab_title: Literal["NCDP Terraform Twin"] = "NCDP Terraform Twin"
+    schema_version: Literal["2"] = "2"
+    lab_id: Literal["09605569-0468-4fc4-8684-beb5a1342b9c"] = LIVE_LAB_ID
+    lab_title: Literal["NCDP Live"] = LIVE_LAB_TITLE
+    lab_state: Literal["STARTED"] = "STARTED"
     admitted_at: datetime
     expires_at: datetime
-    legacy_lab_state: Literal["STOPPED"] = "STOPPED"
-    staging_labs: tuple[()] = ()
     nodes: tuple[RealizationNode, RealizationNode]
     digest: Sha256
 
@@ -103,7 +103,7 @@ class RealizationAdmission(BaseModel):
 
 
 class CmlRealizationAuthority:
-    """Read-only exact CML API boundary for one operator realization."""
+    """Read-only exact CML API boundary for the persistent live realization."""
 
     def __init__(
         self,
@@ -222,72 +222,71 @@ class CmlRealizationAuthority:
         *,
         now: datetime | None = None,
     ) -> RealizationAdmission:
-        """Validate ownership, collision absence, Day-0 identity, and BOOTED state."""
-        if set(node_ids) != set(EXPECTED_NODES):
+        """Validate exact live identity, collision absence, and BOOTED state."""
+        if lab_id != LIVE_LAB_ID or set(node_ids) != set(EXPECTED_NODES):
             raise ObservabilityRealizationError("CML node population rejected")
         lab_ids = self._get("/api/v0/labs")
-        if not isinstance(lab_ids, list) or any(
-            not isinstance(item, str) for item in lab_ids
+        if (
+            not isinstance(lab_ids, list)
+            or any(not isinstance(item, str) for item in lab_ids)
+            or len(lab_ids) != len(set(lab_ids))
         ):
             raise ObservabilityRealizationError("CML lab population rejected")
-        operator_matches: list[str] = []
-        legacy_seen = False
+        live_seen = False
         for candidate in lab_ids:
             lab = self._get(f"/api/v0/labs/{candidate}")
             if not isinstance(lab, dict):
                 raise ObservabilityRealizationError("CML lab population rejected")
             title = lab.get("lab_title") or lab.get("title")
-            if title == OPERATOR_LAB_TITLE:
-                operator_matches.append(candidate)
-            if isinstance(title, str) and title.startswith(STAGING_LAB_PREFIX):
-                raise ObservabilityRealizationError("CML staging realization active")
-            if candidate == LEGACY_LAB_ID:
-                legacy_seen = True
-                legacy_nodes = self._get(f"/api/v0/labs/{candidate}/nodes")
-                if not isinstance(legacy_nodes, list):
-                    raise ObservabilityRealizationError("legacy CML state rejected")
-                for legacy_node_id in legacy_nodes:
-                    legacy_node = self._get(
-                        f"/api/v0/labs/{candidate}/nodes/{legacy_node_id}"
+            if candidate == LIVE_LAB_ID:
+                if title != LIVE_LAB_TITLE or lab.get("state") != "STARTED":
+                    raise ObservabilityRealizationError(
+                        "persistent live CML realization rejected"
                     )
-                    if not isinstance(legacy_node, dict) or legacy_node.get(
-                        "state"
-                    ) not in {
-                        "STOPPED",
-                        "DEFINED_ON_CORE",
-                    }:
-                        raise ObservabilityRealizationError(
-                            "legacy CML realization active"
-                        )
-            elif candidate != lab_id:
-                foreign_nodes = self._get(f"/api/v0/labs/{candidate}/nodes")
-                if not isinstance(foreign_nodes, list):
+                live_seen = True
+                continue
+            foreign_nodes = self._get(f"/api/v0/labs/{candidate}/nodes")
+            if not isinstance(foreign_nodes, list):
+                raise ObservabilityRealizationError("CML address ownership ambiguous")
+            for foreign_node_id in foreign_nodes:
+                foreign_node = self._get(
+                    f"/api/v0/labs/{candidate}/nodes/{foreign_node_id}"
+                )
+                if not isinstance(foreign_node, dict):
                     raise ObservabilityRealizationError(
                         "CML address ownership ambiguous"
                     )
-                for foreign_node_id in foreign_nodes:
-                    foreign_node = self._get(
-                        f"/api/v0/labs/{candidate}/nodes/{foreign_node_id}"
+                if foreign_node.get("state") not in {"BOOTED", "STARTED"}:
+                    continue
+                if foreign_node.get("node_definition") in {
+                    "external_connector",
+                    "unmanaged_switch",
+                }:
+                    continue
+                configuration = self._configuration(candidate, foreign_node_id)
+                if any(
+                    expected["address"] in configuration
+                    for expected in EXPECTED_NODES.values()
+                ):
+                    raise ObservabilityRealizationError(
+                        "CML address ownership ambiguous"
                     )
-                    if not isinstance(foreign_node, dict):
-                        raise ObservabilityRealizationError(
-                            "CML address ownership ambiguous"
-                        )
-                    if foreign_node.get("state") in {"BOOTED", "STARTED"}:
-                        configuration = self._configuration(candidate, foreign_node_id)
-                        if any(
-                            expected["address"] in configuration
-                            for expected in EXPECTED_NODES.values()
-                        ):
-                            raise ObservabilityRealizationError(
-                                "CML address ownership ambiguous"
-                            )
-        if operator_matches != [lab_id] or not legacy_seen:
-            raise ObservabilityRealizationError("CML operator realization rejected")
+        if not live_seen:
+            raise ObservabilityRealizationError(
+                "persistent live CML realization rejected"
+            )
 
         actual_ids = self._get(f"/api/v0/labs/{lab_id}/nodes")
         if not isinstance(actual_ids, list):
             raise ObservabilityRealizationError("CML node population rejected")
+        for actual_id in actual_ids:
+            if actual_id in node_ids.values():
+                continue
+            infrastructure = self._get(f"/api/v0/labs/{lab_id}/nodes/{actual_id}")
+            if not isinstance(infrastructure, dict) or infrastructure.get(
+                "node_definition"
+            ) not in {"external_connector", "unmanaged_switch"}:
+                raise ObservabilityRealizationError("CML node population rejected")
         nodes: list[RealizationNode] = []
         for identity, expected in EXPECTED_NODES.items():
             node_id = node_ids[identity]
@@ -299,7 +298,7 @@ class CmlRealizationAuthority:
             configuration = self._configuration(lab_id, node_id)
             image = node.get("image_definition") or node.get("image_definition_id")
             if (
-                node.get("label") != expected["name"]
+                node.get("label") != expected["cml_label"]
                 or node.get("node_definition") != expected["definition"]
                 or image != expected["image"]
                 or node.get("state") != "BOOTED"
@@ -319,13 +318,12 @@ class CmlRealizationAuthority:
             )
         admitted = (now or datetime.now(UTC)).astimezone(UTC)
         unsigned = RealizationAdmission.model_construct(
-            schema_version="1",
+            schema_version="2",
             lab_id=lab_id,
-            lab_title=OPERATOR_LAB_TITLE,
+            lab_title=LIVE_LAB_TITLE,
+            lab_state="STARTED",
             admitted_at=admitted,
             expires_at=admitted + ADMISSION_TTL,
-            legacy_lab_state="STOPPED",
-            staging_labs=(),
             nodes=tuple(nodes),
             digest="sha256:" + "0" * 64,
         )

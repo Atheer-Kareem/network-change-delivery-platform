@@ -75,26 +75,6 @@ resource "cml2_node" "edge_junos_01" {
   }
 }
 
-resource "cml2_node" "core_03" {
-  lab_id          = var.lab_id
-  label           = "core-03"
-  nodedefinition  = "cat8000v"
-  configuration   = file("${path.module}/bootstrap/cat8000v-unmanaged.tftpl")
-  imagedefinition = one(local.accepted_cat8000v_images).id
-  cpus            = 1
-  ram             = 4096
-  tags            = ["terraform-stage-router"]
-  x               = 700
-  y               = -400
-
-  lifecycle {
-    precondition {
-      condition     = length(local.accepted_cat8000v_images) == 1
-      error_message = "Exactly one CAT8000V image with ID cat8000v-17-18-02 is required."
-    }
-  }
-}
-
 resource "cml2_link" "system_bridge_management" {
   lab_id = var.lab_id
   node_a = cml2_node.system_bridge.id
@@ -119,28 +99,12 @@ resource "cml2_link" "management_edge_junos_01" {
   slot_b = 0
 }
 
-resource "cml2_link" "management_core_03" {
-  lab_id = var.lab_id
-  node_a = cml2_node.management_switch.id
-  slot_a = 3
-  node_b = cml2_node.core_03.id
-  slot_b = 0
-}
-
 resource "cml2_link" "core_02_edge_junos_01" {
   lab_id = var.lab_id
   node_a = cml2_node.core_02.id
   slot_a = 3
   node_b = cml2_node.edge_junos_01.id
   slot_b = 1
-}
-
-resource "cml2_link" "edge_junos_01_core_03" {
-  lab_id = var.lab_id
-  node_a = cml2_node.edge_junos_01.id
-  slot_a = 2
-  node_b = cml2_node.core_03.id
-  slot_b = 2
 }
 
 resource "cml2_lifecycle" "twin" {
@@ -153,7 +117,6 @@ resource "cml2_lifecycle" "twin" {
     management_switch = "${cml2_node.management_switch.id}:${cml2_node.management_switch.generation}"
     core_02           = "${cml2_node.core_02.id}:${cml2_node.core_02.generation}"
     edge_junos_01     = "${cml2_node.edge_junos_01.id}:${cml2_node.edge_junos_01.generation}"
-    core_03           = "${cml2_node.core_03.id}:${cml2_node.core_03.generation}"
   }
 
   staging = {
@@ -171,12 +134,9 @@ resource "cml2_lifecycle" "twin" {
     cml2_node.management_switch,
     cml2_node.core_02,
     cml2_node.edge_junos_01,
-    cml2_node.core_03,
     cml2_link.system_bridge_management,
     cml2_link.management_core_02,
     cml2_link.management_edge_junos_01,
-    cml2_link.management_core_03,
     cml2_link.core_02_edge_junos_01,
-    cml2_link.edge_junos_01_core_03,
   ]
 }

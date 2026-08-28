@@ -184,14 +184,21 @@ Ordering may change when implementation evidence requires it.
       recorded the operator-confirmed static/no-DHCP policy and established the
       `192.168.4.0/24` NetBox Prefix plus known infrastructure allocations;
       subsequent read-only collision discovery and human selection admitted
-      `.30`/`.31`. B1-2 is externally complete pending repository review: stable
+      `.30`/`.31`. B1-2 is complete: stable
       staged devices 6 and 7 use a dedicated role, explicit `staging` environment
       and live-homolog fields, separate primary IPs, and no live selector tags;
       canonical devices 1 and 2 are explicitly `live`, while device 3 remains
       unclassified. Native NetBox provenance records both bounded writer episodes,
       and both temporary writers were retired with zero standing privilege. B2
-      credential separation and all Terraform/Buildkite migration remain
-      unstarted.
+      is externally complete pending repository review: separate KV-v2 secrets,
+      exact policies, and staging JWT roles now belong to devices 6/7; bounded
+      administrative capability matrices deny live and sibling paths; and the
+      historical staging roles/policies for live devices 1/2 are retired. Live
+      secrets and deployment authority remain unchanged. The checked-in staging
+      consumer still targets 1/2 and is deliberately fail-closed. Before any B3
+      source or Terraform commit, a reviewed Buildkite migration execution guard
+      or freeze must prevent legacy `cml-staging` execution. Terraform/Buildkite
+      consumer migration remains unstarted.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
       and privately protect recovery evidence, manually remove only approved
       obsolete resources, observe before remediation, reconcile authority,

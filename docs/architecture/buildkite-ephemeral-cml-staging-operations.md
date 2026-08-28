@@ -39,7 +39,15 @@ receive staging credentials before admission.
 
 ## Workload identities
 
-The job requests one five-minute Buildkite JWT with audience
+The operational description below is historical runtime behavior pending the
+ADR 0023 B3/B4 consumer migration. Phase B2 retired the staging roles and
+policies for live devices 1/2 and established standing credentials, policies,
+and roles for staging devices 6/7. The checked-in runtime still requests the old
+roles, so `cml-staging` is intentionally unauthorized and must not run. Before
+any B3 source or Terraform commit is pushed, a reviewed Buildkite execution
+guard or freeze must prevent this legacy path during the half-migrated window.
+
+Historically, the job requests one five-minute Buildkite JWT with audience
 `urn:ncdp:openbao:staging`, immutable pipeline UUID in `sub`, and explicit
 `build_id`. The application validates pipeline, build, commit, branch, step,
 job, queue, and retry context. It uses the JWT only in memory for two logins:
@@ -66,6 +74,11 @@ uses the existing personal-controller operator login to mint one in-memory
 bearer per run. This is an explicit platform limitation, not a claim of narrow
 CML authorization. The driver rejects ambient `CML2_TOKEN`; controller settings
 remain outside staging.
+
+The current standing Phase B2 OpenBao objects instead use roles
+`ncdp-buildkite-staging-device-6` and `-7`, each carrying only its corresponding
+exact staging-device policy. B3/B4 will update protected consumption; B2 does
+not claim that migration has occurred.
 
 ## Execution and evidence
 

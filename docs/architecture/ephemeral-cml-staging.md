@@ -91,8 +91,15 @@ selected them. Phase B1-2 created stable NetBox staging devices 6 and 7,
 canonical pair as `live` and staging pair as `staging`, and bound each staging
 device explicitly to its live homolog. The staging devices are `staged`, have a
 dedicated role, and carry no live selector tags. Network silence was not IPAM
-authority. Credentials and Terraform/Buildkite consumption remain later Phase B
-work.
+authority. Phase B2 created separate credentials and exact device-read
+policies/JWT roles for staging devices 6/7 and retired the historical staging
+roles/policies that read live devices 1/2. Live secrets and deployment authority
+were preserved. Terraform/Buildkite consumption remains later Phase B work.
+
+The checked-in consumer still selects historical devices 1/2, so it is
+intentionally fail-closed after B2. No `cml-staging` execution is authorized
+until B3/B4 migrate the consumer. A reviewed Buildkite migration execution guard
+or freeze is required before the first B3 source or Terraform commit is pushed.
 
 ## State lifecycle and secret boundary
 
@@ -160,7 +167,7 @@ deployment authorization.
 The staging roles bind the immutable pipeline subject and exact staging step,
 map build commit, branch, build, and job identity for application verification,
 and issue one-use tokens with no default policy. Their policies read only the two exact
-personal-lab device credential paths required for Day-0. NCDP should validate
+staging-device credential paths required for Day-0. NCDP should validate
 all mapped claims before credential access. A trusted agent-owned command hook
 rejects fork PRs and commands other than the exact staging wrapper before
 checkout code can use staging credentials. Zone 1 quality jobs remain

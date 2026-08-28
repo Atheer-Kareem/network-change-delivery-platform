@@ -63,14 +63,29 @@ and reports only whether the mount was newly enabled and whether the non-secret
 backend, role, and no-device-capability contracts were verified. This is an
 operator action, never a Buildkite job action.
 
-Buildkite ephemeral staging uses audience `urn:ncdp:openbao:staging` and
-separate roles `ncdp-buildkite-staging-device-1` and `-2`. Each binds the
-immutable pipeline subject and exact `cml-staging` step and issues one
+Buildkite ephemeral staging historically used audience
+`urn:ncdp:openbao:staging` and separate roles for live device IDs 1 and 2. Each
+role bound the immutable pipeline subject and exact `cml-staging` step and issued one
 five-minute, one-use token with no default policy and only its matching exact
 device-read policy. The application verifies mapped pipeline, build, commit,
 branch, step, and job identity before the single KV-v2 read. One in-memory JWT
 is used for the two independent role logins and discarded. Staging rejects
 AppRole; deployment roles, audiences, policies, and approval remain unchanged.
+
+ADR 0023 Phase B2 supersedes the standing staging credential authority, not yet
+the checked-in consumer. Staging credentials now belong to NetBox devices 6
+`stg-core-02` and 7 `stg-edge-junos-01`, at
+`ncdp/devices/6/ssh` and `ncdp/devices/7/ssh`. Roles
+`ncdp-buildkite-staging-device-6` and `-7` issue only their corresponding exact
+`-read` policy. Administrative capability introspection proved each policy can
+read only its matching staging path and cannot read devices 1, 2, or its sibling.
+The historical staging roles and policies for devices 1/2 are absent; live
+secrets and live deployment authority remain unchanged.
+
+The current runtime still names devices 1/2 and is intentionally unable to
+authenticate after B2. No staging run is authorized until B3/B4 migrate that
+consumer. A reviewed Buildkite migration guard or freeze is required before the
+first B3 source or Terraform commit can be pushed.
 
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role

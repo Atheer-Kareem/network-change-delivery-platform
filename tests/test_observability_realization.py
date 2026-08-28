@@ -254,6 +254,42 @@ def test_oversized_configuration_response_fails_closed() -> None:
     client.close()
 
 
+@pytest.mark.parametrize("fallback_shape", ("alternate-suffix", "node"))
+def test_oversized_configuration_cannot_be_bypassed_by_valid_fallback(
+    fallback_shape: str,
+) -> None:
+    oversized = "x" * (2 * 1024 * 1024 + 1)
+    fallback = transport()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v0/authenticate":
+            return httpx.Response(200, json="private-token")
+        if path.endswith(f"/{CORE}/configuration"):
+            return httpx.Response(200, json=oversized)
+        if fallback_shape == "alternate-suffix" and path.endswith(
+            f"/{CORE}/configurations"
+        ):
+            return httpx.Response(200, json="hostname core-02 192.168.4.14")
+        if fallback_shape == "node" and path.endswith(f"/nodes/{CORE}"):
+            response = fallback.handle_request(request)
+            payload = response.json()
+            payload["configuration"] = "hostname core-02 192.168.4.14"
+            return httpx.Response(200, json=payload)
+        return fallback.handle_request(request)
+
+    client = CmlRealizationAuthority(
+        "https://cml.example",
+        "-----BEGIN CERTIFICATE-----\ninvalid-for-mock\n-----END CERTIFICATE-----",
+        "private-user",
+        "private-password",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ObservabilityRealizationError, match="Day-0 identity"):
+        admit(client)
+    client.close()
+
+
 @pytest.mark.parametrize(
     "kwargs,match",
     [

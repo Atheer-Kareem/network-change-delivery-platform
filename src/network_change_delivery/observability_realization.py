@@ -176,14 +176,15 @@ class CmlRealizationAuthority:
                 response = self._client.get(
                     f"/api/v0/labs/{lab_id}/nodes/{node_id}/{suffix}"
                 )
-                if response.status_code != 200:
-                    continue
-                if len(response.content) > 2 * 1024 * 1024:
-                    raise ObservabilityRealizationError(
-                        "CML Day-0 identity unavailable"
-                    )
+            except httpx.HTTPError:
+                continue
+            if response.status_code != 200:
+                continue
+            if len(response.content) > 2 * 1024 * 1024:
+                raise ObservabilityRealizationError("CML Day-0 identity unavailable")
+            try:
                 payload = response.json()
-            except (httpx.HTTPError, ValueError):
+            except ValueError:
                 continue
             if isinstance(payload, str):
                 return payload

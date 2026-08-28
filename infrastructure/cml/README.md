@@ -1,6 +1,24 @@
-# CML Terraform digital twin
+# CML Terraform environments
 
-This directory contains the protected operator/local root, the reusable
+ADR 0023 separates the Terraform implementations in this directory:
+
+- `ephemeral/` plus `modules/managed-pair/` is the target staging structure. It
+  owns one disposable lab, four nodes, four links, and one lifecycle resource:
+  exactly ten resources. Its Cisco/Junos data-plane link is staging integration
+  topology, not a claim about brownfield live wiring.
+- the directory root plus `modules/twin/` is the frozen historical
+  pre-ADR-0023 operator-twin implementation. It remains for migration and
+  historical recovery continuity. It is neither live/reference authority nor
+  authorized for execution during the migration.
+
+Terraform never owns or adopts the brownfield live/reference lab. Phase B3-1
+changes only the static staging graph. The checked-in orchestration still uses
+historical devices 1/2 authority and is intentionally fail closed after B2;
+B3-2 owns the protected devices 6/7 authority boundary.
+
+## Historical operator-twin contract
+
+The historical implementation contains the protected operator/local root, the reusable
 `modules/twin` realization module, and the intentionally destroyable
 `ephemeral` staging root. Each root owns its CML lab. The shared module discovers
 controller metadata, the unique `System Bridge` connector, accepted images,
@@ -140,8 +158,8 @@ destroyed through an exact 13-resource Terraform graph.
 
 ### Ephemeral run contract
 
-The ephemeral root requires a unique non-secret `staging_run_id`, explicit
-`twin_lifecycle_state`, and every NetBox/OpenBao-derived Day-0 input. It has no
+The target ephemeral root requires a unique non-secret `staging_run_id`, explicit
+`lifecycle_state`, and every authority-derived Day-0 input. It has no
 credential defaults or committed tfvars. Initialize it with a unique backend
 path supplied externally for that run:
 

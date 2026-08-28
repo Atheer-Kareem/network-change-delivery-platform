@@ -7,6 +7,7 @@ service_parent=${NCDP_OBSERVABILITY_SERVICE_PARENT:-/Users/netdevops/.local/lib/
 commit=${NCDP_SOURCE_COMMIT:?source commit required}
 runtime=${service_parent}/observability-service-${commit}
 plist=/Users/netdevops/Library/LaunchAgents/com.ncdp.observability.plist
+install_lock=${service_parent}/.observability-install.lock
 prometheus='prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0'
 blackbox='prom/blackbox-exporter:v0.27.0@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d'
 
@@ -18,9 +19,33 @@ for name in NCDP_OBSERVABILITY_CML_ADDRESS NCDP_OBSERVABILITY_CML_CACERT NCDP_OB
   eval "value=\${${name}:-}"
   [ -n "${value}" ] || { echo "observability CML authority missing" >&2; exit 2; }
 done
-[ ! -e "${runtime}" ] || { echo "observability service runtime already exists" >&2; exit 2; }
+for path in "${state_root}" "${config_root}" "${runtime}" "${plist}"; do
+  [ ! -e "${path}" ] && [ ! -L "${path}" ] || {
+    echo "observability first-install target already exists" >&2
+    exit 2
+  }
+done
+case "${state_root}" in /*/observability) ;; *) echo "observability state root rejected" >&2; exit 2;; esac
+case "${config_root}" in /*/observability) ;; *) echo "observability config root rejected" >&2; exit 2;; esac
+case "${service_parent}" in /*/ncdp) ;; *) echo "observability service parent rejected" >&2; exit 2;; esac
 
 umask 077
+mkdir -p "${service_parent}"
+chmod 0700 "${service_parent}"
+mkdir "${install_lock}" || { echo "observability installation already in progress" >&2; exit 2; }
+chmod 0700 "${install_lock}"
+install_complete=0
+cleanup_incomplete_install() {
+  status=$?
+  if [ "${install_complete}" -ne 1 ]; then
+    rm -f "${plist}"
+    rm -rf "${runtime}" "${config_root}" "${state_root}"
+  fi
+  rmdir "${install_lock}" 2>/dev/null || true
+  exit "${status}"
+}
+trap cleanup_incomplete_install EXIT
+trap 'exit 1' HUP INT TERM
 for directory in "${state_root}" "${state_root}/runtime" "${state_root}/discovery" "${state_root}/operator" "${state_root}/control" "${state_root}/logs" "${state_root}/prometheus" "${config_root}" "${service_parent}" "${runtime}"; do
   mkdir -p "${directory}"
   chmod 0700 "${directory}"
@@ -45,7 +70,7 @@ cp infrastructure/observability/blackbox.yml "${config_root}/blackbox.yml"
 printf '%s\n' "${runtime}/compose.yaml" > "${config_root}/compose-path"
 printf '%s\n' "${commit}" > "${config_root}/source-commit"
 printf '%s' "${NCDP_OBSERVABILITY_NETBOX_TOKEN}" > "${config_root}/netbox-token"
-NCDP_OBSERVABILITY_CONFIG_ROOT="${config_root}" python -c 'import json, os, pathlib; p=pathlib.Path(os.environ["NCDP_OBSERVABILITY_CONFIG_ROOT"])/"authority.json"; p.write_text(json.dumps({"netbox_url":"http://127.0.0.1:8000","cml_address":os.environ["NCDP_OBSERVABILITY_CML_ADDRESS"],"cml_certificate":os.environ["NCDP_OBSERVABILITY_CML_CACERT"],"cml_username":os.environ["NCDP_OBSERVABILITY_CML_USERNAME"],"cml_password":os.environ["NCDP_OBSERVABILITY_CML_PASSWORD"]},sort_keys=True,separators=(",",":"))+"\n")'
+NCDP_OBSERVABILITY_CONFIG_ROOT="${config_root}" "${runtime}/bin/python" -c 'import json, os, pathlib; p=pathlib.Path(os.environ["NCDP_OBSERVABILITY_CONFIG_ROOT"])/"authority.json"; p.write_text(json.dumps({"netbox_url":"http://127.0.0.1:8000","cml_address":os.environ["NCDP_OBSERVABILITY_CML_ADDRESS"],"cml_certificate":os.environ["NCDP_OBSERVABILITY_CML_CACERT"],"cml_username":os.environ["NCDP_OBSERVABILITY_CML_USERNAME"],"cml_password":os.environ["NCDP_OBSERVABILITY_CML_PASSWORD"]},sort_keys=True,separators=(",",":"))+"\n")'
 for file in "${runtime}/compose.yaml" "${config_root}/prometheus.yml" "${config_root}/blackbox.yml" "${config_root}/compose-path" "${config_root}/source-commit" "${config_root}/netbox-token" "${config_root}/authority.json" "${config_root}/prometheus-image-id" "${config_root}/blackbox-image-id"; do
   chmod 0600 "${file}"
 done
@@ -74,4 +99,8 @@ cat > "${plist}" <<EOF
 EOF
 chmod 0644 "${plist}"
 plutil -lint "${plist}" >/dev/null
+rmdir "${install_lock}"
+install_complete=1
+trap - EXIT
+trap - HUP INT TERM
 echo "observability persistent service installed but not loaded"

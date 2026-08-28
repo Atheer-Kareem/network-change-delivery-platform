@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -339,6 +342,177 @@ def test_installer_is_external_private_and_does_not_load_launchagent() -> None:
     assert "launchctl" not in script
     assert "ansible-galaxy" not in script
     assert "node.next" not in script
+    assert '"${runtime}/bin/python" -c' in script
+    assert " python -c" not in script
+
+
+def _installer_fixture(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, Path]]:
+    root = Path(__file__).parents[1]
+    work = tmp_path / "work"
+    script_root = work / "scripts/observability"
+    infrastructure = work / "infrastructure/observability"
+    script_root.mkdir(parents=True)
+    infrastructure.mkdir(parents=True)
+    launchagents = tmp_path / "Library/LaunchAgents"
+    launchagents.mkdir(parents=True)
+    script = (root / "scripts/observability/install_service.sh").read_text()
+    plist = launchagents / "com.ncdp.observability.plist"
+    script = script.replace(
+        "plist=/Users/netdevops/Library/LaunchAgents/com.ncdp.observability.plist",
+        f"plist={plist}",
+    )
+    installer = script_root / "install_service.sh"
+    installer.write_text(script)
+    installer.chmod(0o700)
+    for name in ("compose.yaml", "prometheus.yml", "blackbox.yml"):
+        shutil.copy(root / "infrastructure/observability" / name, infrastructure / name)
+
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    for command in ("cat", "chmod", "cp", "grep", "mkdir", "rm", "rmdir", "touch"):
+        executable = shutil.which(command)
+        assert executable is not None
+        (binaries / command).symlink_to(executable)
+    (binaries / "id").write_text("#!/bin/sh\necho netdevops\n")
+    (binaries / "id").chmod(0o700)
+    image_id = "sha256:" + "a" * 64
+    (binaries / "docker").write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        f"  *Os*Architecture*) echo '{image_id} linux/arm64' ;;\n"
+        f"  *) echo '{image_id}' ;;\n"
+        "esac\n"
+    )
+    (binaries / "docker").chmod(0o700)
+    runtime_python = tmp_path / "runtime-python"
+    runtime_python.write_text(
+        "#!/bin/sh\n"
+        'case "$2" in\n'
+        "  *authority.json*)\n"
+        '    [ "${NCDP_TEST_FAIL_AUTHORITY:-0}" = 0 ] || exit 17\n'
+        f'    exec {sys.executable} "$@"\n'
+        "    ;;\n"
+        "  *publish_generation*) exit 0 ;;\n"
+        "  *) exit 19 ;;\n"
+        "esac\n"
+    )
+    runtime_python.chmod(0o700)
+    (binaries / "uv").write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  venv)\n"
+        "    runtime=$4\n"
+        '    mkdir -p "${runtime}/bin"\n'
+        '    cp "${NCDP_TEST_RUNTIME_PYTHON}" "${runtime}/bin/python"\n'
+        '    chmod 0700 "${runtime}/bin/python"\n'
+        "    ;;\n"
+        "  build)\n"
+        "    mkdir -p dist\n"
+        "    touch dist/network_change_delivery-0.1.0-py3-none-any.whl\n"
+        "    ;;\n"
+        "  pip) exit 0 ;;\n"
+        "  *) exit 18 ;;\n"
+        "esac\n"
+    )
+    (binaries / "uv").chmod(0o700)
+    (binaries / "plutil").write_text('#!/bin/sh\n[ -f "$2" ]\n')
+    (binaries / "plutil").chmod(0o700)
+
+    paths = {
+        "state": tmp_path / "external/state/observability",
+        "config": tmp_path / "external/config/observability",
+        "service_parent": tmp_path / "external/lib/ncdp",
+        "plist": plist,
+    }
+    paths["runtime"] = paths["service_parent"] / f"observability-service-{'a' * 40}"
+    paths["service_parent"].mkdir(parents=True)
+    sentinel = paths["service_parent"] / "unrelated-runtime"
+    sentinel.write_text("preserve\n")
+    environment = {
+        "PATH": str(binaries),
+        "NCDP_SOURCE_COMMIT": "a" * 40,
+        "NCDP_OBSERVABILITY_STATE_ROOT": str(paths["state"]),
+        "NCDP_OBSERVABILITY_CONFIG_ROOT": str(paths["config"]),
+        "NCDP_OBSERVABILITY_SERVICE_PARENT": str(paths["service_parent"]),
+        "NCDP_OBSERVABILITY_NETBOX_TOKEN": "test-token",
+        "NCDP_OBSERVABILITY_CML_ADDRESS": "https://cml.invalid",
+        "NCDP_OBSERVABILITY_CML_CACERT": "test-certificate",
+        "NCDP_OBSERVABILITY_CML_USERNAME": "test-user",
+        "NCDP_OBSERVABILITY_CML_PASSWORD": "test-password",
+        "NCDP_TEST_RUNTIME_PYTHON": str(runtime_python),
+    }
+    assert shutil.which("python", path=environment["PATH"]) is None
+    return installer, environment, paths
+
+
+def test_installer_uses_runtime_python_without_host_python(tmp_path: Path) -> None:
+    installer, environment, paths = _installer_fixture(tmp_path)
+    result = subprocess.run(
+        [str(installer)],
+        cwd=installer.parents[2],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (paths["config"] / "authority.json").is_file()
+    assert paths["runtime"].is_dir()
+    assert paths["plist"].is_file()
+    assert (paths["service_parent"] / "unrelated-runtime").is_file()
+
+
+def test_failed_first_install_cleans_only_new_state_and_can_retry(
+    tmp_path: Path,
+) -> None:
+    installer, environment, paths = _installer_fixture(tmp_path)
+    failed = subprocess.run(
+        [str(installer)],
+        cwd=installer.parents[2],
+        env={**environment, "NCDP_TEST_FAIL_AUTHORITY": "1"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert failed.returncode == 17
+    assert not paths["state"].exists()
+    assert not paths["config"].exists()
+    assert not paths["runtime"].exists()
+    assert not paths["plist"].exists()
+    assert (paths["service_parent"] / "unrelated-runtime").read_text() == "preserve\n"
+
+    retry = subprocess.run(
+        [str(installer)],
+        cwd=installer.parents[2],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert retry.returncode == 0, retry.stderr
+    assert paths["runtime"].is_dir()
+    assert paths["plist"].is_file()
+
+
+def test_first_install_rejects_and_preserves_preexisting_state(tmp_path: Path) -> None:
+    installer, environment, paths = _installer_fixture(tmp_path)
+    paths["state"].mkdir(parents=True)
+    existing = paths["state"] / "prometheus-history"
+    existing.write_text("preserve\n")
+
+    result = subprocess.run(
+        [str(installer)],
+        cwd=installer.parents[2],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert existing.read_text() == "preserve\n"
+    assert not paths["config"].exists()
+    assert not paths["runtime"].exists()
+    assert not paths["plist"].exists()
 
 
 def test_retirement_order_invalidates_authorization_before_empty_targets() -> None:

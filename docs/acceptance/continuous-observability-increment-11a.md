@@ -65,6 +65,22 @@ device probe, device authentication or write, OpenBao device-secret read by the
 observability plane, Oxidized mutation, or AuditStore mutation occurred.
 Increment 11A live acceptance remains NOT YET PROVEN.
 
+The third post-merge attempt used authority commit
+`e18a8a0af06b40d21d98a5144fb7af2ac0774ab2` after natural merged-main Build
+#168 passed. The persistent runtime update, healthy RETIRED state, and a normal
+300-second reconciliation passed. An exact fresh 13-resource operator
+realization was created and transitioned to STARTED: lab
+`4de9d1f3-92e8-4b58-a4c9-b9d797689a46`, Cisco node
+`d75f5380-7301-4434-9246-cafef7995850`, and Junos node
+`4dbdf049-d1bb-43dc-be03-da86d61b6298`. Realization admission then failed
+closed with `CML Day-0 identity unavailable` because the 11A reader did not
+support CML 2.10's list-valued stored-configuration representation. No
+admission, ACTIVE generation, readiness, or live device probe was produced,
+and observability-plane device-secret reads remained zero. The exact
+13-resource destroy passed, fixed addresses were released, and the persistent
+service and TSDB were preserved. Increment 11A live acceptance remains NOT YET
+PROVEN.
+
 ## Credential accounting boundary
 
 The 11A observability plane performs zero OpenBao device-secret reads. This

@@ -28,6 +28,8 @@ def transport(
     legacy_running: bool = False,
     booted: bool = True,
     foreign_conflict: bool = False,
+    configuration_shape: str = "endpoint-string",
+    list_payload: object | None = None,
 ):
     foreign = "55555555-5555-5555-5555-555555555555"
     labs = (
@@ -67,28 +69,74 @@ def transport(
         if path == f"/api/v0/labs/{LAB}/nodes":
             return httpx.Response(200, json=[CORE, JUNOS])
         if path == f"/api/v0/labs/{LAB}/nodes/{CORE}":
-            return httpx.Response(
-                200,
-                json={
-                    "label": "core-02",
-                    "node_definition": "cat8000v",
-                    "image_definition": "cat8000v-17-18-02",
-                    "state": "BOOTED" if booted else "STOPPED",
-                },
-            )
+            payload = {
+                "label": "core-02",
+                "node_definition": "cat8000v",
+                "image_definition": "cat8000v-17-18-02",
+                "state": "BOOTED" if booted else "STOPPED",
+            }
+            if configuration_shape == "node-list":
+                payload["configuration"] = (
+                    [{"content": "hostname core-02 192.168.4.14"}]
+                    if list_payload is None
+                    else list_payload
+                )
+            if configuration_shape == "node-string":
+                payload["configuration"] = "hostname core-02 192.168.4.14"
+            return httpx.Response(200, json=payload)
         if path == f"/api/v0/labs/{LAB}/nodes/{JUNOS}":
-            return httpx.Response(
-                200,
-                json={
-                    "label": "edge-junos-01",
-                    "node_definition": "vjunos-router",
-                    "image_definition": "vjunos-router-23-2r1-15",
-                    "state": "BOOTED" if booted else "STOPPED",
-                },
-            )
+            payload = {
+                "label": "edge-junos-01",
+                "node_definition": "vjunos-router",
+                "image_definition": "vjunos-router-23-2r1-15",
+                "state": "BOOTED" if booted else "STOPPED",
+            }
+            if configuration_shape == "node-list":
+                payload["configuration"] = (
+                    [{"content": "host-name edge-junos-01 192.168.4.20"}]
+                    if list_payload is None
+                    else list_payload
+                )
+            if configuration_shape == "node-string":
+                payload["configuration"] = "host-name edge-junos-01 192.168.4.20"
+            return httpx.Response(200, json=payload)
         if path == f"/api/v0/labs/{LAB}/nodes/{CORE}/configuration":
+            if configuration_shape in {"node-list", "node-string"}:
+                return httpx.Response(404)
+            if configuration_shape == "endpoint-list":
+                return httpx.Response(
+                    200, json=[{"content": "hostname core-02 192.168.4.14"}]
+                )
+            if configuration_shape == "endpoint-dict":
+                return httpx.Response(
+                    200, json={"configuration": "hostname core-02 192.168.4.14"}
+                )
+            if configuration_shape == "endpoint-juniper-dict":
+                return httpx.Response(
+                    200,
+                    json={"config/juniper.conf": "hostname core-02 192.168.4.14"},
+                )
             return httpx.Response(200, json="hostname core-02 192.168.4.14")
         if path == f"/api/v0/labs/{LAB}/nodes/{JUNOS}/configuration":
+            if configuration_shape in {"node-list", "node-string"}:
+                return httpx.Response(404)
+            if configuration_shape == "endpoint-list":
+                return httpx.Response(
+                    200,
+                    json=[{"content": "host-name edge-junos-01 192.168.4.20"}],
+                )
+            if configuration_shape == "endpoint-dict":
+                return httpx.Response(
+                    200,
+                    json={"configuration": "host-name edge-junos-01 192.168.4.20"},
+                )
+            if configuration_shape == "endpoint-juniper-dict":
+                return httpx.Response(
+                    200,
+                    json={
+                        "config/juniper.conf": "host-name edge-junos-01 192.168.4.20"
+                    },
+                )
             return httpx.Response(200, json="host-name edge-junos-01 192.168.4.20")
         return httpx.Response(404)
 
@@ -138,6 +186,72 @@ def test_exact_realization_admission_is_digest_bound_and_private(
     assert read_admission(root, now=now) == record
     assert path.stat().st_mode & 0o777 == 0o600
     assert "private" not in json.dumps(record.model_dump(mode="json"))
+
+
+@pytest.mark.parametrize(
+    "configuration_shape",
+    (
+        "endpoint-string",
+        "endpoint-dict",
+        "endpoint-juniper-dict",
+        "endpoint-list",
+        "node-string",
+        "node-list",
+    ),
+)
+def test_supported_stored_configuration_shapes_admit_exact_realization(
+    configuration_shape: str,
+) -> None:
+    client = authority(configuration_shape=configuration_shape)
+    record = admit(client)
+    client.close()
+    assert [node.cml_node_id for node in record.nodes] == [CORE, JUNOS]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        [],
+        [{"content": "marker"}, {"content": "duplicate"}],
+        [{"content": "marker"}, {"other": "malformed"}],
+        ["not-an-entry"],
+        [{}],
+        [{"content": None}],
+        [{"content": 22}],
+        [{"content": ""}],
+        [{"content": {"nested": "value"}}],
+    ),
+)
+def test_ambiguous_or_malformed_list_configuration_fails_closed(
+    payload: object,
+) -> None:
+    client = authority(configuration_shape="node-list", list_payload=payload)
+    with pytest.raises(ObservabilityRealizationError, match="Day-0 identity"):
+        admit(client)
+    client.close()
+
+
+def test_oversized_configuration_response_fails_closed() -> None:
+    oversized = "x" * (2 * 1024 * 1024 + 1)
+    fallback = transport()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v0/authenticate":
+            return httpx.Response(200, json="private-token")
+        if request.url.path.endswith(f"/{CORE}/configuration"):
+            return httpx.Response(200, json=oversized)
+        return fallback.handle_request(request)
+
+    client = CmlRealizationAuthority(
+        "https://cml.example",
+        "-----BEGIN CERTIFICATE-----\ninvalid-for-mock\n-----END CERTIFICATE-----",
+        "private-user",
+        "private-password",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ObservabilityRealizationError, match="Day-0 identity"):
+        admit(client)
+    client.close()
 
 
 @pytest.mark.parametrize(

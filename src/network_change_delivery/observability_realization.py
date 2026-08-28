@@ -178,6 +178,10 @@ class CmlRealizationAuthority:
                 )
                 if response.status_code != 200:
                     continue
+                if len(response.content) > 2 * 1024 * 1024:
+                    raise ObservabilityRealizationError(
+                        "CML Day-0 identity unavailable"
+                    )
                 payload = response.json()
             except (httpx.HTTPError, ValueError):
                 continue
@@ -189,10 +193,26 @@ class CmlRealizationAuthority:
                 )
                 if isinstance(value, str):
                     return value
+            if isinstance(payload, list):
+                return self._list_configuration(payload)
         node = self._get(f"/api/v0/labs/{lab_id}/nodes/{node_id}")
-        if isinstance(node, dict) and isinstance(node.get("configuration"), str):
-            return node["configuration"]
+        if isinstance(node, dict):
+            configuration = node.get("configuration")
+            if isinstance(configuration, str):
+                return configuration
+            if isinstance(configuration, list):
+                return self._list_configuration(configuration)
         raise ObservabilityRealizationError("CML Day-0 identity unavailable")
+
+    @staticmethod
+    def _list_configuration(payload: list[Any]) -> str:
+        """Read the single CML 2.10 stored-configuration entry."""
+        if len(payload) != 1 or not isinstance(payload[0], dict):
+            raise ObservabilityRealizationError("CML Day-0 identity unavailable")
+        content = payload[0].get("content")
+        if not isinstance(content, str) or not content:
+            raise ObservabilityRealizationError("CML Day-0 identity unavailable")
+        return content
 
     def admit(
         self,

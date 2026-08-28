@@ -104,10 +104,22 @@ Python 3.12, a built wheel,
 `uv.lock`, frozen production dependency export with hashes, and a private
 non-editable virtual environment. The protected source inventory includes only
 required controller, adapter, read-only Ansible, Terraform, and bootstrap
-assets; tests and `.git` are excluded. B3-2B1 installed nothing into standing
+assets. It also includes the packaging-declared `README.md` and the controller's
+direct `buildkite_policy.py` import; tests and `.git` are excluded. The admitted
+uv install compiles bytecode before runtime inventory. The exact base Python
+interpreter path and digest are manifest authority, and only the venv's exact
+`bin/python` symlink may cross the runtime boundary to that interpreter.
+B3-2B1 installed nothing into standing
 agent paths. Runtime admission rejects unexpected files, digest or mode drift,
 controller-entry-point replacement, source symlinks, and runtime symlinks that
 escape the admitted runtime.
+
+The actual reduced-source construction was exercised in a private temporary
+directory: it built the project wheel, exported and installed all hash-frozen
+production dependencies without an editable install, created the real
+`ncdp-protected-staging-controller` entry point, ran `--help` outside the
+checkout without bytecode suppression, and produced an identical runtime
+inventory before and after startup. No standing path was used.
 
 Creation-attempt state is explicit. A pre-create admission failure may retire
 only an empty local run without claiming CML ownership. Once create was

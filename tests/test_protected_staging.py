@@ -96,6 +96,8 @@ def manifest(**changes) -> ProtectedStagingManifest:
         "source_inventory_sha256": SHA256,
         "runtime_inventory_sha256": SHA256,
         "runtime_digest": SHA256,
+        "python_interpreter_path": "/opt/protected/python3.12",
+        "python_interpreter_sha256": SHA256,
         "project_wheel_sha256": SHA256,
         "production_requirements_sha256": SHA256,
         "controller_artifact_digest": SHA256,

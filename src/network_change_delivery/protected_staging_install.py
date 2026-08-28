@@ -25,10 +25,12 @@ from network_change_delivery.protected_staging import (
 )
 
 PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
+    "README.md",
     "pyproject.toml",
     "uv.lock",
     "src/network_change_delivery/__init__.py",
     "src/network_change_delivery/buildkite_identity.py",
+    "src/network_change_delivery/buildkite_policy.py",
     "src/network_change_delivery/buildkite_staging.py",
     "src/network_change_delivery/inventory.py",
     "src/network_change_delivery/models.py",
@@ -166,6 +168,7 @@ def construct_isolated_runtime(
             uv,
             "pip",
             "install",
+            "--compile-bytecode",
             "--python",
             str(python),
             "--require-hashes",
@@ -178,8 +181,12 @@ def construct_isolated_runtime(
     if entrypoint.is_symlink() or not entrypoint.is_file():
         raise ProtectedStagingError("protected controller entrypoint missing")
     for link in runtime.rglob("*"):
-        if link.is_symlink() and not link.resolve(strict=True).is_relative_to(runtime):
-            raise ProtectedStagingError("protected runtime symlink escapes runtime")
+        if link.is_symlink():
+            target = str(link.readlink())
+            # Do not resolve the final symlink: this checks its lexical boundary.
+            lexical = Path(os.path.abspath(link.parent / target))  # noqa: PTH100
+            if not lexical.is_relative_to(runtime) and link != runtime / "bin/python":
+                raise ProtectedStagingError("protected runtime symlink escapes runtime")
     return runtime
 
 
@@ -190,13 +197,23 @@ def inventory_runtime(runtime: Path) -> tuple[dict[str, dict[str, object]], str]
         relative = str(path.relative_to(runtime))
         mode = stat.S_IMODE(path.lstat().st_mode)
         if path.is_symlink():
-            if not path.resolve(strict=True).is_relative_to(runtime):
-                raise ProtectedStagingError("protected runtime symlink escapes runtime")
+            target = str(path.readlink())
+            resolved = path.resolve(strict=True)
+            # Do not resolve the final symlink: this checks its lexical boundary.
+            lexical = Path(os.path.abspath(path.parent / target))  # noqa: PTH100
             entries[relative] = {
                 "type": "symlink",
                 "mode": mode,
-                "target": str(path.readlink()),
+                "target": target,
             }
+            if not lexical.is_relative_to(runtime):
+                if relative != "bin/python" or not resolved.is_file():
+                    raise ProtectedStagingError(
+                        "protected runtime symlink escapes runtime"
+                    )
+                entries[relative]["target_sha256"] = hashlib.sha256(
+                    resolved.read_bytes()
+                ).hexdigest()
         elif path.is_file():
             entries[relative] = {
                 "type": "file",
@@ -293,6 +310,7 @@ def install_source_bundle(
             uv_executable=uv_executable,
         )
         runtime_entries, runtime_digest = inventory_runtime(runtime)
+        python_interpreter = (runtime / "bin/python").resolve(strict=True)
         runtime_inventory = json.dumps(
             runtime_entries, sort_keys=True, separators=(",", ":")
         )
@@ -315,6 +333,10 @@ def install_source_bundle(
                 runtime_inventory.encode()
             ).hexdigest(),
             runtime_digest=runtime_digest,
+            python_interpreter_path=str(python_interpreter),
+            python_interpreter_sha256=hashlib.sha256(
+                python_interpreter.read_bytes()
+            ).hexdigest(),
             project_wheel_sha256=hashlib.sha256(wheels[0].read_bytes()).hexdigest(),
             production_requirements_sha256=hashlib.sha256(
                 requirements.read_bytes()
@@ -356,13 +378,23 @@ def install_source_bundle(
         smoke = subprocess.run(
             [str(runtime / manifest.controller_entrypoint), "--help"],
             cwd=destination,
-            env={"PYTHONDONTWRITEBYTECODE": "1"},
+            env={},
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         if smoke.returncode != 0:
             raise ProtectedStagingError("protected controller smoke failed")
+        post_smoke_entries, post_smoke_digest = inventory_runtime(runtime)
+        if post_smoke_entries != runtime_entries or post_smoke_digest != runtime_digest:
+            raise ProtectedStagingError("protected controller mutated runtime")
+        validate_runtime_inventory(
+            runtime,
+            source,
+            manifest,
+            runtime_inventory_file,
+            owner_uid=owner_uid,
+        )
         return manifest
     except Exception:
         raise

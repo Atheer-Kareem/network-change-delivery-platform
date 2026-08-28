@@ -132,6 +132,8 @@ class ProtectedStagingManifest(BaseModel):
     runtime_inventory_sha256: str
     runtime_digest: str
     python_version: Literal["3.12"] = "3.12"
+    python_interpreter_path: str
+    python_interpreter_sha256: str
     project_wheel_sha256: str
     production_requirements_sha256: str
     controller_entrypoint: Literal["bin/ncdp-protected-staging-controller"] = (
@@ -213,6 +215,7 @@ class ProtectedStagingManifest(BaseModel):
             self.runtime_digest,
             self.project_wheel_sha256,
             self.production_requirements_sha256,
+            self.python_interpreter_sha256,
             self.controller_artifact_digest,
             *self.file_digests.values(),
         ):
@@ -223,6 +226,8 @@ class ProtectedStagingManifest(BaseModel):
             for name in self.file_digests
         ):
             raise ValueError("protected file inventory is invalid")
+        if not Path(self.python_interpreter_path).is_absolute():
+            raise ValueError("protected Python interpreter authority is invalid")
         controller_path = "src/network_change_delivery/protected_staging_controller.py"
         if self.file_digests.get(controller_path) != self.controller_artifact_digest:
             raise ValueError("protected controller artifact digest changed")
@@ -936,9 +941,19 @@ def validate_runtime_inventory(
                 raise ProtectedStagingError("protected runtime symlink is invalid")
             target = str(path.readlink())
             resolved = path.resolve(strict=True)
-            if not resolved.is_relative_to(root):
-                raise ProtectedStagingError("protected runtime symlink escapes runtime")
             actual = {"type": "symlink", "mode": mode, "target": target}
+            # Do not resolve the final symlink: this checks its lexical boundary.
+            lexical = Path(os.path.abspath(path.parent / target))  # noqa: PTH100
+            if not lexical.is_relative_to(root):
+                if (
+                    relative != "bin/python"
+                    or str(resolved) != manifest.python_interpreter_path
+                    or _file_sha256(resolved) != manifest.python_interpreter_sha256
+                ):
+                    raise ProtectedStagingError(
+                        "protected runtime symlink escapes runtime"
+                    )
+                actual["target_sha256"] = _file_sha256(resolved)
         else:
             raise ProtectedStagingError("protected runtime inventory is invalid")
         if actual != expected:

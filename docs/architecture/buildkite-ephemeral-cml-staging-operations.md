@@ -78,6 +78,12 @@ inventories, constructs a non-inherited privileged environment, applies only exa
 saved plans, supports exact-subset cleanup/recovery, and emits allowlisted
 evidence. No standing runtime or command hook is changed by B3-2B1.
 
+Runtime construction copies every packaging-required local asset, installs the
+non-editable wheel with uv bytecode compilation enabled, inventories the final
+bytecode-bearing runtime, then starts the real controller and requires the
+second inventory to be identical. The manifest also binds the exact base Python
+interpreter path and digest used by the virtual environment.
+
 Before installing anything, B3-2B2 must prove the validation, staging, and
 deployment OS principals and protected-root ownership/ACLs. A shared Unix UID
 between checkout-controlled validation and protected staging is a hard stop;

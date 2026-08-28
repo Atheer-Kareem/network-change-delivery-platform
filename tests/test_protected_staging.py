@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -61,14 +62,23 @@ def authority(role: str) -> StagingTargetAuthority:
     return StagingTargetAuthority(
         device_id=device_id,
         name=name,
+        site_id=1,
+        device_type_id=1 if device_id == 6 else 2,
         environment="staging",
         status="staged",
         role_slug="ncdp-staging",
         platform_slug=platform,
         management_interface=interface,
+        management_interface_id=9 if device_id == 6 else 10,
+        management_interface_type="1000base-t",
+        management_interface_enabled=True,
+        management_interface_mgmt_only=False,
+        management_ip_address_id=9 if device_id == 6 else 10,
+        management_cidr=f"192.168.4{suffix}/24",
         management_ip=f"192.168.4{suffix}",
         live_homolog_id=homolog_id,
         live_homolog_name=homolog_name,
+        live_primary_cidr=("192.168.4.14/24" if device_id == 6 else "192.168.4.20/24"),
         openbao_role=f"ncdp-buildkite-staging-device-{device_id}",
         credential_reference=f"openbao:kv-v2:ncdp/devices/{device_id}/ssh",
     )
@@ -77,8 +87,19 @@ def authority(role: str) -> StagingTargetAuthority:
 def manifest(**changes) -> ProtectedStagingManifest:
     controller_path = "src/network_change_delivery/protected_staging_controller.py"
     values = {
+        "schema_version": 3,
+        "buildkite_pipeline_id": UUID("00000000-0000-0000-0000-000000000001"),
         "source_commit": SHA1,
-        "bundle_digest": SHA256,
+        "netbox_url": "https://netbox.example",
+        "openbao_url": "https://bao.example",
+        "source_bundle_digest": SHA256,
+        "source_inventory_sha256": SHA256,
+        "runtime_inventory_sha256": SHA256,
+        "runtime_digest": SHA256,
+        "python_interpreter_path": "/opt/protected/python3.12",
+        "python_interpreter_sha256": SHA256,
+        "project_wheel_sha256": SHA256,
+        "production_requirements_sha256": SHA256,
         "controller_artifact_digest": SHA256,
         "file_digests": {controller_path: SHA256, "terraform/main.tf": SHA256},
         "cisco": authority("cisco"),
@@ -92,6 +113,7 @@ def manifest(**changes) -> ProtectedStagingManifest:
         "cml": CMLAuthority(
             controller_identity="personal-cml",
             controller_url="https://cml.example",
+            ca_pem_sha256=SHA256,
         ),
         "terraform_addresses": tuple(sorted(EXPECTED_TERRAFORM_ADDRESSES)),
         "lifecycle_update_address": "module.managed_pair.cml2_lifecycle.managed_pair",
@@ -103,12 +125,12 @@ def manifest(**changes) -> ProtectedStagingManifest:
 @pytest.mark.parametrize(
     "change",
     [
-        {"schema_version": 2},
+        {"schema_version": 1},
         {"live_deny_device_ids": (1, 2)},
         {"live_deny_management_ips": ("192.168.4.30",)},
         {"terraform_addresses": ("cml2_lab.staging",)},
         {"source_commit": "wrong"},
-        {"bundle_digest": "wrong"},
+        {"source_bundle_digest": "wrong"},
     ],
 )
 def test_manifest_rejects_changed_authority(change) -> None:
@@ -160,10 +182,17 @@ def netbox_device(device_id: int, **changes) -> dict[str, object]:
         "status": {"value": "staged" if staging else "active"},
         "role": {"slug": "ncdp-staging" if staging else "router"},
         "platform": {"slug": "cisco-ios-xe" if cisco else "juniper-junos"},
+        "site": {"id": 1},
         "device_type": {"id": 1 if cisco else 2},
-        "primary_ip4": {"address": f"192.168.4.{30 if device_id == 6 else 31}/24"}
+        "primary_ip4": {
+            "id": 9 if device_id == 6 else 10,
+            "address": f"192.168.4.{30 if device_id == 6 else 31}/24",
+        }
         if staging
-        else {"address": f"192.168.4.{14 if device_id == 1 else 20}/24"},
+        else {
+            "id": 1 if device_id == 1 else 2,
+            "address": f"192.168.4.{14 if device_id == 1 else 20}/24",
+        },
         "tags": [],
         "custom_fields": {
             "ncdp_environment": "staging" if staging else "live",
@@ -196,6 +225,18 @@ def netbox_transport(overrides: dict[int, dict[str, object]] | None = None):
             return httpx.Response(
                 200, json=overrides.get(device_id, netbox_device(device_id))
             )
+        if request.url.path.startswith("/api/ipam/ip-addresses/"):
+            ip_id = int(request.url.path.rstrip("/").split("/")[-1])
+            return httpx.Response(
+                200,
+                json={
+                    "id": ip_id,
+                    "address": "192.168.4.30/24" if ip_id == 9 else "192.168.4.31/24",
+                    "status": {"value": "active"},
+                    "assigned_object_type": "dcim.interface",
+                    "assigned_object": {"id": ip_id},
+                },
+            )
         device_id = int(request.url.params["device_id"])
         return httpx.Response(
             200,
@@ -207,6 +248,10 @@ def netbox_transport(overrides: dict[int, dict[str, object]] | None = None):
                         "id": 9 if device_id == 6 else 10,
                         "name": "GigabitEthernet1" if device_id == 6 else "fxp0",
                         "device": {"id": device_id},
+                        "type": {"value": "1000base-t"},
+                        "enabled": True,
+                        "mgmt_only": False,
+                        "tags": [],
                     }
                 ],
             },
@@ -218,7 +263,6 @@ def netbox_transport(overrides: dict[int, dict[str, object]] | None = None):
 def test_protected_resolver_accepts_exact_staging_pair() -> None:
     targets = ProtectedStagingInventoryResolver(
         manifest(),
-        "https://netbox.example",
         "reader",
         transport=netbox_transport(),
     ).resolve()
@@ -263,7 +307,6 @@ def test_protected_resolver_rejects_staging_drift(override) -> None:
     with pytest.raises(InventoryError):
         ProtectedStagingInventoryResolver(
             manifest(),
-            "https://netbox.example",
             "reader",
             transport=netbox_transport({6: netbox_device(6, **override)}),
         ).resolve()
@@ -273,7 +316,6 @@ def test_protected_resolver_rejects_endpoint_identity_substitution() -> None:
     with pytest.raises(InventoryError, match="identity changed"):
         ProtectedStagingInventoryResolver(
             manifest(),
-            "https://netbox.example",
             "reader",
             transport=netbox_transport({6: netbox_device(7)}),
         ).resolve()
@@ -302,7 +344,6 @@ def test_protected_resolver_rejects_ambiguous_interface() -> None:
     with pytest.raises(InventoryError, match="ambiguous"):
         ProtectedStagingInventoryResolver(
             manifest(),
-            "https://netbox.example",
             "reader",
             transport=httpx.MockTransport(handler),
         ).resolve()
@@ -320,7 +361,6 @@ def test_protected_resolver_rejects_incompatible_live_homolog(live_change) -> No
     with pytest.raises(InventoryError, match=r"homolog|device type"):
         ProtectedStagingInventoryResolver(
             manifest(),
-            "https://netbox.example",
             "reader",
             transport=netbox_transport({1: netbox_device(1, **live_change)}),
         ).resolve()
@@ -366,7 +406,6 @@ def test_protected_resolver_rejects_invalid_reverse_mapping(payload) -> None:
     with pytest.raises(InventoryError, match="reverse homolog"):
         ProtectedStagingInventoryResolver(
             manifest(),
-            "https://netbox.example",
             "reader",
             transport=httpx.MockTransport(handler),
         ).resolve()
@@ -403,7 +442,6 @@ def test_protected_resolver_rejects_duplicate_reverse_mapping_for_live_two() -> 
     with pytest.raises(InventoryError, match="reverse homolog"):
         ProtectedStagingInventoryResolver(
             manifest(),
-            "https://netbox.example",
             "reader",
             transport=httpx.MockTransport(handler),
         ).resolve()
@@ -425,7 +463,6 @@ def test_protected_resolver_rejects_non_dictionary_interface_response() -> None:
     with pytest.raises(InventoryError, match="interface response invalid"):
         ProtectedStagingInventoryResolver(
             manifest(),
-            "https://netbox.example",
             "reader",
             transport=httpx.MockTransport(handler),
         ).resolve()
@@ -453,6 +490,10 @@ def test_protected_resolver_rejects_interface_owned_by_another_device() -> None:
                         "id": 9,
                         "name": "GigabitEthernet1" if device_id == 6 else "fxp0",
                         "device": {"id": 999},
+                        "type": {"value": "1000base-t"},
+                        "enabled": True,
+                        "mgmt_only": False,
+                        "tags": [],
                     }
                 ],
             },
@@ -461,7 +502,6 @@ def test_protected_resolver_rejects_interface_owned_by_another_device() -> None:
     with pytest.raises(InventoryError, match="interface device changed"):
         ProtectedStagingInventoryResolver(
             manifest(),
-            "https://netbox.example",
             "reader",
             transport=httpx.MockTransport(handler),
         ).resolve()
@@ -739,7 +779,12 @@ def test_bundle_validation_rejects_checkout_symlink_and_digest_drift(
         .hexdigest()
     )
     accepted = manifest(
-        bundle_digest=combined,
+        source_bundle_digest=combined,
+        source_inventory_sha256=SHA256,
+        runtime_inventory_sha256=SHA256,
+        runtime_digest=SHA256,
+        project_wheel_sha256=SHA256,
+        production_requirements_sha256=SHA256,
         controller_artifact_digest=controller_digest,
         file_digests=files,
     )
@@ -789,11 +834,11 @@ def test_oidc_request_is_exact_and_jwt_is_never_a_path() -> None:
         calls.append(arguments)
         return "header.payload.signature\n"
 
-    jwt = request_staging_oidc_jwt(runner)
+    jwt = request_staging_oidc_jwt(runner, Path("/opt/protected/buildkite-agent"))
     assert repr(jwt) == "BuildkiteOIDCJWT(<redacted>)"
     assert calls == [
         (
-            "buildkite-agent",
+            "/opt/protected/buildkite-agent",
             "oidc",
             "request-token",
             "--audience",
@@ -806,7 +851,10 @@ def test_oidc_request_is_exact_and_jwt_is_never_a_path() -> None:
             "build_id",
         )
     ]
-    assert tuple(inspect.signature(request_staging_oidc_jwt).parameters) == ("runner",)
+    assert tuple(inspect.signature(request_staging_oidc_jwt).parameters) == (
+        "runner",
+        "buildkite_agent",
+    )
 
 
 def test_evidence_is_allowlisted_and_rejects_secret_fields() -> None:

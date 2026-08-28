@@ -43,6 +43,11 @@ B3-2A repository content is installation source, not installed authority.
 It does not yet create a runnable isolated runtime; B3-2B must construct and
 verify that runtime from the exact accepted merged-main source before admission.
 
+B3-2B1 now supplies the repository-side executable composition and tests its
+isolated Python 3.12 wheel/lock/runtime contract in temporary directories. It
+does not install a standing runtime. B3-2B2 still owns exact merged-main
+construction, host tool/collection admission, and external installation.
+
 ADR 0014 makes normal staging ephemeral: absent, fresh create, first boot,
 readiness and validation, sanitized evidence, complete destroy, then proven
 absence. The final Increment 8D twin was destroyed and the external state has no

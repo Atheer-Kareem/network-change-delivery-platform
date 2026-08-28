@@ -8,8 +8,10 @@ import os
 import shutil
 import stat
 import subprocess
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
+from uuid import UUID
 
 from network_change_delivery.protected_staging import (
     EXPECTED_TERRAFORM_ADDRESSES,
@@ -17,19 +19,31 @@ from network_change_delivery.protected_staging import (
     ProtectedStagingError,
     ProtectedStagingManifest,
     StagingTargetAuthority,
+    validate_protected_bundle,
+    validate_runtime_artifacts,
+    validate_runtime_inventory,
 )
 
 PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
+    "README.md",
     "pyproject.toml",
     "uv.lock",
     "src/network_change_delivery/__init__.py",
     "src/network_change_delivery/buildkite_identity.py",
+    "src/network_change_delivery/buildkite_policy.py",
     "src/network_change_delivery/buildkite_staging.py",
     "src/network_change_delivery/inventory.py",
     "src/network_change_delivery/models.py",
     "src/network_change_delivery/protected_staging.py",
     "src/network_change_delivery/protected_staging_controller.py",
+    "src/network_change_delivery/protected_staging_runtime.py",
     "src/network_change_delivery/secrets.py",
+    "src/network_change_delivery/workflow.py",
+    "src/network_change_delivery/ansible_adapter.py",
+    "src/network_change_delivery/junos_adapter.py",
+    "ansible.cfg",
+    "ansible/requirements.yml",
+    "ansible/collect_interface_state.yml",
     "scripts/terraform_cml_safe_ui.py",
     "infrastructure/cml/ephemeral/.terraform.lock.hcl",
     "infrastructure/cml/ephemeral/outputs.tf",
@@ -45,6 +59,171 @@ PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
     "infrastructure/cml/modules/managed-pair/variables.tf",
     "infrastructure/cml/modules/managed-pair/versions.tf",
 )
+
+
+class RuntimeBuildRunner(Protocol):
+    def run(self, arguments: Sequence[str], *, cwd: Path) -> None: ...
+
+
+class SubprocessRuntimeBuildRunner:
+    """Run admitted uv construction commands with a minimal installer environment."""
+
+    def __init__(
+        self,
+        uv_executable: Path,
+        cache_directory: Path,
+        *,
+        build_environment: Mapping[str, str] | None = None,
+    ) -> None:
+        if not uv_executable.is_absolute() or not cache_directory.is_absolute():
+            raise ProtectedStagingError("protected runtime builder rejected")
+        self._uv = uv_executable
+        admitted_build_keys = {
+            "SDKROOT",
+            "CPATH",
+            "LIBRARY_PATH",
+            "LDFLAGS",
+            "CPPFLAGS",
+            "PKG_CONFIG_PATH",
+        }
+        build_values = dict(build_environment or {})
+        if set(build_values) - admitted_build_keys or any(
+            not value or "\x00" in value or "\n" in value
+            for value in build_values.values()
+        ):
+            raise ProtectedStagingError("protected runtime build environment rejected")
+        self._environment = {
+            "PATH": str(uv_executable.parent),
+            "UV_CACHE_DIR": str(cache_directory),
+            "UV_NO_PROGRESS": "1",
+            **build_values,
+        }
+
+    def run(self, arguments: Sequence[str], *, cwd: Path) -> None:
+        if not arguments or arguments[0] != str(self._uv):
+            raise ProtectedStagingError("protected runtime build command rejected")
+        result = subprocess.run(
+            list(arguments),
+            cwd=cwd,
+            env=self._environment,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if result.returncode != 0:
+            raise ProtectedStagingError("protected runtime construction failed")
+
+
+def construct_isolated_runtime(
+    source: Path,
+    install_root: Path,
+    runner: RuntimeBuildRunner,
+    *,
+    uv_executable: Path,
+) -> Path:
+    """Construct a non-editable locked runtime under a temporary/test bundle."""
+    if (
+        not source.is_absolute()
+        or not install_root.is_absolute()
+        or install_root.is_symlink()
+        or not uv_executable.is_absolute()
+    ):
+        raise ProtectedStagingError("protected runtime construction rejected")
+    runtime = install_root / "runtime"
+    artifacts = install_root / "artifacts"
+    wheels = artifacts / "wheels"
+    requirements = artifacts / "production-requirements.txt"
+    if runtime.exists() or wheels.exists() or requirements.exists():
+        raise ProtectedStagingError("protected runtime construction rejected")
+    wheels.mkdir(mode=0o700, parents=True)
+    uv = str(uv_executable)
+    runner.run((uv, "build", "--wheel", "--out-dir", str(wheels)), cwd=source)
+    runner.run(
+        (
+            uv,
+            "export",
+            "--frozen",
+            "--no-dev",
+            "--no-emit-project",
+            "--format",
+            "requirements-txt",
+            "--output-file",
+            str(requirements),
+        ),
+        cwd=source,
+    )
+    wheels_found = tuple(wheels.glob("network_change_delivery-*.whl"))
+    if len(wheels_found) != 1 or wheels_found[0].is_symlink():
+        raise ProtectedStagingError("protected runtime wheel rejected")
+    wheel = wheels_found[0]
+    wheel_digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    with requirements.open("a", encoding="utf-8") as stream:
+        stream.write(f"\n{wheel.as_uri()} --hash=sha256:{wheel_digest}\n")
+    requirements.chmod(0o600)
+    runner.run((uv, "venv", "--python", "3.12", str(runtime)), cwd=install_root)
+    runtime.chmod(0o700)
+    python = runtime / "bin/python"
+    runner.run(
+        (
+            uv,
+            "pip",
+            "install",
+            "--compile-bytecode",
+            "--python",
+            str(python),
+            "--require-hashes",
+            "--requirements",
+            str(requirements),
+        ),
+        cwd=install_root,
+    )
+    entrypoint = runtime / "bin/ncdp-protected-staging-controller"
+    if entrypoint.is_symlink() or not entrypoint.is_file():
+        raise ProtectedStagingError("protected controller entrypoint missing")
+    for link in runtime.rglob("*"):
+        if link.is_symlink():
+            target = str(link.readlink())
+            # Do not resolve the final symlink: this checks its lexical boundary.
+            lexical = Path(os.path.abspath(link.parent / target))  # noqa: PTH100
+            if not lexical.is_relative_to(runtime) and link != runtime / "bin/python":
+                raise ProtectedStagingError("protected runtime symlink escapes runtime")
+    return runtime
+
+
+def inventory_runtime(runtime: Path) -> tuple[dict[str, dict[str, object]], str]:
+    """Inventory every executable-runtime file and admitted internal symlink."""
+    entries: dict[str, dict[str, object]] = {}
+    for path in sorted(runtime.rglob("*")):
+        relative = str(path.relative_to(runtime))
+        mode = stat.S_IMODE(path.lstat().st_mode)
+        if path.is_symlink():
+            target = str(path.readlink())
+            resolved = path.resolve(strict=True)
+            # Do not resolve the final symlink: this checks its lexical boundary.
+            lexical = Path(os.path.abspath(path.parent / target))  # noqa: PTH100
+            entries[relative] = {
+                "type": "symlink",
+                "mode": mode,
+                "target": target,
+            }
+            if not lexical.is_relative_to(runtime):
+                if relative != "bin/python" or not resolved.is_file():
+                    raise ProtectedStagingError(
+                        "protected runtime symlink escapes runtime"
+                    )
+                entries[relative]["target_sha256"] = hashlib.sha256(
+                    resolved.read_bytes()
+                ).hexdigest()
+        elif path.is_file():
+            entries[relative] = {
+                "type": "file",
+                "mode": mode,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+    if not entries:
+        raise ProtectedStagingError("protected runtime inventory is empty")
+    canonical = json.dumps(entries, sort_keys=True, separators=(",", ":"))
+    return entries, hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def verify_merged_source(source: Path, expected_commit: str) -> None:
@@ -78,6 +257,12 @@ def install_source_bundle(
     expected_commit: str,
     controller_identity: str,
     controller_url: str,
+    buildkite_pipeline_id: UUID,
+    netbox_url: str,
+    openbao_url: str,
+    cml_ca_pem_sha256: str,
+    runtime_runner: RuntimeBuildRunner,
+    uv_executable: Path,
     *,
     owner_uid: int | None = None,
 ) -> ProtectedStagingManifest:
@@ -98,6 +283,8 @@ def install_source_bundle(
     expected_uid = os.getuid() if owner_uid is None else owner_uid
     if destination.stat().st_uid != expected_uid:
         raise ProtectedStagingError("protected installation owner rejected")
+    source_root = destination / "source"
+    source_root.mkdir(mode=0o700)
     digests: dict[str, str] = {}
     try:
         for relative in PROTECTED_SOURCE_FILES:
@@ -106,20 +293,54 @@ def install_source_bundle(
                 raise ProtectedStagingError(
                     "protected installation source file rejected"
                 )
-            target = destination / relative
+            target = source_root / relative
             target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             shutil.copyfile(source_file, target, follow_symlinks=False)
             target.chmod(0o600)
             digests[relative] = hashlib.sha256(target.read_bytes()).hexdigest()
         inventory = json.dumps(digests, sort_keys=True, separators=(",", ":"))
-        inventory_file = destination / "bundle-files.json"
+        inventory_file = destination / "source-files.json"
         inventory_file.write_text(inventory, encoding="utf-8")
         inventory_file.chmod(0o600)
-        bundle_digest = hashlib.sha256(inventory.encode()).hexdigest()
+        source_bundle_digest = hashlib.sha256(inventory.encode()).hexdigest()
+        runtime = construct_isolated_runtime(
+            source_root,
+            destination,
+            runtime_runner,
+            uv_executable=uv_executable,
+        )
+        runtime_entries, runtime_digest = inventory_runtime(runtime)
+        python_interpreter = (runtime / "bin/python").resolve(strict=True)
+        runtime_inventory = json.dumps(
+            runtime_entries, sort_keys=True, separators=(",", ":")
+        )
+        runtime_inventory_file = destination / "runtime-files.json"
+        runtime_inventory_file.write_text(runtime_inventory, encoding="utf-8")
+        runtime_inventory_file.chmod(0o600)
+        wheels = tuple((destination / "artifacts/wheels").glob("*.whl"))
+        if len(wheels) != 1:
+            raise ProtectedStagingError("protected runtime wheel rejected")
+        requirements = destination / "artifacts/production-requirements.txt"
         controller_path = "src/network_change_delivery/protected_staging_controller.py"
         manifest = ProtectedStagingManifest(
+            buildkite_pipeline_id=buildkite_pipeline_id,
             source_commit=expected_commit,
-            bundle_digest=bundle_digest,
+            netbox_url=netbox_url,
+            openbao_url=openbao_url,
+            source_bundle_digest=source_bundle_digest,
+            source_inventory_sha256=hashlib.sha256(inventory.encode()).hexdigest(),
+            runtime_inventory_sha256=hashlib.sha256(
+                runtime_inventory.encode()
+            ).hexdigest(),
+            runtime_digest=runtime_digest,
+            python_interpreter_path=str(python_interpreter),
+            python_interpreter_sha256=hashlib.sha256(
+                python_interpreter.read_bytes()
+            ).hexdigest(),
+            project_wheel_sha256=hashlib.sha256(wheels[0].read_bytes()).hexdigest(),
+            production_requirements_sha256=hashlib.sha256(
+                requirements.read_bytes()
+            ).hexdigest(),
             controller_artifact_digest=digests[controller_path],
             file_digests=digests,
             cisco=_target(6),
@@ -133,6 +354,7 @@ def install_source_bundle(
             cml=CMLAuthority(
                 controller_identity=controller_identity,
                 controller_url=controller_url,
+                ca_pem_sha256=cml_ca_pem_sha256,
             ),
             terraform_addresses=tuple(sorted(EXPECTED_TERRAFORM_ADDRESSES)),
             lifecycle_update_address=(
@@ -144,6 +366,35 @@ def install_source_bundle(
             manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
         manifest_file.chmod(0o600)
+        validate_protected_bundle(source_root, source, manifest, owner_uid=owner_uid)
+        validate_runtime_inventory(
+            runtime,
+            source,
+            manifest,
+            runtime_inventory_file,
+            owner_uid=owner_uid,
+        )
+        validate_runtime_artifacts(destination, manifest)
+        smoke = subprocess.run(
+            [str(runtime / manifest.controller_entrypoint), "--help"],
+            cwd=destination,
+            env={},
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if smoke.returncode != 0:
+            raise ProtectedStagingError("protected controller smoke failed")
+        post_smoke_entries, post_smoke_digest = inventory_runtime(runtime)
+        if post_smoke_entries != runtime_entries or post_smoke_digest != runtime_digest:
+            raise ProtectedStagingError("protected controller mutated runtime")
+        validate_runtime_inventory(
+            runtime,
+            source,
+            manifest,
+            runtime_inventory_file,
+            owner_uid=owner_uid,
+        )
         return manifest
     except Exception:
         raise
@@ -158,6 +409,12 @@ def _target(device_id: int) -> StagingTargetAuthority:
             "192.168.4.30",
             1,
             "core-02",
+            1,
+            1,
+            9,
+            9,
+            "192.168.4.30/24",
+            "192.168.4.14/24",
         )
     elif device_id == 7:
         values = (
@@ -167,21 +424,49 @@ def _target(device_id: int) -> StagingTargetAuthority:
             "192.168.4.31",
             2,
             "edge-junos-01",
+            1,
+            2,
+            10,
+            10,
+            "192.168.4.31/24",
+            "192.168.4.20/24",
         )
     else:
         raise ProtectedStagingError("protected installation target rejected")
-    name, platform, interface, ip, homolog_id, homolog_name = values
+    (
+        name,
+        platform,
+        interface,
+        ip,
+        homolog_id,
+        homolog_name,
+        site_id,
+        device_type_id,
+        interface_id,
+        ip_address_id,
+        management_cidr,
+        live_primary_cidr,
+    ) = values
     return StagingTargetAuthority(
         device_id=device_id,
         name=name,
+        site_id=site_id,
+        device_type_id=device_type_id,
         environment="staging",
         status="staged",
         role_slug="ncdp-staging",
         platform_slug=platform,
         management_interface=interface,
+        management_interface_id=interface_id,
+        management_interface_type="1000base-t",
+        management_interface_enabled=True,
+        management_interface_mgmt_only=False,
+        management_ip_address_id=ip_address_id,
+        management_cidr=management_cidr,
         management_ip=ip,
         live_homolog_id=homolog_id,
         live_homolog_name=homolog_name,
+        live_primary_cidr=live_primary_cidr,
         openbao_role=f"ncdp-buildkite-staging-device-{device_id}",
         credential_reference=f"openbao:kv-v2:ncdp/devices/{device_id}/ssh",
     )

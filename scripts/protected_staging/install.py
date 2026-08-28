@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from uuid import UUID
 
 from network_change_delivery.protected_staging_install import install_source_bundle
 
@@ -16,6 +17,10 @@ def main() -> int:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--controller-identity", required=True)
     parser.add_argument("--controller-url", required=True)
+    parser.add_argument("--buildkite-pipeline-id", required=True, type=UUID)
+    parser.add_argument("--netbox-url", required=True)
+    parser.add_argument("--openbao-url", required=True)
+    parser.add_argument("--cml-ca-pem-sha256", required=True)
     arguments = parser.parse_args()
     install_source_bundle(
         arguments.source,
@@ -23,6 +28,10 @@ def main() -> int:
         arguments.commit,
         arguments.controller_identity,
         arguments.controller_url,
+        arguments.buildkite_pipeline_id,
+        arguments.netbox_url,
+        arguments.openbao_url,
+        arguments.cml_ca_pem_sha256,
     )
     return 0
 

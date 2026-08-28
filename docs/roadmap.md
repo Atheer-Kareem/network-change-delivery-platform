@@ -208,8 +208,10 @@ Ordering may change when implementation evidence requires it.
       live-deny authority, independent staging inventory resolution, exact
       OpenBao mapping, digest-bound installed Terraform, exact saved-plan
       application, protected state/cleanup, and allowlisted evidence. It is not
-      installed or active. B3-2B owns exact merged-main installation and
-      external admission; B4 owns later reviewed consumer cutover, unfreeze,
+      installed or active. B3-2B1 composes the executable lifecycle,
+      partial-state recovery, isolated-runtime contract, and safe evidence in
+      repository tests. B3-2B2 owns exact merged-main installation and external
+      admission; B4 owns later reviewed consumer cutover, unfreeze,
       and agent re-enable.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
       and privately protect recovery evidence, manually remove only approved

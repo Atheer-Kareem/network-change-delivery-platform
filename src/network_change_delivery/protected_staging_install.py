@@ -8,8 +8,10 @@ import os
 import shutil
 import stat
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
+from uuid import UUID
 
 from network_change_delivery.protected_staging import (
     EXPECTED_TERRAFORM_ADDRESSES,
@@ -29,7 +31,14 @@ PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
     "src/network_change_delivery/models.py",
     "src/network_change_delivery/protected_staging.py",
     "src/network_change_delivery/protected_staging_controller.py",
+    "src/network_change_delivery/protected_staging_runtime.py",
     "src/network_change_delivery/secrets.py",
+    "src/network_change_delivery/workflow.py",
+    "src/network_change_delivery/ansible_adapter.py",
+    "src/network_change_delivery/junos_adapter.py",
+    "ansible.cfg",
+    "ansible/requirements.yml",
+    "ansible/collect_interface_state.yml",
     "scripts/terraform_cml_safe_ui.py",
     "infrastructure/cml/ephemeral/.terraform.lock.hcl",
     "infrastructure/cml/ephemeral/outputs.tf",
@@ -45,6 +54,73 @@ PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
     "infrastructure/cml/modules/managed-pair/variables.tf",
     "infrastructure/cml/modules/managed-pair/versions.tf",
 )
+
+
+class RuntimeBuildRunner(Protocol):
+    def run(self, arguments: Sequence[str], *, cwd: Path) -> None: ...
+
+
+def construct_isolated_runtime(
+    source: Path,
+    bundle: Path,
+    runner: RuntimeBuildRunner,
+    *,
+    uv_executable: Path,
+) -> Path:
+    """Construct a non-editable locked runtime under a temporary/test bundle."""
+    if (
+        not source.is_absolute()
+        or not bundle.is_absolute()
+        or bundle.is_symlink()
+        or not uv_executable.is_absolute()
+    ):
+        raise ProtectedStagingError("protected runtime construction rejected")
+    runtime = bundle / "runtime"
+    wheels = bundle / "wheels"
+    requirements = bundle / "production-requirements.txt"
+    if runtime.exists() or wheels.exists() or requirements.exists():
+        raise ProtectedStagingError("protected runtime construction rejected")
+    wheels.mkdir(mode=0o700)
+    uv = str(uv_executable)
+    runner.run((uv, "build", "--wheel", "--out-dir", str(wheels)), cwd=source)
+    runner.run(
+        (
+            uv,
+            "export",
+            "--frozen",
+            "--no-dev",
+            "--no-emit-project",
+            "--format",
+            "requirements-txt",
+            "--output-file",
+            str(requirements),
+        ),
+        cwd=source,
+    )
+    wheels_found = tuple(wheels.glob("network_change_delivery-*.whl"))
+    if len(wheels_found) != 1 or wheels_found[0].is_symlink():
+        raise ProtectedStagingError("protected runtime wheel rejected")
+    wheel = wheels_found[0]
+    wheel_digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    with requirements.open("a", encoding="utf-8") as stream:
+        stream.write(f"\n{wheel.as_uri()} --hash=sha256:{wheel_digest}\n")
+    requirements.chmod(0o600)
+    runner.run((uv, "venv", "--python", "3.12", str(runtime)), cwd=bundle)
+    python = runtime / "bin/python"
+    runner.run(
+        (
+            uv,
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            "--require-hashes",
+            "--requirements",
+            str(requirements),
+        ),
+        cwd=bundle,
+    )
+    return runtime
 
 
 def verify_merged_source(source: Path, expected_commit: str) -> None:
@@ -78,6 +154,10 @@ def install_source_bundle(
     expected_commit: str,
     controller_identity: str,
     controller_url: str,
+    buildkite_pipeline_id: UUID,
+    netbox_url: str,
+    openbao_url: str,
+    cml_ca_pem_sha256: str,
     *,
     owner_uid: int | None = None,
 ) -> ProtectedStagingManifest:
@@ -118,7 +198,10 @@ def install_source_bundle(
         bundle_digest = hashlib.sha256(inventory.encode()).hexdigest()
         controller_path = "src/network_change_delivery/protected_staging_controller.py"
         manifest = ProtectedStagingManifest(
+            buildkite_pipeline_id=buildkite_pipeline_id,
             source_commit=expected_commit,
+            netbox_url=netbox_url,
+            openbao_url=openbao_url,
             bundle_digest=bundle_digest,
             controller_artifact_digest=digests[controller_path],
             file_digests=digests,
@@ -133,6 +216,7 @@ def install_source_bundle(
             cml=CMLAuthority(
                 controller_identity=controller_identity,
                 controller_url=controller_url,
+                ca_pem_sha256=cml_ca_pem_sha256,
             ),
             terraform_addresses=tuple(sorted(EXPECTED_TERRAFORM_ADDRESSES)),
             lifecycle_update_address=(
@@ -158,6 +242,12 @@ def _target(device_id: int) -> StagingTargetAuthority:
             "192.168.4.30",
             1,
             "core-02",
+            1,
+            1,
+            9,
+            9,
+            "192.168.4.30/24",
+            "192.168.4.14/24",
         )
     elif device_id == 7:
         values = (
@@ -167,21 +257,49 @@ def _target(device_id: int) -> StagingTargetAuthority:
             "192.168.4.31",
             2,
             "edge-junos-01",
+            1,
+            2,
+            10,
+            10,
+            "192.168.4.31/24",
+            "192.168.4.20/24",
         )
     else:
         raise ProtectedStagingError("protected installation target rejected")
-    name, platform, interface, ip, homolog_id, homolog_name = values
+    (
+        name,
+        platform,
+        interface,
+        ip,
+        homolog_id,
+        homolog_name,
+        site_id,
+        device_type_id,
+        interface_id,
+        ip_address_id,
+        management_cidr,
+        live_primary_cidr,
+    ) = values
     return StagingTargetAuthority(
         device_id=device_id,
         name=name,
+        site_id=site_id,
+        device_type_id=device_type_id,
         environment="staging",
         status="staged",
         role_slug="ncdp-staging",
         platform_slug=platform,
         management_interface=interface,
+        management_interface_id=interface_id,
+        management_interface_type="1000base-t",
+        management_interface_enabled=True,
+        management_interface_mgmt_only=False,
+        management_ip_address_id=ip_address_id,
+        management_cidr=management_cidr,
         management_ip=ip,
         live_homolog_id=homolog_id,
         live_homolog_name=homolog_name,
+        live_primary_cidr=live_primary_cidr,
         openbao_role=f"ncdp-buildkite-staging-device-{device_id}",
         credential_reference=f"openbao:kv-v2:ncdp/devices/{device_id}/ssh",
     )

@@ -95,6 +95,12 @@ OIDC JWT in memory and has no ambient AppRole or live-secret fallback. The
 historical checkout driver still selects 1/2 and remains fail closed. No
 OpenBao object is changed by B3-2A; installation is deferred.
 
+B3-2B1 composes the protected executable consumer without changing OpenBao.
+It binds the OpenBao endpoint in manifest schema 2, requests the fixed staging
+OIDC identity in memory, and loads one device-scoped token and exact two-field
+credential payload for device 6 and then device 7. There is no ambient URL,
+admin token, AppRole, live-secret fallback, or device 1/2 read path.
+
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role
 `ncdp-buildkite-cml-deploy-device-<id>` carries exactly policy

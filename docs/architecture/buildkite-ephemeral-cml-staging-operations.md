@@ -71,6 +71,12 @@ authority. It owns the run state path and applies only the exact saved plan that
 passed trusted structural parsing. B3-2B owns installation from exact clean
 merged main; B4 owns the later hook cutover and re-enable.
 
+Phase B3-2B1 completes the non-live executable composition and splits external
+admission into B3-2B2. The controller binds pipeline and commit to manifest
+schema 2, constructs a non-inherited privileged environment, applies only exact
+saved plans, supports exact-subset cleanup/recovery, and emits allowlisted
+evidence. No standing runtime or command hook is changed by B3-2B1.
+
 The protected OIDC request is fixed to audience
 `urn:ncdp:openbao:staging`, lifetime 300 seconds, `pipeline_id` as the subject
 claim, and explicit `build_id`. No caller can select these values. Protected CML

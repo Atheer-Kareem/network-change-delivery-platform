@@ -7,6 +7,7 @@ import ipaddress
 import json
 import os
 import re
+import ssl
 import stat
 import subprocess
 from collections.abc import Mapping, Sequence
@@ -25,7 +26,11 @@ from network_change_delivery.buildkite_identity import (
     read_buildkite_oidc_jwt,
 )
 from network_change_delivery.inventory import InventoryError
-from network_change_delivery.secrets import CredentialReference, SecretError
+from network_change_delivery.secrets import (
+    CredentialReference,
+    SecretError,
+    validate_openbao_url,
+)
 
 EXPECTED_TERRAFORM_ADDRESSES = frozenset(
     {
@@ -60,14 +65,23 @@ class StagingTargetAuthority(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     device_id: int
     name: str
+    site_id: int
+    device_type_id: int
     environment: Literal["staging"]
     status: Literal["staged"]
     role_slug: Literal["ncdp-staging"]
     platform_slug: Literal["cisco-ios-xe", "juniper-junos"]
     management_interface: str
+    management_interface_id: int
+    management_interface_type: Literal["1000base-t"]
+    management_interface_enabled: Literal[True]
+    management_interface_mgmt_only: Literal[False]
+    management_ip_address_id: int
+    management_cidr: str
     management_ip: str
     live_homolog_id: int
     live_homolog_name: str
+    live_primary_cidr: str
     openbao_role: str
     credential_reference: str
 
@@ -78,6 +92,7 @@ class CMLAuthority(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     controller_identity: str = Field(min_length=1, max_length=255)
     controller_url: str
+    ca_pem_sha256: str
     connector_label: Literal["System Bridge"] = "System Bridge"
     cat8000v_image: Literal["cat8000v-17-18-02"] = "cat8000v-17-18-02"
     vjunos_image: Literal["vjunos-router-23-2r1-15"] = "vjunos-router-23-2r1-15"
@@ -98,6 +113,8 @@ class CMLAuthority(BaseModel):
             raise ValueError("protected CML controller URL is invalid")
         if self.denied_lab_uuids != (BROWNFIELD_LAB_UUID,):
             raise ValueError("brownfield CML denial authority changed")
+        if not _SHA256.fullmatch(self.ca_pem_sha256):
+            raise ValueError("protected CML CA digest is invalid")
         return self
 
 
@@ -105,8 +122,11 @@ class ProtectedStagingManifest(BaseModel):
     """Installed, immutable staging authority; checkout copies are not authority."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
+    buildkite_pipeline_id: UUID
     source_commit: str
+    netbox_url: str
+    openbao_url: str
     bundle_digest: str
     controller_artifact_digest: str
     file_digests: dict[str, str]
@@ -122,22 +142,40 @@ class ProtectedStagingManifest(BaseModel):
         "cisco": {
             "device_id": 6,
             "name": "stg-core-02",
+            "site_id": 1,
+            "device_type_id": 1,
             "platform_slug": "cisco-ios-xe",
             "management_interface": "GigabitEthernet1",
+            "management_interface_id": 9,
+            "management_interface_type": "1000base-t",
+            "management_interface_enabled": True,
+            "management_interface_mgmt_only": False,
+            "management_ip_address_id": 9,
+            "management_cidr": "192.168.4.30/24",
             "management_ip": "192.168.4.30",
             "live_homolog_id": 1,
             "live_homolog_name": "core-02",
+            "live_primary_cidr": "192.168.4.14/24",
             "openbao_role": "ncdp-buildkite-staging-device-6",
             "credential_reference": "openbao:kv-v2:ncdp/devices/6/ssh",
         },
         "junos": {
             "device_id": 7,
             "name": "stg-edge-junos-01",
+            "site_id": 1,
+            "device_type_id": 2,
             "platform_slug": "juniper-junos",
             "management_interface": "fxp0",
+            "management_interface_id": 10,
+            "management_interface_type": "1000base-t",
+            "management_interface_enabled": True,
+            "management_interface_mgmt_only": False,
+            "management_ip_address_id": 10,
+            "management_cidr": "192.168.4.31/24",
             "management_ip": "192.168.4.31",
             "live_homolog_id": 2,
             "live_homolog_name": "edge-junos-01",
+            "live_primary_cidr": "192.168.4.20/24",
             "openbao_role": "ncdp-buildkite-staging-device-7",
             "credential_reference": "openbao:kv-v2:ncdp/devices/7/ssh",
         },
@@ -145,6 +183,13 @@ class ProtectedStagingManifest(BaseModel):
 
     @model_validator(mode="after")
     def exact_authority(self) -> ProtectedStagingManifest:
+        try:
+            if NetBoxURL.validate(self.netbox_url) != self.netbox_url.rstrip("/"):
+                raise ValueError("protected NetBox endpoint is invalid")
+            if validate_openbao_url(self.openbao_url) != self.openbao_url.rstrip("/"):
+                raise ValueError("protected OpenBao endpoint is invalid")
+        except (InventoryError, SecretError):
+            raise ValueError("protected endpoint authority is invalid") from None
         if not _SHA1.fullmatch(self.source_commit):
             raise ValueError("protected source commit is invalid")
         for digest in (
@@ -216,6 +261,8 @@ class ProtectedStagingTarget(BaseModel):
     platform: Literal["cisco_iosxe", "junos"]
     management_interface: str
     interface_id: int
+    management_cidr: str
+    ip_address_id: int
     live_homolog_id: Literal[1, 2]
     credential_reference: str
     openbao_role: str
@@ -226,11 +273,11 @@ class ProtectedStagingInventoryResolver:
 
     _DEVICE_PATH = "/api/dcim/devices/{device_id}/"
     _INTERFACE_PATH = "/api/dcim/interfaces/"
+    _IP_ADDRESS_PATH = "/api/ipam/ip-addresses/{ip_address_id}/"
 
     def __init__(
         self,
         manifest: ProtectedStagingManifest,
-        url: str,
         staging_reader_token: str,
         *,
         transport: httpx.BaseTransport | None = None,
@@ -238,11 +285,8 @@ class ProtectedStagingInventoryResolver:
         if not staging_reader_token:
             raise InventoryError("protected NetBox staging reader missing")
         self._manifest = manifest
-        base_url = url.rstrip("/")
-        if NetBoxURL.validate(base_url) != base_url:
-            raise InventoryError("protected NetBox URL rejected")
         self._client = httpx.Client(
-            base_url=base_url,
+            base_url=manifest.netbox_url,
             headers={"Authorization": f"Bearer {staging_reader_token}"},
             timeout=httpx.Timeout(5.0, connect=3.0),
             follow_redirects=False,
@@ -256,14 +300,14 @@ class ProtectedStagingInventoryResolver:
             target.live_homolog_id: self._device(target.live_homolog_id)
             for target in (self._manifest.cisco, self._manifest.junos)
         }
+        for authority in (self._manifest.cisco, self._manifest.junos):
+            self._validate_unique_reverse_homolog(authority)
         targets = tuple(
             self._resolve_target(authority, live[authority.live_homolog_id])
             for authority in (self._manifest.cisco, self._manifest.junos)
         )
         if len({target.live_homolog_id for target in targets}) != 2:
             raise InventoryError("protected staging homolog mapping is ambiguous")
-        for authority in (self._manifest.cisco, self._manifest.junos):
-            self._validate_unique_reverse_homolog(authority)
         return targets
 
     def _validate_unique_reverse_homolog(
@@ -352,6 +396,10 @@ class ProtectedStagingInventoryResolver:
             raise InventoryError("protected staging device role changed")
         if self._nested_value(device, "platform", "slug") != authority.platform_slug:
             raise InventoryError("protected staging device platform changed")
+        if self._nested_value(device, "site", "id") != authority.site_id:
+            raise InventoryError("protected staging device site changed")
+        if self._nested_value(device, "device_type", "id") != authority.device_type_id:
+            raise InventoryError("protected staging device type changed")
         tags = device.get("tags")
         if not isinstance(tags, list) or tags:
             raise InventoryError("protected staging device tags invalid")
@@ -366,24 +414,25 @@ class ProtectedStagingInventoryResolver:
             live.get("name") != authority.live_homolog_name
             or self._nested_value(live, "status", "value") != "active"
             or self._nested_value(live, "platform", "slug") != authority.platform_slug
+            or self._nested_value(live, "device_type", "id") != authority.device_type_id
+            or self._nested_value(live, "primary_ip4", "address")
+            != authority.live_primary_cidr
             or live_fields.get("ncdp_environment") != "live"
             or live_fields.get("ncdp_live_homolog") is not None
         ):
             raise InventoryError("protected live homolog authority changed")
-        staging_type = self._nested_value(device, "device_type", "id")
-        live_type = self._nested_value(live, "device_type", "id")
-        if (
-            not isinstance(staging_type, int)
-            or isinstance(staging_type, bool)
-            or staging_type != live_type
-        ):
-            raise InventoryError("protected staging device type changed")
         primary = self._nested_value(device, "primary_ip4", "address")
+        primary_id = self._nested_value(device, "primary_ip4", "id")
         try:
             host = str(ipaddress.IPv4Interface(str(primary)).ip)
         except ValueError:
             raise InventoryError("protected staging primary IPv4 invalid") from None
-        if host != authority.management_ip or host in LIVE_DENY_IPS:
+        if (
+            host != authority.management_ip
+            or str(primary) != authority.management_cidr
+            or primary_id != authority.management_ip_address_id
+            or host in LIVE_DENY_IPS
+        ):
             raise InventoryError("protected staging management address changed")
         response = self._client.get(
             self._INTERFACE_PATH,
@@ -410,6 +459,12 @@ class ProtectedStagingInventoryResolver:
             or len(interfaces) != 1
             or not isinstance(interfaces[0], dict)
             or interfaces[0].get("name") != authority.management_interface
+            or interfaces[0].get("id") != authority.management_interface_id
+            or self._nested_value(interfaces[0], "type", "value")
+            != authority.management_interface_type
+            or interfaces[0].get("enabled") is not True
+            or interfaces[0].get("mgmt_only") is not False
+            or interfaces[0].get("tags") != []
         ):
             raise InventoryError("protected staging management interface ambiguous")
         interface_id = interfaces[0].get("id")
@@ -421,6 +476,27 @@ class ProtectedStagingInventoryResolver:
             or interface_device.get("id") != authority.device_id
         ):
             raise InventoryError("protected staging interface device changed")
+        ip_response = self._client.get(
+            self._IP_ADDRESS_PATH.format(
+                ip_address_id=authority.management_ip_address_id
+            )
+        )
+        if ip_response.status_code != 200:
+            raise InventoryError("protected staging IP address unavailable")
+        try:
+            ip_payload = ip_response.json()
+        except ValueError:
+            raise InventoryError("protected staging IP address invalid") from None
+        if (
+            not isinstance(ip_payload, dict)
+            or ip_payload.get("id") != authority.management_ip_address_id
+            or ip_payload.get("address") != authority.management_cidr
+            or self._nested_value(ip_payload, "status", "value") != "active"
+            or ip_payload.get("assigned_object_type") != "dcim.interface"
+            or self._nested_value(ip_payload, "assigned_object", "id")
+            != authority.management_interface_id
+        ):
+            raise InventoryError("protected staging IP address changed")
         return ProtectedStagingTarget(
             device_id=authority.device_id,
             name=authority.name,
@@ -430,6 +506,8 @@ class ProtectedStagingInventoryResolver:
             else "junos",
             management_interface=authority.management_interface,
             interface_id=interface_id,
+            management_cidr=authority.management_cidr,
+            ip_address_id=authority.management_ip_address_id,
             live_homolog_id=authority.live_homolog_id,
             credential_reference=authority.credential_reference,
             openbao_role=authority.openbao_role,
@@ -511,17 +589,20 @@ class ProtectedCMLClient:
         authority: CMLAuthority,
         credentials: ProtectedCMLCredentials,
         *,
+        ssl_context: ssl.SSLContext | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         if not credentials.username or not credentials.password:
             raise ProtectedStagingError("protected CML credentials missing")
         self._authority = authority
         self._credentials = credentials
+        if ssl_context is None and transport is None:
+            raise ProtectedStagingError("protected CML TLS authority missing")
         self._client = httpx.Client(
             base_url=authority.controller_url,
             timeout=httpx.Timeout(10.0, connect=5.0),
             follow_redirects=False,
-            verify=True,
+            verify=ssl_context if ssl_context is not None else True,
             trust_env=False,
             transport=transport,
         )
@@ -601,16 +682,88 @@ class ProtectedCMLClient:
         self._token = None
         self._client.close()
 
+    @property
+    def bearer(self) -> str:
+        """Expose the in-memory bearer only to protected Terraform composition."""
+        if self._token is None:
+            raise ProtectedStagingError("protected CML client is not authenticated")
+        return self._token
+
+    def lab_structure(
+        self, lab_id: UUID
+    ) -> tuple[dict[str, dict[str, object]], tuple[str, ...]]:
+        """Read sanitized node metadata and link identities for one admitted lab."""
+        if self._token is None:
+            raise ProtectedStagingError("protected CML client is not authenticated")
+        headers = {"Authorization": f"Bearer {self._token}"}
+        base = f"/api/v0/labs/{lab_id}"
+        node_response = self._client.get(f"{base}/nodes", headers=headers)
+        link_response = self._client.get(f"{base}/links", headers=headers)
+        if node_response.status_code != 200 or link_response.status_code != 200:
+            raise ProtectedStagingError("protected CML realization unavailable")
+        try:
+            node_ids = node_response.json()
+            link_ids = link_response.json()
+        except ValueError:
+            raise ProtectedStagingError("protected CML realization invalid") from None
+        if (
+            not isinstance(node_ids, list)
+            or not isinstance(link_ids, list)
+            or any(not isinstance(value, str) for value in (*node_ids, *link_ids))
+            or len(node_ids) != len(set(node_ids))
+            or len(link_ids) != len(set(link_ids))
+        ):
+            raise ProtectedStagingError("protected CML realization invalid")
+        nodes: dict[str, dict[str, object]] = {}
+        for node_id in node_ids:
+            try:
+                UUID(node_id)
+            except ValueError:
+                raise ProtectedStagingError(
+                    "protected CML realization invalid"
+                ) from None
+            response = self._client.get(f"{base}/nodes/{node_id}", headers=headers)
+            if response.status_code != 200:
+                raise ProtectedStagingError("protected CML realization unavailable")
+            try:
+                node = response.json()
+            except ValueError:
+                raise ProtectedStagingError(
+                    "protected CML realization invalid"
+                ) from None
+            if not isinstance(node, dict):
+                raise ProtectedStagingError("protected CML realization invalid")
+            nodes[node_id] = {
+                key: node.get(key)
+                for key in (
+                    "id",
+                    "label",
+                    "node_definition",
+                    "image_definition",
+                    "state",
+                )
+            }
+        for link_id in link_ids:
+            try:
+                UUID(link_id)
+            except ValueError:
+                raise ProtectedStagingError(
+                    "protected CML realization invalid"
+                ) from None
+        return nodes, tuple(link_ids)
+
 
 class OIDCCommandRunner(Protocol):
     def __call__(self, arguments: Sequence[str]) -> str: ...
 
 
-def request_staging_oidc_jwt(runner: OIDCCommandRunner) -> BuildkiteOIDCJWT:
+def request_staging_oidc_jwt(
+    runner: OIDCCommandRunner, buildkite_agent: Path
+) -> BuildkiteOIDCJWT:
     """Request exactly one audience-bound JWT and retain it only in memory."""
     value = runner(
         (
-            "buildkite-agent",
+            str(buildkite_agent),
             "oidc",
             "request-token",
             "--audience",
@@ -780,6 +933,54 @@ def validate_cleanup_authority(
         raise ProtectedStagingError("protected cleanup graph rejected")
 
 
+def validate_cleanup_plan(
+    state_addresses: set[str], planned_changes: Mapping[str, str]
+) -> None:
+    """Require cleanup to delete exactly the admitted retained state subset."""
+    if not state_addresses or not state_addresses.issubset(
+        EXPECTED_TERRAFORM_ADDRESSES
+    ):
+        raise ProtectedStagingError("protected cleanup graph rejected")
+    if set(planned_changes) != state_addresses or any(
+        action != "delete" for action in planned_changes.values()
+    ):
+        raise ProtectedStagingError("protected cleanup plan rejected")
+
+
+class ProtectedTerraformOutputs(BaseModel):
+    """Exact structural outputs accepted from the protected staging root."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    staging_run_id: str
+    lab_title: str
+    lab_id: UUID
+    node_ids: dict[str, UUID]
+    link_ids: dict[str, UUID]
+    lifecycle_state: Literal["DEFINED_ON_CORE", "STARTED", "STOPPED"]
+
+    @model_validator(mode="after")
+    def exact_structure(self) -> ProtectedTerraformOutputs:
+        if set(self.node_ids) != {
+            "system_bridge",
+            "management_switch",
+            "cisco",
+            "junos",
+        }:
+            raise ValueError("protected Terraform node outputs changed")
+        if set(self.link_ids) != {
+            "system_bridge_management",
+            "management_cisco",
+            "management_junos",
+            "cisco_junos",
+        }:
+            raise ValueError("protected Terraform link outputs changed")
+        if str(self.lab_id) == BROWNFIELD_LAB_UUID:
+            raise ValueError("brownfield lab output rejected")
+        if self.lab_title != f"NCDP Staging {self.staging_run_id}":
+            raise ValueError("protected Terraform lab title changed")
+        return self
+
+
 class TerraformCommandRunner(Protocol):
     def run(
         self, arguments: Sequence[str], *, cwd: Path, environment: Mapping[str, str]
@@ -789,11 +990,16 @@ class TerraformCommandRunner(Protocol):
 class SubprocessTerraformRunner:
     """Execute Terraform without exposing raw JSON or inheriting ambient secrets."""
 
+    def __init__(self, executable: Path) -> None:
+        if not executable.is_absolute():
+            raise ProtectedStagingError("protected Terraform executable rejected")
+        self._executable = executable
+
     def run(
         self, arguments: Sequence[str], *, cwd: Path, environment: Mapping[str, str]
     ) -> tuple[str, ...]:
         result = subprocess.run(
-            ["terraform", *arguments],
+            [str(self._executable), *arguments],
             cwd=cwd,
             env=dict(environment),
             check=False,
@@ -839,10 +1045,19 @@ class ProtectedTerraformExecutor:
             "TF_DATA_DIR": str(state_directory / "terraform-data"),
         }
 
+    def set_lifecycle_state(self, state: Literal["DEFINED_ON_CORE", "STARTED"]) -> None:
+        """Change only the protected lifecycle input between admitted phases."""
+        self._environment["TF_VAR_lifecycle_state"] = state
+
     def initialize(self) -> None:
         """Initialize only the fixed protected root and fixed run state path."""
         data_directory = Path(self._environment["TF_DATA_DIR"])
-        data_directory.mkdir(mode=0o700)
+        data_directory.mkdir(mode=0o700, exist_ok=True)
+        if (
+            data_directory.is_symlink()
+            or stat.S_IMODE(data_directory.stat().st_mode) & 0o077
+        ):
+            raise ProtectedStagingError("protected Terraform data directory invalid")
         state = self._state_directory / "terraform.tfstate"
         self._runner.run(
             (
@@ -884,6 +1099,89 @@ class ProtectedTerraformExecutor:
         finally:
             if plan.exists() and not plan.is_symlink():
                 plan.unlink()
+
+    def state_addresses(self) -> set[str]:
+        """Read only structural state addresses from the fixed backend."""
+        state = self._state_directory / "terraform.tfstate"
+        data = Path(self._environment["TF_DATA_DIR"])
+        if not state.exists() and not data.exists():
+            return set()
+        lines = self._runner.run(
+            ["state", "list"],
+            cwd=self._terraform_root,
+            environment=self._environment,
+        )
+        addresses = {line.strip() for line in lines if line.strip()}
+        if any(
+            any(character in address for character in "\r\n\x00")
+            for address in addresses
+        ):
+            raise ProtectedStagingError("protected Terraform state invalid")
+        return addresses
+
+    def cleanup_retained(self) -> bool:
+        """Destroy an exact valid partial state; reject any foreign address."""
+        state_addresses = self.state_addresses()
+        if not state_addresses:
+            return False
+        if not state_addresses.issubset(EXPECTED_TERRAFORM_ADDRESSES):
+            raise ProtectedStagingError("protected cleanup graph rejected")
+        plan = self._state_directory / "cleanup.tfplan"
+        if plan.exists() or plan.is_symlink():
+            raise ProtectedStagingError("protected Terraform plan path is occupied")
+        descriptor = os.open(plan, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        try:
+            lines = self._runner.run(
+                ["plan", "-json", "-input=false", f"-out={plan}", "-destroy"],
+                cwd=self._terraform_root,
+                environment=self._environment,
+            )
+            validate_cleanup_plan(state_addresses, parse_structural_plan(lines))
+            self._runner.run(
+                ["apply", "-json", "-input=false", str(plan)],
+                cwd=self._terraform_root,
+                environment=self._environment,
+            )
+            return True
+        finally:
+            if plan.exists() and not plan.is_symlink():
+                plan.unlink()
+
+    def outputs(self, run_id: str) -> ProtectedTerraformOutputs:
+        """Parse exact allowlisted output values without emitting raw JSON."""
+        lines = self._runner.run(
+            ["output", "-json"],
+            cwd=self._terraform_root,
+            environment=self._environment,
+        )
+        try:
+            raw = json.loads("\n".join(lines))
+        except json.JSONDecodeError:
+            raise ProtectedStagingError("protected Terraform outputs invalid") from None
+        expected = {
+            "staging_run_id",
+            "lab_title",
+            "lab_id",
+            "node_ids",
+            "link_ids",
+            "lifecycle_state",
+        }
+        if not isinstance(raw, dict) or set(raw) != expected:
+            raise ProtectedStagingError("protected Terraform outputs invalid")
+        values: dict[str, object] = {}
+        for key in expected:
+            item = raw.get(key)
+            if not isinstance(item, dict) or set(item) < {"value"}:
+                raise ProtectedStagingError("protected Terraform outputs invalid")
+            values[key] = item["value"]
+        try:
+            outputs = ProtectedTerraformOutputs.model_validate(values)
+        except ValueError:
+            raise ProtectedStagingError("protected Terraform outputs invalid") from None
+        if outputs.staging_run_id != run_id:
+            raise ProtectedStagingError("protected Terraform run identity changed")
+        return outputs
 
 
 class ProtectedStagingEvidence(BaseModel):

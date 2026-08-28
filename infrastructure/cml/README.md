@@ -47,6 +47,10 @@ B3-2B1 now supplies the repository-side executable composition and tests its
 isolated Python 3.12 wheel/lock/runtime contract in temporary directories. It
 does not install a standing runtime. B3-2B2 still owns exact merged-main
 construction, host tool/collection admission, and external installation.
+The B3-2B2B0-R correction models that future installation as root-owned
+immutable authority consumed by an exact non-root staging service identity;
+only run state is service-owned. It also requires protected libssh and rejects
+runtime native linkage into user-controlled Homebrew or checkout paths.
 
 ADR 0014 makes normal staging ephemeral: absent, fresh create, first boot,
 readiness and validation, sanitized evidence, complete destroy, then proven

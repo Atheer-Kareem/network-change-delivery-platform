@@ -15,6 +15,8 @@ from network_change_delivery.protected_staging import (
     EXPECTED_TERRAFORM_ADDRESSES,
     CMLAuthority,
     CMLLabObservation,
+    ExecutionToolAuthority,
+    NativeDependencyAuthority,
     ProtectedCMLClient,
     ProtectedCMLCredentials,
     ProtectedStagingError,
@@ -23,6 +25,7 @@ from network_change_delivery.protected_staging import (
     ProtectedStagingManifest,
     ProtectedStagingSecretAuthority,
     ProtectedTerraformExecutor,
+    ServiceIdentityAuthority,
     StagingTargetAuthority,
     admit_cml_labs,
     parse_structural_plan,
@@ -87,7 +90,8 @@ def authority(role: str) -> StagingTargetAuthority:
 def manifest(**changes) -> ProtectedStagingManifest:
     controller_path = "src/network_change_delivery/protected_staging_controller.py"
     values = {
-        "schema_version": 3,
+        "schema_version": 4,
+        "service_identity": ServiceIdentityAuthority(service_uid=420, service_gid=420),
         "buildkite_pipeline_id": UUID("00000000-0000-0000-0000-000000000001"),
         "source_commit": SHA1,
         "netbox_url": "https://netbox.example",
@@ -100,6 +104,56 @@ def manifest(**changes) -> ProtectedStagingManifest:
         "python_interpreter_sha256": SHA256,
         "project_wheel_sha256": SHA256,
         "production_requirements_sha256": SHA256,
+        "uv": ExecutionToolAuthority(
+            path="/protected/uv", sha256=SHA256, version="0.12.2"
+        ),
+        "buildkite_agent": ExecutionToolAuthority(
+            path="/protected/buildkite-agent", sha256=SHA256, version="3.137.0"
+        ),
+        "terraform": ExecutionToolAuthority(
+            path="/protected/terraform", sha256=SHA256, version="1.15.8"
+        ),
+        "openssl": ExecutionToolAuthority(
+            path="/protected/openssl", sha256=SHA256, version="3.6.3"
+        ),
+        "ssh_keyscan": ExecutionToolAuthority(
+            path="/usr/bin/ssh-keyscan",
+            sha256=SHA256,
+            version="OpenSSH_10.2",
+            system_protected=True,
+        ),
+        "ssh_keygen": ExecutionToolAuthority(
+            path="/usr/bin/ssh-keygen",
+            sha256=SHA256,
+            version="OpenSSH_10.2",
+            system_protected=True,
+        ),
+        "ansible_collections_root": "/protected/ansible",
+        "ansible_collections": {
+            "ansible.netcommon": "8.6.0",
+            "ansible.utils": "6.1.0",
+            "cisco.ios": "11.4.2",
+        },
+        "ansible_inventory_sha256": SHA256,
+        "native_dependencies": (
+            NativeDependencyAuthority(
+                name="libssh",
+                version="0.11.3",
+                root="/private/var/db/ncdp-staging/authority/native/libssh",
+                inventory_sha256=SHA256,
+            ),
+            NativeDependencyAuthority(
+                name="openssl",
+                version="3.6.3",
+                root="/private/var/db/ncdp-staging/authority/native/openssl",
+                inventory_sha256=SHA256,
+            ),
+        ),
+        "protected_native_files": {
+            "/private/var/db/ncdp-staging/authority/native/libssh/libssh.dylib": SHA256
+        },
+        "native_dependency_admission_sha256": SHA256,
+        "build_sdk_identity": "macos-sdk-test",
         "controller_artifact_digest": SHA256,
         "file_digests": {controller_path: SHA256, "terraform/main.tf": SHA256},
         "cisco": authority("cisco"),

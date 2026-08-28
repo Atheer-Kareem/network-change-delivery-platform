@@ -8,21 +8,44 @@ import os
 import shutil
 import stat
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final, Protocol
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, model_validator
+
 from network_change_delivery.protected_staging import (
     EXPECTED_TERRAFORM_ADDRESSES,
     CMLAuthority,
+    ExecutionToolAuthority,
+    NativeDependencyAuthority,
     ProtectedStagingError,
     ProtectedStagingManifest,
+    ServiceIdentityAuthority,
     StagingTargetAuthority,
     validate_protected_bundle,
     validate_runtime_artifacts,
     validate_runtime_inventory,
 )
+from network_change_delivery.protected_staging_runtime import (
+    execution_tool_version_runner,
+    inspect_combined_native_dependency_graph,
+    native_dependency_graph_sha256,
+    terraform_version_runner,
+    validate_combined_native_dependency_graph,
+    validate_root_owned_bootstrap_source,
+    validate_root_owned_executable,
+    validate_root_owned_immutable_tree,
+    validate_root_owned_service_directory,
+    validate_system_rooted_directory,
+)
+
+CANONICAL_REPOSITORY = "Atheer-Kareem/network-change-delivery-platform"
+CANONICAL_ORIGIN_URL = (
+    "https://github.com/Atheer-Kareem/network-change-delivery-platform.git"
+)
+SYSTEM_GIT = Path("/usr/bin/git")
 
 PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
     "README.md",
@@ -37,6 +60,8 @@ PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
     "src/network_change_delivery/protected_staging.py",
     "src/network_change_delivery/protected_staging_controller.py",
     "src/network_change_delivery/protected_staging_runtime.py",
+    "src/network_change_delivery/protected_staging_install.py",
+    "src/network_change_delivery/protected_staging_installer_cli.py",
     "src/network_change_delivery/secrets.py",
     "src/network_change_delivery/workflow.py",
     "src/network_change_delivery/ansible_adapter.py",
@@ -61,8 +86,93 @@ PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
 )
 
 
+class StandingInstallationAuthority(BaseModel):
+    """Operator-supplied authority needed before a standing install can begin."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    service_identity: ServiceIdentityAuthority
+    protected_python: Path
+    uv_cache_root: Path
+    build_sdk_root: Path
+    python_version: str
+    python_sha256: str
+    uv: ExecutionToolAuthority
+    buildkite_agent: ExecutionToolAuthority
+    terraform: ExecutionToolAuthority
+    openssl: ExecutionToolAuthority
+    ssh_keyscan: ExecutionToolAuthority
+    ssh_keygen: ExecutionToolAuthority
+    ansible_collections_root: Path
+    ansible_collections: dict[str, str]
+    ansible_inventory_sha256: str
+    native_dependencies: tuple[NativeDependencyAuthority, ...]
+    protected_native_files: dict[str, str]
+    build_sdk_identity: str
+
+    @model_validator(mode="after")
+    def exact_paths(self) -> StandingInstallationAuthority:
+        if (
+            not self.protected_python.is_absolute()
+            or not self.uv_cache_root.is_absolute()
+            or not self.build_sdk_root.is_absolute()
+            or self.uv.path == str(self.protected_python)
+            or str(self.ansible_collections_root) == ""
+            or self.python_version != "3.12"
+            or len(self.python_sha256) != 64
+            or any(
+                character not in "0123456789abcdef" for character in self.python_sha256
+            )
+            or not self.protected_native_files
+            or not self.build_sdk_identity
+        ):
+            raise ValueError("standing installation authority is invalid")
+        return self
+
+    def native_dependency(self, name: str) -> NativeDependencyAuthority:
+        matches = tuple(
+            value for value in self.native_dependencies if value.name == name
+        )
+        if len(matches) != 1:
+            raise ProtectedStagingError("standing native dependency authority invalid")
+        return matches[0]
+
+    def build_environment(self) -> dict[str, str]:
+        """Derive the sole native build environment from admitted roots."""
+        libssh = Path(self.native_dependency("libssh").root)
+        if libssh != Path("/private/var/db/ncdp-staging/authority/native/libssh"):
+            raise ProtectedStagingError("protected libssh build authority rejected")
+        return {
+            "SDKROOT": str(self.build_sdk_root),
+            "CPATH": str(libssh / "include"),
+            "LIBRARY_PATH": str(libssh / "lib"),
+            "LDFLAGS": f"-L{libssh / 'lib'}",
+            "CPPFLAGS": f"-I{libssh / 'include'}",
+            "PKG_CONFIG_PATH": str(libssh / "lib/pkgconfig"),
+        }
+
+
 class RuntimeBuildRunner(Protocol):
     def run(self, arguments: Sequence[str], *, cwd: Path) -> None: ...
+
+
+def _apply_immutable_ownership(root: Path, service_gid: int) -> None:
+    """Finalize a standing authority tree before its inventories are emitted."""
+    if os.geteuid() != 0:
+        raise ProtectedStagingError("standing installation requires root authority")
+    for path in sorted(
+        root.rglob("*"), key=lambda value: len(value.parts), reverse=True
+    ):
+        if path.is_symlink():
+            os.lchown(path, 0, service_gid)
+        elif path.is_dir():
+            path.chmod(0o550)
+            os.chown(path, 0, service_gid)
+        elif path.is_file():
+            executable = bool(path.stat().st_mode & 0o111)
+            path.chmod(0o550 if executable else 0o440)
+            os.chown(path, 0, service_gid)
+    root.chmod(0o750)
+    os.chown(root, 0, service_gid)
 
 
 class SubprocessRuntimeBuildRunner:
@@ -99,6 +209,17 @@ class SubprocessRuntimeBuildRunner:
             **build_values,
         }
 
+    def validate_authority(self, authority: StandingInstallationAuthority) -> None:
+        """Require the builder to match the reviewed standing authority exactly."""
+        expected = {
+            "PATH": str(Path(authority.uv.path).parent),
+            "UV_CACHE_DIR": str(authority.uv_cache_root),
+            "UV_NO_PROGRESS": "1",
+            **authority.build_environment(),
+        }
+        if self._uv != Path(authority.uv.path) or self._environment != expected:
+            raise ProtectedStagingError("protected runtime builder authority rejected")
+
     def run(self, arguments: Sequence[str], *, cwd: Path) -> None:
         if not arguments or arguments[0] != str(self._uv):
             raise ProtectedStagingError("protected runtime build command rejected")
@@ -120,6 +241,7 @@ def construct_isolated_runtime(
     runner: RuntimeBuildRunner,
     *,
     uv_executable: Path,
+    protected_python: Path,
 ) -> Path:
     """Construct a non-editable locked runtime under a temporary/test bundle."""
     if (
@@ -127,6 +249,7 @@ def construct_isolated_runtime(
         or not install_root.is_absolute()
         or install_root.is_symlink()
         or not uv_executable.is_absolute()
+        or not protected_python.is_absolute()
     ):
         raise ProtectedStagingError("protected runtime construction rejected")
     runtime = install_root / "runtime"
@@ -160,7 +283,10 @@ def construct_isolated_runtime(
     with requirements.open("a", encoding="utf-8") as stream:
         stream.write(f"\n{wheel.as_uri()} --hash=sha256:{wheel_digest}\n")
     requirements.chmod(0o600)
-    runner.run((uv, "venv", "--python", "3.12", str(runtime)), cwd=install_root)
+    runner.run(
+        (uv, "venv", "--python", str(protected_python), str(runtime)),
+        cwd=install_root,
+    )
     runtime.chmod(0o700)
     python = runtime / "bin/python"
     runner.run(
@@ -226,26 +352,70 @@ def inventory_runtime(runtime: Path) -> tuple[dict[str, dict[str, object]], str]
     return entries, hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def verify_merged_source(source: Path, expected_commit: str) -> None:
-    """Require an exact, clean, non-detached main checkout before installation."""
+GitRunner = Callable[
+    [Sequence[str], Path, Mapping[str, str]], subprocess.CompletedProcess[str]
+]
+
+
+def _system_git_runner(
+    arguments: Sequence[str], cwd: Path, environment: Mapping[str, str]
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        list(arguments),
+        cwd=cwd,
+        env=dict(environment),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def verify_merged_source(
+    source: Path,
+    expected_commit: str,
+    *,
+    standing: bool = False,
+    service_identity: ServiceIdentityAuthority | None = None,
+    git_runner: GitRunner = _system_git_runner,
+) -> None:
+    """Require exact canonical merged source with sanitized system Git authority."""
+    if standing:
+        if service_identity is None:
+            raise ProtectedStagingError("protected bootstrap identity missing")
+        validate_root_owned_bootstrap_source(source, expected_commit, service_identity)
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": "/var/empty",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_COUNT": "0",
+        "GIT_OPTIONAL_LOCKS": "0",
+    }
+    prefix = (
+        str(SYSTEM_GIT),
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+    )
     commands = {
-        "head": ["git", "rev-parse", "HEAD"],
-        "branch": ["git", "branch", "--show-current"],
-        "status": ["git", "status", "--porcelain", "--untracked-files=all"],
-        "origin": ["git", "rev-parse", "origin/main"],
+        "head": (*prefix, "rev-parse", "HEAD"),
+        "branch": (*prefix, "branch", "--show-current"),
+        "status": (*prefix, "status", "--porcelain", "--untracked-files=all"),
+        "origin_head": (*prefix, "rev-parse", "origin/main"),
+        "origin_url": (*prefix, "remote", "get-url", "origin"),
     }
     values: dict[str, str] = {}
     for name, command in commands.items():
-        result = subprocess.run(
-            command, cwd=source, check=False, capture_output=True, text=True
-        )
+        result = git_runner(command, source, environment)
         if result.returncode != 0:
             raise ProtectedStagingError("protected installation source rejected")
         values[name] = result.stdout.strip()
     if (
         values["head"] != expected_commit
-        or values["origin"] != expected_commit
-        or values["branch"] != "main"
+        or values["origin_head"] != expected_commit
+        or values["origin_url"] != CANONICAL_ORIGIN_URL
+        or (not standing and values["branch"] != "main")
         or values["status"]
     ):
         raise ProtectedStagingError("protected installation source rejected")
@@ -263,18 +433,152 @@ def install_source_bundle(
     cml_ca_pem_sha256: str,
     runtime_runner: RuntimeBuildRunner,
     uv_executable: Path,
+    installation_authority: StandingInstallationAuthority,
     *,
     owner_uid: int | None = None,
+    standing: bool = False,
 ) -> ProtectedStagingManifest:
     """Copy an exact reviewed source set into a new private versioned bundle."""
-    verify_merged_source(source, expected_commit)
+    verify_merged_source(
+        source,
+        expected_commit,
+        standing=standing,
+        service_identity=(
+            installation_authority.service_identity if standing else None
+        ),
+    )
     source = source.resolve(strict=True)
+    if str(uv_executable) != installation_authority.uv.path:
+        raise ProtectedStagingError("protected uv authority mismatch")
+    if standing and (
+        os.geteuid() != 0
+        or installation_authority.protected_python.is_symlink()
+        or not installation_authority.protected_python.is_file()
+        or hashlib.sha256(
+            installation_authority.protected_python.read_bytes()
+        ).hexdigest()
+        != installation_authority.python_sha256
+    ):
+        raise ProtectedStagingError("protected Python authority rejected")
+    if standing:
+        authority_root = Path("/private/var/db/ncdp-staging/authority")
+        if (
+            installation_authority.uv_cache_root != authority_root / "cache/uv"
+            or Path(installation_authority.uv.path).parent != authority_root / "tools"
+            or not installation_authority.protected_python.resolve(
+                strict=True
+            ).is_relative_to(authority_root / "tools")
+            or installation_authority.ansible_collections_root
+            != authority_root / "ansible"
+            or any(
+                Path(value.root).parent != authority_root / "native"
+                for value in installation_authority.native_dependencies
+            )
+        ):
+            raise ProtectedStagingError("standing installation layout rejected")
+        if not isinstance(runtime_runner, SubprocessRuntimeBuildRunner):
+            raise ProtectedStagingError("standing runtime builder rejected")
+        runtime_runner.validate_authority(installation_authority)
+        validate_root_owned_executable(
+            uv_executable,
+            source,
+            installation_authority.service_identity,
+            installation_authority.uv,
+            observed_version=execution_tool_version_runner(uv_executable, "uv"),
+        )
+        validate_root_owned_executable(
+            installation_authority.protected_python,
+            source,
+            installation_authority.service_identity,
+            ExecutionToolAuthority(
+                path=str(installation_authority.protected_python),
+                sha256=installation_authority.python_sha256,
+                version=installation_authority.python_version,
+            ),
+        )
+        for tool in (
+            installation_authority.buildkite_agent,
+            installation_authority.terraform,
+            installation_authority.openssl,
+            installation_authority.ssh_keyscan,
+            installation_authority.ssh_keygen,
+        ):
+            validate_root_owned_executable(
+                Path(tool.path),
+                source,
+                installation_authority.service_identity,
+                tool,
+                observed_version=(
+                    terraform_version_runner(Path(tool.path), ())
+                    if tool is installation_authority.terraform
+                    else execution_tool_version_runner(
+                        Path(tool.path), Path(tool.path).name
+                    )
+                ),
+            )
+        validate_root_owned_service_directory(
+            installation_authority.uv_cache_root,
+            source,
+            installation_authority.service_identity,
+        )
+        validate_system_rooted_directory(installation_authority.build_sdk_root, source)
+        if (
+            str(installation_authority.build_sdk_root)
+            != installation_authority.build_sdk_identity
+        ):
+            raise ProtectedStagingError("protected SDK authority rejected")
+        validate_root_owned_immutable_tree(
+            installation_authority.ansible_collections_root,
+            source,
+            installation_authority.service_identity,
+            installation_authority.ansible_inventory_sha256,
+            expected_collections=installation_authority.ansible_collections,
+        )
+        admitted_native_roots: list[Path] = []
+        for dependency in installation_authority.native_dependencies:
+            root = Path(dependency.root)
+            validate_root_owned_immutable_tree(
+                root,
+                source,
+                installation_authority.service_identity,
+                dependency.inventory_sha256,
+            )
+            try:
+                observed_version = (
+                    (root / "VERSION").read_text(encoding="utf-8").strip()
+                )
+            except OSError:
+                raise ProtectedStagingError(
+                    "protected native dependency version rejected"
+                ) from None
+            if observed_version != dependency.version:
+                raise ProtectedStagingError(
+                    "protected native dependency version rejected"
+                )
+            admitted_native_roots.append(root.resolve(strict=True))
+        for value, digest in installation_authority.protected_native_files.items():
+            path = Path(value)
+            if (
+                not any(
+                    path.resolve(strict=True).is_relative_to(root)
+                    for root in admitted_native_roots
+                )
+                or hashlib.sha256(path.read_bytes()).hexdigest() != digest
+            ):
+                raise ProtectedStagingError("protected native file authority rejected")
     if (
         destination.exists()
         or destination.is_symlink()
         or not destination.is_absolute()
     ):
         raise ProtectedStagingError("protected installation destination rejected")
+    if standing:
+        install_parent = Path("/private/var/db/ncdp-staging/authority/install")
+        if destination.parent != install_parent:
+            raise ProtectedStagingError("standing installation destination rejected")
+        validate_root_owned_service_directory(
+            install_parent, source, installation_authority.service_identity
+        )
     if destination.resolve(strict=False).is_relative_to(source):
         raise ProtectedStagingError("protected installation destination rejected")
     destination.mkdir(mode=0o700, parents=False)
@@ -308,7 +612,62 @@ def install_source_bundle(
             destination,
             runtime_runner,
             uv_executable=uv_executable,
+            protected_python=installation_authority.protected_python,
         )
+        if standing:
+            native_scopes = {
+                "runtime": runtime,
+                "python": installation_authority.protected_python,
+                "openssl-tool": Path(installation_authority.openssl.path),
+                "terraform": Path(installation_authority.terraform.path),
+                "buildkite-agent": Path(installation_authority.buildkite_agent.path),
+                "uv-install-time": Path(installation_authority.uv.path),
+                **{
+                    dependency.name: Path(dependency.root)
+                    for dependency in installation_authority.native_dependencies
+                },
+            }
+            native_graph = inspect_combined_native_dependency_graph(native_scopes)
+            if set(native_graph) != set(native_scopes):
+                raise ProtectedStagingError("protected native dependency scope changed")
+            validate_combined_native_dependency_graph(
+                native_graph,
+                protected_native_files={
+                    Path(path): digest
+                    for path, digest in (
+                        installation_authority.protected_native_files.items()
+                    )
+                },
+                digest_reader=lambda path: hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest(),
+            )
+            admission = native_dependency_graph_sha256(native_graph)
+            for immutable_root in (source_root, runtime, destination / "artifacts"):
+                _apply_immutable_ownership(
+                    immutable_root, installation_authority.service_identity.service_gid
+                )
+            final_native_graph = inspect_combined_native_dependency_graph(native_scopes)
+            if set(final_native_graph) != set(native_scopes):
+                raise ProtectedStagingError("protected native dependency scope changed")
+            validate_combined_native_dependency_graph(
+                final_native_graph,
+                protected_native_files={
+                    Path(path): digest
+                    for path, digest in (
+                        installation_authority.protected_native_files.items()
+                    )
+                },
+                digest_reader=lambda path: hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest(),
+            )
+            if native_dependency_graph_sha256(final_native_graph) != admission:
+                raise ProtectedStagingError(
+                    "protected native dependency admission changed"
+                )
+        else:
+            admission = native_dependency_graph_sha256({"runtime": {}})
         runtime_entries, runtime_digest = inventory_runtime(runtime)
         python_interpreter = (runtime / "bin/python").resolve(strict=True)
         runtime_inventory = json.dumps(
@@ -316,13 +675,22 @@ def install_source_bundle(
         )
         runtime_inventory_file = destination / "runtime-files.json"
         runtime_inventory_file.write_text(runtime_inventory, encoding="utf-8")
-        runtime_inventory_file.chmod(0o600)
+        runtime_inventory_file.chmod(0o440 if standing else 0o600)
+        if standing:
+            os.chown(
+                runtime_inventory_file,
+                0,
+                installation_authority.service_identity.service_gid,
+            )
         wheels = tuple((destination / "artifacts/wheels").glob("*.whl"))
         if len(wheels) != 1:
             raise ProtectedStagingError("protected runtime wheel rejected")
         requirements = destination / "artifacts/production-requirements.txt"
         controller_path = "src/network_change_delivery/protected_staging_controller.py"
         manifest = ProtectedStagingManifest(
+            canonical_repository=CANONICAL_REPOSITORY,
+            canonical_origin_url=CANONICAL_ORIGIN_URL,
+            service_identity=installation_authority.service_identity,
             buildkite_pipeline_id=buildkite_pipeline_id,
             source_commit=expected_commit,
             netbox_url=netbox_url,
@@ -341,6 +709,21 @@ def install_source_bundle(
             production_requirements_sha256=hashlib.sha256(
                 requirements.read_bytes()
             ).hexdigest(),
+            uv=installation_authority.uv,
+            buildkite_agent=installation_authority.buildkite_agent,
+            terraform=installation_authority.terraform,
+            openssl=installation_authority.openssl,
+            ssh_keyscan=installation_authority.ssh_keyscan,
+            ssh_keygen=installation_authority.ssh_keygen,
+            ansible_collections_root=str(
+                installation_authority.ansible_collections_root
+            ),
+            ansible_collections=installation_authority.ansible_collections,
+            ansible_inventory_sha256=(installation_authority.ansible_inventory_sha256),
+            native_dependencies=installation_authority.native_dependencies,
+            protected_native_files=installation_authority.protected_native_files,
+            native_dependency_admission_sha256=admission,
+            build_sdk_identity=installation_authority.build_sdk_identity,
             controller_artifact_digest=digests[controller_path],
             file_digests=digests,
             cisco=_target(6),
@@ -365,16 +748,45 @@ def install_source_bundle(
         manifest_file.write_text(
             manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
-        manifest_file.chmod(0o600)
-        validate_protected_bundle(source_root, source, manifest, owner_uid=owner_uid)
+        manifest_file.chmod(0o440 if standing else 0o600)
+        if standing:
+            os.chown(
+                manifest_file, 0, installation_authority.service_identity.service_gid
+            )
+            inventory_file.chmod(0o440)
+            os.chown(
+                inventory_file, 0, installation_authority.service_identity.service_gid
+            )
+            destination.chmod(0o750)
+            os.chown(
+                destination, 0, installation_authority.service_identity.service_gid
+            )
+        validate_protected_bundle(
+            source_root,
+            source,
+            manifest,
+            owner_uid=owner_uid,
+            service_identity=(
+                installation_authority.service_identity if standing else None
+            ),
+        )
         validate_runtime_inventory(
             runtime,
             source,
             manifest,
             runtime_inventory_file,
             owner_uid=owner_uid,
+            service_identity=(
+                installation_authority.service_identity if standing else None
+            ),
         )
-        validate_runtime_artifacts(destination, manifest)
+        validate_runtime_artifacts(
+            destination,
+            manifest,
+            service_identity=(
+                installation_authority.service_identity if standing else None
+            ),
+        )
         smoke = subprocess.run(
             [str(runtime / manifest.controller_entrypoint), "--help"],
             cwd=destination,
@@ -394,6 +806,9 @@ def install_source_bundle(
             manifest,
             runtime_inventory_file,
             owner_uid=owner_uid,
+            service_identity=(
+                installation_authority.service_identity if standing else None
+            ),
         )
         return manifest
     except Exception:

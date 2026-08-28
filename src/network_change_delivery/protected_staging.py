@@ -118,11 +118,70 @@ class CMLAuthority(BaseModel):
         return self
 
 
+class ServiceIdentityAuthority(BaseModel):
+    """Exact non-root principal permitted to execute protected staging."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    service_uid: int = Field(gt=0)
+    service_gid: int = Field(gt=0)
+    immutable_owner_uid: Literal[0] = 0
+    supplementary_gids: tuple[int, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> ServiceIdentityAuthority:
+        if self.service_uid == 501 or self.service_gid != self.service_uid:
+            raise ValueError("protected service identity overlaps validation")
+        if self.supplementary_gids:
+            raise ValueError("protected service supplementary groups are forbidden")
+        return self
+
+
+class ExecutionToolAuthority(BaseModel):
+    """Digest and version authority for one protected execution tool."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    path: str
+    sha256: str
+    version: str = Field(min_length=1, max_length=255)
+    system_protected: bool = False
+
+    @model_validator(mode="after")
+    def validate_tool(self) -> ExecutionToolAuthority:
+        if not Path(self.path).is_absolute() or not _SHA256.fullmatch(self.sha256):
+            raise ValueError("protected execution tool authority is invalid")
+        return self
+
+
+class NativeDependencyAuthority(BaseModel):
+    """One exact root-owned native dependency tree admitted at installation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    name: Literal["libssh", "openssl"]
+    version: str = Field(min_length=1, max_length=255)
+    root: str
+    inventory_sha256: str
+
+    @model_validator(mode="after")
+    def validate_native_dependency(self) -> NativeDependencyAuthority:
+        if not Path(self.root).is_absolute() or not _SHA256.fullmatch(
+            self.inventory_sha256
+        ):
+            raise ValueError("protected native dependency authority is invalid")
+        return self
+
+
 class ProtectedStagingManifest(BaseModel):
     """Installed, immutable staging authority; checkout copies are not authority."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
+    canonical_repository: Literal["Atheer-Kareem/network-change-delivery-platform"] = (
+        "Atheer-Kareem/network-change-delivery-platform"
+    )
+    canonical_origin_url: Literal[
+        "https://github.com/Atheer-Kareem/network-change-delivery-platform.git"
+    ] = "https://github.com/Atheer-Kareem/network-change-delivery-platform.git"
+    service_identity: ServiceIdentityAuthority
     buildkite_pipeline_id: UUID
     source_commit: str
     netbox_url: str
@@ -136,6 +195,19 @@ class ProtectedStagingManifest(BaseModel):
     python_interpreter_sha256: str
     project_wheel_sha256: str
     production_requirements_sha256: str
+    uv: ExecutionToolAuthority
+    buildkite_agent: ExecutionToolAuthority
+    terraform: ExecutionToolAuthority
+    openssl: ExecutionToolAuthority
+    ssh_keyscan: ExecutionToolAuthority
+    ssh_keygen: ExecutionToolAuthority
+    ansible_collections_root: str
+    ansible_collections: dict[str, str]
+    ansible_inventory_sha256: str
+    native_dependencies: tuple[NativeDependencyAuthority, ...]
+    protected_native_files: dict[str, str]
+    native_dependency_admission_sha256: str
+    build_sdk_identity: str
     controller_entrypoint: Literal["bin/ncdp-protected-staging-controller"] = (
         "bin/ncdp-protected-staging-controller"
     )
@@ -215,9 +287,12 @@ class ProtectedStagingManifest(BaseModel):
             self.runtime_digest,
             self.project_wheel_sha256,
             self.production_requirements_sha256,
+            self.ansible_inventory_sha256,
+            self.native_dependency_admission_sha256,
             self.python_interpreter_sha256,
             self.controller_artifact_digest,
             *self.file_digests.values(),
+            *self.protected_native_files.values(),
         ):
             if not _SHA256.fullmatch(digest):
                 raise ValueError("protected bundle digest is invalid")
@@ -228,6 +303,30 @@ class ProtectedStagingManifest(BaseModel):
             raise ValueError("protected file inventory is invalid")
         if not Path(self.python_interpreter_path).is_absolute():
             raise ValueError("protected Python interpreter authority is invalid")
+        expected_collections = {
+            "ansible.netcommon": "8.6.0",
+            "ansible.utils": "6.1.0",
+            "cisco.ios": "11.4.2",
+        }
+        native_root = Path("/private/var/db/ncdp-staging/authority/native")
+        admitted_native_roots = {Path(value.root) for value in self.native_dependencies}
+        if (
+            not Path(self.ansible_collections_root).is_absolute()
+            or self.ansible_collections != expected_collections
+            or {dependency.name for dependency in self.native_dependencies}
+            != {"libssh", "openssl"}
+            or not self.protected_native_files
+            or any(not Path(path).is_absolute() for path in self.protected_native_files)
+            or not self.build_sdk_identity
+            or any(root.parent != native_root for root in admitted_native_roots)
+            or any(
+                not any(
+                    Path(path).is_relative_to(root) for root in admitted_native_roots
+                )
+                for path in self.protected_native_files
+            )
+        ):
+            raise ValueError("protected runtime dependency authority changed")
         controller_path = "src/network_change_delivery/protected_staging_controller.py"
         if self.file_digests.get(controller_path) != self.controller_artifact_digest:
             raise ValueError("protected controller artifact digest changed")
@@ -841,6 +940,7 @@ def validate_protected_bundle(
     manifest: ProtectedStagingManifest,
     *,
     owner_uid: int | None = None,
+    service_identity: ServiceIdentityAuthority | None = None,
 ) -> Path:
     """Verify an external, private, exact-file protected installation."""
     if not bundle_root.is_absolute() or bundle_root.is_symlink():
@@ -850,8 +950,22 @@ def validate_protected_bundle(
     if root == checkout or root.is_relative_to(checkout):
         raise ProtectedStagingError("protected bundle must be outside checkout")
     metadata = root.stat(follow_symlinks=False)
-    expected_uid = os.getuid() if owner_uid is None else owner_uid
-    if metadata.st_uid != expected_uid or stat.S_IMODE(metadata.st_mode) & 0o077:
+    expected_uid = (
+        service_identity.immutable_owner_uid
+        if service_identity is not None
+        else os.getuid()
+        if owner_uid is None
+        else owner_uid
+    )
+    expected_gid = (
+        service_identity.service_gid if service_identity is not None else None
+    )
+    accepted_modes = {0o550, 0o750} if service_identity is not None else {0o700}
+    if (
+        metadata.st_uid != expected_uid
+        or (expected_gid is not None and metadata.st_gid != expected_gid)
+        or stat.S_IMODE(metadata.st_mode) not in accepted_modes
+    ):
         raise ProtectedStagingError("protected bundle ownership or mode is invalid")
     observed: dict[str, str] = {}
     for relative, expected_digest in manifest.file_digests.items():
@@ -863,6 +977,13 @@ def validate_protected_bundle(
         ):
             raise ProtectedStagingError("protected bundle file is invalid")
         digest = _file_sha256(path)
+        file_metadata = path.stat(follow_symlinks=False)
+        if service_identity is not None and (
+            file_metadata.st_uid != service_identity.immutable_owner_uid
+            or file_metadata.st_gid != service_identity.service_gid
+            or stat.S_IMODE(file_metadata.st_mode) != 0o440
+        ):
+            raise ProtectedStagingError("protected bundle file ownership is invalid")
         if digest != expected_digest:
             raise ProtectedStagingError("protected bundle digest mismatch")
         observed[relative] = digest
@@ -873,6 +994,18 @@ def validate_protected_bundle(
     }
     if actual_files != set(manifest.file_digests):
         raise ProtectedStagingError("protected bundle contains unexpected files")
+    if service_identity is not None:
+        for directory in (path for path in root.rglob("*") if path.is_dir()):
+            directory_metadata = directory.stat(follow_symlinks=False)
+            if (
+                directory.is_symlink()
+                or directory_metadata.st_uid != service_identity.immutable_owner_uid
+                or directory_metadata.st_gid != service_identity.service_gid
+                or stat.S_IMODE(directory_metadata.st_mode) != 0o550
+            ):
+                raise ProtectedStagingError(
+                    "protected bundle directory ownership is invalid"
+                )
     combined = hashlib.sha256(
         json.dumps(observed, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -888,6 +1021,7 @@ def validate_runtime_inventory(
     inventory_path: Path,
     *,
     owner_uid: int | None = None,
+    service_identity: ServiceIdentityAuthority | None = None,
 ) -> Path:
     """Verify every file/symlink in the installed executable runtime."""
     if not runtime_root.is_absolute() or runtime_root.is_symlink():
@@ -896,16 +1030,32 @@ def validate_runtime_inventory(
     checkout = checkout_root.resolve(strict=True)
     if root == checkout or root.is_relative_to(checkout):
         raise ProtectedStagingError("protected runtime must be outside checkout")
-    expected_uid = os.getuid() if owner_uid is None else owner_uid
+    expected_uid = (
+        service_identity.immutable_owner_uid
+        if service_identity is not None
+        else os.getuid()
+        if owner_uid is None
+        else owner_uid
+    )
+    expected_gid = (
+        service_identity.service_gid if service_identity is not None else None
+    )
     metadata = root.stat(follow_symlinks=False)
-    if metadata.st_uid != expected_uid or stat.S_IMODE(metadata.st_mode) & 0o077:
+    if (
+        metadata.st_uid != expected_uid
+        or (expected_gid is not None and metadata.st_gid != expected_gid)
+        or stat.S_IMODE(metadata.st_mode)
+        not in ({0o550, 0o750} if service_identity is not None else {0o700})
+    ):
         raise ProtectedStagingError("protected runtime ownership or mode is invalid")
     if inventory_path.is_symlink() or not inventory_path.is_file():
         raise ProtectedStagingError("protected runtime inventory is invalid")
     inventory_metadata = inventory_path.stat(follow_symlinks=False)
     if (
         inventory_metadata.st_uid != expected_uid
-        or stat.S_IMODE(inventory_metadata.st_mode) & 0o077
+        or (expected_gid is not None and inventory_metadata.st_gid != expected_gid)
+        or stat.S_IMODE(inventory_metadata.st_mode)
+        not in ({0o440} if service_identity is not None else {0o600})
     ):
         raise ProtectedStagingError("protected runtime inventory is invalid")
     raw = inventory_path.read_bytes()
@@ -936,6 +1086,13 @@ def validate_runtime_inventory(
             if path.is_symlink() or not path.is_file():
                 raise ProtectedStagingError("protected runtime file is invalid")
             actual = {"type": "file", "mode": mode, "sha256": _file_sha256(path)}
+            file_metadata = path.stat(follow_symlinks=False)
+            if service_identity is not None and (
+                file_metadata.st_uid != service_identity.immutable_owner_uid
+                or file_metadata.st_gid != service_identity.service_gid
+                or mode & 0o022
+            ):
+                raise ProtectedStagingError("protected runtime ownership is invalid")
         elif expected.get("type") == "symlink":
             if not path.is_symlink():
                 raise ProtectedStagingError("protected runtime symlink is invalid")
@@ -966,6 +1123,18 @@ def validate_runtime_inventory(
     }
     if actual_objects != set(inventory):
         raise ProtectedStagingError("protected runtime contains unexpected files")
+    if service_identity is not None:
+        for directory in (path for path in root.rglob("*") if path.is_dir()):
+            directory_metadata = directory.stat(follow_symlinks=False)
+            if (
+                directory.is_symlink()
+                or directory_metadata.st_uid != service_identity.immutable_owner_uid
+                or directory_metadata.st_gid != service_identity.service_gid
+                or stat.S_IMODE(directory_metadata.st_mode) != 0o550
+            ):
+                raise ProtectedStagingError(
+                    "protected runtime directory ownership is invalid"
+                )
     combined = hashlib.sha256(
         json.dumps(observed, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -978,7 +1147,10 @@ def validate_runtime_inventory(
 
 
 def validate_runtime_artifacts(
-    install_root: Path, manifest: ProtectedStagingManifest
+    install_root: Path,
+    manifest: ProtectedStagingManifest,
+    *,
+    service_identity: ServiceIdentityAuthority | None = None,
 ) -> None:
     """Bind retained wheel and frozen production requirements to the manifest."""
     wheels = tuple((install_root / "artifacts/wheels").glob("*.whl"))
@@ -992,6 +1164,17 @@ def validate_runtime_artifacts(
         or _file_sha256(requirements) != manifest.production_requirements_sha256
     ):
         raise ProtectedStagingError("protected runtime artifacts mismatch")
+    if service_identity is not None:
+        for path in (*wheels, requirements):
+            metadata = path.stat(follow_symlinks=False)
+            if (
+                metadata.st_uid != service_identity.immutable_owner_uid
+                or metadata.st_gid != service_identity.service_gid
+                or stat.S_IMODE(metadata.st_mode) != 0o440
+            ):
+                raise ProtectedStagingError(
+                    "protected runtime artifact ownership invalid"
+                )
 
 
 def validate_state_root(

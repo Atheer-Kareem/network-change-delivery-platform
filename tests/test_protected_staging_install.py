@@ -7,17 +7,173 @@ from uuid import UUID
 import pytest
 
 from network_change_delivery.protected_staging import (
+    ExecutionToolAuthority,
+    NativeDependencyAuthority,
     ProtectedStagingError,
+    ServiceIdentityAuthority,
     validate_runtime_artifacts,
     validate_runtime_inventory,
 )
+from network_change_delivery.protected_staging_controller import (
+    PROTECTED_CONTROLLER_CONFIG,
+)
 from network_change_delivery.protected_staging_install import (
+    CANONICAL_ORIGIN_URL,
     PROTECTED_SOURCE_FILES,
+    SYSTEM_GIT,
+    StandingInstallationAuthority,
     SubprocessRuntimeBuildRunner,
     construct_isolated_runtime,
     install_source_bundle,
     inventory_runtime,
+    verify_merged_source,
 )
+from network_change_delivery.protected_staging_runtime import (
+    inspect_runtime_native_dependencies,
+    validate_macho_dependencies,
+)
+
+SHA256 = "b" * 64
+
+
+def test_standing_git_verification_uses_system_git_and_sanitized_environment(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    commit = "a" * 40
+    observed = []
+    outputs = {
+        ("rev-parse", "HEAD"): commit,
+        ("branch", "--show-current"): "",
+        ("status", "--porcelain", "--untracked-files=all"): "",
+        ("rev-parse", "origin/main"): commit,
+        ("remote", "get-url", "origin"): CANONICAL_ORIGIN_URL,
+    }
+
+    def runner(arguments, cwd, environment):
+        observed.append((tuple(arguments), cwd, dict(environment)))
+        key = tuple(arguments[5:])
+        return subprocess.CompletedProcess(arguments, 0, outputs[key], "")
+
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install."
+        "validate_root_owned_bootstrap_source",
+        lambda *_args, **_kwargs: source,
+    )
+    verify_merged_source(
+        source,
+        commit,
+        standing=True,
+        service_identity=ServiceIdentityAuthority(service_uid=420, service_gid=420),
+        git_runner=runner,
+    )
+    assert all(call[0][0] == str(SYSTEM_GIT) for call in observed)
+    assert all(
+        call[0][1:5] == ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
+        for call in observed
+    )
+    assert all(
+        set(environment)
+        == {
+            "PATH",
+            "HOME",
+            "GIT_CONFIG_NOSYSTEM",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_CONFIG_COUNT",
+            "GIT_OPTIONAL_LOCKS",
+        }
+        and environment["HOME"] == "/var/empty"
+        for _, _, environment in observed
+    )
+
+
+@pytest.mark.parametrize("field", ["origin", "head", "dirty"])
+def test_standing_git_verification_rejects_authority_drift(
+    tmp_path: Path, monkeypatch, field: str
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    commit = "a" * 40
+
+    def runner(arguments, _cwd, _environment):
+        command = tuple(arguments[5:])
+        output = {
+            ("rev-parse", "HEAD"): "b" * 40 if field == "head" else commit,
+            ("branch", "--show-current"): "",
+            ("status", "--porcelain", "--untracked-files=all"): (
+                " M README.md" if field == "dirty" else ""
+            ),
+            ("rev-parse", "origin/main"): commit,
+            ("remote", "get-url", "origin"): (
+                "https://example.invalid/repository.git"
+                if field == "origin"
+                else CANONICAL_ORIGIN_URL
+            ),
+        }[command]
+        return subprocess.CompletedProcess(arguments, 0, output, "")
+
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install."
+        "validate_root_owned_bootstrap_source",
+        lambda *_args, **_kwargs: source,
+    )
+    with pytest.raises(ProtectedStagingError, match="source rejected"):
+        verify_merged_source(
+            source,
+            commit,
+            standing=True,
+            service_identity=ServiceIdentityAuthority(service_uid=420, service_gid=420),
+            git_runner=runner,
+        )
+
+
+def _install_authority(
+    python: Path = Path("/opt/protected/python3.12"),
+    uv: Path = Path("/opt/protected/bin/uv"),
+) -> StandingInstallationAuthority:
+    tool = lambda path, version, system=False: ExecutionToolAuthority(  # noqa: E731
+        path=path, sha256=SHA256, version=version, system_protected=system
+    )
+    return StandingInstallationAuthority(
+        service_identity=ServiceIdentityAuthority(service_uid=420, service_gid=420),
+        protected_python=python,
+        uv_cache_root=Path("/opt/protected/cache/uv"),
+        build_sdk_root=Path("/opt/protected/sdk"),
+        python_version="3.12",
+        python_sha256=SHA256,
+        uv=tool(str(uv), "0.12.2"),
+        buildkite_agent=tool("/opt/protected/bin/buildkite-agent", "3.137.0"),
+        terraform=tool("/opt/protected/bin/terraform", "1.15.8"),
+        openssl=tool("/opt/protected/bin/openssl", "3.6.3"),
+        ssh_keyscan=tool("/usr/bin/ssh-keyscan", "OpenSSH_10.2", True),
+        ssh_keygen=tool("/usr/bin/ssh-keygen", "OpenSSH_10.2", True),
+        ansible_collections_root=Path("/opt/protected/ansible"),
+        ansible_collections={
+            "ansible.netcommon": "8.6.0",
+            "ansible.utils": "6.1.0",
+            "cisco.ios": "11.4.2",
+        },
+        ansible_inventory_sha256=SHA256,
+        native_dependencies=(
+            NativeDependencyAuthority(
+                name="libssh",
+                version="0.11.3",
+                root="/private/var/db/ncdp-staging/authority/native/libssh",
+                inventory_sha256=SHA256,
+            ),
+            NativeDependencyAuthority(
+                name="openssl",
+                version="3.6.3",
+                root="/private/var/db/ncdp-staging/authority/native/openssl",
+                inventory_sha256=SHA256,
+            ),
+        ),
+        protected_native_files={
+            "/private/var/db/ncdp-staging/authority/native/libssh/libssh.dylib": SHA256
+        },
+        build_sdk_identity="/opt/protected/sdk",
+    )
 
 
 class FakeRuntimeBuilder:
@@ -54,7 +210,7 @@ def test_installer_copies_only_exact_private_source_set(
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -68,6 +224,7 @@ def test_installer_copies_only_exact_private_source_set(
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     assert set(manifest.file_digests) == set(PROTECTED_SOURCE_FILES)
     assert (destination / "source-files.json").is_file()
@@ -89,7 +246,7 @@ def test_installer_refuses_checkout_destination(monkeypatch) -> None:
     source = Path(__file__).parents[1]
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     with pytest.raises(ProtectedStagingError, match="destination"):
         install_source_bundle(
@@ -104,6 +261,36 @@ def test_installer_refuses_checkout_destination(monkeypatch) -> None:
             "b" * 64,
             FakeRuntimeBuilder(),
             Path("/opt/protected/bin/uv"),
+            _install_authority(),
+        )
+
+
+def test_standing_install_requires_root_and_exact_protected_python(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = Path(__file__).parents[1]
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install.verify_merged_source",
+        lambda _source, _commit, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install.os.geteuid", lambda: 501
+    )
+    with pytest.raises(ProtectedStagingError, match="Python authority"):
+        install_source_bundle(
+            source,
+            tmp_path / "standing",
+            "a" * 40,
+            "personal-cml",
+            "https://cml.example",
+            UUID("00000000-0000-0000-0000-000000000001"),
+            "https://netbox.example",
+            "https://bao.example",
+            "b" * 64,
+            FakeRuntimeBuilder(),
+            Path("/opt/protected/bin/uv"),
+            _install_authority(),
+            standing=True,
         )
 
 
@@ -127,6 +314,33 @@ def test_controller_sources_never_execute_checkout_runtime() -> None:
         assert forbidden not in sources
 
 
+def test_standing_installer_is_packaged_and_checkout_wrapper_is_not_authority() -> None:
+    root = Path(__file__).parents[1]
+    project = (root / "pyproject.toml").read_text(encoding="utf-8")
+    wrapper = (root / "scripts/protected_staging/install.py").read_text(
+        encoding="utf-8"
+    )
+    acceptance = (
+        root / "docs/acceptance/protected-staging-root-authority-phase-b3-2b2b0-r.md"
+    ).read_text(encoding="utf-8")
+    assert (
+        "ncdp-protected-staging-install = "
+        '"network_change_delivery.protected_staging_installer_cli:main"' in project
+    )
+    assert "install_source_bundle" not in wrapper
+    assert "sudo scripts/protected_staging/install.py" not in acceptance
+
+
+def test_controller_config_authority_is_fixed_and_home_independent(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HOME", "/checkout-controlled-home")
+    assert (
+        Path("/private/var/db/ncdp-staging/authority/config/protected-controller.json")
+        == PROTECTED_CONTROLLER_CONFIG
+    )
+
+
 def test_isolated_runtime_contract_is_locked_noneditable_and_outside_source(
     tmp_path: Path,
 ) -> None:
@@ -136,7 +350,11 @@ def test_isolated_runtime_contract_is_locked_noneditable_and_outside_source(
     bundle.mkdir(mode=0o700)
     runner = FakeRuntimeBuilder()
     runtime = construct_isolated_runtime(
-        source, bundle, runner, uv_executable=Path("/opt/protected/bin/uv")
+        source,
+        bundle,
+        runner,
+        uv_executable=Path("/opt/protected/bin/uv"),
+        protected_python=Path("/opt/protected/python3.12"),
     )
     assert runtime == bundle / "runtime"
     commands = [call[0] for call in runner.calls]
@@ -148,7 +366,7 @@ def test_isolated_runtime_contract_is_locked_noneditable_and_outside_source(
         "/opt/protected/bin/uv",
         "venv",
         "--python",
-        "3.12",
+        "/opt/protected/python3.12",
     )
     assert "--require-hashes" in commands[3]
     assert "--compile-bytecode" in commands[3]
@@ -188,6 +406,49 @@ def test_runtime_subprocess_runner_accepts_only_admitted_uv(
         )
 
 
+def test_standing_builder_environment_is_derived_and_not_ambient(
+    monkeypatch,
+) -> None:
+    authority = _install_authority()
+    monkeypatch.setenv("CPATH", "/opt/homebrew/include")
+    monkeypatch.setenv("LDFLAGS", "-L/Users/netdevops/lib")
+    expected = {
+        "SDKROOT": "/opt/protected/sdk",
+        "CPATH": "/private/var/db/ncdp-staging/authority/native/libssh/include",
+        "LIBRARY_PATH": ("/private/var/db/ncdp-staging/authority/native/libssh/lib"),
+        "LDFLAGS": ("-L/private/var/db/ncdp-staging/authority/native/libssh/lib"),
+        "CPPFLAGS": ("-I/private/var/db/ncdp-staging/authority/native/libssh/include"),
+        "PKG_CONFIG_PATH": (
+            "/private/var/db/ncdp-staging/authority/native/libssh/lib/pkgconfig"
+        ),
+    }
+    assert authority.build_environment() == expected
+    runner = SubprocessRuntimeBuildRunner(
+        Path(authority.uv.path),
+        authority.uv_cache_root,
+        build_environment=expected,
+    )
+    runner.validate_authority(authority)
+    with pytest.raises(ProtectedStagingError, match="builder authority"):
+        SubprocessRuntimeBuildRunner(
+            Path(authority.uv.path),
+            Path("/Users/netdevops/cache"),
+            build_environment=expected,
+        ).validate_authority(authority)
+    homebrew = authority.model_copy(
+        update={
+            "native_dependencies": (
+                authority.native_dependencies[0].model_copy(
+                    update={"root": "/opt/homebrew/opt/libssh"}
+                ),
+                authority.native_dependencies[1],
+            )
+        }
+    )
+    with pytest.raises(ProtectedStagingError, match="libssh build authority"):
+        homebrew.build_environment()
+
+
 @pytest.mark.parametrize("tamper", ["module", "entrypoint", "unexpected"])
 def test_final_runtime_inventory_rejects_tamper(
     tmp_path: Path, monkeypatch, tamper: str
@@ -196,7 +457,7 @@ def test_final_runtime_inventory_rejects_tamper(
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -210,6 +471,7 @@ def test_final_runtime_inventory_rejects_tamper(
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     runtime = destination / "runtime"
     if tamper == "module":
@@ -236,7 +498,7 @@ def test_runtime_inventory_rejects_escaping_and_entrypoint_symlinks(
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -250,6 +512,7 @@ def test_runtime_inventory_rejects_escaping_and_entrypoint_symlinks(
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     entrypoint = destination / "runtime/bin/ncdp-protected-staging-controller"
     entrypoint.unlink()
@@ -268,7 +531,7 @@ def test_runtime_inventory_file_tamper_is_rejected(tmp_path: Path, monkeypatch) 
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -282,6 +545,7 @@ def test_runtime_inventory_file_tamper_is_rejected(tmp_path: Path, monkeypatch) 
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     inventory = destination / "runtime-files.json"
     inventory.write_text("{}", encoding="utf-8")
@@ -297,7 +561,7 @@ def test_retained_wheel_and_requirements_are_manifest_bound(
     destination = tmp_path / "installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     manifest = install_source_bundle(
         source,
@@ -311,6 +575,7 @@ def test_retained_wheel_and_requirements_are_manifest_bound(
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     validate_runtime_artifacts(destination, manifest)
     path = (
@@ -336,10 +601,18 @@ def test_actual_reduced_source_builds_immutable_protected_runtime(
     uv_path = shutil.which("uv")
     if uv_path is None:
         pytest.fail("admitted uv executable is unavailable")
+    protected_python = Path(
+        subprocess.run(
+            [uv_path, "--cache-dir", "/tmp/ncdp-uv-cache", "python", "find", "3.12"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
     destination = tmp_path / "actual-installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
-        lambda _source, _commit: None,
+        lambda _source, _commit, **_kwargs: None,
     )
     build_environment = {}
     if sys.platform == "darwin":
@@ -379,6 +652,7 @@ def test_actual_reduced_source_builds_immutable_protected_runtime(
             build_environment=build_environment,
         ),
         Path(uv_path),
+        _install_authority(protected_python, Path(uv_path)),
     )
     assert (destination / "source/README.md").is_file()
     runtime = destination / "runtime"
@@ -400,6 +674,20 @@ def test_actual_reduced_source_builds_immutable_protected_runtime(
     assert after_digest == before_digest
     assert inventory_path.read_bytes() == before_inventory
     validate_runtime_inventory(runtime, source, manifest, inventory_path)
+    if sys.platform == "darwin":
+        native_map = inspect_runtime_native_dependencies(runtime)
+        assert native_map
+        assert any(
+            dependency.startswith("/opt/homebrew") or dependency.startswith("@")
+            for dependencies in native_map.values()
+            for dependency in dependencies
+        )
+        with pytest.raises(ProtectedStagingError):
+            validate_macho_dependencies(
+                native_map,
+                protected_native_files={},
+                digest_reader=lambda _path: SHA256,
+            )
     module = subprocess.run(
         [
             str(runtime / "bin/python"),

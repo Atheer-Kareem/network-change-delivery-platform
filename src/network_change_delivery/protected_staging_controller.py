@@ -16,21 +16,23 @@ from network_change_delivery.buildkite_staging import (
     staging_context_from_environment,
 )
 from network_change_delivery.protected_staging import (
+    ExecutionToolAuthority,
     ProtectedCMLClient,
     ProtectedCMLCredentials,
     ProtectedStagingError,
     ProtectedStagingInventoryResolver,
     ProtectedStagingManifest,
     ProtectedTerraformExecutor,
+    ServiceIdentityAuthority,
     SubprocessTerraformRunner,
     request_staging_oidc_jwt,
     validate_protected_bundle,
     validate_runtime_artifacts,
     validate_runtime_inventory,
-    validate_state_root,
 )
 from network_change_delivery.protected_staging_runtime import (
     LifecycleIdentity,
+    ProcessIdentity,
     ProtectedCommandRunner,
     ProtectedLifecycleOperations,
     ProtectedNCDPReadOnlyValidator,
@@ -44,18 +46,24 @@ from network_change_delivery.protected_staging_runtime import (
     build_protected_terraform_environment,
     derive_junos_password_verifier,
     derive_run_directory,
+    execution_tool_version_runner,
+    inspect_combined_native_dependency_graph,
     load_protected_staging_credentials,
-    read_protected_file,
+    read_root_owned_service_file,
     recover_protected_run,
     run_protected_lifecycle,
     terraform_version_runner,
-    validate_protected_directory,
-    validate_protected_executable,
+    validate_native_runtime_authority,
+    validate_root_owned_executable,
+    validate_root_owned_immutable_tree,
+    validate_root_owned_service_directory,
+    validate_service_identity,
+    validate_service_owned_private_path,
     verify_ca_digest,
 )
 
-PROTECTED_CONTROLLER_CONFIG = (
-    Path.home() / ".config/buildkite/ncdp-staging/protected-controller.json"
+PROTECTED_CONTROLLER_CONFIG = Path(
+    "/private/var/db/ncdp-staging/authority/config/protected-controller.json"
 )
 
 
@@ -63,7 +71,7 @@ class ProtectedControllerConfig(BaseModel):
     """Agent-owned locations; none may be supplied through checkout arguments."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
     install_root: Path
     source_bundle_root: Path
     runtime_root: Path
@@ -108,21 +116,55 @@ class ProtectedStagingController:
         config_path: Path = PROTECTED_CONTROLLER_CONFIG,
         checkout: Path,
         recovery: bool = False,
+        process_identity: ProcessIdentity | None = None,
     ) -> ProtectedStagingController:
         if config_path != PROTECTED_CONTROLLER_CONFIG:
             raise ProtectedStagingError("protected controller config path rejected")
+        observed = process_identity
+        if observed is None:
+            from network_change_delivery.protected_staging_runtime import (
+                current_process_identity,
+            )
+
+            observed = current_process_identity()
         try:
+            bootstrap_identity = ServiceIdentityAuthority(
+                service_uid=observed.effective_uid,
+                service_gid=observed.effective_gid,
+                supplementary_gids=observed.supplementary_gids,
+            )
             config = ProtectedControllerConfig.model_validate_json(
-                read_protected_file(config_path, checkout).decode()
+                read_root_owned_service_file(
+                    config_path, checkout, bootstrap_identity
+                ).decode()
             )
             manifest = ProtectedStagingManifest.model_validate_json(
-                read_protected_file(config.manifest_path, checkout).decode()
+                read_root_owned_service_file(
+                    config.manifest_path, checkout, bootstrap_identity
+                ).decode()
             )
         except (OSError, ValueError):
             raise ProtectedStagingError(
                 "protected controller authority invalid"
             ) from None
-        validate_protected_bundle(config.source_bundle_root, checkout, manifest)
+        validate_service_identity(manifest.service_identity, observed)
+        if manifest.service_identity != bootstrap_identity:
+            raise ProtectedStagingError("protected service identity mismatch")
+        for immutable_directory in (
+            config.install_root,
+            config.source_bundle_root,
+            config.runtime_root,
+            config.install_root / "artifacts",
+        ):
+            validate_root_owned_service_directory(
+                immutable_directory, checkout, manifest.service_identity
+            )
+        validate_protected_bundle(
+            config.source_bundle_root,
+            checkout,
+            manifest,
+            service_identity=manifest.service_identity,
+        )
         install_root = config.install_root.resolve(strict=True)
         if (
             config.source_bundle_root.resolve(strict=True).parent != install_root
@@ -135,7 +177,9 @@ class ProtectedStagingController:
             != install_root / "runtime-files.json"
         ):
             raise ProtectedStagingError("protected installation layout mismatch")
-        source_inventory = read_protected_file(config.source_inventory_path, checkout)
+        source_inventory = read_root_owned_service_file(
+            config.source_inventory_path, checkout, manifest.service_identity
+        )
         if (
             hashlib.sha256(source_inventory).hexdigest()
             != manifest.source_inventory_sha256
@@ -151,25 +195,83 @@ class ProtectedStagingController:
             checkout,
             manifest,
             config.runtime_inventory_path,
+            service_identity=manifest.service_identity,
         )
-        validate_runtime_artifacts(install_root, manifest)
-        validate_state_root(config.state_root, checkout)
-        netbox_token = read_protected_file(config.netbox_token_file, checkout)
-        cml_username = read_protected_file(config.cml_username_file, checkout)
-        cml_password = read_protected_file(config.cml_password_file, checkout)
-        cml_ca = read_protected_file(config.cml_ca_file, checkout)
+        validate_root_owned_executable(
+            Path(manifest.python_interpreter_path),
+            checkout,
+            manifest.service_identity,
+            ExecutionToolAuthority(
+                path=manifest.python_interpreter_path,
+                sha256=manifest.python_interpreter_sha256,
+                version=manifest.python_version,
+            ),
+        )
+        validate_runtime_artifacts(
+            install_root, manifest, service_identity=manifest.service_identity
+        )
+        validate_service_owned_private_path(
+            config.state_root, checkout, manifest.service_identity
+        )
+        validate_native_runtime_authority(
+            manifest,
+            config.runtime_root,
+            checkout,
+            dependency_inspector=inspect_combined_native_dependency_graph,
+        )
+        if (
+            str(config.tools.ansible_collections_root)
+            != manifest.ansible_collections_root
+        ):
+            raise ProtectedStagingError("protected Ansible authority mismatch")
+        validate_root_owned_immutable_tree(
+            config.tools.ansible_collections_root,
+            checkout,
+            manifest.service_identity,
+            manifest.ansible_inventory_sha256,
+            expected_collections=manifest.ansible_collections,
+        )
+        netbox_token = read_root_owned_service_file(
+            config.netbox_token_file, checkout, manifest.service_identity
+        )
+        cml_username = read_root_owned_service_file(
+            config.cml_username_file, checkout, manifest.service_identity
+        )
+        cml_password = read_root_owned_service_file(
+            config.cml_password_file, checkout, manifest.service_identity
+        )
+        cml_ca = read_root_owned_service_file(
+            config.cml_ca_file, checkout, manifest.service_identity
+        )
         verify_ca_digest(cml_ca, manifest)
-        validate_protected_executable(config.tools.buildkite_agent, checkout)
-        validate_protected_executable(
+        validate_root_owned_executable(
+            config.tools.buildkite_agent,
+            checkout,
+            manifest.service_identity,
+            manifest.buildkite_agent,
+            observed_version=execution_tool_version_runner(
+                config.tools.buildkite_agent, "buildkite-agent"
+            ),
+        )
+        validate_root_owned_executable(
             config.tools.terraform,
             checkout,
-            expected_version=config.tools.terraform_version,
-            version_runner=terraform_version_runner,
+            manifest.service_identity,
+            manifest.terraform,
+            observed_version=terraform_version_runner(config.tools.terraform, ()),
         )
-        validate_protected_executable(config.tools.openssl, checkout)
-        validate_protected_executable(config.tools.ssh_keyscan, checkout)
-        validate_protected_executable(config.tools.ssh_keygen, checkout)
-        validate_protected_directory(config.tools.ansible_collections_root, checkout)
+        for path, authority in (
+            (config.tools.openssl, manifest.openssl),
+            (config.tools.ssh_keyscan, manifest.ssh_keyscan),
+            (config.tools.ssh_keygen, manifest.ssh_keygen),
+        ):
+            validate_root_owned_executable(
+                path,
+                checkout,
+                manifest.service_identity,
+                authority,
+                observed_version=execution_tool_version_runner(path, path.name),
+            )
         context = None if recovery else staging_context_from_environment()
         if context is not None:
             if context.commit != manifest.source_commit:
@@ -196,7 +298,7 @@ class ProtectedStagingController:
         if self.context is None:
             raise ProtectedStagingError("normal staging context missing")
         return {
-            "schema_version": 2,
+            "schema_version": self.manifest.schema_version,
             "run_id": self.context.staging_run_id,
             "source_commit": self.manifest.source_commit,
             "bundle_digest": self.manifest.bundle_digest,

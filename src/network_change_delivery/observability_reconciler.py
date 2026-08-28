@@ -8,6 +8,7 @@ import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from enum import StrEnum
 from pathlib import Path
 
 from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
@@ -15,6 +16,7 @@ from network_change_delivery.observability_private_paths import validate_private
 from network_change_delivery.observability_realization import (
     CmlRealizationAuthority,
     ObservabilityRealizationError,
+    RealizationAdmission,
     publish_admission,
     read_admission,
 )
@@ -37,6 +39,23 @@ from network_change_delivery.observability_targets import (
 
 STATE_ROOT = Path("/Users/netdevops/.local/state/ncdp/observability")
 CONFIG_ROOT = Path("/Users/netdevops/.config/ncdp/observability")
+
+
+class AdmissionRefreshStage(StrEnum):
+    """Finite diagnostic stages for realization refresh failures."""
+
+    SETTINGS = "SETTINGS"
+    ADMISSION_READ = "ADMISSION_READ"
+    CML_REVALIDATION = "CML_REVALIDATION"
+    ADMISSION_PUBLICATION = "ADMISSION_PUBLICATION"
+
+
+class AdmissionRefreshError(ObservabilityServiceError):
+    """Bounded realization-refresh failure without underlying error text."""
+
+    def __init__(self, stage: AdmissionRefreshStage) -> None:
+        self.stage = stage
+        super().__init__("observability realization reconciliation failed")
 
 
 @contextmanager
@@ -111,21 +130,36 @@ def _runtime_source_commit() -> str:
     return source_commit
 
 
-def _refresh_admission(settings: dict[str, str]):
-    previous = read_admission(STATE_ROOT)
-    node_ids = {item.inventory_object_id: item.cml_node_id for item in previous.nodes}
-    authority = CmlRealizationAuthority(
-        settings["cml_address"],
-        settings["cml_certificate"],
-        settings["cml_username"],
-        settings["cml_password"],
-    )
+def _refresh_admission() -> tuple[dict[str, str], RealizationAdmission]:
     try:
-        refreshed = authority.admit(previous.lab_id, node_ids)
-    finally:
-        authority.close()
-    publish_admission(STATE_ROOT, refreshed)
-    return refreshed
+        settings = _settings()
+    except ObservabilityServiceError:
+        raise AdmissionRefreshError(AdmissionRefreshStage.SETTINGS) from None
+    try:
+        previous = read_admission(STATE_ROOT)
+    except ObservabilityRealizationError:
+        raise AdmissionRefreshError(AdmissionRefreshStage.ADMISSION_READ) from None
+    node_ids = {item.inventory_object_id: item.cml_node_id for item in previous.nodes}
+    try:
+        authority = CmlRealizationAuthority(
+            settings["cml_address"],
+            settings["cml_certificate"],
+            settings["cml_username"],
+            settings["cml_password"],
+        )
+        try:
+            refreshed = authority.admit(previous.lab_id, node_ids)
+        finally:
+            authority.close()
+    except ObservabilityRealizationError:
+        raise AdmissionRefreshError(AdmissionRefreshStage.CML_REVALIDATION) from None
+    try:
+        publish_admission(STATE_ROOT, refreshed)
+    except ObservabilityRealizationError:
+        raise AdmissionRefreshError(
+            AdmissionRefreshStage.ADMISSION_PUBLICATION
+        ) from None
+    return settings, refreshed
 
 
 def _reconcile_locked() -> str:
@@ -138,17 +172,14 @@ def _reconcile_locked() -> str:
     )
     if admission_exists:
         try:
-            settings = _settings()
-            admission = _refresh_admission(settings)
-        except (ObservabilityRealizationError, ObservabilityServiceError):
+            settings, admission = _refresh_admission()
+        except AdmissionRefreshError as error:
             publish_generation(
                 STATE_ROOT,
                 state=TargetGenerationState.FAILED,
                 failure=TargetFailureClassification.REALIZATION_REJECTED,
             )
-            raise ObservabilityServiceError(
-                "observability realization reconciliation failed"
-            ) from None
+            raise error from None
         try:
             targets = targets_from_inventory(
                 NetBoxInventoryProvider(
@@ -220,6 +251,13 @@ def main() -> int:
         return 2
     try:
         digest = reconcile()
+    except AdmissionRefreshError as error:
+        print(
+            "observability realization reconciliation failed "
+            f"stage={error.stage.value}",
+            file=sys.stderr,
+        )
+        return 2
     except (ValueError, OSError):
         print("observability service reconciliation failed", file=sys.stderr)
         return 2

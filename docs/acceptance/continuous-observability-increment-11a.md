@@ -81,6 +81,25 @@ and observability-plane device-secret reads remained zero. The exact
 service and TSDB were preserved. Increment 11A live acceptance remains NOT YET
 PROVEN.
 
+The fourth post-merge attempt used authority commit
+`5a414bc20510c285c33ff0cf01a0ee2fc6c79989` after natural merged-main Build
+#171 passed. The runtime update and healthy RETIRED reconciliation passed. An
+exact fresh 13-resource realization was created and started: lab
+`8416c2a9-d9f1-4938-b765-8f027a5297ec`, Cisco node
+`7ccee7e1-fdfc-4355-90d0-887d5221abbc`, and Junos node
+`21b9c48a-4b1f-430f-b608-43f9d6761700`. CML 2.10 admission succeeded with
+digest
+`sha256:2a259e4762da79500b6d92b9b71de2fc4f26a996a636e2833ad52e90f2c2b045`.
+The still-fresh admission then encountered two independent normal scheduled
+reconciliation failures classified `REALIZATION_REJECTED`. Neither produced
+ACTIVE targets, readiness, or a probe, and no manual reconcile substituted for
+scheduled evidence. Immediately afterward, isolated admission read, live CML
+revalidation, and atomic publication to a temporary private root each passed;
+the retained diagnostic could not identify which scheduled refresh substage
+failed. The observability credential boundary remained intact. Retirement and
+the exact 13-resource destroy passed, while the persistent service and TSDB
+were preserved. Increment 11A live acceptance remains NOT YET PROVEN.
+
 ## Credential accounting boundary
 
 The 11A observability plane performs zero OpenBao device-secret reads. This

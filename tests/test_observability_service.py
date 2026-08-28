@@ -12,6 +12,9 @@ import pytest
 
 from network_change_delivery import observability_reconciler
 from network_change_delivery.models import InventoryDevice
+from network_change_delivery.observability_realization import (
+    ObservabilityRealizationError,
+)
 from network_change_delivery.observability_service import (
     BLACKBOX_CONTAINER,
     PROMETHEUS_CONTAINER,
@@ -22,8 +25,10 @@ from network_change_delivery.observability_service import (
     verify_container_definitions,
 )
 from network_change_delivery.observability_targets import (
+    TargetFailureClassification,
     TargetGenerationState,
     publish_generation,
+    read_generation,
     targets_from_inventory,
 )
 
@@ -583,6 +588,306 @@ def test_runtime_transition_lock_is_exclusive(
         ):
             pass
     assert not (config / "runtime-transition.lock").exists()
+
+
+@pytest.mark.parametrize(
+    "stage,expected_calls",
+    (
+        (
+            observability_reconciler.AdmissionRefreshStage.SETTINGS,
+            ["settings"],
+        ),
+        (
+            observability_reconciler.AdmissionRefreshStage.ADMISSION_READ,
+            ["settings", "admission_read"],
+        ),
+        (
+            observability_reconciler.AdmissionRefreshStage.CML_REVALIDATION,
+            ["settings", "admission_read", "cml_revalidation"],
+        ),
+        (
+            observability_reconciler.AdmissionRefreshStage.ADMISSION_PUBLICATION,
+            [
+                "settings",
+                "admission_read",
+                "cml_revalidation",
+                "authority_close",
+                "admission_publication",
+            ],
+        ),
+    ),
+)
+def test_refresh_stage_failure_remains_realization_rejected_and_stops_progression(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: observability_reconciler.AdmissionRefreshStage,
+    expected_calls: list[str],
+) -> None:
+    secret = "synthetic-secret-must-not-appear"
+    state = tmp_path / "external" / "observability"
+    state.mkdir(parents=True, mode=0o700)
+    calls: list[str] = []
+    settings = {
+        "netbox_url": "https://netbox.invalid",
+        "cml_address": "https://cml.invalid",
+        "cml_certificate": "certificate",
+        "cml_username": "username",
+        "cml_password": "password",
+    }
+    previous = SimpleNamespace(
+        lab_id="11111111-1111-1111-1111-111111111111",
+        nodes=(
+            SimpleNamespace(
+                inventory_object_id="netbox:dcim.device:1",
+                cml_node_id="22222222-2222-2222-2222-222222222222",
+            ),
+        ),
+    )
+    refreshed = SimpleNamespace(digest="sha256:" + "a" * 64)
+
+    def settings_operation():
+        calls.append("settings")
+        if stage is observability_reconciler.AdmissionRefreshStage.SETTINGS:
+            raise ObservabilityServiceError(secret)
+        return settings
+
+    def admission_read(_root):
+        calls.append("admission_read")
+        if stage is observability_reconciler.AdmissionRefreshStage.ADMISSION_READ:
+            raise ObservabilityRealizationError(secret)
+        return previous
+
+    class Authority:
+        def __init__(self, *_args):
+            calls.append("cml_revalidation")
+            if stage is observability_reconciler.AdmissionRefreshStage.CML_REVALIDATION:
+                raise ObservabilityRealizationError(secret)
+
+        def admit(self, _lab_id, _node_ids):
+            return refreshed
+
+        def close(self):
+            calls.append("authority_close")
+
+    def admission_publication(_root, _admission):
+        calls.append("admission_publication")
+        if (
+            stage
+            is observability_reconciler.AdmissionRefreshStage.ADMISSION_PUBLICATION
+        ):
+            raise ObservabilityRealizationError(secret)
+
+    monkeypatch.setattr(observability_reconciler, "STATE_ROOT", state)
+    monkeypatch.setattr(observability_reconciler, "_settings", settings_operation)
+    monkeypatch.setattr(observability_reconciler, "read_admission", admission_read)
+    monkeypatch.setattr(observability_reconciler, "CmlRealizationAuthority", Authority)
+    monkeypatch.setattr(
+        observability_reconciler, "publish_admission", admission_publication
+    )
+    monkeypatch.setattr(
+        observability_reconciler, "_runtime_source_commit", lambda: COMMIT
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "validate_private_file",
+        lambda *_args, **_kwargs: b"admission",
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "targets_from_inventory",
+        lambda *_args: pytest.fail("target materialization followed refresh failure"),
+    )
+
+    with pytest.raises(observability_reconciler.AdmissionRefreshError) as caught:
+        observability_reconciler._reconcile_locked()
+    assert caught.value.stage is stage
+    assert calls == expected_calls
+    generation = read_generation(state)
+    assert generation.state is TargetGenerationState.FAILED
+    assert (
+        generation.failure_classification
+        is TargetFailureClassification.REALIZATION_REJECTED
+    )
+    assert generation.targets == ()
+    assert not (state / "runtime/observability-ready.json").exists()
+    serialized = (state / "runtime/target-generation.json").read_text()
+    assert secret not in serialized
+
+
+@pytest.mark.parametrize("stage", tuple(observability_reconciler.AdmissionRefreshStage))
+def test_refresh_stage_diagnostic_is_finite_and_suppresses_underlying_message(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stage: observability_reconciler.AdmissionRefreshStage,
+) -> None:
+    secret = "synthetic-secret-must-not-appear"
+
+    def fail():
+        error = observability_reconciler.AdmissionRefreshError(stage)
+        error.__cause__ = ValueError(secret)
+        raise error
+
+    monkeypatch.setattr(observability_reconciler, "reconcile", fail)
+    monkeypatch.setattr(sys, "argv", ["ncdp-observability-service"])
+    assert observability_reconciler.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        f"observability realization reconciliation failed stage={stage.value}\n"
+    )
+    assert secret not in captured.err
+
+
+def test_successful_refresh_preserves_settings_validation_and_publication_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    settings = {
+        "netbox_url": "https://netbox.invalid",
+        "cml_address": "https://cml.invalid",
+        "cml_certificate": "certificate",
+        "cml_username": "username",
+        "cml_password": "password",
+    }
+    previous = SimpleNamespace(
+        lab_id="11111111-1111-1111-1111-111111111111",
+        nodes=(
+            SimpleNamespace(
+                inventory_object_id="netbox:dcim.device:1",
+                cml_node_id="22222222-2222-2222-2222-222222222222",
+            ),
+        ),
+    )
+    refreshed = SimpleNamespace(digest="sha256:" + "a" * 64)
+
+    monkeypatch.setattr(
+        observability_reconciler,
+        "_settings",
+        lambda: calls.append("settings") or settings,
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "read_admission",
+        lambda _root: calls.append("admission_read") or previous,
+    )
+
+    class Authority:
+        def __init__(self, *_args):
+            calls.append("cml_authority")
+
+        def admit(self, _lab_id, _node_ids):
+            calls.append("cml_admit")
+            return refreshed
+
+        def close(self):
+            calls.append("cml_close")
+
+    monkeypatch.setattr(observability_reconciler, "CmlRealizationAuthority", Authority)
+    monkeypatch.setattr(
+        observability_reconciler,
+        "publish_admission",
+        lambda _root, _admission: calls.append("admission_publication"),
+    )
+    assert observability_reconciler._refresh_admission() == (settings, refreshed)
+    assert calls == [
+        "settings",
+        "admission_read",
+        "cml_authority",
+        "cml_admit",
+        "cml_close",
+        "admission_publication",
+    ]
+
+
+def test_successful_refresh_still_materializes_targets_and_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "external" / "observability"
+    state.mkdir(parents=True, mode=0o700)
+    calls: list[str] = []
+    settings = {"netbox_url": "https://netbox.invalid"}
+    admission = realization()
+    generation = SimpleNamespace(digest="sha256:" + "b" * 64)
+
+    monkeypatch.setattr(observability_reconciler, "STATE_ROOT", state)
+    monkeypatch.setattr(
+        observability_reconciler,
+        "validate_private_file",
+        lambda *_args, **_kwargs: b"private-input",
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "_runtime_source_commit",
+        lambda: calls.append("source_commit") or COMMIT,
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "_refresh_admission",
+        lambda: calls.append("refresh") or (settings, admission),
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "NetBoxInventoryProvider",
+        lambda *_args: calls.append("inventory_provider") or Inventory(),
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "targets_from_inventory",
+        lambda _inventory: calls.append("targets") or ("target",),
+    )
+
+    def generation_publication(_root, *, state, targets, realization):
+        calls.append("generation")
+        assert state is TargetGenerationState.ACTIVE
+        assert targets == ("target",)
+        assert realization is admission
+        return generation
+
+    monkeypatch.setattr(
+        observability_reconciler, "publish_generation", generation_publication
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "run_compose",
+        lambda *_args: calls.append("compose"),
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "inspect_containers",
+        lambda: calls.append("inspect") or {},
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "verify_container_definitions",
+        lambda *_args, **_kwargs: (
+            calls.append("verify_containers") or (PROM_CONTAINER, BLACKBOX_CONTAINER_ID)
+        ),
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "wait_service_health",
+        lambda **_kwargs: calls.append("health"),
+    )
+    monkeypatch.setattr(
+        observability_reconciler,
+        "publish_readiness",
+        lambda *_args, **_kwargs: calls.append("readiness"),
+    )
+
+    assert observability_reconciler._reconcile_locked() == generation.digest
+    assert calls == [
+        "source_commit",
+        "refresh",
+        "inventory_provider",
+        "targets",
+        "generation",
+        "compose",
+        "inspect",
+        "verify_containers",
+        "health",
+        "source_commit",
+        "readiness",
+    ]
 
 
 def test_reconciler_uses_no_openbao_ssh_or_configuration_collection() -> None:

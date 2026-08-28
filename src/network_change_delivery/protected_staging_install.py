@@ -19,6 +19,9 @@ from network_change_delivery.protected_staging import (
     ProtectedStagingError,
     ProtectedStagingManifest,
     StagingTargetAuthority,
+    validate_protected_bundle,
+    validate_runtime_artifacts,
+    validate_runtime_inventory,
 )
 
 PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
@@ -111,7 +114,7 @@ class SubprocessRuntimeBuildRunner:
 
 def construct_isolated_runtime(
     source: Path,
-    bundle: Path,
+    install_root: Path,
     runner: RuntimeBuildRunner,
     *,
     uv_executable: Path,
@@ -119,17 +122,18 @@ def construct_isolated_runtime(
     """Construct a non-editable locked runtime under a temporary/test bundle."""
     if (
         not source.is_absolute()
-        or not bundle.is_absolute()
-        or bundle.is_symlink()
+        or not install_root.is_absolute()
+        or install_root.is_symlink()
         or not uv_executable.is_absolute()
     ):
         raise ProtectedStagingError("protected runtime construction rejected")
-    runtime = bundle / "runtime"
-    wheels = bundle / "wheels"
-    requirements = bundle / "production-requirements.txt"
+    runtime = install_root / "runtime"
+    artifacts = install_root / "artifacts"
+    wheels = artifacts / "wheels"
+    requirements = artifacts / "production-requirements.txt"
     if runtime.exists() or wheels.exists() or requirements.exists():
         raise ProtectedStagingError("protected runtime construction rejected")
-    wheels.mkdir(mode=0o700)
+    wheels.mkdir(mode=0o700, parents=True)
     uv = str(uv_executable)
     runner.run((uv, "build", "--wheel", "--out-dir", str(wheels)), cwd=source)
     runner.run(
@@ -154,7 +158,8 @@ def construct_isolated_runtime(
     with requirements.open("a", encoding="utf-8") as stream:
         stream.write(f"\n{wheel.as_uri()} --hash=sha256:{wheel_digest}\n")
     requirements.chmod(0o600)
-    runner.run((uv, "venv", "--python", "3.12", str(runtime)), cwd=bundle)
+    runner.run((uv, "venv", "--python", "3.12", str(runtime)), cwd=install_root)
+    runtime.chmod(0o700)
     python = runtime / "bin/python"
     runner.run(
         (
@@ -167,9 +172,41 @@ def construct_isolated_runtime(
             "--requirements",
             str(requirements),
         ),
-        cwd=bundle,
+        cwd=install_root,
     )
+    entrypoint = runtime / "bin/ncdp-protected-staging-controller"
+    if entrypoint.is_symlink() or not entrypoint.is_file():
+        raise ProtectedStagingError("protected controller entrypoint missing")
+    for link in runtime.rglob("*"):
+        if link.is_symlink() and not link.resolve(strict=True).is_relative_to(runtime):
+            raise ProtectedStagingError("protected runtime symlink escapes runtime")
     return runtime
+
+
+def inventory_runtime(runtime: Path) -> tuple[dict[str, dict[str, object]], str]:
+    """Inventory every executable-runtime file and admitted internal symlink."""
+    entries: dict[str, dict[str, object]] = {}
+    for path in sorted(runtime.rglob("*")):
+        relative = str(path.relative_to(runtime))
+        mode = stat.S_IMODE(path.lstat().st_mode)
+        if path.is_symlink():
+            if not path.resolve(strict=True).is_relative_to(runtime):
+                raise ProtectedStagingError("protected runtime symlink escapes runtime")
+            entries[relative] = {
+                "type": "symlink",
+                "mode": mode,
+                "target": str(path.readlink()),
+            }
+        elif path.is_file():
+            entries[relative] = {
+                "type": "file",
+                "mode": mode,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+    if not entries:
+        raise ProtectedStagingError("protected runtime inventory is empty")
+    canonical = json.dumps(entries, sort_keys=True, separators=(",", ":"))
+    return entries, hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def verify_merged_source(source: Path, expected_commit: str) -> None:
@@ -207,6 +244,8 @@ def install_source_bundle(
     netbox_url: str,
     openbao_url: str,
     cml_ca_pem_sha256: str,
+    runtime_runner: RuntimeBuildRunner,
+    uv_executable: Path,
     *,
     owner_uid: int | None = None,
 ) -> ProtectedStagingManifest:
@@ -227,6 +266,8 @@ def install_source_bundle(
     expected_uid = os.getuid() if owner_uid is None else owner_uid
     if destination.stat().st_uid != expected_uid:
         raise ProtectedStagingError("protected installation owner rejected")
+    source_root = destination / "source"
+    source_root.mkdir(mode=0o700)
     digests: dict[str, str] = {}
     try:
         for relative in PROTECTED_SOURCE_FILES:
@@ -235,23 +276,49 @@ def install_source_bundle(
                 raise ProtectedStagingError(
                     "protected installation source file rejected"
                 )
-            target = destination / relative
+            target = source_root / relative
             target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             shutil.copyfile(source_file, target, follow_symlinks=False)
             target.chmod(0o600)
             digests[relative] = hashlib.sha256(target.read_bytes()).hexdigest()
         inventory = json.dumps(digests, sort_keys=True, separators=(",", ":"))
-        inventory_file = destination / "bundle-files.json"
+        inventory_file = destination / "source-files.json"
         inventory_file.write_text(inventory, encoding="utf-8")
         inventory_file.chmod(0o600)
-        bundle_digest = hashlib.sha256(inventory.encode()).hexdigest()
+        source_bundle_digest = hashlib.sha256(inventory.encode()).hexdigest()
+        runtime = construct_isolated_runtime(
+            source_root,
+            destination,
+            runtime_runner,
+            uv_executable=uv_executable,
+        )
+        runtime_entries, runtime_digest = inventory_runtime(runtime)
+        runtime_inventory = json.dumps(
+            runtime_entries, sort_keys=True, separators=(",", ":")
+        )
+        runtime_inventory_file = destination / "runtime-files.json"
+        runtime_inventory_file.write_text(runtime_inventory, encoding="utf-8")
+        runtime_inventory_file.chmod(0o600)
+        wheels = tuple((destination / "artifacts/wheels").glob("*.whl"))
+        if len(wheels) != 1:
+            raise ProtectedStagingError("protected runtime wheel rejected")
+        requirements = destination / "artifacts/production-requirements.txt"
         controller_path = "src/network_change_delivery/protected_staging_controller.py"
         manifest = ProtectedStagingManifest(
             buildkite_pipeline_id=buildkite_pipeline_id,
             source_commit=expected_commit,
             netbox_url=netbox_url,
             openbao_url=openbao_url,
-            bundle_digest=bundle_digest,
+            source_bundle_digest=source_bundle_digest,
+            source_inventory_sha256=hashlib.sha256(inventory.encode()).hexdigest(),
+            runtime_inventory_sha256=hashlib.sha256(
+                runtime_inventory.encode()
+            ).hexdigest(),
+            runtime_digest=runtime_digest,
+            project_wheel_sha256=hashlib.sha256(wheels[0].read_bytes()).hexdigest(),
+            production_requirements_sha256=hashlib.sha256(
+                requirements.read_bytes()
+            ).hexdigest(),
             controller_artifact_digest=digests[controller_path],
             file_digests=digests,
             cisco=_target(6),
@@ -277,6 +344,25 @@ def install_source_bundle(
             manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
         manifest_file.chmod(0o600)
+        validate_protected_bundle(source_root, source, manifest, owner_uid=owner_uid)
+        validate_runtime_inventory(
+            runtime,
+            source,
+            manifest,
+            runtime_inventory_file,
+            owner_uid=owner_uid,
+        )
+        validate_runtime_artifacts(destination, manifest)
+        smoke = subprocess.run(
+            [str(runtime / manifest.controller_entrypoint), "--help"],
+            cwd=destination,
+            env={"PYTHONDONTWRITEBYTECODE": "1"},
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if smoke.returncode != 0:
+            raise ProtectedStagingError("protected controller smoke failed")
         return manifest
     except Exception:
         raise

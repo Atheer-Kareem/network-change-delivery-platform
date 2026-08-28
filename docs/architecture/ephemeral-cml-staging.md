@@ -11,11 +11,16 @@ controller and installation-source contracts; installation and external
 admission remain deferred to B3-2B, and execution remains fail closed.
 
 Phase B3-2B1 composes that contract into the complete repository-side
-executable lifecycle: manifest schema 2, exact object-ID admission,
+executable lifecycle: manifest schema 3 with separately inventoried reviewed
+source and generated executable-runtime authority, exact object-ID admission,
 digest-bound CML trust, exact saved-plan application, partial-state cleanup,
 read-only device validation, recovery, and sanitized evidence. It remains
 repository-only. B3-2B2 must construct and admit the exact merged-main isolated
 runtime externally before B4 may cut over the protected hook.
+
+B3-2B2 must prove an OS-principal/ACL boundary between checkout-controlled
+validation and protected staging. If they share filesystem authority, including
+one Unix UID, installation is prohibited.
 
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.
 Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary

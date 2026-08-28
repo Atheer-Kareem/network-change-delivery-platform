@@ -73,9 +73,15 @@ merged main; B4 owns the later hook cutover and re-enable.
 
 Phase B3-2B1 completes the non-live executable composition and splits external
 admission into B3-2B2. The controller binds pipeline and commit to manifest
-schema 2, constructs a non-inherited privileged environment, applies only exact
+schema 3, separately validates the reviewed source and final executable-runtime
+inventories, constructs a non-inherited privileged environment, applies only exact
 saved plans, supports exact-subset cleanup/recovery, and emits allowlisted
 evidence. No standing runtime or command hook is changed by B3-2B1.
+
+Before installing anything, B3-2B2 must prove the validation, staging, and
+deployment OS principals and protected-root ownership/ACLs. A shared Unix UID
+between checkout-controlled validation and protected staging is a hard stop;
+private paths under one UID are not an isolation boundary.
 
 The protected OIDC request is fixed to audience
 `urn:ncdp:openbao:staging`, lifetime 300 seconds, `pipeline_id` as the subject

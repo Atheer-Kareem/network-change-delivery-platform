@@ -87,12 +87,17 @@ def authority(role: str) -> StagingTargetAuthority:
 def manifest(**changes) -> ProtectedStagingManifest:
     controller_path = "src/network_change_delivery/protected_staging_controller.py"
     values = {
-        "schema_version": 2,
+        "schema_version": 3,
         "buildkite_pipeline_id": UUID("00000000-0000-0000-0000-000000000001"),
         "source_commit": SHA1,
         "netbox_url": "https://netbox.example",
         "openbao_url": "https://bao.example",
-        "bundle_digest": SHA256,
+        "source_bundle_digest": SHA256,
+        "source_inventory_sha256": SHA256,
+        "runtime_inventory_sha256": SHA256,
+        "runtime_digest": SHA256,
+        "project_wheel_sha256": SHA256,
+        "production_requirements_sha256": SHA256,
         "controller_artifact_digest": SHA256,
         "file_digests": {controller_path: SHA256, "terraform/main.tf": SHA256},
         "cisco": authority("cisco"),
@@ -123,7 +128,7 @@ def manifest(**changes) -> ProtectedStagingManifest:
         {"live_deny_management_ips": ("192.168.4.30",)},
         {"terraform_addresses": ("cml2_lab.staging",)},
         {"source_commit": "wrong"},
-        {"bundle_digest": "wrong"},
+        {"source_bundle_digest": "wrong"},
     ],
 )
 def test_manifest_rejects_changed_authority(change) -> None:
@@ -772,7 +777,12 @@ def test_bundle_validation_rejects_checkout_symlink_and_digest_drift(
         .hexdigest()
     )
     accepted = manifest(
-        bundle_digest=combined,
+        source_bundle_digest=combined,
+        source_inventory_sha256=SHA256,
+        runtime_inventory_sha256=SHA256,
+        runtime_digest=SHA256,
+        project_wheel_sha256=SHA256,
+        production_requirements_sha256=SHA256,
         controller_artifact_digest=controller_digest,
         file_digests=files,
     )

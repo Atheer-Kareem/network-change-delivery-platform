@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
@@ -23,6 +25,8 @@ from network_change_delivery.protected_staging import (
     SubprocessTerraformRunner,
     request_staging_oidc_jwt,
     validate_protected_bundle,
+    validate_runtime_artifacts,
+    validate_runtime_inventory,
     validate_state_root,
 )
 from network_change_delivery.protected_staging_runtime import (
@@ -59,9 +63,13 @@ class ProtectedControllerConfig(BaseModel):
     """Agent-owned locations; none may be supplied through checkout arguments."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal[2] = 2
-    bundle_root: Path
+    schema_version: Literal[3] = 3
+    install_root: Path
+    source_bundle_root: Path
+    runtime_root: Path
     manifest_path: Path
+    source_inventory_path: Path
+    runtime_inventory_path: Path
     state_root: Path
     netbox_token_file: Path
     cml_username_file: Path
@@ -114,7 +122,37 @@ class ProtectedStagingController:
             raise ProtectedStagingError(
                 "protected controller authority invalid"
             ) from None
-        validate_protected_bundle(config.bundle_root, checkout, manifest)
+        validate_protected_bundle(config.source_bundle_root, checkout, manifest)
+        install_root = config.install_root.resolve(strict=True)
+        if (
+            config.source_bundle_root.resolve(strict=True).parent != install_root
+            or config.runtime_root.resolve(strict=True).parent != install_root
+            or config.manifest_path.resolve(strict=True)
+            != install_root / "authority-manifest.json"
+            or config.source_inventory_path.resolve(strict=True)
+            != install_root / "source-files.json"
+            or config.runtime_inventory_path.resolve(strict=True)
+            != install_root / "runtime-files.json"
+        ):
+            raise ProtectedStagingError("protected installation layout mismatch")
+        source_inventory = read_protected_file(config.source_inventory_path, checkout)
+        if (
+            hashlib.sha256(source_inventory).hexdigest()
+            != manifest.source_inventory_sha256
+        ):
+            raise ProtectedStagingError("protected source inventory digest mismatch")
+        try:
+            if json.loads(source_inventory) != manifest.file_digests:
+                raise ProtectedStagingError("protected source inventory mismatch")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ProtectedStagingError("protected source inventory invalid") from None
+        validate_runtime_inventory(
+            config.runtime_root,
+            checkout,
+            manifest,
+            config.runtime_inventory_path,
+        )
+        validate_runtime_artifacts(install_root, manifest)
         validate_state_root(config.state_root, checkout)
         netbox_token = read_protected_file(config.netbox_token_file, checkout)
         cml_username = read_protected_file(config.cml_username_file, checkout)
@@ -255,7 +293,7 @@ class ProtectedStagingController:
             trusted_path=trusted_path,
         )
         terraform = ProtectedTerraformExecutor(
-            self.config.bundle_root,
+            self.config.source_bundle_root,
             run_directory,
             SubprocessTerraformRunner(self.config.tools.terraform),
             environment,
@@ -273,7 +311,7 @@ class ProtectedStagingController:
                 self.config.tools.ssh_keyscan, self.config.tools.ssh_keygen
             ),
             validator=ProtectedNCDPReadOnlyValidator(
-                self.config.bundle_root,
+                self.config.source_bundle_root,
                 self.config.tools.ssh_keygen,
                 self.config.tools.ansible_collections_root,
             ),
@@ -320,7 +358,7 @@ class ProtectedStagingController:
             trusted_path=str(self.config.tools.terraform.parent),
         )
         terraform = ProtectedTerraformExecutor(
-            self.config.bundle_root,
+            self.config.source_bundle_root,
             run_directory,
             SubprocessTerraformRunner(self.config.tools.terraform),
             environment,

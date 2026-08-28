@@ -63,6 +63,7 @@ class FailureCode(StrEnum):
     INVENTORY_AUTHORITY = "INVENTORY_AUTHORITY"
     CREDENTIAL_AUTHORITY = "CREDENTIAL_AUTHORITY"
     CML_ADMISSION = "CML_ADMISSION"
+    TERRAFORM_INIT = "TERRAFORM_INIT"
     TERRAFORM_CREATE = "TERRAFORM_CREATE"
     REALIZATION = "REALIZATION"
     TERRAFORM_START = "TERRAFORM_START"
@@ -763,9 +764,12 @@ class ProtectedRuntimeOperations:
             raise ProtectedOperationError(FailureCode.CREDENTIAL_AUTHORITY)
         try:
             admit_cml_labs(self._manifest, self._run_id, self._cml.labs())
-            self._terraform.initialize()
         except ProtectedStagingError:
             raise ProtectedOperationError(FailureCode.CML_ADMISSION) from None
+        try:
+            self._terraform.initialize()
+        except ProtectedStagingError:
+            raise ProtectedOperationError(FailureCode.TERRAFORM_INIT) from None
 
     def create(self) -> ProtectedTerraformOutputs:
         try:
@@ -944,10 +948,11 @@ def run_protected_lifecycle(
         run_id=run_id,
     )
     outputs: ProtectedTerraformOutputs | None = None
-    managed_state_seen = False
+    create_attempted = False
     try:
         operations.admit()
         evidence.creation_result = "failed"
+        create_attempted = True
         outputs = operations.create()
         evidence.creation_result = "passed"
         evidence.terraform_actions["create"] = 10
@@ -977,8 +982,13 @@ def run_protected_lifecycle(
     finally:
         try:
             state = operations.state_addresses()
-            managed_state_seen = bool(state)
-            if state:
+            if not create_attempted:
+                if state:
+                    evidence.cleanup_result = "retained"
+                    evidence.cleanup_failure = FailureCode.CLEANUP_UNAUTHORIZED
+                else:
+                    evidence.cleanup_result = "passed"
+            elif state:
                 if not state.issubset(EXPECTED_TERRAFORM_ADDRESSES):
                     evidence.cleanup_result = "retained"
                     evidence.cleanup_failure = FailureCode.CLEANUP_UNAUTHORIZED
@@ -992,9 +1002,14 @@ def run_protected_lifecycle(
             if evidence.cleanup_result != "retained":
                 evidence.cleanup_result = "failed"
                 evidence.cleanup_failure = FailureCode.CLEANUP_FAILED
-        if outputs is not None and evidence.cleanup_result == "passed":
+        if create_attempted and evidence.cleanup_result == "passed":
             try:
-                operations.prove_absent(outputs.lab_id, outputs.lab_title)
+                if operations.state_addresses():
+                    raise ProtectedStagingError("protected state remains")
+                if outputs is None:
+                    operations.prove_title_absent(f"NCDP Staging {run_id}")
+                else:
+                    operations.prove_absent(outputs.lab_id, outputs.lab_title)
                 evidence.absence_result = "passed"
                 if operations.state_addresses():
                     raise ProtectedStagingError("protected state remains")
@@ -1008,11 +1023,7 @@ def run_protected_lifecycle(
                 except (OSError, ProtectedStagingError):
                     evidence.state_retirement_result = "failed"
                     evidence.cleanup_failure = FailureCode.RETIREMENT_FAILED
-        elif (
-            outputs is None
-            and not managed_state_seen
-            and evidence.cleanup_result == "passed"
-        ):
+        elif not create_attempted and evidence.cleanup_result == "passed":
             try:
                 retire_exact_run_directory(run_directory, run_id)
                 evidence.state_retirement_result = "passed"
@@ -1057,9 +1068,12 @@ def recover_protected_run(
     if metadata.build_id != build_id or metadata.run_id != run_id:
         raise ProtectedStagingError("protected recovery identity mismatch")
     state = operations.state_addresses()
-    if not state or not state.issubset(EXPECTED_TERRAFORM_ADDRESSES):
+    if not state.issubset(EXPECTED_TERRAFORM_ADDRESSES):
         raise ProtectedStagingError("protected recovery graph rejected")
-    operations.cleanup_retained()
+    if state:
+        operations.cleanup_retained()
+        if operations.state_addresses():
+            raise ProtectedStagingError("protected recovery state remains")
     if metadata.lab_id is None:
         operations.prove_title_absent(metadata.lab_title)
     else:

@@ -122,12 +122,21 @@ class ProtectedStagingManifest(BaseModel):
     """Installed, immutable staging authority; checkout copies are not authority."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     buildkite_pipeline_id: UUID
     source_commit: str
     netbox_url: str
     openbao_url: str
-    bundle_digest: str
+    source_bundle_digest: str
+    source_inventory_sha256: str
+    runtime_inventory_sha256: str
+    runtime_digest: str
+    python_version: Literal["3.12"] = "3.12"
+    project_wheel_sha256: str
+    production_requirements_sha256: str
+    controller_entrypoint: Literal["bin/ncdp-protected-staging-controller"] = (
+        "bin/ncdp-protected-staging-controller"
+    )
     controller_artifact_digest: str
     file_digests: dict[str, str]
     cisco: StagingTargetAuthority
@@ -137,6 +146,11 @@ class ProtectedStagingManifest(BaseModel):
     cml: CMLAuthority
     terraform_addresses: tuple[str, ...]
     lifecycle_update_address: str
+
+    @property
+    def bundle_digest(self) -> str:
+        """Compatibility name for run metadata; authority is the source digest."""
+        return self.source_bundle_digest
 
     _EXPECTED: ClassVar[dict[str, dict[str, object]]] = {
         "cisco": {
@@ -193,7 +207,12 @@ class ProtectedStagingManifest(BaseModel):
         if not _SHA1.fullmatch(self.source_commit):
             raise ValueError("protected source commit is invalid")
         for digest in (
-            self.bundle_digest,
+            self.source_bundle_digest,
+            self.source_inventory_sha256,
+            self.runtime_inventory_sha256,
+            self.runtime_digest,
+            self.project_wheel_sha256,
+            self.production_requirements_sha256,
             self.controller_artifact_digest,
             *self.file_digests.values(),
         ):
@@ -842,20 +861,122 @@ def validate_protected_bundle(
         if digest != expected_digest:
             raise ProtectedStagingError("protected bundle digest mismatch")
         observed[relative] = digest
-    allowed_generated = {"authority-manifest.json", "bundle-files.json"}
     actual_files = {
         str(path.relative_to(root))
         for path in root.rglob("*")
         if path.is_file() or path.is_symlink()
     }
-    if actual_files - set(manifest.file_digests) - allowed_generated:
+    if actual_files != set(manifest.file_digests):
         raise ProtectedStagingError("protected bundle contains unexpected files")
     combined = hashlib.sha256(
         json.dumps(observed, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    if combined != manifest.bundle_digest:
+    if combined != manifest.source_bundle_digest:
         raise ProtectedStagingError("protected bundle digest mismatch")
     return root
+
+
+def validate_runtime_inventory(
+    runtime_root: Path,
+    checkout_root: Path,
+    manifest: ProtectedStagingManifest,
+    inventory_path: Path,
+    *,
+    owner_uid: int | None = None,
+) -> Path:
+    """Verify every file/symlink in the installed executable runtime."""
+    if not runtime_root.is_absolute() or runtime_root.is_symlink():
+        raise ProtectedStagingError("protected runtime root is invalid")
+    root = runtime_root.resolve(strict=True)
+    checkout = checkout_root.resolve(strict=True)
+    if root == checkout or root.is_relative_to(checkout):
+        raise ProtectedStagingError("protected runtime must be outside checkout")
+    expected_uid = os.getuid() if owner_uid is None else owner_uid
+    metadata = root.stat(follow_symlinks=False)
+    if metadata.st_uid != expected_uid or stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise ProtectedStagingError("protected runtime ownership or mode is invalid")
+    if inventory_path.is_symlink() or not inventory_path.is_file():
+        raise ProtectedStagingError("protected runtime inventory is invalid")
+    inventory_metadata = inventory_path.stat(follow_symlinks=False)
+    if (
+        inventory_metadata.st_uid != expected_uid
+        or stat.S_IMODE(inventory_metadata.st_mode) & 0o077
+    ):
+        raise ProtectedStagingError("protected runtime inventory is invalid")
+    raw = inventory_path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != manifest.runtime_inventory_sha256:
+        raise ProtectedStagingError("protected runtime inventory digest mismatch")
+    try:
+        inventory = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ProtectedStagingError("protected runtime inventory is invalid") from None
+    if not isinstance(inventory, dict) or not inventory:
+        raise ProtectedStagingError("protected runtime inventory is invalid")
+    observed: dict[str, dict[str, object]] = {}
+    for relative, expected in inventory.items():
+        if (
+            not isinstance(relative, str)
+            or relative.startswith("/")
+            or ".." in Path(relative).parts
+            or not isinstance(expected, dict)
+        ):
+            raise ProtectedStagingError("protected runtime inventory is invalid")
+        path = root / relative
+        mode = (
+            stat.S_IMODE(path.lstat().st_mode)
+            if path.exists() or path.is_symlink()
+            else -1
+        )
+        if expected.get("type") == "file":
+            if path.is_symlink() or not path.is_file():
+                raise ProtectedStagingError("protected runtime file is invalid")
+            actual = {"type": "file", "mode": mode, "sha256": _file_sha256(path)}
+        elif expected.get("type") == "symlink":
+            if not path.is_symlink():
+                raise ProtectedStagingError("protected runtime symlink is invalid")
+            target = str(path.readlink())
+            resolved = path.resolve(strict=True)
+            if not resolved.is_relative_to(root):
+                raise ProtectedStagingError("protected runtime symlink escapes runtime")
+            actual = {"type": "symlink", "mode": mode, "target": target}
+        else:
+            raise ProtectedStagingError("protected runtime inventory is invalid")
+        if actual != expected:
+            raise ProtectedStagingError("protected runtime content mismatch")
+        observed[relative] = actual
+    actual_objects = {
+        str(path.relative_to(root))
+        for path in root.rglob("*")
+        if path.is_file() or path.is_symlink()
+    }
+    if actual_objects != set(inventory):
+        raise ProtectedStagingError("protected runtime contains unexpected files")
+    combined = hashlib.sha256(
+        json.dumps(observed, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if combined != manifest.runtime_digest:
+        raise ProtectedStagingError("protected runtime digest mismatch")
+    entrypoint = root / manifest.controller_entrypoint
+    if entrypoint.is_symlink() or not entrypoint.is_file():
+        raise ProtectedStagingError("protected controller entrypoint is invalid")
+    return root
+
+
+def validate_runtime_artifacts(
+    install_root: Path, manifest: ProtectedStagingManifest
+) -> None:
+    """Bind retained wheel and frozen production requirements to the manifest."""
+    wheels = tuple((install_root / "artifacts/wheels").glob("*.whl"))
+    requirements = install_root / "artifacts/production-requirements.txt"
+    if (
+        len(wheels) != 1
+        or wheels[0].is_symlink()
+        or _file_sha256(wheels[0]) != manifest.project_wheel_sha256
+        or requirements.is_symlink()
+        or not requirements.is_file()
+        or _file_sha256(requirements) != manifest.production_requirements_sha256
+    ):
+        raise ProtectedStagingError("protected runtime artifacts mismatch")
 
 
 def validate_state_root(

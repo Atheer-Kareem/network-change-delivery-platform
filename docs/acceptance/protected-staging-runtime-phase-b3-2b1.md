@@ -16,8 +16,13 @@ installation and admission; B4 still owns hook cutover and agent re-enable.
 
 ## Executable authority
 
-Manifest schema 2 rejects unknown fields and adds immutable Buildkite pipeline,
-NetBox endpoint, OpenBao endpoint, and CML CA PEM digest authority. A normal run
+Manifest schema 3 rejects unknown fields and separately binds the reviewed
+`source/` inventory and final generated `runtime/` inventory. The final manifest
+is written only after the wheel, hash-frozen production requirements,
+non-editable Python 3.12 runtime, and controller entry point exist. It binds
+both inventories, their aggregate digests, the wheel and requirements digests,
+controller entry-point identity, immutable Buildkite pipeline, NetBox endpoint,
+OpenBao endpoint, and CML CA PEM digest authority. A normal run
 requires the Buildkite pipeline UUID and commit to equal the installed
 manifest. External configuration contains private paths and admitted absolute
 tools only; it cannot override endpoints, targets, device IDs, addresses,
@@ -40,7 +45,8 @@ status, and unique reverse-homolog identity. Device 3 remains deny-only debt.
 
 The composed normal-run path is:
 
-1. Admit private non-symlink files, exact bundle digests, state root, and
+1. Admit private non-symlink source files, the exact runtime file/symlink
+   inventory, exact source/runtime/artifact digests, state root, and
    absolute protected tools.
 2. Bind Buildkite pipeline/build/job/commit/step/queue/retry identity.
 3. Request the fixed in-memory staging OIDC JWT.
@@ -76,8 +82,10 @@ cleanup failure separately.
 Trusted-operator recovery accepts only a canonical Buildkite build UUID,
 derives `bk-<uuid>` and its state directory, loads the private recovery record,
 requires exact source/bundle/manifest agreement, never creates or starts, and
-performs only exact-subset cleanup and independent absence proof. A different
-installed bundle fails closed.
+performs only exact-subset cleanup and independent absence proof. Recovery also
+accepts the post-destroy crash window with already-empty state: it performs no
+destroy, proves UUID/title or provisional title absence, rechecks empty state,
+and only then retires the run. A different installed bundle fails closed.
 
 ## Local, tool, and runtime isolation
 
@@ -89,12 +97,31 @@ exactly 1.15.8. The Terraform environment is constructed from an allowlist and
 does not inherit caller `TF_LOG`, `CML2_TOKEN`, NetBox, OpenBao, or device
 credentials.
 
-The B3-2B2 construction contract uses exact Python 3.12, a built wheel,
+The B3-2B2 construction contract uses a versioned installation root with
+separate `source/`, `runtime/`, and `artifacts/` authorities plus
+`source-files.json`, `runtime-files.json`, and the final manifest. It uses exact
+Python 3.12, a built wheel,
 `uv.lock`, frozen production dependency export with hashes, and a private
 non-editable virtual environment. The protected source inventory includes only
 required controller, adapter, read-only Ansible, Terraform, and bootstrap
 assets; tests and `.git` are excluded. B3-2B1 installed nothing into standing
-agent paths.
+agent paths. Runtime admission rejects unexpected files, digest or mode drift,
+controller-entry-point replacement, source symlinks, and runtime symlinks that
+escape the admitted runtime.
+
+Creation-attempt state is explicit. A pre-create admission failure may retire
+only an empty local run without claiming CML ownership. Once create was
+attempted, retirement requires empty Terraform state plus exact UUID/title
+absence when trusted outputs exist, or exact run-title absence when they do
+not. Successful subset cleanup uses the latter proof. Terraform initialization
+has its own bounded `TERRAFORM_INIT` evidence classification.
+
+B3-2B2 has a hard admission prerequisite: checkout-controlled validation and
+protected staging must have demonstrably different OS filesystem authority. It
+must discover validation, staging, and deploy UIDs plus ownership/ACLs for every
+proposed protected root. If validation and staging share a Unix UID or
+equivalent read/write authority, B3-2B2 must stop before installation; path
+separation and private modes alone are insufficient.
 
 ## Evidence and negative proof
 

@@ -21,6 +21,7 @@ from network_change_delivery.protected_staging import (
 from network_change_delivery.protected_staging_runtime import (
     FailureCode,
     LifecycleIdentity,
+    ProtectedOperationError,
     ProtectedRecoveryMetadata,
     ProtectedRuntimeEvidence,
     ProtectedStaticInventory,
@@ -72,12 +73,17 @@ def target(device_id: int) -> StagingTargetAuthority:
 def manifest(**changes) -> ProtectedStagingManifest:
     controller = "src/network_change_delivery/protected_staging_controller.py"
     values = {
-        "schema_version": 2,
+        "schema_version": 3,
         "buildkite_pipeline_id": PIPELINE,
         "source_commit": SHA1,
         "netbox_url": "https://netbox.example",
         "openbao_url": "https://bao.example",
-        "bundle_digest": SHA256,
+        "source_bundle_digest": SHA256,
+        "source_inventory_sha256": SHA256,
+        "runtime_inventory_sha256": SHA256,
+        "runtime_digest": SHA256,
+        "project_wheel_sha256": SHA256,
+        "production_requirements_sha256": SHA256,
         "controller_artifact_digest": SHA256,
         "file_digests": {controller: SHA256},
         "cisco": target(6),
@@ -188,8 +194,8 @@ def run_directory(tmp_path: Path) -> Path:
     return directory
 
 
-def test_schema_two_binds_pipeline_and_endpoints() -> None:
-    assert manifest().schema_version == 2
+def test_schema_three_binds_pipeline_endpoints_source_and_runtime() -> None:
+    assert manifest().schema_version == 3
     with pytest.raises(ValidationError):
         manifest(buildkite_pipeline_id="not-a-uuid")
     with pytest.raises(ValidationError):
@@ -350,8 +356,10 @@ def test_create_failure_valid_partial_state_gets_one_exact_cleanup(
     assert evidence.overall_result == "failed"
     assert evidence.primary_failure == FailureCode.TERRAFORM_CREATE
     assert evidence.cleanup_result == "passed"
+    assert evidence.absence_result == "passed"
     assert operations.calls.count("cleanup") == 1
-    assert directory.exists()
+    assert "absent-title" in operations.calls
+    assert not directory.exists()
 
 
 def test_create_failure_with_empty_state_never_destroys(tmp_path: Path) -> None:
@@ -360,8 +368,55 @@ def test_create_failure_with_empty_state_never_destroys(tmp_path: Path) -> None:
     evidence = run_protected_lifecycle(identity(), directory, operations)
     assert "cleanup" not in operations.calls
     assert evidence.cleanup_result == "passed"
+    assert evidence.absence_result == "passed"
+    assert "absent-title" in operations.calls
     assert evidence.state_retirement_result == "passed"
     assert not directory.exists()
+
+
+def test_create_attempt_without_state_retains_when_title_is_present(
+    tmp_path: Path,
+) -> None:
+    directory = run_directory(tmp_path)
+    operations = FakeOperations(state=set(), failure="absent-title")
+    operations.failure = "create"
+    original = operations.prove_title_absent
+
+    def fail_title(title) -> None:
+        original(title)
+        raise ProtectedStagingError("sanitized title conflict")
+
+    operations.prove_title_absent = fail_title
+    evidence = run_protected_lifecycle(identity(), directory, operations)
+    assert evidence.absence_result == "failed"
+    assert evidence.cleanup_failure == FailureCode.ABSENCE_FAILED
+    assert directory.exists()
+
+
+def test_admission_failure_retires_empty_run_without_cml_claim(tmp_path: Path) -> None:
+    directory = run_directory(tmp_path)
+    operations = FakeOperations(state=set(), failure="admit")
+    evidence = run_protected_lifecycle(identity(), directory, operations)
+    assert "create" not in operations.calls
+    assert "cleanup" not in operations.calls
+    assert "absent-title" not in operations.calls
+    assert evidence.state_retirement_result == "passed"
+    assert not directory.exists()
+
+
+def test_terraform_init_has_distinct_sanitized_failure_code(tmp_path: Path) -> None:
+    directory = run_directory(tmp_path)
+    operations = FakeOperations(state=set())
+
+    def fail_init() -> None:
+        operations.calls.append("admit")
+        raise ProtectedOperationError(FailureCode.TERRAFORM_INIT)
+
+    operations.admit = fail_init
+    evidence = run_protected_lifecycle(identity(), directory, operations)
+    assert evidence.primary_failure == FailureCode.TERRAFORM_INIT
+    assert evidence.safe_json().find("TERRAFORM_INIT") >= 0
+    assert "absent-title" not in operations.calls
 
 
 def test_foreign_state_is_retained_without_destroy(tmp_path: Path) -> None:
@@ -611,3 +666,53 @@ def test_recovery_accepts_provisional_metadata_without_arbitrary_lab_id(
     assert "absent-title" in operations.calls
     assert "create" not in operations.calls and "start" not in operations.calls
     assert not directory.exists()
+
+
+@pytest.mark.parametrize("final_metadata", [True, False])
+def test_recovery_accepts_empty_post_destroy_state_and_proves_absence(
+    tmp_path: Path, final_metadata: bool
+) -> None:
+    checkout = tmp_path / "checkout"
+    state_root = tmp_path / "state"
+    checkout.mkdir()
+    state_root.mkdir(mode=0o700)
+    run_id, directory = derive_run_directory(state_root, BUILD)
+    metadata = ProtectedRecoveryMetadata(
+        run_id=run_id,
+        build_id=BUILD,
+        source_commit=SHA1,
+        manifest_digest=manifest().digest,
+        bundle_digest=SHA256,
+        lab_id=LAB if final_metadata else None,
+        lab_title=f"NCDP Staging {run_id}",
+        terraform_addresses=tuple(sorted(EXPECTED_TERRAFORM_ADDRESSES)),
+    )
+    write_recovery_metadata(directory / "recovery-metadata.json", metadata)
+    operations = FakeOperations(state=set())
+    recover_protected_run(BUILD, state_root, checkout, manifest(), operations)
+    assert "cleanup" not in operations.calls
+    assert ("absent" if final_metadata else "absent-title") in operations.calls
+    assert not directory.exists()
+
+
+def test_recovery_empty_state_retains_when_absence_fails(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    state_root = tmp_path / "state"
+    checkout.mkdir()
+    state_root.mkdir(mode=0o700)
+    run_id, directory = derive_run_directory(state_root, BUILD)
+    metadata = ProtectedRecoveryMetadata(
+        run_id=run_id,
+        build_id=BUILD,
+        source_commit=SHA1,
+        manifest_digest=manifest().digest,
+        bundle_digest=SHA256,
+        lab_title=f"NCDP Staging {run_id}",
+        terraform_addresses=tuple(sorted(EXPECTED_TERRAFORM_ADDRESSES)),
+    )
+    write_recovery_metadata(directory / "recovery-metadata.json", metadata)
+    operations = FakeOperations(state=set(), failure="absent-title")
+    with pytest.raises(ProtectedStagingError):
+        recover_protected_run(BUILD, state_root, checkout, manifest(), operations)
+    assert "cleanup" not in operations.calls
+    assert directory.exists()

@@ -166,12 +166,40 @@ Ordering may change when implementation evidence requires it.
     readiness were then retired and the exact operator twin destroyed while
     preserving six private-history commits. Increment 10C-7B is complete. No
     later increment has started.
-11. **Continuous observability:** an independent, read-only operational plane,
-    decomposed into bounded increments:
+11. **Continuous observability:** an independent, read-only operational plane.
+    Architecture evidence during 11A reordered its live-acceptance dependency:
+    ADR 0023 now requires a persistent manually owned brownfield live/reference
+    pair and separately identified, addressed, credentialed, Terraform-owned
+    ephemeral staging. This migration is a bounded prerequisite rather than a
+    restart or failure of 11A:
+    - **Phase A — architecture authority:** ADR 0023 defines brownfield live,
+      isolated ephemeral staging, explicit scenarios, partial managed-intent
+      ownership, admission without Terraform ownership, and phased migration.
+      It changes documentation only.
+    - **Phase B — staging separation:** perform management-network feasibility,
+      establish staging NetBox identities and homolog authority, staging IPAM
+      and credentials, reduce the Terraform baseline to the Cisco/Junos pair,
+      and accept isolated ephemeral staging.
+    - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
+      and privately protect recovery evidence, manually remove only approved
+      obsolete resources, observe before remediation, reconcile authority,
+      establish realization admission and strict trust, and capture the live
+      actual-state baseline.
+    - **Phase E/F — consumer cutover and obsolete-contract retirement:** move
+      11A, Oxidized continuous operation, then protected deployment; afterward
+      remove disposable operator-lifecycle and shared-address assumptions.
+    Every phase remains fail closed with an explicit stop boundary. No migration
+    implementation or infrastructure mutation is part of Phase A.
+
+    Phase 11 remains decomposed into these bounded increments:
     - **11A — NetBox-bound management-service reachability:** persistent
       Prometheus and credential-free Blackbox TCP probes with stable NetBox
-      identity and realization-scoped CML admission. Implementation is prepared;
-      post-merge live CML acceptance remains pending.
+      identity and realization-scoped CML admission. Implementation is complete
+      through its current reviewed contracts, including persistent runtime,
+      source binding, CML 2.10 parsing, TSDB retention, and bounded refresh
+      diagnostics. Final acceptance is explicitly paused for the ADR 0023
+      environment migration; no further disposable operator-twin attempt is
+      authorized.
     - **11B — dashboards and operator-only alerts:** bounded visualization,
       reachability/staleness/service-health rules, and no remediation authority.
     - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling

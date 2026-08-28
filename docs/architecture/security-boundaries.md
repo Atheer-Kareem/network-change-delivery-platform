@@ -36,6 +36,11 @@ the containers. Raw endpoints never become durable metric identity, and neither
 Oxidized nor generic user SSH trust is reused. Loss of authority removes probe
 authorization; it never enables a fallback or deployment action.
 
+ADR 0023 makes that realization the explicitly admitted, manually owned
+brownfield live/reference lab. Terraform remains confined to staging/scenarios.
+Separated staging may coexist, but it receives different inventory, addresses,
+and credentials and cannot claim protected-live authority.
+
 ## Credential and data boundaries
 
 The personal-lab path uses bounded AppRole bootstrap credentials to obtain a

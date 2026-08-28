@@ -8,6 +8,10 @@ personal CML digital twin. ADR 0014 retains this boundary for fresh ephemeral
 staging realizations; it changes their lifecycle, not their authority or Day-0
 scope.
 
+ADR 0023 scopes this Terraform credential-bearing Day-0 exception to staging
+and explicit scenarios after migration. Brownfield live uses a separately
+reviewed manual minimum-bootstrap boundary; Terraform has no live authority.
+
 ## Context
 
 Increment 8D-2 proved a one-time manual IOS XE management bootstrap, unchanged

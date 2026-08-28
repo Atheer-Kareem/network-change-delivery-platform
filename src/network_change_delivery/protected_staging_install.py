@@ -8,7 +8,7 @@ import os
 import shutil
 import stat
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Final, Protocol
 from uuid import UUID
@@ -58,6 +58,55 @@ PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
 
 class RuntimeBuildRunner(Protocol):
     def run(self, arguments: Sequence[str], *, cwd: Path) -> None: ...
+
+
+class SubprocessRuntimeBuildRunner:
+    """Run admitted uv construction commands with a minimal installer environment."""
+
+    def __init__(
+        self,
+        uv_executable: Path,
+        cache_directory: Path,
+        *,
+        build_environment: Mapping[str, str] | None = None,
+    ) -> None:
+        if not uv_executable.is_absolute() or not cache_directory.is_absolute():
+            raise ProtectedStagingError("protected runtime builder rejected")
+        self._uv = uv_executable
+        admitted_build_keys = {
+            "SDKROOT",
+            "CPATH",
+            "LIBRARY_PATH",
+            "LDFLAGS",
+            "CPPFLAGS",
+            "PKG_CONFIG_PATH",
+        }
+        build_values = dict(build_environment or {})
+        if set(build_values) - admitted_build_keys or any(
+            not value or "\x00" in value or "\n" in value
+            for value in build_values.values()
+        ):
+            raise ProtectedStagingError("protected runtime build environment rejected")
+        self._environment = {
+            "PATH": str(uv_executable.parent),
+            "UV_CACHE_DIR": str(cache_directory),
+            "UV_NO_PROGRESS": "1",
+            **build_values,
+        }
+
+    def run(self, arguments: Sequence[str], *, cwd: Path) -> None:
+        if not arguments or arguments[0] != str(self._uv):
+            raise ProtectedStagingError("protected runtime build command rejected")
+        result = subprocess.run(
+            list(arguments),
+            cwd=cwd,
+            env=self._environment,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if result.returncode != 0:
+            raise ProtectedStagingError("protected runtime construction failed")
 
 
 def construct_isolated_runtime(

@@ -6,6 +6,7 @@ import pytest
 from network_change_delivery.protected_staging import ProtectedStagingError
 from network_change_delivery.protected_staging_install import (
     PROTECTED_SOURCE_FILES,
+    SubprocessRuntimeBuildRunner,
     construct_isolated_runtime,
     install_source_bundle,
 )
@@ -130,3 +131,35 @@ def test_isolated_runtime_contract_is_locked_noneditable_and_outside_source(
     assert "--require-hashes" in commands[3]
     assert "--editable" not in commands[3]
     assert str(source) not in commands[3]
+
+
+def test_runtime_subprocess_runner_accepts_only_admitted_uv(
+    tmp_path: Path, monkeypatch
+) -> None:
+    calls = []
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install.subprocess.run",
+        lambda arguments, **kwargs: (
+            calls.append((arguments, kwargs)) or type("Result", (), {"returncode": 0})()
+        ),
+    )
+    runner = SubprocessRuntimeBuildRunner(
+        Path("/opt/protected/bin/uv"),
+        tmp_path / "cache",
+        build_environment={"SDKROOT": "/opt/protected/sdk"},
+    )
+    runner.run(("/opt/protected/bin/uv", "build"), cwd=tmp_path)
+    assert calls[0][1]["env"] == {
+        "PATH": "/opt/protected/bin",
+        "UV_CACHE_DIR": str(tmp_path / "cache"),
+        "UV_NO_PROGRESS": "1",
+        "SDKROOT": "/opt/protected/sdk",
+    }
+    with pytest.raises(ProtectedStagingError):
+        runner.run(("/usr/bin/uv", "build"), cwd=tmp_path)
+    with pytest.raises(ProtectedStagingError):
+        SubprocessRuntimeBuildRunner(
+            Path("/opt/protected/bin/uv"),
+            tmp_path / "cache",
+            build_environment={"PYTHONPATH": "/checkout"},
+        )

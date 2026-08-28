@@ -55,6 +55,36 @@ OpenBao device-secret read, Oxidized mutation, or AuditStore mutation occurred.
 The newly created partial first-install roots were inspected and safely removed.
 Increment 11A live acceptance remains NOT YET PROVEN.
 
+The second post-merge attempt used corrected implementation commit
+`226d8b7101bdba702090bb0b9d66b31e6aa9d3f2` after natural merged-main Build
+#166 passed. The corrected persistent installation, initial RETIRED
+reconciliation, zero-target state, and TSDB initialization passed. The attempt
+stopped before CML creation because the unqualified zero-OpenBao-read wording
+conflicted with ADR 0013's accepted credential-bearing CML Day-0 bootstrap. No
+device probe, device authentication or write, OpenBao device-secret read by the
+observability plane, Oxidized mutation, or AuditStore mutation occurred.
+Increment 11A live acceptance remains NOT YET PROVEN.
+
+## Credential accounting boundary
+
+The 11A observability plane performs zero OpenBao device-secret reads. This
+boundary includes Prometheus, Blackbox Exporter, target materialization,
+reconciliation, realization admission, Prometheus queries, Blackbox TCP probes,
+readiness publication and verification, and target retirement. Those components
+receive no device credential and perform no device authentication, CLI or RPC
+command, configuration read, or device write.
+
+ADR 0013 separately permits the operator CML infrastructure lifecycle to
+retrieve the exact Cisco and Junos credentials freshly from OpenBao for its
+minimum Day-0 management bootstrap. Those reads are infrastructure
+initialization, not observability credential use or NCDP-managed intent. Final
+evidence reports each operator-wrapper invocation separately, including its
+bootstrap/source-login operations and the two reviewed device-secret
+materializations performed by `_environment()`. Status evidence should use
+credential-free CML, Terraform-state, or read-only inspection paths instead of
+unnecessarily invoking that wrapper. Bootstrap values remain excluded from
+Prometheus, Blackbox, metrics, labels, logs, and acceptance evidence.
+
 ## Pending live acceptance
 
 After the implementation PR is merged, the operator must install/update the
@@ -70,8 +100,10 @@ Live acceptance requires repeated successful TCP probes for
 `netbox:dcim.device:2` on its derived NETCONF service. Queries must prove stable
 labels, no raw endpoint as `instance`, no CML UUID label, fresh realization and
 container binding, interval reconciliation, and TSDB persistence. It must also
-prove zero device authentication/commands/writes, zero OpenBao device-secret
-reads, zero Oxidized collections/history mutation, and zero AuditStore mutation.
+prove zero device authentication, commands, configuration reads and writes by
+the observability plane; zero OpenBao device-secret reads by the observability
+plane; zero Oxidized collections/history mutation; and zero AuditStore mutation.
+ADR 0013 CML Day-0 bootstrap reads are permitted and accounted separately.
 
 Before destroying the twin, invalidate readiness, retire admission, publish an
 empty target generation, and prove no management probes remain scheduled.

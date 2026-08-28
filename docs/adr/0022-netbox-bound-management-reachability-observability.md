@@ -22,6 +22,10 @@ correctness. Neither service receives the NetBox token, CML credential, device
 credential, SSH trust, configuration history, AuditStore, checkout, or Docker
 socket.
 
+This credential-free observability boundary does not supersede ADR 0013: the
+separate operator CML infrastructure lifecycle may still retrieve the reviewed
+device credentials for its minimum Day-0 management bootstrap.
+
 The durable metric identity is the stable NetBox object identity. The private
 address and port are used only as the Blackbox `target` parameter. The bounded
 labels are `instance`, `device_name`, `platform`, `management_service`,

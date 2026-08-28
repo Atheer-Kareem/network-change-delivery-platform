@@ -179,11 +179,19 @@ Ordering may change when implementation evidence requires it.
     - **Phase B — staging separation:** perform management-network feasibility,
       establish staging NetBox identities and homolog authority, staging IPAM
       and credentials, reduce the Terraform baseline to the Cisco/Junos pair,
-      and accept isolated ephemeral staging. Phase B1-1 correctly stopped when
+      and accept separated ephemeral staging. Phase B1-1 correctly stopped when
       external allocation authority was unavailable. A later bounded follow-up
       recorded the operator-confirmed static/no-DHCP policy and established the
       `192.168.4.0/24` NetBox Prefix plus known infrastructure allocations;
-      staging address candidates and B1-2 inventory remain unstarted.
+      subsequent read-only collision discovery and human selection admitted
+      `.30`/`.31`. B1-2 is externally complete pending repository review: stable
+      staged devices 6 and 7 use a dedicated role, explicit `staging` environment
+      and live-homolog fields, separate primary IPs, and no live selector tags;
+      canonical devices 1 and 2 are explicitly `live`, while device 3 remains
+      unclassified. Native NetBox provenance records both bounded writer episodes,
+      and both temporary writers were retired with zero standing privilege. B2
+      credential separation and all Terraform/Buildkite migration remain
+      unstarted.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
       and privately protect recovery evidence, manually remove only approved
       obsolete resources, observe before remediation, reconcile authority,

@@ -11,7 +11,8 @@ controller and installation-source contracts; installation and external
 admission remain deferred to B3-2B, and execution remains fail closed.
 
 Phase B3-2B1 composes that contract into the complete repository-side
-executable lifecycle: manifest schema 3 with separately inventoried reviewed
+executable lifecycle. B3-2B2B0-R advances the authority to manifest schema 4
+with separately inventoried root-owned reviewed
 source and generated executable-runtime authority, exact object-ID admission,
 digest-bound CML trust, exact saved-plan application, partial-state cleanup,
 read-only device validation, recovery, and sanitized evidence. It remains
@@ -21,6 +22,14 @@ runtime externally before B4 may cut over the protected hook.
 B3-2B2 must prove an OS-principal/ACL boundary between checkout-controlled
 validation and protected staging. If they share filesystem authority, including
 one Unix UID, installation is prohibited.
+
+Schema 4 binds the exact non-root staging UID/GID and empty supplementary
+groups while immutable configuration, credentials, source, runtime, artifacts,
+tools, Ansible collections, and native dependencies remain root-owned. Only
+build and run state is service-owned. The controller uses a fixed configuration
+path independent of `HOME`, construction requires an exact protected Python,
+and native admission rejects linkage into Homebrew, checkout, user-home, or
+temporary authority. Protected libssh is an explicit supply-chain dependency.
 
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.
 Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary

@@ -13,15 +13,24 @@ from pathlib import Path
 from typing import Final, Protocol
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, model_validator
+
 from network_change_delivery.protected_staging import (
     EXPECTED_TERRAFORM_ADDRESSES,
     CMLAuthority,
+    ExecutionToolAuthority,
+    NativeDependencyAuthority,
     ProtectedStagingError,
     ProtectedStagingManifest,
+    ServiceIdentityAuthority,
     StagingTargetAuthority,
     validate_protected_bundle,
     validate_runtime_artifacts,
     validate_runtime_inventory,
+)
+from network_change_delivery.protected_staging_runtime import (
+    validate_macho_dependencies,
+    validate_root_owned_executable,
 )
 
 PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
@@ -61,8 +70,103 @@ PROTECTED_SOURCE_FILES: Final[tuple[str, ...]] = (
 )
 
 
+class StandingInstallationAuthority(BaseModel):
+    """Operator-supplied authority needed before a standing install can begin."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    service_identity: ServiceIdentityAuthority
+    protected_python: Path
+    python_version: str
+    python_sha256: str
+    uv: ExecutionToolAuthority
+    buildkite_agent: ExecutionToolAuthority
+    terraform: ExecutionToolAuthority
+    openssl: ExecutionToolAuthority
+    ssh_keyscan: ExecutionToolAuthority
+    ssh_keygen: ExecutionToolAuthority
+    ansible_collections_root: Path
+    ansible_collections: dict[str, str]
+    ansible_inventory_sha256: str
+    native_dependencies: tuple[NativeDependencyAuthority, ...]
+    protected_native_files: dict[str, str]
+    native_dependency_admission_sha256: str
+    build_sdk_identity: str
+
+    @model_validator(mode="after")
+    def exact_paths(self) -> StandingInstallationAuthority:
+        if (
+            not self.protected_python.is_absolute()
+            or self.uv.path == str(self.protected_python)
+            or str(self.ansible_collections_root) == ""
+            or self.python_version != "3.12"
+            or len(self.python_sha256) != 64
+            or any(
+                character not in "0123456789abcdef" for character in self.python_sha256
+            )
+            or not self.protected_native_files
+            or not self.build_sdk_identity
+        ):
+            raise ValueError("standing installation authority is invalid")
+        return self
+
+
 class RuntimeBuildRunner(Protocol):
     def run(self, arguments: Sequence[str], *, cwd: Path) -> None: ...
+
+
+def inspect_runtime_native_dependencies(
+    runtime: Path,
+) -> dict[str, tuple[str, ...]]:
+    """Read Mach-O dependency paths with system-protected inspection tools."""
+    observed: dict[str, tuple[str, ...]] = {}
+    for path in sorted(value for value in runtime.rglob("*") if value.is_file()):
+        kind = subprocess.run(
+            ["/usr/bin/file", "-b", str(path)],
+            env={},
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if kind.returncode != 0:
+            raise ProtectedStagingError("protected native inspection failed")
+        if "Mach-O" not in kind.stdout:
+            continue
+        linked = subprocess.run(
+            ["/usr/bin/otool", "-L", str(path)],
+            env={},
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if linked.returncode != 0:
+            raise ProtectedStagingError("protected native inspection failed")
+        dependencies = tuple(
+            line.strip().split(" ", 1)[0]
+            for line in linked.stdout.splitlines()[1:]
+            if line.strip()
+        )
+        observed[str(path)] = dependencies
+    return observed
+
+
+def _apply_immutable_ownership(root: Path, service_gid: int) -> None:
+    """Finalize a standing authority tree before its inventories are emitted."""
+    if os.geteuid() != 0:
+        raise ProtectedStagingError("standing installation requires root authority")
+    for path in sorted(
+        root.rglob("*"), key=lambda value: len(value.parts), reverse=True
+    ):
+        if path.is_symlink():
+            os.lchown(path, 0, service_gid)
+        elif path.is_dir():
+            path.chmod(0o550)
+            os.chown(path, 0, service_gid)
+        elif path.is_file():
+            executable = bool(path.stat().st_mode & 0o111)
+            path.chmod(0o550 if executable else 0o440)
+            os.chown(path, 0, service_gid)
+    root.chmod(0o750)
+    os.chown(root, 0, service_gid)
 
 
 class SubprocessRuntimeBuildRunner:
@@ -120,6 +224,7 @@ def construct_isolated_runtime(
     runner: RuntimeBuildRunner,
     *,
     uv_executable: Path,
+    protected_python: Path,
 ) -> Path:
     """Construct a non-editable locked runtime under a temporary/test bundle."""
     if (
@@ -127,6 +232,7 @@ def construct_isolated_runtime(
         or not install_root.is_absolute()
         or install_root.is_symlink()
         or not uv_executable.is_absolute()
+        or not protected_python.is_absolute()
     ):
         raise ProtectedStagingError("protected runtime construction rejected")
     runtime = install_root / "runtime"
@@ -160,7 +266,10 @@ def construct_isolated_runtime(
     with requirements.open("a", encoding="utf-8") as stream:
         stream.write(f"\n{wheel.as_uri()} --hash=sha256:{wheel_digest}\n")
     requirements.chmod(0o600)
-    runner.run((uv, "venv", "--python", "3.12", str(runtime)), cwd=install_root)
+    runner.run(
+        (uv, "venv", "--python", str(protected_python), str(runtime)),
+        cwd=install_root,
+    )
     runtime.chmod(0o700)
     python = runtime / "bin/python"
     runner.run(
@@ -263,12 +372,43 @@ def install_source_bundle(
     cml_ca_pem_sha256: str,
     runtime_runner: RuntimeBuildRunner,
     uv_executable: Path,
+    installation_authority: StandingInstallationAuthority,
     *,
     owner_uid: int | None = None,
+    standing: bool = False,
 ) -> ProtectedStagingManifest:
     """Copy an exact reviewed source set into a new private versioned bundle."""
     verify_merged_source(source, expected_commit)
     source = source.resolve(strict=True)
+    if str(uv_executable) != installation_authority.uv.path:
+        raise ProtectedStagingError("protected uv authority mismatch")
+    if standing and (
+        os.geteuid() != 0
+        or installation_authority.protected_python.is_symlink()
+        or not installation_authority.protected_python.is_file()
+        or hashlib.sha256(
+            installation_authority.protected_python.read_bytes()
+        ).hexdigest()
+        != installation_authority.python_sha256
+    ):
+        raise ProtectedStagingError("protected Python authority rejected")
+    if standing:
+        validate_root_owned_executable(
+            uv_executable,
+            source,
+            installation_authority.service_identity,
+            installation_authority.uv,
+        )
+        validate_root_owned_executable(
+            installation_authority.protected_python,
+            source,
+            installation_authority.service_identity,
+            ExecutionToolAuthority(
+                path=str(installation_authority.protected_python),
+                sha256=installation_authority.python_sha256,
+                version=installation_authority.python_version,
+            ),
+        )
     if (
         destination.exists()
         or destination.is_symlink()
@@ -308,7 +448,35 @@ def install_source_bundle(
             destination,
             runtime_runner,
             uv_executable=uv_executable,
+            protected_python=installation_authority.protected_python,
         )
+        if standing:
+            dependency_map = inspect_runtime_native_dependencies(runtime)
+            validate_macho_dependencies(
+                dependency_map,
+                protected_native_files={
+                    Path(path): digest
+                    for path, digest in (
+                        installation_authority.protected_native_files.items()
+                    )
+                },
+                digest_reader=lambda path: hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest(),
+            )
+            admission = hashlib.sha256(
+                json.dumps(
+                    dependency_map, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).hexdigest()
+            if admission != installation_authority.native_dependency_admission_sha256:
+                raise ProtectedStagingError(
+                    "protected native dependency admission changed"
+                )
+            for immutable_root in (source_root, runtime, destination / "artifacts"):
+                _apply_immutable_ownership(
+                    immutable_root, installation_authority.service_identity.service_gid
+                )
         runtime_entries, runtime_digest = inventory_runtime(runtime)
         python_interpreter = (runtime / "bin/python").resolve(strict=True)
         runtime_inventory = json.dumps(
@@ -316,13 +484,20 @@ def install_source_bundle(
         )
         runtime_inventory_file = destination / "runtime-files.json"
         runtime_inventory_file.write_text(runtime_inventory, encoding="utf-8")
-        runtime_inventory_file.chmod(0o600)
+        runtime_inventory_file.chmod(0o440 if standing else 0o600)
+        if standing:
+            os.chown(
+                runtime_inventory_file,
+                0,
+                installation_authority.service_identity.service_gid,
+            )
         wheels = tuple((destination / "artifacts/wheels").glob("*.whl"))
         if len(wheels) != 1:
             raise ProtectedStagingError("protected runtime wheel rejected")
         requirements = destination / "artifacts/production-requirements.txt"
         controller_path = "src/network_change_delivery/protected_staging_controller.py"
         manifest = ProtectedStagingManifest(
+            service_identity=installation_authority.service_identity,
             buildkite_pipeline_id=buildkite_pipeline_id,
             source_commit=expected_commit,
             netbox_url=netbox_url,
@@ -341,6 +516,23 @@ def install_source_bundle(
             production_requirements_sha256=hashlib.sha256(
                 requirements.read_bytes()
             ).hexdigest(),
+            uv=installation_authority.uv,
+            buildkite_agent=installation_authority.buildkite_agent,
+            terraform=installation_authority.terraform,
+            openssl=installation_authority.openssl,
+            ssh_keyscan=installation_authority.ssh_keyscan,
+            ssh_keygen=installation_authority.ssh_keygen,
+            ansible_collections_root=str(
+                installation_authority.ansible_collections_root
+            ),
+            ansible_collections=installation_authority.ansible_collections,
+            ansible_inventory_sha256=(installation_authority.ansible_inventory_sha256),
+            native_dependencies=installation_authority.native_dependencies,
+            protected_native_files=installation_authority.protected_native_files,
+            native_dependency_admission_sha256=(
+                installation_authority.native_dependency_admission_sha256
+            ),
+            build_sdk_identity=installation_authority.build_sdk_identity,
             controller_artifact_digest=digests[controller_path],
             file_digests=digests,
             cisco=_target(6),
@@ -365,16 +557,45 @@ def install_source_bundle(
         manifest_file.write_text(
             manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
-        manifest_file.chmod(0o600)
-        validate_protected_bundle(source_root, source, manifest, owner_uid=owner_uid)
+        manifest_file.chmod(0o440 if standing else 0o600)
+        if standing:
+            os.chown(
+                manifest_file, 0, installation_authority.service_identity.service_gid
+            )
+            inventory_file.chmod(0o440)
+            os.chown(
+                inventory_file, 0, installation_authority.service_identity.service_gid
+            )
+            destination.chmod(0o750)
+            os.chown(
+                destination, 0, installation_authority.service_identity.service_gid
+            )
+        validate_protected_bundle(
+            source_root,
+            source,
+            manifest,
+            owner_uid=owner_uid,
+            service_identity=(
+                installation_authority.service_identity if standing else None
+            ),
+        )
         validate_runtime_inventory(
             runtime,
             source,
             manifest,
             runtime_inventory_file,
             owner_uid=owner_uid,
+            service_identity=(
+                installation_authority.service_identity if standing else None
+            ),
         )
-        validate_runtime_artifacts(destination, manifest)
+        validate_runtime_artifacts(
+            destination,
+            manifest,
+            service_identity=(
+                installation_authority.service_identity if standing else None
+            ),
+        )
         smoke = subprocess.run(
             [str(runtime / manifest.controller_entrypoint), "--help"],
             cwd=destination,
@@ -394,6 +615,9 @@ def install_source_bundle(
             manifest,
             runtime_inventory_file,
             owner_uid=owner_uid,
+            service_identity=(
+                installation_authority.service_identity if standing else None
+            ),
         )
         return manifest
     except Exception:

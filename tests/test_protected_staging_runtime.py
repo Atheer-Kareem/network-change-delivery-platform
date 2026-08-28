@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -11,26 +13,37 @@ from pydantic import ValidationError
 from network_change_delivery.protected_staging import (
     EXPECTED_TERRAFORM_ADDRESSES,
     CMLAuthority,
+    ExecutionToolAuthority,
+    NativeDependencyAuthority,
     ProtectedStagingError,
     ProtectedStagingManifest,
     ProtectedStagingTarget,
     ProtectedTerraformExecutor,
     ProtectedTerraformOutputs,
+    ServiceIdentityAuthority,
     StagingTargetAuthority,
 )
 from network_change_delivery.protected_staging_runtime import (
     FailureCode,
     LifecycleIdentity,
+    ProcessIdentity,
     ProtectedOperationError,
     ProtectedRecoveryMetadata,
     ProtectedRuntimeEvidence,
     ProtectedStaticInventory,
     build_protected_terraform_environment,
     derive_run_directory,
+    directory_inventory_sha256,
     read_protected_file,
+    read_root_owned_service_file,
     recover_protected_run,
     run_protected_lifecycle,
+    validate_macho_dependencies,
     validate_protected_executable,
+    validate_root_owned_executable,
+    validate_root_owned_service_directory,
+    validate_service_identity,
+    validate_service_owned_private_path,
     verify_ca_digest,
     write_recovery_metadata,
 )
@@ -73,7 +86,8 @@ def target(device_id: int) -> StagingTargetAuthority:
 def manifest(**changes) -> ProtectedStagingManifest:
     controller = "src/network_change_delivery/protected_staging_controller.py"
     values = {
-        "schema_version": 3,
+        "schema_version": 4,
+        "service_identity": ServiceIdentityAuthority(service_uid=420, service_gid=420),
         "buildkite_pipeline_id": PIPELINE,
         "source_commit": SHA1,
         "netbox_url": "https://netbox.example",
@@ -86,6 +100,54 @@ def manifest(**changes) -> ProtectedStagingManifest:
         "python_interpreter_sha256": SHA256,
         "project_wheel_sha256": SHA256,
         "production_requirements_sha256": SHA256,
+        "uv": ExecutionToolAuthority(
+            path="/protected/uv", sha256=SHA256, version="0.12.2"
+        ),
+        "buildkite_agent": ExecutionToolAuthority(
+            path="/protected/buildkite-agent", sha256=SHA256, version="3.137.0"
+        ),
+        "terraform": ExecutionToolAuthority(
+            path="/protected/terraform", sha256=SHA256, version="1.15.8"
+        ),
+        "openssl": ExecutionToolAuthority(
+            path="/protected/openssl", sha256=SHA256, version="3.6.3"
+        ),
+        "ssh_keyscan": ExecutionToolAuthority(
+            path="/usr/bin/ssh-keyscan",
+            sha256=SHA256,
+            version="OpenSSH_10.2",
+            system_protected=True,
+        ),
+        "ssh_keygen": ExecutionToolAuthority(
+            path="/usr/bin/ssh-keygen",
+            sha256=SHA256,
+            version="OpenSSH_10.2",
+            system_protected=True,
+        ),
+        "ansible_collections_root": "/protected/ansible",
+        "ansible_collections": {
+            "ansible.netcommon": "8.6.0",
+            "ansible.utils": "6.1.0",
+            "cisco.ios": "11.4.2",
+        },
+        "ansible_inventory_sha256": SHA256,
+        "native_dependencies": (
+            NativeDependencyAuthority(
+                name="libssh",
+                version="0.11.3",
+                root="/protected/native/libssh",
+                inventory_sha256=SHA256,
+            ),
+            NativeDependencyAuthority(
+                name="openssl",
+                version="3.6.3",
+                root="/protected/native/openssl",
+                inventory_sha256=SHA256,
+            ),
+        ),
+        "protected_native_files": {"/protected/native/libssh.dylib": SHA256},
+        "native_dependency_admission_sha256": SHA256,
+        "build_sdk_identity": "macos-sdk-test",
         "controller_artifact_digest": SHA256,
         "file_digests": {controller: SHA256},
         "cisco": target(6),
@@ -196,14 +258,219 @@ def run_directory(tmp_path: Path) -> Path:
     return directory
 
 
-def test_schema_three_binds_pipeline_endpoints_source_and_runtime() -> None:
-    assert manifest().schema_version == 3
+def test_schema_four_binds_pipeline_endpoints_source_runtime_and_service() -> None:
+    assert manifest().schema_version == 4
     with pytest.raises(ValidationError):
         manifest(buildkite_pipeline_id="not-a-uuid")
     with pytest.raises(ValidationError):
         manifest(netbox_url="https://other.example/path")
     with pytest.raises(ValidationError):
         manifest(openbao_url="http://bao.example")
+
+
+def _metadata(uid: int, gid: int, mode: int, size: int = 1):
+    return SimpleNamespace(st_uid=uid, st_gid=gid, st_mode=mode, st_size=size)
+
+
+def test_exact_service_identity_rejects_root_validation_and_groups() -> None:
+    authority = manifest().service_identity
+    validate_service_identity(authority, ProcessIdentity(420, 420, ()))
+    for identity in (
+        ProcessIdentity(0, 420, ()),
+        ProcessIdentity(501, 420, ()),
+        ProcessIdentity(420, 421, ()),
+        ProcessIdentity(420, 420, (20,)),
+    ):
+        with pytest.raises(ProtectedStagingError):
+            validate_service_identity(authority, identity)
+
+
+def test_root_owned_config_and_service_owned_state_policies(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    authority_root = tmp_path / "protected/authority"
+    config_dir = authority_root / "config"
+    state_root = tmp_path / "protected/state"
+    checkout.mkdir()
+    config_dir.mkdir(parents=True)
+    state_root.mkdir()
+    config = config_dir / "protected-controller.json"
+    config.write_text("{}", encoding="utf-8")
+    authority = manifest().service_identity
+
+    def admitted(path: Path):
+        if path == config:
+            return _metadata(0, 420, stat.S_IFREG | 0o440, 2)
+        if path == config_dir:
+            return _metadata(0, 420, stat.S_IFDIR | 0o750)
+        if path == state_root:
+            return _metadata(420, 420, stat.S_IFDIR | 0o700)
+        return _metadata(0, 0, stat.S_IFDIR | 0o755)
+
+    assert (
+        read_root_owned_service_file(
+            config,
+            checkout,
+            authority,
+            authority_root=authority_root,
+            metadata_reader=admitted,
+        )
+        == b"{}"
+    )
+    assert (
+        validate_root_owned_service_directory(
+            config_dir,
+            checkout,
+            authority,
+            authority_root=authority_root,
+            metadata_reader=admitted,
+        )
+        == config_dir
+    )
+    assert (
+        validate_service_owned_private_path(
+            state_root,
+            checkout,
+            authority,
+            mutable_root=tmp_path / "protected",
+            metadata_reader=admitted,
+        )
+        == state_root
+    )
+    for uid, gid in ((421, 420), (420, 421)):
+        with pytest.raises(ProtectedStagingError):
+            validate_service_owned_private_path(
+                state_root,
+                checkout,
+                authority,
+                mutable_root=tmp_path / "protected",
+                metadata_reader=lambda path, uid=uid, gid=gid: (
+                    _metadata(uid, gid, stat.S_IFDIR | 0o700)
+                    if path == state_root
+                    else admitted(path)
+                ),
+            )
+
+    def staging_owned(path: Path):
+        value = admitted(path)
+        if path == config:
+            return _metadata(420, 420, value.st_mode, value.st_size)
+        return value
+
+    with pytest.raises(ProtectedStagingError):
+        read_root_owned_service_file(
+            config,
+            checkout,
+            authority,
+            authority_root=authority_root,
+            metadata_reader=staging_owned,
+        )
+    with pytest.raises(ProtectedStagingError):
+        validate_root_owned_service_directory(
+            config_dir,
+            checkout,
+            authority,
+            authority_root=authority_root,
+            metadata_reader=lambda path: (
+                _metadata(420, 420, stat.S_IFDIR | 0o550)
+                if path == config_dir
+                else admitted(path)
+            ),
+        )
+
+
+def test_tool_digest_and_native_dependency_admission(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    authority_root = tmp_path / "authority"
+    tool_dir = authority_root / "tools"
+    checkout.mkdir()
+    tool_dir.mkdir(parents=True)
+    tool = tool_dir / "terraform"
+    tool.write_bytes(b"terraform")
+    tool.chmod(0o550)
+    authority = manifest().service_identity
+    tool_authority = manifest().terraform.model_copy(
+        update={"path": str(tool), "sha256": hashlib.sha256(b"terraform").hexdigest()}
+    )
+
+    def metadata(path: Path):
+        if path == tool:
+            return _metadata(0, 420, stat.S_IFREG | 0o550, len(b"terraform"))
+        return _metadata(0, 0, stat.S_IFDIR | 0o755)
+
+    validate_root_owned_executable(
+        tool,
+        checkout,
+        authority,
+        tool_authority,
+        authority_root=authority_root,
+        metadata_reader=metadata,
+        observed_version="1.15.8",
+    )
+    with pytest.raises(ProtectedStagingError):
+        validate_root_owned_executable(
+            tool,
+            checkout,
+            authority,
+            tool_authority,
+            authority_root=authority_root,
+            metadata_reader=lambda path: (
+                _metadata(0, 0, stat.S_IFDIR | 0o775)
+                if path == tool_dir
+                else metadata(path)
+            ),
+        )
+    with pytest.raises(ProtectedStagingError):
+        validate_root_owned_executable(
+            tool,
+            checkout,
+            authority,
+            tool_authority.model_copy(update={"sha256": "0" * 64}),
+            authority_root=authority_root,
+            metadata_reader=metadata,
+        )
+    with pytest.raises(ProtectedStagingError):
+        validate_root_owned_executable(
+            tool,
+            checkout,
+            authority,
+            tool_authority,
+            authority_root=authority_root,
+            metadata_reader=metadata,
+            observed_version="1.16.0",
+        )
+
+    protected = Path(
+        "/private/var/db/ncdp-staging/authority/native/libssh/libssh.dylib"
+    )
+    validate_macho_dependencies(
+        {
+            "/protected/runtime/module.so": (
+                "/usr/lib/libSystem.B.dylib",
+                str(protected),
+            )
+        },
+        protected_native_files={protected: SHA256},
+        digest_reader=lambda _path: SHA256,
+    )
+    for rejected in (
+        "/opt/homebrew/lib/libssh.dylib",
+        "/Users/netdevops/libssh.dylib",
+        "/private/tmp/build/libssh.dylib",
+    ):
+        with pytest.raises(ProtectedStagingError):
+            validate_macho_dependencies(
+                {"/protected/runtime/module.so": (rejected,)},
+                protected_native_files={},
+                digest_reader=lambda _path: SHA256,
+            )
+
+    collections = tmp_path / "collections"
+    collections.mkdir()
+    metadata_file = collections / "MANIFEST.json"
+    metadata_file.write_text('{"version":"8.6.0"}', encoding="utf-8")
+    before = directory_inventory_sha256(collections)
+    metadata_file.write_text('{"version":"8.6.1"}', encoding="utf-8")
+    assert directory_inventory_sha256(collections) != before
 
 
 def test_protected_file_rejects_mode_symlink_empty_and_checkout(tmp_path: Path) -> None:

@@ -72,8 +72,9 @@ passed trusted structural parsing. B3-2B owns installation from exact clean
 merged main; B4 owns the later hook cutover and re-enable.
 
 Phase B3-2B1 completes the non-live executable composition and splits external
-admission into B3-2B2. The controller binds pipeline and commit to manifest
-schema 3, separately validates the reviewed source and final executable-runtime
+admission into B3-2B2. B3-2B2B0-R corrects standing ownership: the controller
+binds pipeline and commit to manifest schema 4, separately validates the
+root-owned reviewed source and final executable-runtime
 inventories, constructs a non-inherited privileged environment, applies only exact
 saved plans, supports exact-subset cleanup/recovery, and emits allowlisted
 evidence. No standing runtime or command hook is changed by B3-2B1.
@@ -88,6 +89,15 @@ Before installing anything, B3-2B2 must prove the validation, staging, and
 deployment OS principals and protected-root ownership/ACLs. A shared Unix UID
 between checkout-controlled validation and protected staging is a hard stop;
 private paths under one UID are not an isolation boundary.
+
+Remediation must rotate every exposed cluster-registration token and bootstrap
+each affected agent from a root-only descriptor. Connecting the replacement
+staging agent for admission requires the exact queue to be administratively
+paused; the repository freeze alone is not dispatch authority. Agent UUID
+stability is measured before selecting an additional OpenBao claim. Before B4,
+agent-local hooks, plugins and command evaluation are disabled and a root-owned
+hook may invoke only the installed controller; cryptographic evidence
+attestation remains a separate gate.
 
 The protected OIDC request is fixed to audience
 `urn:ncdp:openbao:staging`, lifetime 300 seconds, `pipeline_id` as the subject

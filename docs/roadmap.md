@@ -213,7 +213,10 @@ Ordering may change when implementation evidence requires it.
       repository tests. B3-2B2 owns exact merged-main installation and external
       admission, including proof that checkout validation and protected staging
       do not share filesystem authority or a Unix UID; absence is a pre-install
-      hard stop. B4 owns later reviewed consumer cutover, unfreeze,
+      hard stop. B3-2B2B0-R models schema-4 root-owned immutable authority,
+      exact service identity, protected native dependencies, root-descriptor
+      agent-token bootstrap, and queue-paused registration. B4 owns later
+      reviewed consumer cutover, unfreeze,
       and agent re-enable.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
       and privately protect recovery evidence, manually remove only approved

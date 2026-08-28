@@ -7,17 +7,75 @@ from uuid import UUID
 import pytest
 
 from network_change_delivery.protected_staging import (
+    ExecutionToolAuthority,
+    NativeDependencyAuthority,
     ProtectedStagingError,
+    ServiceIdentityAuthority,
     validate_runtime_artifacts,
     validate_runtime_inventory,
 )
+from network_change_delivery.protected_staging_controller import (
+    PROTECTED_CONTROLLER_CONFIG,
+)
 from network_change_delivery.protected_staging_install import (
     PROTECTED_SOURCE_FILES,
+    StandingInstallationAuthority,
     SubprocessRuntimeBuildRunner,
     construct_isolated_runtime,
+    inspect_runtime_native_dependencies,
     install_source_bundle,
     inventory_runtime,
 )
+from network_change_delivery.protected_staging_runtime import (
+    validate_macho_dependencies,
+)
+
+SHA256 = "b" * 64
+
+
+def _install_authority(
+    python: Path = Path("/opt/protected/python3.12"),
+    uv: Path = Path("/opt/protected/bin/uv"),
+) -> StandingInstallationAuthority:
+    tool = lambda path, version, system=False: ExecutionToolAuthority(  # noqa: E731
+        path=path, sha256=SHA256, version=version, system_protected=system
+    )
+    return StandingInstallationAuthority(
+        service_identity=ServiceIdentityAuthority(service_uid=420, service_gid=420),
+        protected_python=python,
+        python_version="3.12",
+        python_sha256=SHA256,
+        uv=tool(str(uv), "0.12.2"),
+        buildkite_agent=tool("/opt/protected/bin/buildkite-agent", "3.137.0"),
+        terraform=tool("/opt/protected/bin/terraform", "1.15.8"),
+        openssl=tool("/opt/protected/bin/openssl", "3.6.3"),
+        ssh_keyscan=tool("/usr/bin/ssh-keyscan", "OpenSSH_10.2", True),
+        ssh_keygen=tool("/usr/bin/ssh-keygen", "OpenSSH_10.2", True),
+        ansible_collections_root=Path("/opt/protected/ansible"),
+        ansible_collections={
+            "ansible.netcommon": "8.6.0",
+            "ansible.utils": "6.1.0",
+            "cisco.ios": "11.4.2",
+        },
+        ansible_inventory_sha256=SHA256,
+        native_dependencies=(
+            NativeDependencyAuthority(
+                name="libssh",
+                version="0.11.3",
+                root="/opt/protected/native/libssh",
+                inventory_sha256=SHA256,
+            ),
+            NativeDependencyAuthority(
+                name="openssl",
+                version="3.6.3",
+                root="/opt/protected/native/openssl",
+                inventory_sha256=SHA256,
+            ),
+        ),
+        protected_native_files={"/opt/protected/native/libssh.dylib": SHA256},
+        native_dependency_admission_sha256=SHA256,
+        build_sdk_identity="macos-sdk-test",
+    )
 
 
 class FakeRuntimeBuilder:
@@ -68,6 +126,7 @@ def test_installer_copies_only_exact_private_source_set(
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     assert set(manifest.file_digests) == set(PROTECTED_SOURCE_FILES)
     assert (destination / "source-files.json").is_file()
@@ -104,6 +163,36 @@ def test_installer_refuses_checkout_destination(monkeypatch) -> None:
             "b" * 64,
             FakeRuntimeBuilder(),
             Path("/opt/protected/bin/uv"),
+            _install_authority(),
+        )
+
+
+def test_standing_install_requires_root_and_exact_protected_python(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = Path(__file__).parents[1]
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install.verify_merged_source",
+        lambda _source, _commit: None,
+    )
+    monkeypatch.setattr(
+        "network_change_delivery.protected_staging_install.os.geteuid", lambda: 501
+    )
+    with pytest.raises(ProtectedStagingError, match="Python authority"):
+        install_source_bundle(
+            source,
+            tmp_path / "standing",
+            "a" * 40,
+            "personal-cml",
+            "https://cml.example",
+            UUID("00000000-0000-0000-0000-000000000001"),
+            "https://netbox.example",
+            "https://bao.example",
+            "b" * 64,
+            FakeRuntimeBuilder(),
+            Path("/opt/protected/bin/uv"),
+            _install_authority(),
+            standing=True,
         )
 
 
@@ -127,6 +216,16 @@ def test_controller_sources_never_execute_checkout_runtime() -> None:
         assert forbidden not in sources
 
 
+def test_controller_config_authority_is_fixed_and_home_independent(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HOME", "/checkout-controlled-home")
+    assert (
+        Path("/private/var/db/ncdp-staging/authority/config/protected-controller.json")
+        == PROTECTED_CONTROLLER_CONFIG
+    )
+
+
 def test_isolated_runtime_contract_is_locked_noneditable_and_outside_source(
     tmp_path: Path,
 ) -> None:
@@ -136,7 +235,11 @@ def test_isolated_runtime_contract_is_locked_noneditable_and_outside_source(
     bundle.mkdir(mode=0o700)
     runner = FakeRuntimeBuilder()
     runtime = construct_isolated_runtime(
-        source, bundle, runner, uv_executable=Path("/opt/protected/bin/uv")
+        source,
+        bundle,
+        runner,
+        uv_executable=Path("/opt/protected/bin/uv"),
+        protected_python=Path("/opt/protected/python3.12"),
     )
     assert runtime == bundle / "runtime"
     commands = [call[0] for call in runner.calls]
@@ -148,7 +251,7 @@ def test_isolated_runtime_contract_is_locked_noneditable_and_outside_source(
         "/opt/protected/bin/uv",
         "venv",
         "--python",
-        "3.12",
+        "/opt/protected/python3.12",
     )
     assert "--require-hashes" in commands[3]
     assert "--compile-bytecode" in commands[3]
@@ -210,6 +313,7 @@ def test_final_runtime_inventory_rejects_tamper(
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     runtime = destination / "runtime"
     if tamper == "module":
@@ -250,6 +354,7 @@ def test_runtime_inventory_rejects_escaping_and_entrypoint_symlinks(
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     entrypoint = destination / "runtime/bin/ncdp-protected-staging-controller"
     entrypoint.unlink()
@@ -282,6 +387,7 @@ def test_runtime_inventory_file_tamper_is_rejected(tmp_path: Path, monkeypatch) 
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     inventory = destination / "runtime-files.json"
     inventory.write_text("{}", encoding="utf-8")
@@ -311,6 +417,7 @@ def test_retained_wheel_and_requirements_are_manifest_bound(
         "b" * 64,
         FakeRuntimeBuilder(),
         Path("/opt/protected/bin/uv"),
+        _install_authority(),
     )
     validate_runtime_artifacts(destination, manifest)
     path = (
@@ -336,6 +443,14 @@ def test_actual_reduced_source_builds_immutable_protected_runtime(
     uv_path = shutil.which("uv")
     if uv_path is None:
         pytest.fail("admitted uv executable is unavailable")
+    protected_python = Path(
+        subprocess.run(
+            [uv_path, "--cache-dir", "/tmp/ncdp-uv-cache", "python", "find", "3.12"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
     destination = tmp_path / "actual-installed"
     monkeypatch.setattr(
         "network_change_delivery.protected_staging_install.verify_merged_source",
@@ -379,6 +494,7 @@ def test_actual_reduced_source_builds_immutable_protected_runtime(
             build_environment=build_environment,
         ),
         Path(uv_path),
+        _install_authority(protected_python, Path(uv_path)),
     )
     assert (destination / "source/README.md").is_file()
     runtime = destination / "runtime"
@@ -400,6 +516,20 @@ def test_actual_reduced_source_builds_immutable_protected_runtime(
     assert after_digest == before_digest
     assert inventory_path.read_bytes() == before_inventory
     validate_runtime_inventory(runtime, source, manifest, inventory_path)
+    if sys.platform == "darwin":
+        native_map = inspect_runtime_native_dependencies(runtime)
+        assert native_map
+        assert any(
+            dependency.startswith("/opt/homebrew") or dependency.startswith("@")
+            for dependencies in native_map.values()
+            for dependency in dependencies
+        )
+        with pytest.raises(ProtectedStagingError):
+            validate_macho_dependencies(
+                native_map,
+                protected_native_files={},
+                digest_reader=lambda _path: SHA256,
+            )
     module = subprocess.run(
         [
             str(runtime / "bin/python"),

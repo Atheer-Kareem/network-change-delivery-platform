@@ -6,8 +6,9 @@ ADR 0023 preserves the ephemeral lifecycle but changes its authority
 inputs: staging will use separate NetBox identities, management addressing,
 credentials, and preferably an isolated management network. Terraform has no
 authority over the brownfield live/reference lab. Phase B3-1 establishes the
-static two-router target graph; authority consumption remains deliberately
-unmigrated and fail closed until B3-2.
+static two-router target graph. Phase B3-2A adds the non-executing protected
+controller and installation-source contracts; installation and external
+admission remain deferred to B3-2B, and execution remains fail closed.
 
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.
 Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary
@@ -106,6 +107,32 @@ staging LaunchAgent plus independent explicit-false pipeline conditions for
 legacy staging and protected delivery. B4 alone owns reviewed removal and agent
 re-enable after the devices 6/7 consumer is migrated.
 
+Phase B3-2A divides the future staging path into three trust zones. The checkout
+contains source under test but receives no CML, Terraform-state, NetBox-reader,
+OpenBao, or protected-environment authority. A versioned agent-owned bundle,
+installed outside every checkout from an exact clean merged-main commit, owns
+the controller and reviewed ten-resource Terraform source. Agent-owned external
+configuration owns the immutable authority manifest, state root, and
+credentials. The controller rejects checkout Terraform, arbitrary authority
+paths, ambient live inventory credentials, live device IDs/addresses, and the
+brownfield lab UUID.
+
+The manifest binds staging devices 6/7 and homologs 1/2, `.30/.31`, exact
+OpenBao roles/references, System Bridge and image definitions, the ten-address
+Terraform graph, source commit, and per-file bundle digests. The staging
+resolver reads devices by stable ID and validates exact status, role, platform,
+matching homolog device type, interface, primary IP, environment, an exactly
+empty staging tag set, and unique reverse homolog mapping through bounded native
+custom-field queries; the live
+`NetBoxInventoryProvider` remains unchanged. Privileged Terraform uses only
+saved, mode-`0600` plans whose sanitized structural actions match the phase
+allowlist, then applies that exact plan.
+
+B3-2A does not create a runnable standing controller or install or activate a
+bundle. B3-2B must construct and verify the isolated executable runtime from
+exact merged authority and validate external authority while preserving the freeze.
+B4 separately owns command-hook cutover and agent re-enable.
+
 ## State lifecycle and secret boundary
 
 Each run initializes `infrastructure/cml/ephemeral` with its own externally
@@ -134,8 +161,10 @@ from cleanup failure and allowlists only structural identities, stable authority
 references, timings, and outcomes. It excludes credentials, rendered configs,
 state, tokens, raw device configuration, and raw provider exception bodies.
 
-All future live plan, apply, lifecycle, and destroy operations must use
-Terraform's JSON UI piped directly through `scripts/terraform_cml_safe_ui.py`.
+Historical staging used Terraform's JSON UI piped through
+`scripts/terraform_cml_safe_ui.py`. The protected B3-2A contract instead keeps
+raw plan JSON inside trusted parsing, writes a sensitive saved plan in the
+protected run directory, structurally admits it, and applies that exact file.
 Raw JSON, saved plans, `tee`, `TF_LOG`, human-readable apply/show, and state
 payload display remain prohibited because the provider lifecycle snapshot can
 surface node configuration through computed non-sensitive fields.
@@ -154,9 +183,9 @@ TCP readiness can precede vendor CLI/facts readiness. The read-only NCDP
 validation boundary therefore retries only bounded provider collection failures
 for three minutes, using a fresh connection each time. Inventory, policy, and
 other ambiguous failures remain immediate failures; this retry never invokes a
-deploy or device-write operation. During B3-1 these runtime semantics still
-refer to historical devices 1/2 and are not executable; B3-2 owns the protected
-devices 6/7 migration.
+deploy or device-write operation. The checkout-controlled historical driver
+still resolves devices 1/2 and remains deliberately unusable. B3-2A supplies a
+separate protected devices 6/7 contract without making checkout code privileged.
 
 ## Buildkite identities
 

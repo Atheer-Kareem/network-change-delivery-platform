@@ -148,7 +148,7 @@ class BuildkiteStagingSecretProvider:
     @staticmethod
     def reference(device) -> CredentialReference:
         device_id = netbox_device_id(device)
-        if device_id not in {1, 2}:
+        if device_id not in {6, 7}:
             raise SecretError("Buildkite staging device identity rejected")
         return CredentialReference(
             "openbao", f"openbao:kv-v2:ncdp/devices/{device_id}/ssh"

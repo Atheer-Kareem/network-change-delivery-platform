@@ -23,6 +23,7 @@ ncdp-netbox-lab-service = "network_change_delivery.netbox_lab_reconciler:main"
 ncdp-oxidized-observe = "network_change_delivery.oxidized_observation:main"
 ncdp-oxidized-retire-trust = "network_change_delivery.oxidized_host_trust:retire_main"
 ncdp-observability-service = "network_change_delivery.observability_reconciler:main"
+ncdp-protected-staging-controller = "network_change_delivery.protected_staging_controller:main"
 
 [dependency-groups]
 dev = [

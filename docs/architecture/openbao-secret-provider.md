@@ -87,6 +87,14 @@ authenticate after B2. No staging run is authorized until B3/B4 migrate that
 consumer. A reviewed Buildkite migration guard or freeze is required before the
 first B3 source or Terraform commit can be pushed.
 
+Phase B3-2A aligns the repository staging configurator and protected staging
+secret authority with standing devices 6/7. The protected provider accepts only
+device 6 with role/reference 6 and device 7 with role/reference 7; it rejects
+live IDs 1/2/3, arbitrary IDs, roles, and references. It receives the Buildkite
+OIDC JWT in memory and has no ambient AppRole or live-secret fallback. The
+historical checkout driver still selects 1/2 and remains fail closed. No
+OpenBao object is changed by B3-2A; installation is deferred.
+
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role
 `ncdp-buildkite-cml-deploy-device-<id>` carries exactly policy

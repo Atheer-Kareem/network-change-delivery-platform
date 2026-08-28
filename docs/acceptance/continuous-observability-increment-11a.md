@@ -43,6 +43,18 @@ absence verification, and run-scoped Terraform state retirement. Build #162 is
 not retried. This infrastructure failure is retained as implementation-PR
 staging evidence and does not constitute 11A live acceptance.
 
+## Post-merge live-attempt history
+
+The first post-merge live-acceptance attempt used implementation commit
+`f9a24abca1264c3657639ae2efe7b5fd1e9016fd` after natural merged-main Build
+#164 passed. It stopped during persistent service installation with the bounded
+failure `python: command not found`: the installer invoked a host `python`
+alias instead of the exact versioned runtime interpreter it had already
+created. No CML realization, device probe, device authentication or write,
+OpenBao device-secret read, Oxidized mutation, or AuditStore mutation occurred.
+The newly created partial first-install roots were inspected and safely removed.
+Increment 11A live acceptance remains NOT YET PROVEN.
+
 ## Pending live acceptance
 
 After the implementation PR is merged, the operator must install/update the

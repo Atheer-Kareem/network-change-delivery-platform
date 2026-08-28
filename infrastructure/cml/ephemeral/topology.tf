@@ -1,20 +1,20 @@
-resource "cml2_lab" "staging" {
+resource "cml2_lab" "twin" {
   title       = "NCDP Staging ${var.staging_run_id}"
-  description = "ADR 0023 ephemeral Terraform-owned Cisco/Junos staging pair."
-  notes       = "Run ${var.staging_run_id}; disposable staging realization; stable identity remains NetBox-owned; not live/reference or a brownfield topology clone."
+  description = "Ephemeral Terraform-owned personal CML staging twin."
+  notes       = "Run ${var.staging_run_id}; disposable CML realization only; stable identity remains NetBox-owned."
 }
 
-module "managed_pair" {
-  source = "../modules/managed-pair"
+module "twin" {
+  source = "../modules/twin"
 
-  lab_id                          = cml2_lab.staging.id
-  lifecycle_state                 = var.lifecycle_state
-  cisco_bootstrap_hostname        = var.cisco_bootstrap_hostname
-  cisco_bootstrap_management_cidr = var.cisco_bootstrap_management_cidr
-  cisco_bootstrap_username        = var.cisco_bootstrap_username
-  cisco_bootstrap_password        = var.cisco_bootstrap_password
-  junos_bootstrap_hostname        = var.junos_bootstrap_hostname
-  junos_bootstrap_management_cidr = var.junos_bootstrap_management_cidr
-  junos_bootstrap_username        = var.junos_bootstrap_username
-  junos_bootstrap_password_hash   = var.junos_bootstrap_password_hash
+  lab_id                                  = cml2_lab.twin.id
+  twin_lifecycle_state                    = var.twin_lifecycle_state
+  core_02_bootstrap_hostname              = var.core_02_bootstrap_hostname
+  core_02_bootstrap_management_cidr       = var.core_02_bootstrap_management_cidr
+  core_02_bootstrap_username              = var.core_02_bootstrap_username
+  core_02_bootstrap_password              = var.core_02_bootstrap_password
+  edge_junos_01_bootstrap_hostname        = var.edge_junos_01_bootstrap_hostname
+  edge_junos_01_bootstrap_management_cidr = var.edge_junos_01_bootstrap_management_cidr
+  edge_junos_01_bootstrap_username        = var.edge_junos_01_bootstrap_username
+  edge_junos_01_bootstrap_password_hash   = var.edge_junos_01_bootstrap_password_hash
 }

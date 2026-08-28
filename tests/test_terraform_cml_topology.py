@@ -46,8 +46,8 @@ def test_exact_resource_type_counts_and_no_structural_escape_hatches() -> None:
     assert ROOT_TOPOLOGY.count('resource "cml2_lab" "twin"') == 1
     assert ROOT_TOPOLOGY.count('module "twin"') == 1
     ephemeral = (EPHEMERAL_ROOT / "topology.tf").read_text()
-    assert ephemeral.count('resource "cml2_lab" "staging"') == 1
-    assert ephemeral.count('module "managed_pair"') == 1
+    assert ephemeral.count('resource "cml2_lab" "twin"') == 1
+    assert ephemeral.count('module "twin"') == 1
     all_hcl = "\n".join(path.read_text() for path in TF_ROOT.rglob("*.tf"))
     for forbidden in ("import", "moved", "removed"):
         assert re.search(rf"(?m)^\s*{forbidden}\s+", all_hcl) is None
@@ -229,7 +229,7 @@ def test_safe_lifecycle_contract_and_increment_guard() -> None:
 
     operator_lab = balanced_body(r'resource\s+"cml2_lab"\s+"twin"\s*\{', ROOT_TOPOLOGY)
     ephemeral_lab = balanced_body(
-        r'resource\s+"cml2_lab"\s+"staging"\s*\{',
+        r'resource\s+"cml2_lab"\s+"twin"\s*\{',
         (EPHEMERAL_ROOT / "topology.tf").read_text(),
     )
     assert "prevent_destroy" not in operator_lab
@@ -242,11 +242,11 @@ def test_ephemeral_run_identity_and_required_inputs_fail_closed() -> None:
     assert re.search(r"(?m)^\s*default\s*=", run_id) is None
     assert "{0,39}" in run_id
     for name in (
-        "lifecycle_state",
-        "cisco_bootstrap_username",
-        "cisco_bootstrap_password",
-        "junos_bootstrap_username",
-        "junos_bootstrap_password_hash",
+        "twin_lifecycle_state",
+        "core_02_bootstrap_username",
+        "core_02_bootstrap_password",
+        "edge_junos_01_bootstrap_username",
+        "edge_junos_01_bootstrap_password_hash",
     ):
         body = balanced_body(rf'variable\s+"{name}"\s*\{{', variables)
         assert re.search(r"(?m)^\s*default\s*=", body) is None

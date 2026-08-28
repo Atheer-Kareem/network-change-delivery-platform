@@ -4,12 +4,6 @@
 
 Accepted for implementation. Increment 11A live CML acceptance is pending.
 
-ADR 0023 preserves stable NetBox metric identity, credential-free probing,
-source binding, persistent TSDB, fail-safe publication, and periodic
-revalidation. It supersedes the disposable-operator-realization and blanket
-staging-absence assumptions; final 11A acceptance waits for persistent
-brownfield live onboarding and isolated staging.
-
 ## Decision
 
 Continuous observability is an independent, read-only operational plane. It is

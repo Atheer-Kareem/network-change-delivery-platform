@@ -1,11 +1,5 @@
 # OpenBao secret provider
 
-Active ADR 0023 staging accepts only the device-scoped roles and secret
-references for NetBox devices 6 and 7. Devices 1, 2, 3 and arbitrary IDs are
-rejected without fallback to live authority. Checkout-independent schema-4
-host isolation is deferred production hardening; credential separation remains
-mandatory.
-
 ## Boundary and authentication
 
 OpenBao is the primary personal-lab credential provider. The local/bootstrap
@@ -69,44 +63,14 @@ and reports only whether the mount was newly enabled and whether the non-secret
 backend, role, and no-device-capability contracts were verified. This is an
 operator action, never a Buildkite job action.
 
-Buildkite ephemeral staging historically used audience
-`urn:ncdp:openbao:staging` and separate roles for live device IDs 1 and 2. Each
-role bound the immutable pipeline subject and exact `cml-staging` step and issued one
+Buildkite ephemeral staging uses audience `urn:ncdp:openbao:staging` and
+separate roles `ncdp-buildkite-staging-device-1` and `-2`. Each binds the
+immutable pipeline subject and exact `cml-staging` step and issues one
 five-minute, one-use token with no default policy and only its matching exact
 device-read policy. The application verifies mapped pipeline, build, commit,
 branch, step, and job identity before the single KV-v2 read. One in-memory JWT
 is used for the two independent role logins and discarded. Staging rejects
 AppRole; deployment roles, audiences, policies, and approval remain unchanged.
-
-ADR 0023 Phase B2 supersedes the standing staging credential authority, not yet
-the checked-in consumer. Staging credentials now belong to NetBox devices 6
-`stg-core-02` and 7 `stg-edge-junos-01`, at
-`ncdp/devices/6/ssh` and `ncdp/devices/7/ssh`. Roles
-`ncdp-buildkite-staging-device-6` and `-7` issue only their corresponding exact
-`-read` policy. Administrative capability introspection proved each policy can
-read only its matching staging path and cannot read devices 1, 2, or its sibling.
-The historical staging roles and policies for devices 1/2 are absent; live
-secrets and live deployment authority remain unchanged.
-
-The current runtime still names devices 1/2 and is intentionally unable to
-authenticate after B2. No staging run is authorized until B3/B4 migrate that
-consumer. A reviewed Buildkite migration guard or freeze is required before the
-first B3 source or Terraform commit can be pushed.
-
-Phase B3-2A aligns the repository staging configurator and protected staging
-secret authority with standing devices 6/7. The protected provider accepts only
-device 6 with role/reference 6 and device 7 with role/reference 7; it rejects
-live IDs 1/2/3, arbitrary IDs, roles, and references. It receives the Buildkite
-OIDC JWT in memory and has no ambient AppRole or live-secret fallback. The
-historical checkout driver still selects 1/2 and remains fail closed. No
-OpenBao object is changed by B3-2A; installation is deferred.
-
-B3-2B1 composes the protected executable consumer without changing OpenBao.
-It binds the OpenBao endpoint in protected-authority manifest schema 4,
-requests the fixed staging
-OIDC identity in memory, and loads one device-scoped token and exact two-field
-credential payload for device 6 and then device 7. There is no ambient URL,
-admin token, AppRole, live-secret fallback, or device 1/2 read path.
 
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role

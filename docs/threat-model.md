@@ -41,11 +41,10 @@ does not reproduce production network segmentation, hardware roots of trust,
 high availability, enterprise identity governance, scale, or operational staffing.
 The reference implementation must not be promoted to production unchanged.
 
-ADR 0013 accepts an additional personal-lab staging/scenario residual risk: a
-device credential is deliberately copied into external Terraform state and CML
-Day-0 storage to permit zero-console recreation. Under ADR 0023 this exception
-does not give Terraform authority over brownfield live. Terraform sensitivity
-markings protect normal display, not stored bytes. The state remains outside Git with
+ADR 0013 accepts an additional personal-lab residual risk: the existing device
+credential is deliberately copied into external Terraform state and CML Day-0
+storage to permit zero-console recreation. Terraform sensitivity markings
+protect normal display, not stored bytes. The state remains outside Git with
 restrictive permissions on encrypted host storage, CML access remains bounded,
 credential-bearing tfvars and saved plans are prohibited, and logs/evidence must
 never emit the value. Compromise of either store can still expose the static lab

@@ -11,11 +11,6 @@ if [[ "${BUILDKITE_RETRY_COUNT:-0}" != 0 ]]; then
   echo "retried staging job is not authorized" >&2
   exit 2
 fi
-if [[ "${BUILDKITE_BRANCH:-}" != main || \
-  "${BUILDKITE_PULL_REQUEST:-false}" != false ]]; then
-  echo "credentialed staging requires reviewed merged main" >&2
-  exit 2
-fi
 scripts/buildkite/verify_staging_commit.sh
 for prohibited_variable in \
   NCDP_OPENBAO_ROLE_ID \
@@ -34,6 +29,8 @@ if [[ -z "${NCDP_STAGING_STATE_ROOT:-}" || -z "${BUILDKITE_BUILD_ID:-}" ]]; then
   echo "Buildkite staging state root or build identity is missing" >&2
   exit 2
 fi
+run_id="bk-${BUILDKITE_BUILD_ID}"
+run_directory="${NCDP_STAGING_STATE_ROOT}/ephemeral/${run_id}"
 evidence_relative="staging-evidence/staging-run.json"
 mkdir -p staging-evidence
 
@@ -43,7 +40,10 @@ buildkite-agent oidc request-token \
   --lifetime 300 \
   --subject-claim pipeline_id \
   --claim build_id |
-  uv run ncdp-staging-controller \
+  uv run python scripts/run_ephemeral_cml_staging.py \
+    --identity buildkite \
+    --run-id "$run_id" \
+    --run-directory "$run_directory" \
     --evidence "$evidence_relative"
 staging_status=$?
 set -e

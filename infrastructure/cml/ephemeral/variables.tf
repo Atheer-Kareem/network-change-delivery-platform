@@ -9,62 +9,62 @@ variable "staging_run_id" {
   }
 }
 
-variable "lifecycle_state" {
+variable "twin_lifecycle_state" {
   description = "Explicit desired CML lifecycle state. Required; no implicit lifecycle action is allowed."
   type        = string
 
   validation {
-    condition     = contains(["DEFINED_ON_CORE", "STARTED", "STOPPED"], var.lifecycle_state)
-    error_message = "lifecycle_state must be explicitly one of DEFINED_ON_CORE, STARTED, or STOPPED."
+    condition     = contains(["DEFINED_ON_CORE", "STARTED", "STOPPED"], var.twin_lifecycle_state)
+    error_message = "twin_lifecycle_state must be explicitly one of DEFINED_ON_CORE, STARTED, or STOPPED."
   }
 }
 
-variable "cisco_bootstrap_hostname" {
-  description = "Authority-supplied hostname rendered into the Cisco staging Day-0 bootstrap."
+variable "core_02_bootstrap_hostname" {
+  description = "NetBox-authoritative hostname rendered into core-02 Day-0 bootstrap."
   type        = string
   nullable    = false
 }
 
-variable "cisco_bootstrap_management_cidr" {
-  description = "Authority-supplied IPv4 CIDR rendered on Cisco GigabitEthernet1."
+variable "core_02_bootstrap_management_cidr" {
+  description = "NetBox-authoritative IPv4 CIDR rendered on core-02 GigabitEthernet1."
   type        = string
   nullable    = false
 }
 
-variable "cisco_bootstrap_username" {
+variable "core_02_bootstrap_username" {
   description = "OpenBao-authoritative local IOS XE management username."
   type        = string
   sensitive   = true
   nullable    = false
 }
 
-variable "cisco_bootstrap_password" {
+variable "core_02_bootstrap_password" {
   description = "OpenBao-authoritative local IOS XE management password."
   type        = string
   sensitive   = true
   nullable    = false
 }
 
-variable "junos_bootstrap_hostname" {
-  description = "Authority-supplied hostname rendered into the Junos staging Day-0 bootstrap."
+variable "edge_junos_01_bootstrap_hostname" {
+  description = "NetBox-authoritative hostname rendered into edge-junos-01 Day-0 bootstrap."
   type        = string
   nullable    = false
 }
 
-variable "junos_bootstrap_management_cidr" {
-  description = "Authority-supplied IPv4 CIDR rendered on Junos fxp0."
+variable "edge_junos_01_bootstrap_management_cidr" {
+  description = "NetBox-authoritative IPv4 CIDR rendered on edge-junos-01 fxp0."
   type        = string
   nullable    = false
 }
 
-variable "junos_bootstrap_username" {
+variable "edge_junos_01_bootstrap_username" {
   description = "OpenBao-authoritative non-root Junos management username."
   type        = string
   sensitive   = true
   nullable    = false
 }
 
-variable "junos_bootstrap_password_hash" {
+variable "edge_junos_01_bootstrap_password_hash" {
   description = "Runtime-derived SHA-512-crypt verifier for the OpenBao-authoritative Junos password."
   type        = string
   sensitive   = true

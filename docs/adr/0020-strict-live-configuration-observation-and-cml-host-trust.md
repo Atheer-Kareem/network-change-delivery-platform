@@ -4,11 +4,6 @@
 
 Accepted for Increment 10C-6.
 
-ADR 0023 preserves strict host trust, readiness, and stable private chronology
-while superseding Terraform ownership, fresh operator-twin creation, blanket
-staging absence, and routine post-acceptance destroy as future live
-prerequisites. Manual replacement requires re-onboarding and new trust.
-
 ## Decision
 
 Real Oxidized observation uses SSH only. The pinned Oxidized 0.37.0 defaults of

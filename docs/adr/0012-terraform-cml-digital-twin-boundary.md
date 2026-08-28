@@ -9,11 +9,6 @@ rationale and all other authority boundaries remain accepted. ADR 0014
 supersedes the persistent operational staging-lifecycle assumption: normal CML
 staging now creates, validates, and destroys a fresh twin per run.
 
-ADR 0023 reinforces the prohibition on importing or adopting the accepted
-manual lab and confines Terraform ownership to staging and explicit scenarios.
-It supersedes the legacy-stopped/shared-address consequence only after staging
-identity and addressing are separated; Terraform never becomes live authority.
-
 ## Context
 
 Increment 7 completed protected, commit-bound deployment to the accepted manual

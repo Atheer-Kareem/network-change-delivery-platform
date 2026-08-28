@@ -1,5 +1,20 @@
 # Buildkite ephemeral CML staging operations
 
+## Active simplified model
+
+Pull requests and non-main builds run quality and contract validation only.
+After the separate cutover, a reviewed merged-main build may run the
+credentialed disposable lifecycle on the existing `ncdp-staging` agent under
+`netdevops`. The wrapper invokes `ncdp-staging-controller`, which requires
+branch `main`, no pull request, exact step/queue/retry identity, devices 6/7,
+OpenBao roles/references 6/7, the ten-resource graph, and the brownfield/live
+denial boundaries. Protected delivery remains independently frozen.
+
+Checkout-independent schema-4 installation, dedicated Unix identity, protected
+toolchain, token supervisor, LaunchDaemon migration, and related native/runtime
+admission below are retained as deferred production-hardening reference. They
+are not active lab execution prerequisites.
+
 ## Trusted agent boundary
 
 The `cml-staging` step runs on a dedicated self-hosted `ncdp-staging` queue with
@@ -39,8 +54,8 @@ receive staging credentials before admission.
 
 ## Workload identities
 
-The operational description below is historical runtime behavior pending the
-ADR 0023 B3/B4 consumer migration. Phase B2 retired the staging roles and
+The operational description below is historical runtime behavior from before
+the simplified devices 6/7 consumer. Phase B2 retired the staging roles and
 policies for live devices 1/2 and established standing credentials, policies,
 and roles for staging devices 6/7. The checked-in runtime still requests the old
 roles, so `cml-staging` is intentionally unauthorized and must not run. Before
@@ -160,14 +175,15 @@ not claim that migration has occurred.
 
 ## Execution and evidence
 
-The frozen historical pipeline command calls
+The frozen pipeline command calls
 `scripts/buildkite/ephemeral_staging.sh`. The wrapper
-verifies job/checkout identity, pipes the JWT to the existing Python driver, and
+verifies merged-main job/checkout identity, pipes the JWT to the simplified
+controller, and
 uploads only `staging-evidence/staging-run.json`. The authoritative state machine
 remains `network_change_delivery.ephemeral_staging.run_staging_lifecycle`.
 
 Each realization gets a run-scoped `known_hosts` file for exact
-`192.168.4.14` and `192.168.4.20` trust. SSH and NETCONF remain strict; no human
+`192.168.4.30` and `192.168.4.31` trust. SSH and NETCONF remain strict; no human
 trust file or earlier-build key is used. Staging performs read-only NCDP
 planning/validation and never invokes `ncdp deploy`.
 

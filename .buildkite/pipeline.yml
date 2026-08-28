@@ -89,9 +89,9 @@ steps:
 
   - label: ":cloud: ephemeral CML staging"
     key: cml-staging
-    # ADR 0023 migration freeze: B2 moved standing staging authority to NetBox
-    # devices 6/7 while this consumer still targets 1/2. B4 must explicitly
-    # review and remove this false condition during the protected cutover.
+    # ADR 0023 migration freeze: the simplified consumer now targets staging
+    # devices 6/7, but a separate cutover must explicitly review and replace
+    # this false condition with the merged-main-only execution guard.
     if: "false"
     depends_on:
       - quality

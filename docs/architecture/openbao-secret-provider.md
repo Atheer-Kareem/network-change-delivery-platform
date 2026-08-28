@@ -1,5 +1,11 @@
 # OpenBao secret provider
 
+Active ADR 0023 staging accepts only the device-scoped roles and secret
+references for NetBox devices 6 and 7. Devices 1, 2, 3 and arbitrary IDs are
+rejected without fallback to live authority. Checkout-independent schema-4
+host isolation is deferred production hardening; credential separation remains
+mandatory.
+
 ## Boundary and authentication
 
 OpenBao is the primary personal-lab credential provider. The local/bootstrap

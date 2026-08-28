@@ -1,5 +1,11 @@
 # CML Terraform environments
 
+The active lab trust boundary is reviewed merged `main` plus separate staging
+credentials. `ephemeral/` and `modules/managed-pair/` remain the exact
+ten-resource disposable target. The schema-4 checkout-independent host/runtime
+design is retained as deferred production-hardening reference, not an active
+prerequisite. Persistent brownfield CML remains outside Terraform authority.
+
 ADR 0023 separates the Terraform implementations in this directory:
 
 - `ephemeral/` plus `modules/managed-pair/` is the target staging structure. It

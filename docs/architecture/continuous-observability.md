@@ -28,6 +28,14 @@ legacy-off state, and staging/fixed-address absence. These values do not become
 metric labels. No device credential, OpenBao device secret, SSH key, NETCONF
 session, CLI command, or Oxidized trust is involved.
 
+ADR 0024 establishes the persistent, manually owned `NCDP Live` two-router lab
+as the current live realization. The existing 11A realization-admission record
+and service mechanics were built for the earlier disposable operator twin and
+do not automatically authorize the renamed or topologically changed live lab.
+They require a fresh, separately reviewed live-realization admission before 11A
+can publish `.14`/`.20` targets for this realization. Ephemeral staging at
+`.30`/`.40` is never an observability target.
+
 ## Runtime and private state
 
 The installed service uses these external roots:

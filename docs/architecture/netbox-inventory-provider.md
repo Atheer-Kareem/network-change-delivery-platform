@@ -10,6 +10,13 @@ authoritative for change intent, policy, and the desired interface description;
 the live device remains observed reality. In particular, the provider does not
 read `dcim.interface.description`, and that field is not desired-state authority.
 
+ADR 0024 retains exactly two logical devices. Device 1 (`core-02`) has primary
+`.14` and secondary staging `.30` on `GigabitEthernet1`; device 2
+(`edge-junos-01`) has primary `.20` and secondary staging `.40` on `fxp0`.
+Normal inventory resolution continues to use the primary address. The staging
+driver separately verifies the exact secondary `ipam.ipaddress` assignment to
+the same management interface before using it.
+
 `LocalYamlInventoryProvider` remains available for isolated tests and offline
 development. Both implementations satisfy the same `InventoryProvider` boundary;
 neither decides workflow policy or contains credentials.

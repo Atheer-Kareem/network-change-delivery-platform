@@ -59,8 +59,8 @@ uv run python scripts/openbao/configure_buildkite_staging.py
 
 The tool verifies the existing NCDP-owned `jwt/` mount and backend and never
 alters deployment roles. NetBox uses a distinct token limited to device,
-interface, tag, and protection-metadata reads. CML 2.10 exposes lab ownership
-and sharing, but the personal license rejects creation of additional users. This
+interface, IP-address, tag, and protection-metadata reads. CML 2.10 exposes lab
+ownership and sharing, but the personal license rejects creation of additional users. This
 environment therefore cannot supply the preferred regular staging account and
 uses the existing personal-controller operator login to mint one in-memory
 bearer per run. This is an explicit platform limitation, not a claim of narrow
@@ -75,8 +75,10 @@ uploads only `staging-evidence/staging-run.json`. The authoritative state machin
 remains `network_change_delivery.ephemeral_staging.run_staging_lifecycle`.
 
 Each realization gets a run-scoped `known_hosts` file for exact
-`192.168.4.14` and `192.168.4.20` trust. SSH and NETCONF remain strict; no human
-trust file or earlier-build key is used. Staging performs read-only NCDP
+`192.168.4.30` and `192.168.4.40` trust. NetBox device 1/2 primary addresses
+remain `.14/.20`; staging verifies the secondary addresses are assigned to the
+same authoritative management interfaces before creating the lab. SSH and
+NETCONF remain strict; no human trust file or earlier-build key is used. Staging performs read-only NCDP
 planning/validation and never invokes `ncdp deploy`.
 
 Evidence contains only job binding, disposable CML IDs, stable NetBox identity,

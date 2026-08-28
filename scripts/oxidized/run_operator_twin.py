@@ -28,16 +28,14 @@ DATA_PATH = STATE_ROOT / "operator-data"
 OXIDIZED_STATE = Path("/Users/netdevops/.local/state/ncdp/oxidized")
 OXIDIZED_CONFIG = Path("/Users/netdevops/.config/ncdp/oxidized")
 EXPECTED_NODES = frozenset(
-    {"system_bridge", "management_switch", "core_02", "edge_junos_01", "core_03"}
+    {"system_bridge", "management_switch", "core_02", "edge_junos_01"}
 )
 EXPECTED_LINKS = frozenset(
     {
         "system_bridge_management",
         "management_core_02",
         "management_edge_junos_01",
-        "management_core_03",
         "core_02_edge_junos_01",
-        "edge_junos_01_core_03",
     }
 )
 
@@ -238,7 +236,7 @@ def run(action: str) -> None:
         if _changes(_safe(["plan"], environment)) != dict.fromkeys(
             _expected_addresses(), "create"
         ):
-            raise OperatorTwinError("Terraform create graph was not exactly 13 creates")
+            raise OperatorTwinError("Terraform create graph was not exactly 10 creates")
         _safe(["apply", "-auto-approve"], environment)
     elif action == "start":
         if _changes(_safe(["plan"], environment)) != {
@@ -251,7 +249,7 @@ def run(action: str) -> None:
             _expected_addresses(), "delete"
         ):
             raise OperatorTwinError(
-                "Terraform destroy graph was not exactly 13 deletes"
+                "Terraform destroy graph was not exactly 10 deletes"
             )
         _safe(["destroy", "-auto-approve"], environment)
     elif action != "status":

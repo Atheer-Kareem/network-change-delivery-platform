@@ -78,8 +78,10 @@ Ordering may change when implementation evidence requires it.
    authority boundaries, trusted-agent PR admission, evidence publication, and
    retained-state recovery. Increment 8E-3 is complete: PR #44 merged and the
    merged commit passed Buildkite build #115, including the ephemeral CML staging
-   gate before promotion. Parallel twins require a future isolated management
-   network.
+   gate before promotion. ADR 0024 now fixes the active lab model at two logical
+   routers: manually owned `NCDP Live` remains running on primary `.14/.20`,
+   while the ten-resource Terraform staging graph uses secondary `.30/.40`, the
+   same device 1/2 credentials, and exact create/validate/destroy ownership.
 9. **Failure recovery — complete:** vendor-aware immediate recovery,
    failed-validation handling, honest ambiguous-write behavior, recovery
    verification, and strict fleet stop semantics. Sophisticated historical

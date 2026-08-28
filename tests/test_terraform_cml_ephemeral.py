@@ -80,21 +80,17 @@ def test_ephemeral_inputs_backend_and_outputs_are_secret_safe() -> None:
 
 def test_shared_realization_and_customizer_prerequisite_contract() -> None:
     topology = (MODULE_ROOT / "topology.tf").read_text()
-    assert len(re.findall(r'(?m)^resource\s+"cml2_node"', topology)) == 5
-    assert len(re.findall(r'(?m)^resource\s+"cml2_link"', topology)) == 6
+    assert len(re.findall(r'(?m)^resource\s+"cml2_node"', topology)) == 4
+    assert len(re.findall(r'(?m)^resource\s+"cml2_link"', topology)) == 4
     assert 'resource "cml2_lifecycle" "twin"' in topology
     assert "cat8000v-17-18-02" in (MODULE_ROOT / "data.tf").read_text()
     assert "vjunos-router-23-2r1-15" in (MODULE_ROOT / "data.tf").read_text()
     assert "bootstrap/cat8000v.tftpl" in topology
-    assert "bootstrap/cat8000v-unmanaged.tftpl" in topology
     assert "bootstrap/vjunos-router.tftpl" in topology
 
     expected_template_hashes = {
         "cat8000v.tftpl": (
             "c7f2bd6fed987fd9ba8fa8e0d2361b79f7848ca4a71d343d969bc6235ed12e32"
-        ),
-        "cat8000v-unmanaged.tftpl": (
-            "f2480c7344069a248c260019a0aae2e248e3636b1758f14fb11ab93bb008aeb9"
         ),
         "vjunos-router.tftpl": (
             "76c61083d844683329851c80d789b46f105a27ddf803bfd601cac021b821fdff"
@@ -110,16 +106,13 @@ def test_shared_realization_and_customizer_prerequisite_contract() -> None:
         "management_switch",
         "core_02",
         "edge_junos_01",
-        "core_03",
     ):
         assert re.search(rf"(?m)^\s*{role}\s*=\s*cml2_node\.{role}\.id$", outputs)
     for purpose in (
         "system_bridge_management",
         "management_core_02",
         "management_edge_junos_01",
-        "management_core_03",
         "core_02_edge_junos_01",
-        "edge_junos_01_core_03",
     ):
         assert re.search(rf"(?m)^\s*{purpose}\s*=\s*cml2_link\.{purpose}\.id$", outputs)
 

@@ -30,13 +30,10 @@ def test_managed_resource_allow_list_and_provider_security() -> None:
         ("cml2_node", "management_switch"),
         ("cml2_node", "core_02"),
         ("cml2_node", "edge_junos_01"),
-        ("cml2_node", "core_03"),
         ("cml2_link", "system_bridge_management"),
         ("cml2_link", "management_core_02"),
         ("cml2_link", "management_edge_junos_01"),
-        ("cml2_link", "management_core_03"),
         ("cml2_link", "core_02_edge_junos_01"),
-        ("cml2_link", "edge_junos_01_core_03"),
         ("cml2_lifecycle", "twin"),
     }
     for block in ("import", "moved", "removed"):

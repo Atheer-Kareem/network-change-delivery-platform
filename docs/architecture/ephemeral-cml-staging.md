@@ -29,7 +29,7 @@ Each root owns `cml2_lab.twin`. Terraform lifecycle meta-arguments cannot be
 controlled safely by a runtime boolean, so this boundary preserves
 `prevent_destroy = true` in the operator root while the ephemeral root remains
 intentionally destroyable. Both roots pass their lab ID and required authority
-inputs to `modules/twin`, which owns connector/image discovery, five nodes, six
+inputs to `modules/twin`, which owns connector/image discovery, four nodes, four
 links, deterministic placement, Day-0 rendering, staging tags, update triggers,
 and `cml2_lifecycle.twin`. No state migration blocks exist because Increment 8D
 destroyed every managed object and left the operator state empty before the
@@ -51,8 +51,10 @@ hyphens and beginning with a letter or digit. The lab title is
 changing device targeting. Buildkite derives it as
 `bk-${BUILDKITE_BUILD_ID}` from the immutable build UUID.
 
-The fixed NetBox-authoritative management addresses `192.168.4.14` and
-`192.168.4.20` require one admitted CML staging run at a time. Initial Buildkite
+The fixed NetBox-authoritative staging addresses `192.168.4.30` and
+`192.168.4.40` require one admitted CML staging run at a time. They are secondary
+addresses on NetBox devices 1 and 2; the live primary addresses `.14` and `.20`
+remain active in the manually owned `NCDP Live` lab. Initial Buildkite
 integration must use a dedicated staging concurrency group. Parallel twins are
 blocked until an isolated management-network and addressing design is accepted.
 
@@ -96,12 +98,10 @@ CML Configuration Customizer Scripts must already be enabled for vJunos Day-0
 processing. This is a controller-global infrastructure prerequisite verified
 outside Terraform. Neither root attempts to configure it.
 
-Every router in the STARTED topology must boot unattended. The unmanaged
-`core-03` role therefore receives a non-secret minimal CAT8000V startup
-configuration containing only its established role hostname and platform
-console prerequisite. It carries no management address or credential authority;
-its staging readiness boundary is the CML `BOOTED` state. This avoids the IOS XE
-17.18 initial setup/security dialog without expanding NetBox or OpenBao scope.
+Both routers in the STARTED topology boot unattended from the existing Cisco
+and Junos Day-0 templates. Staging uses the same logical device 1/2 OpenBao
+credentials as live, but supplies the secondary `.30/.40` addresses to the
+Terraform realization.
 
 TCP readiness can precede vendor CLI/facts readiness. The read-only NCDP
 validation boundary therefore retries only bounded provider collection failures

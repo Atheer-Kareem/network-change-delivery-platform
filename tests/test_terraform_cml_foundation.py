@@ -23,9 +23,14 @@ def test_managed_resource_allow_list_and_provider_security() -> None:
     text = "\n".join(path.read_text() for path in sorted(TF_ROOT.rglob("*.tf")))
     assert not list(TF_ROOT.rglob("*.tfvars"))
     resources = re.findall(r'(?m)^resource\s+"([^"]+)"\s+"([^"]+)"\s*\{', text)
-    assert resources.count(("cml2_lab", "twin")) == 2
+    assert resources.count(("cml2_lab", "twin")) == 1
+    assert resources.count(("cml2_lab", "staging")) == 1
+    assert sum(resource_type == "cml2_node" for resource_type, _ in resources) == 9
+    assert sum(resource_type == "cml2_link" for resource_type, _ in resources) == 10
+    assert sum(resource_type == "cml2_lifecycle" for resource_type, _ in resources) == 2
     assert set(resources) == {
         ("cml2_lab", "twin"),
+        ("cml2_lab", "staging"),
         ("cml2_node", "system_bridge"),
         ("cml2_node", "management_switch"),
         ("cml2_node", "core_02"),
@@ -38,6 +43,12 @@ def test_managed_resource_allow_list_and_provider_security() -> None:
         ("cml2_link", "core_02_edge_junos_01"),
         ("cml2_link", "edge_junos_01_core_03"),
         ("cml2_lifecycle", "twin"),
+        ("cml2_node", "cisco"),
+        ("cml2_node", "junos"),
+        ("cml2_link", "management_cisco"),
+        ("cml2_link", "management_junos"),
+        ("cml2_link", "cisco_junos"),
+        ("cml2_lifecycle", "managed_pair"),
     }
     for block in ("import", "moved", "removed"):
         assert re.search(rf"(?m)^\s*{block}\s+", text) is None

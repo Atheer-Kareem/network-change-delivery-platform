@@ -55,6 +55,12 @@ remain installed for a separately reviewed B4 cutover. Neither freeze may be
 removed, and the agent may not be re-enabled, before that cutover authorizes the
 migrated devices 6/7 consumer.
 
+Phase B3-1 statically changes the target ephemeral Terraform graph to the
+ten-resource `modules/managed-pair` structure: System Bridge, management switch,
+Cisco, Junos, four links, and one lifecycle. It deliberately does not change
+the historical devices 1/2 authority selection or restore runtime execution.
+The external and pipeline freezes therefore remain mandatory for B3-2.
+
 Historically, the job requests one five-minute Buildkite JWT with audience
 `urn:ncdp:openbao:staging`, immutable pipeline UUID in `sub`, and explicit
 `build_id`. The application validates pipeline, build, commit, branch, step,

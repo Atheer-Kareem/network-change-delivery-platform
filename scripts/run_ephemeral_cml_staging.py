@@ -59,17 +59,13 @@ from network_change_delivery.workflow import plan_change
 ROOT = Path(__file__).resolve().parents[1]
 TERRAFORM_ROOT = ROOT / "infrastructure" / "cml" / "ephemeral"
 SAFE_UI = ROOT / "scripts" / "terraform_cml_safe_ui.py"
-EXPECTED_NODES = frozenset(
-    {"system_bridge", "management_switch", "core_02", "edge_junos_01", "core_03"}
-)
+EXPECTED_NODES = frozenset({"system_bridge", "management_switch", "cisco", "junos"})
 EXPECTED_LINKS = frozenset(
     {
         "system_bridge_management",
-        "management_core_02",
-        "management_edge_junos_01",
-        "management_core_03",
-        "core_02_edge_junos_01",
-        "edge_junos_01_core_03",
+        "management_cisco",
+        "management_junos",
+        "cisco_junos",
     }
 )
 LEGACY_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
@@ -224,8 +220,8 @@ class LocalOperations:
             bao = OpenBaoSecretProvider()
         self._inventory = inventory
         targets = {
-            "core_02": ("core-02", "192.168.4.14", "cisco_iosxe"),
-            "edge_junos_01": ("edge-junos-01", "192.168.4.20", "junos"),
+            "cisco": ("core-02", "192.168.4.14", "cisco_iosxe"),
+            "junos": ("edge-junos-01", "192.168.4.20", "junos"),
         }
         for role, (name, host, platform) in targets.items():
             device = inventory.resolve(name)
@@ -233,11 +229,11 @@ class LocalOperations:
                 device.host != host
                 or device.platform != platform
                 or device.inventory_object_id
-                != f"netbox:dcim.device:{1 if role == 'core_02' else 2}"
+                != f"netbox:dcim.device:{1 if role == 'cisco' else 2}"
             ):
                 raise StagingError(f"{name} authoritative identity mismatch")
             reference = bao.reference(device)
-            expected = f"openbao:kv-v2:ncdp/devices/{1 if role == 'core_02' else 2}/ssh"
+            expected = f"openbao:kv-v2:ncdp/devices/{1 if role == 'cisco' else 2}/ssh"
             if reference.reference != expected:
                 raise StagingError(f"{name} credential reference mismatch")
             self._devices[role] = device
@@ -258,19 +254,19 @@ class LocalOperations:
             {
                 "TF_DATA_DIR": str(self.data_directory),
                 "TF_VAR_staging_run_id": self.run_id,
-                "TF_VAR_twin_lifecycle_state": "DEFINED_ON_CORE",
-                "TF_VAR_core_02_bootstrap_hostname": "core-02",
-                "TF_VAR_core_02_bootstrap_management_cidr": "192.168.4.14/24",
-                "TF_VAR_core_02_bootstrap_username": self._credentials[
+                "TF_VAR_lifecycle_state": "DEFINED_ON_CORE",
+                "TF_VAR_cisco_bootstrap_hostname": "core-02",
+                "TF_VAR_cisco_bootstrap_management_cidr": "192.168.4.14/24",
+                "TF_VAR_cisco_bootstrap_username": self._credentials[
                     "core-02"
                 ].username,
-                "TF_VAR_core_02_bootstrap_password": self._credentials[
+                "TF_VAR_cisco_bootstrap_password": self._credentials[
                     "core-02"
                 ].password,
-                "TF_VAR_edge_junos_01_bootstrap_hostname": "edge-junos-01",
-                "TF_VAR_edge_junos_01_bootstrap_management_cidr": "192.168.4.20/24",
-                "TF_VAR_edge_junos_01_bootstrap_username": edge.username,
-                "TF_VAR_edge_junos_01_bootstrap_password_hash": verifier,
+                "TF_VAR_junos_bootstrap_hostname": "edge-junos-01",
+                "TF_VAR_junos_bootstrap_management_cidr": "192.168.4.20/24",
+                "TF_VAR_junos_bootstrap_username": edge.username,
+                "TF_VAR_junos_bootstrap_password_hash": verifier,
             }
         )
 
@@ -402,16 +398,19 @@ class LocalOperations:
     @staticmethod
     def _expected_addresses() -> set[str]:
         return (
-            {"cml2_lab.twin", "module.twin.cml2_lifecycle.twin"}
-            | {f"module.twin.cml2_node.{role}" for role in EXPECTED_NODES}
-            | {f"module.twin.cml2_link.{role}" for role in EXPECTED_LINKS}
+            {
+                "cml2_lab.staging",
+                "module.managed_pair.cml2_lifecycle.managed_pair",
+            }
+            | {f"module.managed_pair.cml2_node.{role}" for role in EXPECTED_NODES}
+            | {f"module.managed_pair.cml2_link.{role}" for role in EXPECTED_LINKS}
         )
 
     def create(self, evidence: StagingEvidence) -> None:
         plan = self._run_safe(["plan"])
         changes = self._changes(plan)
         if changes != dict.fromkeys(self._expected_addresses(), "create"):
-            raise StagingError("Terraform create graph was not exactly 13 creates")
+            raise StagingError("Terraform create graph was not exactly 10 creates")
         self._run_safe(["apply", "-auto-approve"])
         self._managed = True
         self.state_path.chmod(0o600)
@@ -463,9 +462,8 @@ class LocalOperations:
             node = self._api(f"/api/v0/labs/{evidence.lab_id}/nodes/{node_id}")
             if node.get("state") != "DEFINED_ON_CORE":
                 raise StagingError("created CML node was not DEFINED_ON_CORE")
-        self._verify_day0(evidence, "core_02", self._render_core())
-        self._verify_day0(evidence, "edge_junos_01", self._render_edge())
-        self._verify_day0(evidence, "core_03", self._render_core_03())
+        self._verify_day0(evidence, "cisco", self._render_cisco())
+        self._verify_day0(evidence, "junos", self._render_junos())
 
     def _configuration(self, lab_id: str, node_id: str) -> str:
         for suffix in ("configuration", "configurations"):
@@ -507,9 +505,9 @@ class LocalOperations:
         ):
             raise StagingError(f"{role} stored Day-0 configuration mismatch")
 
-    def _render_core(self) -> str:
+    def _render_cisco(self) -> str:
         template = (
-            ROOT / "infrastructure/cml/modules/twin/bootstrap/cat8000v.tftpl"
+            ROOT / "infrastructure/cml/modules/managed-pair/bootstrap/cat8000v.tftpl"
         ).read_text()
         values = {
             "hostname": "core-02",
@@ -522,32 +520,27 @@ class LocalOperations:
             template = template.replace("${" + key + "}", value)
         return template
 
-    def _render_edge(self) -> str:
+    def _render_junos(self) -> str:
         template = (
-            ROOT / "infrastructure/cml/modules/twin/bootstrap/vjunos-router.tftpl"
+            ROOT
+            / "infrastructure/cml/modules/managed-pair/bootstrap/vjunos-router.tftpl"
         ).read_text()
         values = {
             "hostname": "edge-junos-01",
             "management_cidr": "192.168.4.20/24",
             "username": self._credentials["edge-junos-01"].username,
             "password_hash": self._terraform_env[
-                "TF_VAR_edge_junos_01_bootstrap_password_hash"
+                "TF_VAR_junos_bootstrap_password_hash"
             ],
         }
         for key, value in values.items():
             template = template.replace("${" + key + "}", value)
         return template
 
-    @staticmethod
-    def _render_core_03() -> str:
-        return (
-            ROOT / "infrastructure/cml/modules/twin/bootstrap/cat8000v-unmanaged.tftpl"
-        ).read_text()
-
     def start(self, evidence: StagingEvidence) -> None:
-        self._terraform_env["TF_VAR_twin_lifecycle_state"] = "STARTED"
+        self._terraform_env["TF_VAR_lifecycle_state"] = "STARTED"
         changes = self._changes(self._run_safe(["plan"]))
-        if changes != {"module.twin.cml2_lifecycle.twin": "update"}:
+        if changes != {"module.managed_pair.cml2_lifecycle.managed_pair": "update"}:
             raise StagingError("Terraform STARTED graph was not lifecycle-only")
         self._run_safe(["apply", "-auto-approve"])
         if evidence.lab_id != self._outputs["lab_id"]["value"]:
@@ -592,17 +585,6 @@ class LocalOperations:
             time.sleep(10)
         raise StagingError(f"{host} did not reach bounded management readiness")
 
-    def _wait_node_booted(
-        self, lab_id: str, node_id: str, *, timeout: int = 1200
-    ) -> None:
-        started = time.monotonic()
-        while time.monotonic() - started < timeout:
-            node = self._api(f"/api/v0/labs/{lab_id}/nodes/{node_id}")
-            if node.get("state") == "BOOTED":
-                return
-            time.sleep(10)
-        raise StagingError("core_03 did not reach unattended CML BOOTED state")
-
     def _establish_host_trust(self, host: str, ports: tuple[int, ...]) -> None:
         known_hosts = self._known_hosts
         known_hosts.parent.mkdir(mode=0o700, exist_ok=True)
@@ -646,10 +628,8 @@ class LocalOperations:
         known_hosts.chmod(0o600)
 
     def validate(self, evidence: StagingEvidence) -> None:
-        self._wait_node_booted(str(evidence.lab_id), evidence.node_ids["core_03"])
-        evidence.node_states["core_03"] = "BOOTED"
         verify_deployment_ansible_runtime(ROOT)
-        for role in ("core_02", "edge_junos_01"):
+        for role in ("cisco", "junos"):
             device = self._devices[role]
             evidence.readiness_seconds[role] = self._wait_device(device.host)
             evidence.readiness_checks[role] = {
@@ -659,18 +639,18 @@ class LocalOperations:
                 "tcp830": "passed",
             }
         evidence.readiness_outcome = "passed"
-        for role in ("core_02", "edge_junos_01"):
+        for role in ("cisco", "junos"):
             device = self._devices[role]
             self._establish_host_trust(
-                device.host, (22, 830) if role == "edge_junos_01" else (22,)
+                device.host, (22, 830) if role == "junos" else (22,)
             )
         cached = CachedSecrets(self._credentials)
         targets = {
-            "core_02": (
+            "cisco": (
                 "GigabitEthernet2",
                 AnsibleRunnerCiscoAdapter(ROOT, known_hosts=self._known_hosts),
             ),
-            "edge_junos_01": (
+            "junos": (
                 "ge-0/0/2",
                 JunosPyEZAdapter(known_hosts=self._known_hosts),
             ),
@@ -719,7 +699,7 @@ class LocalOperations:
         del evidence
         changes = self._changes(self._run_safe(["plan", "-destroy"]))
         if changes != dict.fromkeys(self._expected_addresses(), "delete"):
-            raise StagingError("Terraform destroy graph was not exactly 13 destroys")
+            raise StagingError("Terraform destroy graph was not exactly 10 destroys")
         self._run_safe(["destroy", "-auto-approve"])
 
     def verify_absent(self, evidence: StagingEvidence) -> None:

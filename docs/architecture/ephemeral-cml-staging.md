@@ -2,12 +2,12 @@
 
 ## Scope
 
-ADR 0023 preserves the ephemeral lifecycle but changes its future authority
+ADR 0023 preserves the ephemeral lifecycle but changes its authority
 inputs: staging will use separate NetBox identities, management addressing,
-credentials, and preferably an isolated management network. The current
-operator root, shared live addresses, and five-node/six-link topology remain
-migration-era implementation. Terraform has no authority over the brownfield
-live/reference lab.
+credentials, and preferably an isolated management network. Terraform has no
+authority over the brownfield live/reference lab. Phase B3-1 establishes the
+static two-router target graph; authority consumption remains deliberately
+unmigrated and fail closed until B3-2.
 
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.
 Increment 8E-2 adds and locally accepts a reusable Python orchestration boundary
@@ -24,28 +24,29 @@ explicit scenario test.
 
 ## Terraform ownership
 
-The current layout below is historical implementation authority until Phase B
-of ADR 0023. The target layout has Terraform roots only for staging and explicit
-scenarios, with reusable structure centered on a two-router homolog pair. There
-will be no Terraform live root and no ordinary operator-twin environment.
-
-There are two root modules and one shared child module:
+The directory contains a target staging path and a frozen historical path:
 
 ```text
-infrastructure/cml/                 operator/local root
-  modules/twin/                     shared realization module
-  ephemeral/                        build/run-scoped staging root
+infrastructure/cml/                 frozen historical operator root
+  modules/twin/                     frozen historical 13-resource module
+  modules/managed-pair/             target two-router staging module
+  ephemeral/                        build/run-scoped target staging root
 ```
 
-Each root owns `cml2_lab.twin`. Terraform lifecycle meta-arguments cannot be
-controlled safely by a runtime boolean, so this boundary preserves
-`prevent_destroy = true` in the operator root while the ephemeral root remains
-intentionally destroyable. Both roots pass their lab ID and required authority
-inputs to `modules/twin`, which owns connector/image discovery, five nodes, six
-links, deterministic placement, Day-0 rendering, staging tags, update triggers,
-and `cml2_lifecycle.twin`. No state migration blocks exist because Increment 8D
-destroyed every managed object and left the operator state empty before the
-refactor.
+The target root owns `cml2_lab.staging` and passes its lab ID and explicit
+inputs to `modules/managed-pair`. The module owns System Bridge and image
+discovery, a management switch, one Cisco router, one Junos router, four links,
+Day-0 rendering, staging tags, and `cml2_lifecycle.managed_pair`. Together the
+root and module contain exactly one lab, four nodes, four links, and one
+lifecycle resource: ten managed resources. There is no baseline `core-03`.
+The Cisco/Junos link is staging integration topology; a staging homolog is a
+platform and automation-role homolog, not an exact live-topology clone.
+
+The root and `modules/twin` retain the historical five-node, six-link,
+13-resource operator-twin implementation. They are not staging target
+authority, not live/reference authority, and not authorized for execution
+during migration. No state migration is needed because the staging state root
+contains no managed realization.
 
 The child module exposes only controller/image/connector observations,
 lifecycle state, and node/link UUID maps keyed by stable topology roles. Roots
@@ -145,18 +146,17 @@ CML Configuration Customizer Scripts must already be enabled for vJunos Day-0
 processing. This is a controller-global infrastructure prerequisite verified
 outside Terraform. Neither root attempts to configure it.
 
-Every router in the STARTED topology must boot unattended. The unmanaged
-`core-03` role therefore receives a non-secret minimal CAT8000V startup
-configuration containing only its established role hostname and platform
-console prerequisite. It carries no management address or credential authority;
-its staging readiness boundary is the CML `BOOTED` state. This avoids the IOS XE
-17.18 initial setup/security dialog without expanding NetBox or OpenBao scope.
+The target managed pair contains no `core-03` node, link, lifecycle trigger, or
+output. Historical operator-twin evidence and code retain their three-router
+facts without making that topology part of the ADR 0023 staging baseline.
 
 TCP readiness can precede vendor CLI/facts readiness. The read-only NCDP
 validation boundary therefore retries only bounded provider collection failures
 for three minutes, using a fresh connection each time. Inventory, policy, and
 other ambiguous failures remain immediate failures; this retry never invokes a
-deploy or device-write operation.
+deploy or device-write operation. During B3-1 these runtime semantics still
+refer to historical devices 1/2 and are not executable; B3-2 owns the protected
+devices 6/7 migration.
 
 ## Buildkite identities
 

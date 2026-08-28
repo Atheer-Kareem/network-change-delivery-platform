@@ -200,8 +200,12 @@ Ordering may change when implementation evidence requires it.
       or freeze must prevent legacy `cml-staging` execution. B2-G establishes
       that prerequisite through a persistently disabled/unloaded external
       staging LaunchAgent and independent explicit-false pipeline guards for
-      `cml-staging` and protected delivery. B4 owns later reviewed unfreeze and
-      agent re-enable; Terraform/Buildkite consumer migration remains unstarted.
+      `cml-staging` and protected delivery. B3-1 now provides the non-executing
+      static ten-resource managed-pair graph (one lab, four nodes, four links,
+      one lifecycle) while retaining the historical operator twin and leaving
+      devices 1/2 authority deliberately fail closed. B3-2 owns protected
+      devices 6/7 authority and controller work; B4 owns later reviewed
+      consumer cutover, unfreeze, and agent re-enable.
     - **Phase C/D — brownfield rehabilitation and onboarding:** freshly inspect
       and privately protect recovery evidence, manually remove only approved
       obsolete resources, observe before remediation, reconcile authority,

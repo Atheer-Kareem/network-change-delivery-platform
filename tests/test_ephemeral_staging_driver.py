@@ -19,6 +19,33 @@ driver = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(driver)
 
 
+def test_managed_pair_runtime_structural_contract_is_exact() -> None:
+    assert {
+        "system_bridge",
+        "management_switch",
+        "cisco",
+        "junos",
+    } == driver.EXPECTED_NODES
+    assert {
+        "system_bridge_management",
+        "management_cisco",
+        "management_junos",
+        "cisco_junos",
+    } == driver.EXPECTED_LINKS
+    assert driver.LocalOperations._expected_addresses() == {
+        "cml2_lab.staging",
+        "module.managed_pair.cml2_node.system_bridge",
+        "module.managed_pair.cml2_node.management_switch",
+        "module.managed_pair.cml2_node.cisco",
+        "module.managed_pair.cml2_node.junos",
+        "module.managed_pair.cml2_link.system_bridge_management",
+        "module.managed_pair.cml2_link.management_cisco",
+        "module.managed_pair.cml2_link.management_junos",
+        "module.managed_pair.cml2_link.cisco_junos",
+        "module.managed_pair.cml2_lifecycle.managed_pair",
+    }
+
+
 def test_provider_read_retries_bounded_provider_failures(monkeypatch) -> None:
     calls = 0
 

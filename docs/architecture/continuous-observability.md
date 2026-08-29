@@ -101,3 +101,44 @@ Grafana is provisioned from reviewed files and exposed only on loopback;
 Alertmanager routes advisory alerts to a private bounded demonstration
 receiver. Neither service has credentials, device access, or remediation
 authority.
+
+## Proposed 11C SNMPv3 boundary
+
+ADR 0026 proposes an offline contract for the next independent path:
+
+```text
+11A: Prometheus -> Blackbox TCP probe -> admitted management service
+11C: Prometheus -> snmp_exporter -> UDP/161 -> admitted device
+```
+
+The accepted production runtime remains the five 11B services. No running
+`snmp_exporter`, live scrape job, SNMP credential, or device configuration exists
+yet. A later synthetic slice may add the reviewed sixth-service contract, but it
+must not make the 11A target generation or
+`ObservabilityReady(service_contract="11A")` depend on SNMP health.
+
+The future exporter is a protocol translator, not inventory authority. NetBox
+continues to own stable device identity and stable numeric interface object
+identity. The host will start from a conservatively bounded NetBox-modeled
+interface population and map each expected interface through case-sensitive
+exact `ifName` equality. `netbox:dcim.interface:<id>` is durable; `ifIndex` is
+transient. Duplicate IDs or names, missing or ambiguous matches, malformed
+relationships, pagination failure, and excessive populations fail closed.
+SNMP-only interfaces never acquire managed identity merely because an agent
+reports them.
+
+The future exporter will have no host port and will share a dedicated private
+Docker network only with Prometheus. It will not receive the NetBox token, CML
+authority, OpenBao bootstrap, SSH credentials, AuditStore, configuration
+history, or device-write capability. Its private authentication directory will
+be mounted read-only. A host materializer will eventually replace a mode-0600
+auth file atomically inside that mode-0700 directory and then deliberately reload
+or reconcile the exporter. Real materialization, OpenBao identity, and device
+provisioning remain 11C-3.
+
+The reviewed `ncdp_if_mib` generator source and generated module use only the
+exact system and interface objects recorded by ADR 0026. The future Cisco and
+Junos read views must match that generated get/walk closure. Expanding the
+module requires a corresponding reviewed device-view change; broad IF-MIB
+authority is not implied. SNMPv3 communities, traps, write access, vendor MIBs,
+dashboards, alerts, rates, and remediation are outside 11C-1. gNMI remains 11D.

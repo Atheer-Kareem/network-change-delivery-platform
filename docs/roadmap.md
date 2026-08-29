@@ -183,9 +183,16 @@ Ordering may change when implementation evidence requires it.
       Alertmanager, and local demonstration receiver. Merged-main Build #231
       and non-disruptive persistent-runtime acceptance passed on commit
       `f75b9e9c274a2f2890116cc4c18592c97956c220`. Increment 11B is complete;
-      11C remains unstarted.
+      the proposed offline 11C-1 contract follows without yet starting exporter,
+      secret-provider, or device integration.
     - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling
-      and bounded interface identity/counter normalization.
+      and bounded interface identity/counter normalization. Proposed ADR 0026
+      divides delivery into four authority-separated slices: 11C-1 architecture,
+      generated standard-IETF module, and pure offline contracts; 11C-2 synthetic
+      exporter/Prometheus integration without real OpenBao authority; 11C-3
+      separate credential and typed device-provisioning authority; and 11C-4
+      supported persistent activation plus read-only live acceptance. Later
+      slices are not implied implemented by the offline 11C-1 contract.
     - **11D — gNMI/OpenConfig streaming telemetry:** reviewed TLS identity,
       vendor-aware capability admission, and streaming normalization.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

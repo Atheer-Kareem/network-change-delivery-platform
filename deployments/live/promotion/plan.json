@@ -1,41 +1,56 @@
 {
   "schema_version": "1",
-  "change_id": "CHG-NCDP-10C7-001",
-  "kind": "interface_description",
+  "plan_type": "snmp_provisioning_plan",
+  "change_id": "CHG-SNMP-11C3-CISCO-001",
+  "kind": "snmpv3_interface_telemetry",
   "target": "core-02",
   "inventory_source": "netbox",
   "inventory_object_id": "netbox:dcim.device:1",
-  "inventory_interface_object_id": "netbox:dcim.interface:2",
-  "credential_source": "openbao",
-  "credential_reference": "openbao:kv-v2:ncdp/devices/1/ssh",
+  "platform": "cisco_iosxe",
   "host": "192.168.4.14",
   "port": 22,
   "expected_hostname": "core-02",
-  "platform": "cisco_iosxe",
-  "interface": "GigabitEthernet2",
-  "current_description": null,
-  "desired_description": "managed-by-ncdp-10c7-audit-correlation",
+  "connection_credential_reference": "openbao:kv-v2:ncdp/devices/1/ssh",
+  "snmp_credential": {
+    "device": "netbox:dcim.device:1",
+    "reference": "snmpv3:netbox:dcim.device:1:generation:v1",
+    "auth_selector": "device_1_v1"
+  },
+  "generation": "v1",
+  "username": "ncdp_snmp_d1_v1",
+  "security_level": "authPriv",
+  "authentication_protocol": "SHA256",
+  "privacy_protocol": "AES128",
+  "view_name": "NCDP_IFMIB",
+  "group_name": "NCDP_SNMP_RO",
+  "device_view_oids": [
+    "1.3.6.1.2.1.1.3",
+    "1.3.6.1.2.1.2.1",
+    "1.3.6.1.2.1.2.2.1.1",
+    "1.3.6.1.2.1.2.2.1.13",
+    "1.3.6.1.2.1.2.2.1.14",
+    "1.3.6.1.2.1.2.2.1.19",
+    "1.3.6.1.2.1.2.2.1.20",
+    "1.3.6.1.2.1.2.2.1.7",
+    "1.3.6.1.2.1.2.2.1.8",
+    "1.3.6.1.2.1.31.1.1.1.1",
+    "1.3.6.1.2.1.31.1.1.1.10",
+    "1.3.6.1.2.1.31.1.1.1.15",
+    "1.3.6.1.2.1.31.1.1.1.19",
+    "1.3.6.1.2.1.31.1.1.1.6",
+    "1.3.6.1.2.1.31.1.5"
+  ],
+  "oid_closure_digest": "sha256:7a7834c141bd20109d661b9d9b76d0a5291d39e89f64898ab033f2b225b09e9d",
   "transaction_strategy": "cisco_targeted_inverse",
   "confirmed_timeout_minutes": null,
-  "confirmation_operation": null,
-  "execution_artifact": {
-    "parent": "interface GigabitEthernet2",
-    "lines": [
-      "description managed-by-ncdp-10c7-audit-correlation"
-    ]
-  },
-  "recovery_artifact": {
-    "parent": "interface GigabitEthernet2",
-    "lines": [
-      "no description"
-    ]
-  },
   "preconditions": {
     "observed_hostname": "core-02",
-    "interface_exists": true,
-    "interface_protected": false,
-    "current_description": null
+    "local_engine_id_present": false,
+    "view": "ABSENT",
+    "group": "ABSENT",
+    "user": "ABSENT",
+    "foreign_objects_present": false
   },
-  "created_at": "2026-08-27T06:34:52.036312Z",
-  "digest": "sha256:1df5d5a598cd292f36b67ad18fd841f90932922a642ae88d03f11cc4371648f1"
+  "created_at": "2026-08-29T19:13:31.588592Z",
+  "digest": "sha256:fd2c10caee51973c16699cf9fd1a6016aa032cf28f173903a67b62f04b0d3375"
 }

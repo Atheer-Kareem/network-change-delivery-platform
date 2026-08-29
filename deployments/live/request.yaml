@@ -2,6 +2,6 @@
 # Assurance baseline refreshed for the live two-router direct transit.
 schema_version: "1"
 action: deploy
-change_id: CHG-NCDP-10C7-001
-plan_digest: sha256:1df5d5a598cd292f36b67ad18fd841f90932922a642ae88d03f11cc4371648f1
+change_id: CHG-SNMP-11C3-CISCO-001
+plan_digest: sha256:fd2c10caee51973c16699cf9fd1a6016aa032cf28f173903a67b62f04b0d3375
 inventory_object_id: netbox:dcim.device:1

@@ -1,0 +1,25 @@
+modules:
+  ncdp_if_mib:
+    walk:
+      - SNMPv2-MIB::sysUpTime
+      - IF-MIB::ifNumber
+      - IF-MIB::ifIndex
+      - IF-MIB::ifAdminStatus
+      - IF-MIB::ifOperStatus
+      - IF-MIB::ifInDiscards
+      - IF-MIB::ifInErrors
+      - IF-MIB::ifOutDiscards
+      - IF-MIB::ifOutErrors
+      - IF-MIB::ifName
+      - IF-MIB::ifHCInOctets
+      - IF-MIB::ifHCOutOctets
+      - IF-MIB::ifHighSpeed
+      - IF-MIB::ifCounterDiscontinuityTime
+      - IF-MIB::ifTableLastChange
+    lookups:
+      - source_indexes: [ifIndex]
+        lookup: IF-MIB::ifName
+        drop_source_indexes: false
+    overrides:
+      ifName:
+        ignore: true

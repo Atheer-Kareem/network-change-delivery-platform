@@ -79,6 +79,17 @@ steps:
         agents:
           queue: ncdp-validation
 
+      - label: ":gear: SNMP module reproducibility"
+        key: quality-snmp-generator
+        command: uv run --frozen python scripts/observability/check_snmp_generator.py
+        agents:
+          queue: ncdp-validation
+        if_changed:
+          include:
+            - "infrastructure/observability/snmp/**"
+            - "scripts/observability/check_snmp_generator.py"
+            - "src/network_change_delivery/snmp_mib.py"
+
       - label: ":chart_with_upwards_trend: observability 11B Docker validation"
         key: quality-observability-11b
         depends_on: quality-env

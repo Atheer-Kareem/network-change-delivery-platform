@@ -53,6 +53,7 @@ def test_pipeline_contract() -> None:
         "quality-ansible-lint",
         "quality-package-build",
         "quality-terraform-cml",
+        "quality-snmp-generator",
         "quality-observability-11b",
     }
     assert all(
@@ -93,6 +94,17 @@ def test_pipeline_contract() -> None:
         "src/network_change_delivery/observability_*.py",
         "tests/test_observability_*.py",
     ]
+
+    snmp_generator = quality_steps["quality-snmp-generator"]
+    assert snmp_generator["command"] == (
+        "uv run --frozen python scripts/observability/check_snmp_generator.py"
+    )
+    assert snmp_generator["if_changed"]["include"] == [
+        "infrastructure/observability/snmp/**",
+        "scripts/observability/check_snmp_generator.py",
+        "src/network_change_delivery/snmp_mib.py",
+    ]
+    assert "depends_on" not in snmp_generator
 
     terraform = quality_steps["quality-terraform-cml"]
     terraform_command = terraform["command"]

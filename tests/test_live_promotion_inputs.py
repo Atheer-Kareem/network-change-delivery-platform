@@ -26,13 +26,37 @@ from network_change_delivery.promotion import (
     create_promotion_bundle,
     verify_promotion_bundle,
 )
-from network_change_delivery.snmp_provisioning import SnmpProvisioningPlan
+from network_change_delivery.snmp_credentials import snmp_username
+from network_change_delivery.snmp_mib import APPROVED_DEVICE_VIEW_OIDS
+from network_change_delivery.snmp_provisioning import (
+    SnmpProvisioningPlan,
+    oid_closure_digest,
+)
 
 ROOT = Path(__file__).parents[1]
 INPUTS = ROOT / "deployments/live/promotion"
 PLAN = INPUTS / "plan.json"
 POLICY = INPUTS / "policy.yaml"
 BASELINE = INPUTS / "baseline"
+
+_FORBIDDEN_LIVE_INPUT_SECRET = re.compile(
+    r"(?i)(authentication_secret|privacy_secret|password|private[_ -]?key|"
+    r"snmp-server community|enable secret|secret_id|client_token|x-vault-token|"
+    r"certificate|aaa (authentication|authorization|accounting)|"
+    r"authorization:\s*bearer)"
+)
+
+
+def _forbidden_live_input_secret(text: str) -> re.Match[str] | None:
+    return _FORBIDDEN_LIVE_INPUT_SECRET.search(text)
+
+
+def _assert_live_input_secret_free(root: Path) -> None:
+    for source in sorted(root.rglob("*")):
+        if source.is_file():
+            assert (
+                _forbidden_live_input_secret(source.read_text(encoding="utf-8")) is None
+            )
 
 
 class PassingProvider:
@@ -101,16 +125,26 @@ def test_active_plan_is_single_device_digest_verified_and_exactly_provenanced() 
         assert plan.preconditions.interface_exists is True
         assert plan.preconditions.interface_protected is False
     else:
+        device_id = int(plan.inventory_object_id.rsplit(":", 1)[1])
         assert plan.platform in {"cisco_iosxe", "junos"}
+        assert device_id in {1, 2}
         assert plan.generation == "v1"
-        assert plan.username == "ncdp_snmp_d1_v1"
+        assert plan.username == snmp_username(device_id, plan.generation)
+        assert plan.security_level == "authPriv"
         assert plan.view_name == "NCDP_IFMIB"
         assert plan.group_name == "NCDP_SNMP_RO"
         assert plan.authentication_protocol == "SHA256"
         assert plan.privacy_protocol == "AES128"
-        assert plan.oid_closure_digest.startswith("sha256:")
-        assert plan.connection_credential_reference.endswith("/ssh")
-        assert plan.snmp_credential.reference.startswith("snmpv3:")
+        assert frozenset(plan.device_view_oids) == APPROVED_DEVICE_VIEW_OIDS
+        assert plan.oid_closure_digest == oid_closure_digest(plan.device_view_oids)
+        assert plan.connection_credential_reference == (
+            f"openbao:kv-v2:ncdp/devices/{device_id}/ssh"
+        )
+        assert plan.snmp_credential.reference == (
+            f"snmpv3:netbox:dcim.device:{device_id}:generation:v1"
+        )
+        assert plan.snmp_credential.auth_selector == f"device_{device_id}_v1"
+        assert plan.preconditions.safe_to_create_for(plan.platform)
         assert plan.preconditions.view == "ABSENT"
         assert plan.preconditions.group == "ABSENT"
         assert plan.preconditions.user == "ABSENT"
@@ -150,13 +184,12 @@ def test_committed_plan_assurance_and_promotion_verify(tmp_path: Path) -> None:
     assert promoted.digest == plan.digest
 
 
-def test_live_promotion_inputs_are_secret_free() -> None:
-    forbidden = re.compile(
-        r"(?i)(password|authentication_secret|privacy_secret|private[_ -]?key|"
-        r"snmp-server community|"
-        r"enable secret|secret_id|client_token|x-vault-token|certificate|"
-        r"aaa (authentication|authorization|accounting)|authorization:\s*bearer)"
-    )
-    for source in sorted(INPUTS.rglob("*")):
-        if source.is_file():
-            assert forbidden.search(source.read_text(encoding="utf-8")) is None
+def test_live_promotion_inputs_are_secret_free(tmp_path: Path) -> None:
+    _assert_live_input_secret_free(INPUTS)
+    positive = tmp_path / "username.json"
+    positive.write_text('{"username":"ncdp_snmp_d1_v1"}', encoding="utf-8")
+    _assert_live_input_secret_free(tmp_path)
+    for field in ("authentication_secret", "privacy_secret", "password"):
+        fixture = tmp_path / f"{field}.json"
+        fixture.write_text(f'{{"{field}":"sentinel"}}', encoding="utf-8")
+        assert _forbidden_live_input_secret(fixture.read_text()) is not None

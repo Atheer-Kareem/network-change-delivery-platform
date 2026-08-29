@@ -81,7 +81,8 @@ steps:
 
       - label: ":chart_with_upwards_trend: observability 11B Docker validation"
         key: quality-observability-11b
-        command: scripts/observability/verify_runtime.sh
+        depends_on: quality-env
+        command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_runtime.sh
         agents:
           queue: ncdp-validation
         if_changed:

@@ -8,6 +8,11 @@ export NCDP_OBSERVABILITY_NETWORK="${network}"
 export NCDP_PROMETHEUS_PORT=$((19090 + ${BUILDKITE_BUILD_NUMBER:-0} % 100))
 export NCDP_GRAFANA_PORT=$((13000 + ${BUILDKITE_BUILD_NUMBER:-0} % 100))
 export NCDP_RECEIVER_PORT=$((18080 + ${BUILDKITE_BUILD_NUMBER:-0} % 100))
+export NCDP_PROMETHEUS_CONTAINER="${project}-prometheus"
+export NCDP_BLACKBOX_CONTAINER="${project}-blackbox"
+export NCDP_GRAFANA_CONTAINER="${project}-grafana"
+export NCDP_ALERTMANAGER_CONTAINER="${project}-alertmanager"
+export NCDP_RECEIVER_CONTAINER="${project}-receiver"
 
 test_root=$(mktemp -d)
 config_root=${test_root}/config

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import string
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -25,6 +26,8 @@ SNMP_AUTH_PROTOCOL = "SHA256"
 SNMP_PRIVACY_PROTOCOL = "AES128"
 SNMP_SECURITY_LEVEL = "authPriv"
 SNMP_SECRET_FIELDS = frozenset({"username", "authentication_secret", "privacy_secret"})
+SNMP_SECRET_ALPHABET = string.ascii_letters + string.digits + "-_.~"
+SNMP_SECRET_LENGTH = 48
 
 _GENERATION = re.compile(r"v[1-9][0-9]{0,8}")
 _USERNAME = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,31}")
@@ -52,6 +55,17 @@ def snmp_username(device_id: int, generation: str = SNMP_GENERATION) -> str:
     value = f"ncdp_snmp_d{device_id}_{generation}"
     if _USERNAME.fullmatch(value) is None:
         raise SecretError("SNMP credential username rejected")
+    return value
+
+
+def validate_snmp_secret(value: str, field: str = "SNMP credential") -> str:
+    """Validate the exact bounded secret format shared by every consumer."""
+    if (
+        not isinstance(value, str)
+        or len(value) != SNMP_SECRET_LENGTH
+        or any(character not in SNMP_SECRET_ALPHABET for character in value)
+    ):
+        raise SecretError(f"{field} secret format rejected")
     return value
 
 
@@ -89,11 +103,12 @@ class SnmpProvisioningCredentials:
     def __post_init__(self) -> None:
         if _USERNAME.fullmatch(self.username) is None:
             raise SecretError("OpenBao SNMP credential payload invalid")
-        if (
-            len(self.authentication_secret) < 16
-            or len(self.privacy_secret) < 16
-            or self.authentication_secret == self.privacy_secret
-        ):
+        try:
+            validate_snmp_secret(self.authentication_secret, "authentication")
+            validate_snmp_secret(self.privacy_secret, "privacy")
+        except SecretError:
+            raise SecretError("OpenBao SNMP credential payload invalid") from None
+        if self.authentication_secret == self.privacy_secret:
             raise SecretError("OpenBao SNMP credential payload invalid")
 
     def __repr__(self) -> str:

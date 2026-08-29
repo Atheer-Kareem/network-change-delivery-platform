@@ -43,8 +43,8 @@ from network_change_delivery.snmp_provisioning import (
 )
 from network_change_delivery.snmp_telemetry import SnmpCredentialReference
 
-AUTH = "auth-secret-sentinel-123456"
-PRIV = "privacy-secret-sentinel-654321"
+AUTH = "auth-secret-sentinel-" + "A" * 27
+PRIV = "privacy-secret-sentinel-" + "B" * 24
 
 
 def credential(device_id: int = 1) -> SnmpCredentialReference:
@@ -156,9 +156,14 @@ def test_cisco_artifact_is_exact_and_recovery_is_dependency_ordered() -> None:
     assert AUTH in commands[-1] and PRIV in commands[-1]
     assert AUTH not in repr(artifact) and PRIV not in repr(artifact)
     recovery = cisco_recovery_commands(value)
-    assert recovery[0].startswith("no snmp-server user")
-    assert recovery[1].startswith("no snmp-server group")
-    assert all(command.startswith("no snmp-server view") for command in recovery[2:])
+    assert recovery == (
+        f"no snmp-server user {snmp_username(1)} {NCDP_SNMP_GROUP} v3",
+        f"no snmp-server group {NCDP_SNMP_GROUP} v3 priv",
+        *(
+            f"no snmp-server view {NCDP_SNMP_VIEW} {oid} included"
+            for oid in reversed(value.device_view_oids)
+        ),
+    )
 
 
 def test_junos_artifact_uses_privacy_only_read_view_and_targeted_inverse() -> None:
@@ -210,7 +215,7 @@ def test_cisco_targeted_preflight_normalizes_exact_or_conflicting_owned_state() 
     value = plan()
     assert cisco_preflight_commands(value) == (
         "show snmp engineID",
-        f"show snmp view {NCDP_SNMP_VIEW}",
+        "show snmp view",
         "show snmp group",
         f"show snmp user {snmp_username(1)}",
     )
@@ -236,6 +241,43 @@ def test_cisco_targeted_preflight_normalizes_exact_or_conflicting_owned_state() 
     assert state.view is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
     assert state.group is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
     assert state.user is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
+    symbolic_names = {
+        "1.3.6.1.2.1.1.3": "SNMPv2-MIB::sysUpTime",
+        "1.3.6.1.2.1.2.1": "IF-MIB::ifNumber",
+        "1.3.6.1.2.1.31.1.5": "IF-MIB::ifTableLastChange",
+        "1.3.6.1.2.1.2.2.1.1": "IF-MIB::ifIndex",
+        "1.3.6.1.2.1.2.2.1.7": "IF-MIB::ifAdminStatus",
+        "1.3.6.1.2.1.2.2.1.8": "IF-MIB::ifOperStatus",
+        "1.3.6.1.2.1.2.2.1.13": "IF-MIB::ifInDiscards",
+        "1.3.6.1.2.1.2.2.1.14": "IF-MIB::ifInErrors",
+        "1.3.6.1.2.1.2.2.1.19": "IF-MIB::ifOutDiscards",
+        "1.3.6.1.2.1.2.2.1.20": "IF-MIB::ifOutErrors",
+        "1.3.6.1.2.1.31.1.1.1.1": "IF-MIB::ifName",
+        "1.3.6.1.2.1.31.1.1.1.6": "IF-MIB::ifHCInOctets",
+        "1.3.6.1.2.1.31.1.1.1.10": "IF-MIB::ifHCOutOctets",
+        "1.3.6.1.2.1.31.1.1.1.15": "IF-MIB::ifHighSpeed",
+        "1.3.6.1.2.1.31.1.1.1.19": "IF-MIB::ifCounterDiscontinuityTime",
+    }
+    symbolic_view = "\n".join(
+        f"{NCDP_SNMP_VIEW} {symbolic_names[oid]} - included nonvolatile active"
+        for oid in value.device_view_oids
+    )
+    symbolic_state = parse_cisco_snmp_state(
+        value,
+        observed_hostname="core-02",
+        engine_output="Local SNMP engineID: value",
+        view_output=symbolic_view,
+        group_output=(
+            f"groupname: {NCDP_SNMP_GROUP} security model:v3 priv\n"
+            f"readview : {NCDP_SNMP_VIEW} writeview: <no writeview specified>\n"
+            "notifyview: <no notifyview specified>\n"
+        ),
+        user_output=(
+            f"User name: {snmp_username(1)}\nAuthentication Protocol: SHA-2 256\n"
+            f"Privacy Protocol: AES128\nGroup-name: {NCDP_SNMP_GROUP}\n"
+        ),
+    )
+    assert symbolic_state.view is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
     conflict = parse_cisco_snmp_state(
         value,
         observed_hostname="core-02",

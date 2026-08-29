@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import secrets
-import string
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -27,13 +26,17 @@ from network_change_delivery.secrets import (
 )
 from network_change_delivery.snmp_credentials import (
     SNMP_GENERATION,
+    SNMP_SECRET_ALPHABET,
     SNMP_SECRET_FIELDS,
+    SNMP_SECRET_LENGTH,
+    SnmpProvisioningCredentials,
     snmp_provision_policy_name,
     snmp_provision_role_name,
     snmp_secret_api_path,
     snmp_secret_logical_path,
     snmp_username,
     validate_snmp_generation,
+    validate_snmp_secret,
 )
 
 SNMP_OBSERVABILITY_POLICY_NAME = "ncdp-observability-snmp-read"
@@ -55,8 +58,6 @@ SNMP_OBSERVABILITY_ROLE = {
     "token_max_ttl": 300,
     "token_num_uses": 1,
 }
-_SECRET_ALPHABET = string.ascii_letters + string.digits + "-_.~"
-_SECRET_LENGTH = 48
 
 
 def snmp_provision_policy(device_id: int, generation: str = "v1") -> str:
@@ -302,14 +303,17 @@ class OpenBaoSnmpConfigurator:
             if (
                 not isinstance(existing_data, dict)
                 or set(existing_data) != SNMP_SECRET_FIELDS
-                or existing_data.get("username") != username
-                or not isinstance(existing_data.get("authentication_secret"), str)
-                or not existing_data.get("authentication_secret")
-                or not isinstance(existing_data.get("privacy_secret"), str)
-                or not existing_data.get("privacy_secret")
-                or existing_data.get("authentication_secret")
-                == existing_data.get("privacy_secret")
             ):
+                raise SecretError("OpenBao existing SNMP generation rejected")
+            try:
+                existing_credentials = SnmpProvisioningCredentials(
+                    existing_data["username"],
+                    existing_data["authentication_secret"],
+                    existing_data["privacy_secret"],
+                )
+            except (SecretError, TypeError):
+                raise SecretError("OpenBao existing SNMP generation rejected") from None
+            if existing_credentials.username != username:
                 raise SecretError("OpenBao existing SNMP generation rejected")
             return SnmpGenerationResult(
                 device_id,
@@ -319,13 +323,15 @@ class OpenBaoSnmpConfigurator:
                 SnmpGenerationOutcome.ALREADY_EXISTS,
             )
         authentication = "".join(
-            self._random_choice(_SECRET_ALPHABET) for _ in range(_SECRET_LENGTH)
+            self._random_choice(SNMP_SECRET_ALPHABET) for _ in range(SNMP_SECRET_LENGTH)
         )
         privacy = "".join(
-            self._random_choice(_SECRET_ALPHABET) for _ in range(_SECRET_LENGTH)
+            self._random_choice(SNMP_SECRET_ALPHABET) for _ in range(SNMP_SECRET_LENGTH)
         )
         if authentication == privacy:
             raise SecretError("SNMP secret generation collision")
+        validate_snmp_secret(authentication, "authentication")
+        validate_snmp_secret(privacy, "privacy")
         payload = {
             "data": {
                 "username": username,

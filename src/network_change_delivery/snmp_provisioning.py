@@ -315,7 +315,7 @@ def cisco_recovery_commands(plan: SnmpProvisioningPlan) -> tuple[str, ...]:
         f"no snmp-server user {plan.username} {plan.group_name} v3",
         f"no snmp-server group {plan.group_name} v3 priv",
         *(
-            f"no snmp-server view {plan.view_name} {oid}"
+            f"no snmp-server view {plan.view_name} {oid} included"
             for oid in reversed(plan.device_view_oids)
         ),
     )
@@ -453,7 +453,7 @@ def cisco_preflight_commands(plan: SnmpPreflightSubject) -> tuple[str, ...]:
         raise SnmpProvisioningError("Cisco SNMP preflight plan rejected")
     return (
         "show snmp engineID",
-        f"show snmp view {plan.view_name}",
+        "show snmp view",
         "show snmp group",
         f"show snmp user {plan.username}",
     )
@@ -472,17 +472,73 @@ def parse_cisco_snmp_state(
     if plan.platform != "cisco_iosxe":
         raise SnmpProvisioningError("Cisco SNMP preflight plan rejected")
     engine = bool(re.search(r"(?im)^\s*(?:Local )?SNMP engineID\s*:", engine_output))
-    view_lines = {
-        match.group(1)
-        for match in re.finditer(
-            rf"(?im)^\s*{re.escape(plan.view_name)}\s+([0-9.]+)\s+-\s+included\b",
-            view_output,
-        )
+    symbolic_oids = {
+        "sysUpTime": "1.3.6.1.2.1.1.3",
+        "ifNumber": "1.3.6.1.2.1.2.1",
+        "ifTableLastChange": "1.3.6.1.2.1.31.1.5",
+        "ifIndex": "1.3.6.1.2.1.2.2.1.1",
+        "ifName": "1.3.6.1.2.1.31.1.1.1.1",
+        "ifCounterDiscontinuityTime": "1.3.6.1.2.1.31.1.1.1.19",
+        "ifAdminStatus": "1.3.6.1.2.1.2.2.1.7",
+        "ifOperStatus": "1.3.6.1.2.1.2.2.1.8",
+        "ifHighSpeed": "1.3.6.1.2.1.31.1.1.1.15",
+        "ifHCInOctets": "1.3.6.1.2.1.31.1.1.1.6",
+        "ifHCOutOctets": "1.3.6.1.2.1.31.1.1.1.10",
+        "ifInErrors": "1.3.6.1.2.1.2.2.1.14",
+        "ifOutErrors": "1.3.6.1.2.1.2.2.1.20",
+        "ifInDiscards": "1.3.6.1.2.1.2.2.1.13",
+        "ifOutDiscards": "1.3.6.1.2.1.2.2.1.19",
     }
-    view_named = bool(re.search(rf"(?im)\b{re.escape(plan.view_name)}\b", view_output))
+    symbol_to_oid = {name.casefold(): oid for name, oid in symbolic_oids.items()}
+    symbol_to_oid.update(
+        {
+            f"SNMPv2-MIB::{name}".casefold(): oid
+            for name, oid in symbolic_oids.items()
+            if name in {"sysUpTime"}
+        }
+    )
+    symbol_to_oid.update(
+        {
+            f"IF-MIB::{name}".casefold(): oid
+            for name, oid in symbolic_oids.items()
+            if name not in {"sysUpTime"}
+        }
+    )
+
+    def canonical_oid(value: str) -> str | None:
+        if re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", value):
+            return value
+        return symbol_to_oid.get(value.casefold())
+
+    view_oids: list[str] = []
+    view_named = False
+    in_view = False
+    for line in view_output.splitlines():
+        header = re.match(r"^\s*View name:\s*(\S+)\s*$", line, re.IGNORECASE)
+        if header:
+            in_view = header.group(1) == plan.view_name
+            view_named |= in_view
+            continue
+        match = re.match(
+            rf"^\s*(?:{re.escape(plan.view_name)}\s+)?(\S+)\s+(?:-\s+)?(included|excluded)\b",
+            line,
+            re.IGNORECASE,
+        )
+        if not match or (not in_view and not line.lstrip().startswith(plan.view_name)):
+            continue
+        if line.lstrip().startswith(plan.view_name):
+            view_named = True
+        value = canonical_oid(match.group(1))
+        view_oids.append(
+            value
+            if value is not None and match.group(2).lower() == "included"
+            else "<invalid>"
+        )
+    view_lines = set(view_oids)
+    view_valid = len(view_oids) == len(view_lines) and "<invalid>" not in view_lines
     if not view_named:
         view = SnmpOwnedStateDisposition.ABSENT
-    elif view_lines == set(plan.device_view_oids):
+    elif view_valid and view_lines == set(plan.device_view_oids):
         view = SnmpOwnedStateDisposition.EXACT_NCDP_STATE
     else:
         view = SnmpOwnedStateDisposition.CONFLICT

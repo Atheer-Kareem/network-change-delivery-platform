@@ -23,8 +23,8 @@ from network_change_delivery.snmp_telemetry import SnmpCredentialReference
 
 JWT = "sensitive.header.signature"
 TOKEN = "sensitive-token"
-AUTH = "auth-secret-sentinel-123456"
-PRIV = "priv-secret-sentinel-654321"
+AUTH = "auth-secret-sentinel-" + "A" * 27
+PRIV = "priv-secret-sentinel-" + "B" * 27
 USERNAME = snmp_username(1)
 
 
@@ -218,6 +218,27 @@ def test_secret_values_are_redacted_from_representations_and_errors() -> None:
     rendered = repr(provider) + repr(caught.value)
     for sentinel in (AUTH, PRIV, TOKEN, JWT):
         assert sentinel not in rendered
+
+
+@pytest.mark.parametrize(
+    "authentication,privacy",
+    [
+        ("A" * 47, "B" * 48),
+        ("A" * 49, "B" * 48),
+        ("A" * 47 + " ", "B" * 48),
+        ("A" * 47 + "\n", "B" * 48),
+        ("A" * 47 + '"', "B" * 48),
+        ("A" * 47 + ";", "B" * 48),
+        ("A" * 47 + "$", "B" * 48),
+        ("A" * 47 + "\\", "B" * 48),
+        ("A" * 48, "A" * 48),
+    ],
+)
+def test_secret_format_is_exactly_shared_contract(authentication, privacy) -> None:
+    from network_change_delivery.snmp_credentials import SnmpProvisioningCredentials
+
+    with pytest.raises(SecretError):
+        SnmpProvisioningCredentials(USERNAME, authentication, privacy)
 
 
 def test_protected_cli_requests_a_distinct_bounded_snmp_oidc_exchange(

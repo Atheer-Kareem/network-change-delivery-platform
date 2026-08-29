@@ -84,8 +84,8 @@ class Source:
         self.events.append("snmp-secret")
         return SnmpProvisioningCredentials(
             snmp_username(1),
-            "auth-secret-sentinel-123456",
-            "privacy-secret-sentinel-654321",
+            "auth-secret-sentinel-" + "A" * 27,
+            "privacy-secret-sentinel-" + "B" * 24,
         )
 
 
@@ -229,8 +229,8 @@ def test_junos_uses_one_confirmed_commit_then_independent_validation_and_confirm
             self.events.append("snmp-secret")
             return SnmpProvisioningCredentials(
                 snmp_username(2),
-                "auth-secret-sentinel-123456",
-                "privacy-secret-sentinel-654321",
+                "auth-secret-sentinel-" + "A" * 27,
+                "privacy-secret-sentinel-" + "B" * 24,
             )
 
     source = JunosSource(events)

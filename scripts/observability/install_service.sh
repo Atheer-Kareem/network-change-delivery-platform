@@ -46,7 +46,7 @@ cleanup_incomplete_install() {
 }
 trap cleanup_incomplete_install EXIT
 trap 'exit 1' HUP INT TERM
-for directory in "${state_root}" "${state_root}/runtime" "${state_root}/discovery" "${state_root}/operator" "${state_root}/control" "${state_root}/logs" "${state_root}/prometheus" "${config_root}" "${service_parent}" "${runtime}"; do
+for directory in "${state_root}" "${state_root}/runtime" "${state_root}/discovery" "${state_root}/operator" "${state_root}/control" "${state_root}/logs" "${state_root}/prometheus" "${state_root}/grafana" "${state_root}/alertmanager" "${config_root}" "${service_parent}" "${runtime}"; do
   mkdir -p "${directory}"
   chmod 0700 "${directory}"
 done

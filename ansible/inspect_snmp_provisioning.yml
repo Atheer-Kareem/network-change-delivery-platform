@@ -8,7 +8,7 @@
     ncdp_snmp_disabled_line: '(?m)^\\s*%SNMP agent not enabled\\s*$'
     ncdp_snmp_other_error_line: '(?m)^\\s*%(?!SNMP agent not enabled\\s*$).*$'
     ncdp_snmp_disabled_wrapper: "^b'[^%]*\\\\r\\\\n%SNMP agent not enabled\\\\r\\\\n[^%]*'$"
-    ncdp_snmp_non_cli_failure: '(?i)(traceback|exception|timeout|unreachable|authentication failure|ssh failure)'
+    ncdp_snmp_non_cli_failure: '(?i)(traceback|exception|timeout|timed out|unreachable|authentication failure|ssh failure)'
   tasks:
     - name: NCDP collect identity
       cisco.ios.ios_facts:

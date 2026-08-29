@@ -543,7 +543,9 @@ def test_cisco_preflight_rejects_phrase_with_unrelated_failure(monkeypatch) -> N
         adapter.snmp_preflight(device(), DeviceCredentials("u", "p"), value)
 
 
-@pytest.mark.parametrize("prefix", ["timeout", "authentication failure", "ssh failure"])
+@pytest.mark.parametrize(
+    "prefix", ["timeout", "timed out", "authentication failure", "ssh failure"]
+)
 def test_cisco_preflight_rejects_failed_escaped_wrapper(
     monkeypatch, prefix: str
 ) -> None:

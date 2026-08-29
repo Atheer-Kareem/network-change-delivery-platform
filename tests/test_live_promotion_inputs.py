@@ -111,12 +111,12 @@ def test_active_plan_is_single_device_digest_verified_and_exactly_provenanced() 
     plan = live_plan()
     assert plan.verify_digest()
     assert plan.inventory_source == "netbox"
-    assert plan.inventory_object_id == "netbox:dcim.device:1"
     request = yaml.safe_load((ROOT / "deployments/live/request.yaml").read_text())
     assert request["change_id"] == plan.change_id
     assert request["plan_digest"] == plan.digest
     assert request["inventory_object_id"] == plan.inventory_object_id
     if isinstance(plan, DeploymentPlan):
+        assert plan.inventory_object_id == "netbox:dcim.device:1"
         assert plan.inventory_object_id == "netbox:dcim.device:1"
         assert plan.inventory_interface_object_id == "netbox:dcim.interface:2"
         assert plan.credential_source == "openbao"

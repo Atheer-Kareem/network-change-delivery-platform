@@ -123,6 +123,7 @@ docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   check rules /etc/ncdp/rules/11b-alerts.yml
 docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "${uid}:${gid}" \
+  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
   --workdir /etc/ncdp/rules -v "${runtime_root}/rules:/etc/ncdp/rules:ro" \
   --entrypoint /bin/promtool "${prometheus_image}" \
   test rules 11b-alerts.test.yml

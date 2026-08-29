@@ -26,11 +26,18 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "${config_root}" "${state_root}/runtime" "${state_root}/discovery" "${state_root}/control" \
-  "${state_root}/operator" "${state_root}/prometheus"
+  "${state_root}/operator" "${state_root}/prometheus" "${state_root}/grafana" "${state_root}/alertmanager" \
+  "${config_root}/rules" "${config_root}/grafana/provisioning/datasources" "${config_root}/grafana/provisioning/dashboards" "${config_root}/grafana/dashboards"
 chmod 0700 "${config_root}" "${state_root}" "${state_root}/runtime" "${state_root}/discovery" \
   "${state_root}/control" "${state_root}/operator" "${state_root}/prometheus"
 cp "${root}/infrastructure/observability/prometheus.yml" "${config_root}/prometheus.yml"
 cp "${root}/infrastructure/observability/blackbox.yml" "${config_root}/blackbox.yml"
+cp "${root}/infrastructure/observability/rules/11b-alerts.yml" "${config_root}/rules/11b-alerts.yml"
+cp "${root}/infrastructure/observability/alertmanager.yml" "${config_root}/alertmanager.yml"
+cp "${root}/infrastructure/observability/grafana/provisioning/datasources/prometheus.yml" "${config_root}/grafana/provisioning/datasources/prometheus.yml"
+cp "${root}/infrastructure/observability/grafana/provisioning/dashboards/dashboards.yml" "${config_root}/grafana/provisioning/dashboards/dashboards.yml"
+cp "${root}/infrastructure/observability/grafana/dashboards/ncdp-management-reachability.json" "${config_root}/grafana/dashboards/ncdp-management-reachability.json"
+cp "${root}/scripts/observability/demo_receiver.py" "${config_root}/demo_receiver.py"
 chmod 0600 "${config_root}/prometheus.yml" "${config_root}/blackbox.yml"
 
 NCDP_TEST_STATE_ROOT=${state_root} UV_CACHE_DIR=/tmp/ncdp-uv-cache \

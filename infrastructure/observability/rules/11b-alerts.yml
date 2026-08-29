@@ -11,7 +11,7 @@ groups:
           summary: "Management TCP connection unavailable"
           description: "The admitted management TCP connection is unavailable; this does not indicate authentication or device failure."
       - alert: NCDPManagementTargetsStale
-        expr: absent_over_time(probe_success{job="ncdp-management-service"}[2m])
+        expr: count(probe_success{job="ncdp-management-service"}) < 2
         for: 1m
         labels:
           severity: critical

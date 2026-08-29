@@ -45,7 +45,7 @@ services:
       - alertmanager
 
   grafana:
-    image: grafana/grafana:12.1.1@sha256:2c6f6f1d5f9d2a6c4c0a8e2dc4f6d8b5b8e2c1a0f4b6c8d2e1f0a9b7c6d5e4f3
+    image: grafana/grafana:12.1.1@sha256:a1701c2180249361737a99a01bc770db39381640e4d631825d38ff4535efa47d
     container_name: ncdp-grafana
     pull_policy: never
     restart: "no"
@@ -69,10 +69,13 @@ services:
         source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/grafana/dashboards
         target: /var/lib/grafana/dashboards
         read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/grafana
+        target: /var/lib/grafana
     networks: [telemetry]
 
   alertmanager:
-    image: prom/alertmanager:v0.29.0@sha256:8a4d7b6c5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8
+    image: prom/alertmanager:v0.29.0@sha256:88743b63b3e09ea6e31e140ced5bf45f4a8e82c617c2a963f78841f4995ad1d7
     container_name: ncdp-alertmanager
     pull_policy: never
     restart: "no"
@@ -86,6 +89,9 @@ services:
         source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/alertmanager.yml
         target: /etc/ncdp/alertmanager.yml
         read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/alertmanager
+        target: /alertmanager
     networks: [telemetry]
     depends_on: [receiver]
 

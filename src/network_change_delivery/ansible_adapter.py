@@ -547,13 +547,12 @@ class AnsibleRunnerCiscoAdapter:
                     message,
                 )
                 lines = message.splitlines()
-                line_response = (
-                    any(line.strip() == "%SNMP agent not enabled" for line in lines)
-                    and not any(
-                        line.lstrip().startswith("%")
-                        and line.strip() != "%SNMP agent not enabled"
-                        for line in lines
-                    )
+                line_response = any(
+                    line.strip() == "%SNMP agent not enabled" for line in lines
+                ) and not any(
+                    line.lstrip().startswith("%")
+                    and line.strip() != "%SNMP agent not enabled"
+                    for line in lines
                 )
                 if wrapped or line_response:
                     return "%SNMP agent not enabled"

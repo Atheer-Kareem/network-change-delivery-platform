@@ -313,6 +313,25 @@ def test_container_definition_is_exact_nonroot_and_loopback_only() -> None:
     )
 
 
+def test_five_service_verifier_accepts_only_opted_in_prometheus_network() -> None:
+    inspected = valid_inspections()
+    prometheus = inspected[PROMETHEUS_CONTAINER]
+    prometheus["HostConfig"]["NetworkMode"] = "synthetic-snmp"
+    prometheus["NetworkSettings"]["Networks"]["synthetic-snmp"] = {}
+    assert verify_container_definitions(
+        inspected,
+        prometheus_image_id=PROM_IMAGE,
+        blackbox_image_id=BLACKBOX_IMAGE,
+        grafana_image_id=GRAFANA_IMAGE,
+        alertmanager_image_id=ALERTMANAGER_IMAGE,
+        receiver_image_id=RECEIVER_IMAGE,
+        config_root=CONFIG_ROOT,
+        state_root=STATE_ROOT,
+        runtime_root=RUNTIME_ROOT,
+        prometheus_additional_networks=frozenset({"synthetic-snmp"}),
+    ) == (PROM_CONTAINER, BLACKBOX_CONTAINER_ID)
+
+
 @pytest.mark.parametrize(
     "name,mutation",
     [

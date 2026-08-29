@@ -80,14 +80,25 @@ protocol translator on this conceptual path:
 Prometheus -> snmp_exporter -> UDP/161 -> admitted device
 ```
 
-It will be a sixth service in the existing Compose project, with no host port and
-a dedicated private network shared only with Prometheus. It will not receive
-NetBox, CML, OpenBao bootstrap, SSH, AuditStore, or device-write authority. Its
-future private authentication input is a mode-0600 file atomically replaced by a
-host materializer inside a mode-0700 directory. The directory, rather than one
-rotating file, is mounted read-only, and successful publication requires an
-explicit exporter reload or reconciliation. Environment-variable secret
-injection is rejected because container inspection exposes environment values.
+It will be a sixth service in the existing Compose project, with no host port.
+An internal control network shared only by Prometheus and the exporter carries
+Prometheus-to-exporter HTTP. A separate ordinary bridge attaches only the
+exporter in the future production topology and provides exporter-to-device
+UDP/161 egress; Prometheus and the other accepted services do not join it. It
+will not receive NetBox, CML, OpenBao bootstrap, SSH, AuditStore, or device-write
+authority. Its future private authentication input is a mode-0600 file
+atomically replaced by a host materializer inside a mode-0700 directory. The
+directory, rather than one rotating file, is mounted read-only, and successful
+publication requires an explicit exporter reload or reconciliation.
+Environment-variable secret injection is rejected because container inspection
+exposes environment values. 11C-2 implements that two-network topology only as
+an explicitly selected Compose overlay; synthetic agents join only the device
+bridge. The accepted five-service production invocation remains unchanged.
+Synthetic rotation uses a private `POST /-/reload`, whose HTTP result provides
+positive acknowledgement without publishing another host port. A rejected
+reload retains the previously active valid exporter configuration. Synthetic
+flow does not prove Docker Desktop-to-router UDP/161 reachability; that remains
+11C-4 live evidence after separately approved provisioning.
 
 SNMP target generation and readiness are separate from
 `ObservabilityReady(service_contract="11A")`. SNMP state distinguishes ACTIVE,
@@ -104,6 +115,12 @@ or create real OpenBao paths, roles, policies, AppRoles, bootstrap values, or
 device credentials.
 The bounded auth selector is a non-secret routing value that may later populate
 `__param_auth`; it is neither credential material nor durable metric identity.
+The SNMPv3 username is likewise a non-secret but controlled authentication
+principal. It may appear in the private auth file and the exporter's private
+`/config` response, but not in Prometheus configuration, target or metric labels,
+container environment or arguments, ordinary logs, or public evidence. Only the
+authentication and privacy passphrases or keys are confidentiality-bearing;
+`snmp_exporter` must redact those values from `/config`.
 
 ## Delivery decomposition
 
@@ -111,11 +128,13 @@ The bounded auth selector is a non-secret routing value that may later populate
 
 1. **11C-1 — architecture and offline contract:** proposed ADR, generated
    standard-IETF module, pure typed identity/state contracts, closure validation,
-   and unit tests. No SNMP, secret-provider, device, or persistent-runtime access.
+   and unit tests. This slice is complete. It used no SNMP, secret-provider,
+   device, or persistent-runtime access.
 2. **11C-2 — exporter and synthetic integration:** disposable SNMPv3 agent,
    sixth-service container/runtime contract, synthetic `authPriv` collection,
-   Prometheus normalization, and secret-leak tests. It introduces no real OpenBao
-   or device authority.
+   Prometheus normalization, rotation, and secret-leak tests. The implementation
+   uses an opt-in overlay and introduces no real OpenBao, device, or persistent
+   runtime authority.
 3. **11C-3 — credential and device provisioning:** real SNMP credential storage,
    separate provisioning and observability secret-read identities, typed
    vendor-specific device intent, and separately authorized device mutation.

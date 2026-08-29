@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -17,6 +18,7 @@ from network_change_delivery.snmp_telemetry import (
     SnmpDeviceTargetStatus,
     SnmpFailureClassification,
     SnmpReadiness,
+    SnmpReadinessInterfaceMapping,
     SnmpTargetIdentity,
     SnmpTargetState,
     normalize_interfaces,
@@ -284,10 +286,44 @@ def test_generation_is_ordered_digest_bound_and_separate_from_11a() -> None:
     )
     assert [item.device for item in generation.devices] == [DEVICE_1, DEVICE_2]
     assert generation.digest == generation.calculated_digest()
+    now = datetime(2026, 8, 29, tzinfo=UTC)
     readiness = SnmpReadiness(
-        state=generation.state, target_generation_digest=generation.digest
+        state=generation.state,
+        refreshed_at=now,
+        expires_at=now + timedelta(minutes=15),
+        source_commit="c" * 40,
+        target_generation_digest=generation.digest,
+        target_file_sha256="sha256:" + "b" * 64,
+        interface_mappings=(
+            SnmpReadinessInterfaceMapping(
+                device=DEVICE_1, mapping_digest=MAPPING_DIGEST
+            ),
+            SnmpReadinessInterfaceMapping(
+                device=DEVICE_2, mapping_digest=MAPPING_DIGEST
+            ),
+        ),
+        exporter_container_id="d" * 64,
+        exporter_image_id="sha256:" + "e" * 64,
+        module_config_sha256="sha256:" + "f" * 64,
     )
     assert readiness.service_contract == "11C"
+    serialized = readiness.model_dump_json().casefold()
+    assert "password" not in serialized
+    assert "auth" not in serialized
+    assert set(SnmpReadiness.model_fields) == {
+        "schema_version",
+        "service_contract",
+        "state",
+        "refreshed_at",
+        "expires_at",
+        "source_commit",
+        "target_generation_digest",
+        "target_file_sha256",
+        "interface_mappings",
+        "exporter_container_id",
+        "exporter_image_id",
+        "module_config_sha256",
+    }
     assert ObservabilityReady.model_fields["service_contract"].default == "11A"
     with pytest.raises(ValidationError, match="digest rejected"):
         generation.model_copy(update={"digest": "sha256:" + "f" * 64}).model_validate(

@@ -38,6 +38,10 @@ INTERFACES_TASK = "NCDP collect interfaces"
 L3_INTERFACES_TASK = "NCDP collect layer 3 interfaces"
 EXECUTION_TASK = "NCDP apply exact approved artifact"
 SNMP_PREFLIGHT_TASK = "NCDP inspect exact SNMP owned names"
+SNMP_ENGINE_TASK = "NCDP inspect SNMP engine"
+SNMP_VIEW_TASK = "NCDP inspect SNMP view"
+SNMP_GROUP_TASK = "NCDP inspect SNMP group"
+SNMP_USER_TASK = "NCDP inspect SNMP user"
 SNMP_EXECUTION_TASK = "NCDP apply exact SNMP artifact"
 
 
@@ -335,6 +339,10 @@ class AnsibleRunnerCiscoAdapter:
                 L3_INTERFACES_TASK,
                 EXECUTION_TASK,
                 SNMP_PREFLIGHT_TASK,
+                SNMP_ENGINE_TASK,
+                SNMP_VIEW_TASK,
+                SNMP_GROUP_TASK,
+                SNMP_USER_TASK,
                 SNMP_EXECUTION_TASK,
             }:
                 result = data.get("res", {})
@@ -522,14 +530,34 @@ class AnsibleRunnerCiscoAdapter:
             or getattr(runner, "rc", 1) != 0
         ):
             raise ProviderError("Cisco SNMP targeted preflight failed")
+
+        def command_output(task: str) -> str:
+            result = selected.get(task)
+            if not isinstance(result, dict):
+                raise ProviderError("Cisco SNMP preflight result rejected")
+            output = result.get("stdout")
+            if isinstance(output, list) and len(output) == 1:
+                return str(output[0])
+            message = result.get("msg")
+            if isinstance(message, bytes):
+                message = message.decode("utf-8", errors="replace")
+            if isinstance(message, str) and "%SNMP agent not enabled" in message:
+                return "%SNMP agent not enabled"
+            raise ProviderError("Cisco SNMP preflight result rejected")
+
         try:
             hostname = str(
                 selected[IDENTITY_TASK]["ansible_facts"]["ansible_net_hostname"]
             )
-            output = selected[SNMP_PREFLIGHT_TASK]["stdout"]
-            if not isinstance(output, list) or len(output) != len(commands):
-                raise KeyError
-            values = tuple(str(value) for value in output)
+            values = tuple(
+                command_output(task)
+                for task in (
+                    SNMP_ENGINE_TASK,
+                    SNMP_VIEW_TASK,
+                    SNMP_GROUP_TASK,
+                    SNMP_USER_TASK,
+                )
+            )
         except (KeyError, TypeError):
             raise ProviderError("Cisco SNMP preflight result rejected") from None
         return parse_cisco_snmp_state(

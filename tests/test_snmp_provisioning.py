@@ -13,8 +13,14 @@ from lxml import etree
 from pydantic import ValidationError
 
 from network_change_delivery.ansible_adapter import (
+    IDENTITY_TASK,
+    SNMP_ENGINE_TASK,
     SNMP_EXECUTION_TASK,
+    SNMP_GROUP_TASK,
+    SNMP_USER_TASK,
+    SNMP_VIEW_TASK,
     AnsibleRunnerCiscoAdapter,
+    ProviderError,
 )
 from network_change_delivery.junos_adapter import JunosPyEZAdapter
 from network_change_delivery.models import ExecutionDisposition, InventoryDevice
@@ -408,6 +414,63 @@ def test_cisco_adapter_executes_exact_artifact_once_through_no_log_playbook(
     playbook = Path("ansible/apply_snmp_provisioning.yml").read_text()
     assert "no_log: true" in playbook
     assert "save_when: never" in playbook
+
+
+def test_cisco_preflight_reconstructs_four_single_command_results(monkeypatch) -> None:
+    value = plan()
+    adapter = AnsibleRunnerCiscoAdapter()
+    view = "\n".join(
+        f"{NCDP_SNMP_VIEW} {oid} - included" for oid in value.device_view_oids
+    )
+    results = {
+        SNMP_ENGINE_TASK: {"stdout": ["%SNMP agent not enabled"]},
+        SNMP_VIEW_TASK: {"stdout": ["%SNMP agent not enabled"]},
+        SNMP_GROUP_TASK: {"stdout": ["%SNMP agent not enabled"]},
+        SNMP_USER_TASK: {"stdout": ["%SNMP agent not enabled"]},
+    }
+    results[SNMP_ENGINE_TASK] = {"stdout": ["Local SNMP engineID: value"]}
+    results[SNMP_VIEW_TASK] = {"stdout": [view]}
+    results[SNMP_GROUP_TASK] = {
+        "stdout": [
+            f"groupname: {NCDP_SNMP_GROUP} security model:v3 priv\n"
+            f"readview : {NCDP_SNMP_VIEW} writeview: <no writeview specified>\n"
+            "notifyview: <no notifyview specified>"
+        ]
+    }
+    results[SNMP_USER_TASK] = {
+        "stdout": [
+            f"User name: {snmp_username(1)}\nAuthentication Protocol: SHA-2 256\n"
+            f"Privacy Protocol: AES128\nGroup-name: {NCDP_SNMP_GROUP}"
+        ]
+    }
+
+    def run(*_args, **_kwargs):
+        return SimpleNamespace(status="successful", rc=0), {
+            IDENTITY_TASK: {"ansible_facts": {"ansible_net_hostname": "core-02"}},
+            **results,
+        }
+
+    monkeypatch.setattr(adapter, "_run", run)
+    state = adapter.snmp_preflight(device(), DeviceCredentials("u", "p"), value)
+    assert state.view is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
+    assert state.group is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
+    assert state.user is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
+    playbook = Path("ansible/inspect_snmp_provisioning.yml").read_text()
+    assert playbook.count("cisco.ios.ios_command:") == 4
+
+
+def test_cisco_preflight_rejects_missing_bounded_task(monkeypatch) -> None:
+    value = plan()
+    adapter = AnsibleRunnerCiscoAdapter()
+
+    def run(*_args, **_kwargs):
+        return SimpleNamespace(status="successful", rc=0), {
+            IDENTITY_TASK: {"ansible_facts": {"ansible_net_hostname": "core-02"}}
+        }
+
+    monkeypatch.setattr(adapter, "_run", run)
+    with pytest.raises(ProviderError):
+        adapter.snmp_preflight(device(), DeviceCredentials("u", "p"), value)
 
 
 def test_junos_adapter_loads_checks_and_commits_confirmed_exactly_once(

@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted for implementation. Increment 11A live CML acceptance is pending.
+Accepted. Final persistent live Increment 11A acceptance completed on commit
+`47a6a856ccc19903b585d2a2605dbea3c67db616` through Build #215.
 
 ## Decision
 
@@ -86,3 +87,8 @@ target authorization, private publication, persistent time-series retention, and
 failure-safe retirement before richer telemetry is introduced. Configuration
 bytes and diffs remain private Oxidized history; AuditStore remains delivery
 evidence rather than a metrics database.
+
+ADR 0025 subsequently added and accepted the separate 11B dashboard and
+operator-alert consumers without changing this credential-free 11A target,
+readiness, or authority contract. Increment 11B formally closed on merged main
+through Build #233.

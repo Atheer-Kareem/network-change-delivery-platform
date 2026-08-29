@@ -2,7 +2,7 @@
 
 ## Authority boundary
 
-NetBox is the primary personal-lab inventory source for this increment. It owns
+NetBox is the primary personal-lab inventory source. It owns
 the resolved device name and stable object identity, requested interface name
 and stable object identity, active eligibility, management endpoint, platform,
 and interface protection metadata. Git remains
@@ -30,14 +30,14 @@ The provider resolves a device by exact `dcim.device.name` and consumes only:
 - interface names returned by an explicit device and `ncdp-protected` tag filter.
 
 Exactly one matching device must exist. It must be active, tagged
-`ncdp-managed`, use platform slug `cisco-ios-xe`, have a valid primary IPv4, and
-have a numeric NetBox object ID. Planning additionally requires exactly one
+`ncdp-managed`, use a supported platform slug, have a valid primary IPv4, and
+have a numeric NetBox object ID. The exact platform mappings are
+`cisco-ios-xe` to internal `cisco_iosxe` on TCP/22 and `juniper-junos` to
+internal `junos` on TCP/830. Planning additionally requires exactly one
 exact-name interface on that resolved device and a numeric interface object ID.
-The platform maps to internal `cisco_iosxe`; the IPv4 prefix is removed and SSH
-port 22 is fixed for this increment. Protection results use a bounded limit and
-fail closed if NetBox reports any next page or a count that differs from the
-returned results. Python policy independently protects `GigabitEthernet1` as
-well.
+The IPv4 prefix is removed. Protection results use a bounded limit and fail
+closed if NetBox reports any next page or a count that differs from the returned
+results. Python policy independently protects `GigabitEthernet1` as well.
 
 ## Authentication and transport
 
@@ -93,7 +93,11 @@ before loading device credentials or opening a connection. Any mismatch returns
 
 ## Limitations
 
-This increment resolves one exact device name only. It does not implement fleet
-selectors, NetBox writes, custom SSH ports, desired configuration in NetBox,
-OpenBao, Junos, topology/IPAM policy, or a dynamic provider plugin system. Local
-lab bootstrap is an administrative setup activity outside normal NCDP execution.
+An exact-name operation resolves one device. The same provider also supports the
+narrow `ncdp-managed` tag-selected fleet and complete active managed population
+used by protected delivery and observability. Platform eligibility remains
+limited to the exact Cisco IOS XE and Junos mappings above. The provider does
+not implement NetBox writes, custom management ports, desired configuration in
+NetBox, credential resolution, general topology/IPAM policy, or a dynamic
+provider plugin system. Local lab bootstrap is an administrative setup activity
+outside normal NCDP execution.

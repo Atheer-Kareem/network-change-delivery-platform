@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted for 7C-A implementation; external live acceptance pending.
+Accepted. External live deployment completed in Increment 7C through Build
+#46; the no-retry hardening was accepted through Build #48.
 
 ## Decision
 
@@ -45,16 +46,22 @@ maps to one exact credential read for the first protected acceptance.
 Ordinary main builds remain no-write and stop before privileged JWT issuance,
 NetBox access, credential retrieval, or device access. NetBox remains read-only,
 and OpenBao remains the credential system of record. The accepted 7B role is not
-repurposed or broadened. This 7C-A implementation contains no active request and
-performs no live write. A later 7C-B request PR and protected-main exercise own
+repurposed or broadened. At the 7C-A implementation boundary there was no active
+request or live write; the later 7C-B request and protected-main exercise owned
 external live CML acceptance. No fleet-wide atomicity or production-grade host
 isolation is claimed.
 
-7C-B1 prepares that later acceptance with one repository-owned, single-device
+7C-B1 prepared that acceptance with one repository-owned, single-device
 promotion input for `core-02`. Its immutable plan originated from fresh
 read-only NetBox resolution, one exact OpenBao credential read, and read-only
 device collection. The dedicated Batfish baseline is sanitized and plan-bound;
 it models the selected interface's exact observed description but is not claimed
-as a fresh full device or production twin. The B1 change contains no live request,
-so protected-main must validate the new promotion in no-write mode before a
-separate reviewed deployment-request change can exercise live acceptance.
+as a fresh full device or production twin. The B1 change contained no live
+request, so protected main validated the promotion in no-write mode before the
+separate reviewed deployment request exercised live acceptance.
+
+Build #46 then completed the exact commit-bound single-device deployment,
+independent post-validation, and typed evidence path. Build #48 verified the
+hardened unchanged-request `NO_WRITE` path. The chronological acceptance and
+failure-driven hardening evidence remains in the Increment 7C acceptance
+record.

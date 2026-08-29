@@ -13,8 +13,8 @@ Increment 10 is divided deliberately:
 - 10A defines this evidence, correlation, storage, and sensitivity contract.
 - 10B-1 implements the durable correlation record and append-only store;
   10B-2 integrates the protected Buildkite boundary and bounded queries.
-- 10C will add private Oxidized Git-backed actual-state chronology and bounded
-  references from audit evidence.
+- 10C adds private Oxidized Git-backed actual-state chronology and bounded
+  references from protected audit evidence.
 
 ## Existing evidence inventory
 
@@ -46,7 +46,7 @@ records above. They do not each require a new durable artifact.
 
 ## Top-level correlation record
 
-10B should introduce a separate `ChangeAuditRecord`; it should not enlarge or
+10B introduces a separate `ChangeAuditRecord`; it does not enlarge or
 rename `ChangeRecord`. The new record is an immutable, versioned correlation
 envelope for one reviewed change and delivery attempt. This preserves mature
 device and fleet evidence semantics and avoids a migration that would turn a
@@ -235,7 +235,7 @@ exists fabricates no durable execution record.
 
 ## Oxidized actual-state chronology
 
-Oxidized belongs in 10C as a separate observed-state system. Upstream supports
+Oxidized is the separate 10C observed-state system. Upstream supports
 IOS/IOS XE and Junos models, HTTP/CSV/database sources, and a Git output that
 creates a commit when collected configuration changes. Its web API can move a
 node to the head of the queue, fetch a node, list nodes, and inspect node
@@ -249,26 +249,24 @@ See the upstream [Oxidized README](https://github.com/ytti/oxidized/blob/master/
 [Junos](https://github.com/ytti/oxidized/blob/master/lib/oxidized/model/junos.rb)
 models.
 
-NetBox should remain inventory authority. 10C should map each stable NetBox
-device ID to one bounded Oxidized node identity through a read-only source or a
-narrow generated adapter. NetBox must not become a credential store. Device
-credentials remain OpenBao-managed and must be supplied only through a
-protected Oxidized runtime boundary; the exact least-privilege account and
-non-persistent injection mechanism require implementation-time validation.
+NetBox remains inventory authority. 10C maps each stable NetBox device ID to
+one bounded Oxidized node identity through the private generated JSONFile
+source. NetBox is not a credential store. Device credentials remain
+OpenBao-managed and are materialized only through the protected Oxidized
+runtime boundary described below.
 
-After deployment, NCDP can request a bounded node fetch and observe the node's
-Git history. The correlation reference should contain the NetBox device ID,
-Oxidized node/group, private repository identity, Git commit SHA, configuration
-path/blob hash, capture request and observation times, and outcome. A collection
-that observes no content change may correctly yield no new Git commit; it must
-reference the unchanged commit/blob and say so.
+During protected delivery, NCDP requests bounded PRE and POST observations and
+reads the node's path-scoped Git metadata. Each durable correlation reference
+contains the NetBox device ID, Oxidized node/group, private repository identity,
+Git commit SHA, configuration path/blob hash, capture request and observation
+times, and outcome. A collection that observes no content change correctly may
+yield no new Git commit; it references the unchanged commit/blob and says so.
 
 The API request, timestamps, and before/after repository state provide useful
 correlation, but periodic collection and concurrent external changes mean they
-do not by themselves prove that one NCDP write caused one Git commit. 10C must
-serialize and poll bounded collection, record that limitation, and avoid
-fabricating exact causality unless upstream behavior or a verified integration
-provides it.
+do not by themselves prove that one NCDP write caused one Git commit. The 10C
+controller serializes and polls bounded collection, records that limitation,
+and keeps causality explicitly `NOT_PROVEN`.
 
 Actual configurations remain potentially sensitive even when Oxidized secret
 filters are enabled. The private persistent Git repository stays outside this
@@ -464,8 +462,10 @@ collection. 10C-5 adds persistent service ownership, freshness-gated bounded
 collection control, and an operator-triggered reboot gate without collecting.
 10C-6 adds strict CML-anchored SSH trust, the first private Cisco/Junos
 baselines, path-scoped collection/revision binding, unchanged suppression, and
-trust retirement before CML cleanup. 10C-7A prepares protected pre/post runtime
-correlation offline; real acceptance remains pending 10C-7B after merge.
+trust retirement before CML cleanup. 10C-7A prepared protected pre/post runtime
+correlation offline; 10C-7B completed the real protected PRE/write/POST path in
+Build #158 with an immutable parent and append-only child. Causality remains
+explicitly `NOT_PROVEN`.
 They must not change desired-state authority or place full configurations in
 NCDP audit JSON.
 

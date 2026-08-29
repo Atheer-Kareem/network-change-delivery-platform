@@ -15,9 +15,13 @@ and Junos.
 
 ## Current status
 
-- Architecture Baseline 1 is established.
-- The first implementation vertical will be a controlled Cisco IOS XE
-  interface-description change in the personal CML lab.
+- The reference platform implements reviewed Cisco IOS XE and Junos planning,
+  controlled delivery, protected Buildkite promotion/deployment, ephemeral CML
+  staging, append-only audit/configuration observation, and persistent
+  reachability dashboards and alerts.
+- The personal-lab model has two managed routers with NetBox inventory,
+  OpenBao credential authority, a manually owned live CML realization, and a
+  separate Terraform-owned ephemeral staging realization.
 - No production or company infrastructure or data is used.
 
 ## Architecture

@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted for Increment 10C-5; real-device collection remains disabled pending
-the operator reboot gate and Increment 10C-6.
+Accepted. Increment 10C-5 established persistent service/readiness ownership;
+ADR 0020 accepted strict real Cisco/Junos observation, and ADR 0021 completed
+protected PRE/write/POST correlation through Build #158.
 
 ## Decision
 
@@ -80,6 +81,12 @@ chronology has zero commits. The separate NetBox lifecycle preserves the
 existing local Compose project and authority volumes; it is not a general
 NetBox deployment manager and will not delete unfamiliar containers or recover
 missing volumes by creating replacements. The operator, not automation,
-performs the final real Mac reboot acceptance. Real collection, baseline
-commits, observation-record publication, protected correlation,
-remotes/backups, and Git maintenance remain later work.
+performed the final real Mac reboot acceptance. At the 10C-5 boundary, real
+collection, baseline commits, observation-record publication, and protected
+correlation remained later work.
+
+ADR 0020 subsequently accepted strict host-trust-bound Cisco and Junos
+collection and private baseline chronology. ADR 0021 and Build #158 accepted
+protected PRE/write/POST observation correlation without claiming causality.
+Periodic collection, remotes/backups, and Git maintenance remain outside the
+accepted boundary.

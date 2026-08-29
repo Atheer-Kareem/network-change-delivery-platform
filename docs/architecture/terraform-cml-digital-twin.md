@@ -34,14 +34,15 @@ persistent operational staging assumption. Increment 8E-1 establishes the
 
 CML UUIDs identify CML realization objects; they are not stable NCDP inventory
 identity. Terraform tags organize its infrastructure but cannot select NCDP
-deployment targets. Before cutover, NCDP must validate Terraform node/image
-realization against NetBox-authoritative platform identity.
+deployment targets. Every ephemeral staging run validates Terraform node/image
+realization against NetBox-authoritative platform identity before NCDP
+validation.
 
 ## Selected toolchain
 
 The implementation contract is Terraform CLI `1.15.8` with exactly
-`CiscoDevNet/cml2` `0.9.3-beta1`. The first implementation must pin both
-contracts and commit the generated `.terraform.lock.hcl`. It must not use a
+`CiscoDevNet/cml2` `0.9.3-beta1`. The implementation pins both contracts and
+commits the generated `.terraform.lock.hcl`. It must not use a
 floating provider constraint, Terraform RC/beta/alpha builds, OpenTofu, or CML2
 provider `0.9.1`.
 
@@ -121,8 +122,8 @@ test, not general staging readiness.
 
 `System Bridge` is a CML UI label, not a Linux device name. The inspected node
 and interface representations did not expose its backing name. Increment 8B
-must use the provider's `cml2_connector` data source, uniquely match the
-`System Bridge` label, and consume the returned `device_name`. Connector objects
+uses the provider's `cml2_connector` data source, uniquely matches the
+`System Bridge` label, and consumes the returned `device_name`. Connector objects
 also expose `id`, `protected`, `snooped`, and `tags`. Zero or multiple label
 matches are ambiguous and must stop planning. Values such as `bridge0` or
 `virbr0` must never be guessed.
@@ -311,6 +312,8 @@ realization module and adds an intentionally destroyable
 ephemeral root with required run identity, externally configured per-run state,
 and safe structural outputs. 8E-2 accepts the local real lifecycle, reusable
 finally-style orchestration, sanitized evidence, direct destroy from STARTED,
-independent absence proof, and guarded state retirement. 8E-3 will add
+independent absence proof, and guarded state retirement. 8E-3 accepted
 serialized Buildkite orchestration and workload identity without duplicating
-the accepted lifecycle logic.
+the lifecycle logic. ADR 0024 later narrowed the active staging graph to the
+10-resource, two-router topology while preserving the accepted
+create/validate/destroy boundary.

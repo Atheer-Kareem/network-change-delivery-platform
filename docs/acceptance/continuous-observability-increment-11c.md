@@ -18,6 +18,10 @@ transient-only `ifIndex`, and bounded fail-closed offline models.
 production invocation remains unchanged. Disposable Linux/ARM64 Net-SNMP 5.9.3
 agents prove SNMPv3 `authPriv` with SHA256 authentication and AES128 privacy
 against the exact digest-pinned `snmp_exporter` v0.30.1 image.
+Prometheus and the exporter alone share an internal control network. The exporter
+and two disposable agents alone share a separate non-internal device bridge,
+proving the intended HTTP-control and UDP-polling separation without claiming
+live-router reachability.
 
 The synthetic verifier exercises valid polling plus wrong authentication,
 wrong privacy, unknown selector, unreachable target, and one-target isolation
@@ -40,5 +44,6 @@ Prometheus configuration, target and metric labels, environment, arguments,
 ordinary logs, and public evidence.
 
 11C-2 provides synthetic evidence only. Real OpenBao identities and credentials,
-typed Cisco/Junos provisioning, device mutation, persistent activation, and live
-read-only acceptance remain 11C-3 and 11C-4.
+typed Cisco/Junos provisioning, device mutation, persistent activation, actual
+Docker Desktop-to-router UDP/161 reachability, and live read-only acceptance
+remain 11C-3 and 11C-4.

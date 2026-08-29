@@ -26,7 +26,8 @@ def verify_snmp_exporter_definition(
     module_root: Path,
     auth_root: Path,
     project_name: str,
-    network_name: str,
+    control_network_name: str,
+    device_network_name: str,
     container_name: str = SNMP_EXPORTER_CONTAINER,
 ) -> str:
     """Verify one exact private, non-root exporter definition."""
@@ -56,6 +57,7 @@ def verify_snmp_exporter_definition(
         f"--config.file={SNMP_MODULE_TARGET}/snmp-modules.yml",
         f"--config.file={SNMP_AUTH_TARGET}/snmp-auth.yml",
     ]
+    expected_networks = {control_network_name, device_network_name}
     if (
         inspected.get("Name") != f"/{container_name}"
         or inspected.get("Image") != image_id
@@ -75,9 +77,9 @@ def verify_snmp_exporter_definition(
         or not isinstance(labels, dict)
         or labels.get("com.docker.compose.project") != project_name
         or labels.get("com.docker.compose.service") != SNMP_EXPORTER_SERVICE
-        or host.get("NetworkMode") != network_name
+        or host.get("NetworkMode") not in expected_networks
         or not isinstance(networks, dict)
-        or set(networks) != {network_name}
+        or set(networks) != expected_networks
         or command != expected_command
         or host.get("PortBindings") not in ({}, None)
     ):

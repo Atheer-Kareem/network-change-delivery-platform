@@ -2,7 +2,7 @@ services:
   prometheus:
     networks:
       telemetry: {}
-      snmp: {}
+      snmp_control: {}
     depends_on:
       snmp_exporter:
         condition: service_started
@@ -28,11 +28,16 @@ services:
         source: ${NCDP_SNMP_AUTH_ROOT:?private SNMP auth root required}
         target: /etc/ncdp/snmp/auth
         read_only: true
-    networks: [snmp]
+    networks: [snmp_control, snmp_device]
 
 networks:
-  snmp:
-    name: ${NCDP_SNMP_NETWORK:-ncdp-observability-snmp}
+  snmp_control:
+    name: ${NCDP_SNMP_CONTROL_NETWORK:-ncdp-observability-snmp-control}
     internal: true
     labels:
-      com.ncdp.service: observability-snmp
+      com.ncdp.service: observability-snmp-control
+  snmp_device:
+    name: ${NCDP_SNMP_DEVICE_NETWORK:-ncdp-observability-snmp-device}
+    internal: false
+    labels:
+      com.ncdp.service: observability-snmp-device

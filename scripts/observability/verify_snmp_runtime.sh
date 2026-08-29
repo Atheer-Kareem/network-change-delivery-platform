@@ -6,7 +6,8 @@ quality_image=${NCDP_QUALITY_IMAGE:?NCDP_QUALITY_IMAGE required}
 run_id=${BUILDKITE_BUILD_NUMBER:-$$}
 project="ncdp-observability-11c2-test-${run_id}"
 telemetry_network="${project}-telemetry"
-snmp_network="${project}-snmp"
+snmp_control_network="${project}-snmp-control"
+snmp_device_network="${project}-snmp-device"
 exporter_image='prom/snmp-exporter:v0.30.1@sha256:e5fd5e8b43ace6c088fe9bf0b37b7fff0e04380bee352be7ec41b853a4dd5859'
 prometheus_image='prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0'
 agent_image="ncdp-snmp-agent:${run_id}"
@@ -31,7 +32,8 @@ export NCDP_OBSERVABILITY_CONFIG_ROOT=${config_root}
 export NCDP_OBSERVABILITY_STATE_ROOT=${state_root}
 export NCDP_OBSERVABILITY_RUNTIME_ROOT=${runtime_root}
 export NCDP_OBSERVABILITY_NETWORK=${telemetry_network}
-export NCDP_SNMP_NETWORK=${snmp_network}
+export NCDP_SNMP_CONTROL_NETWORK=${snmp_control_network}
+export NCDP_SNMP_DEVICE_NETWORK=${snmp_device_network}
 export NCDP_SNMP_MODULE_ROOT=${module_root}
 export NCDP_SNMP_AUTH_ROOT=${auth_root}
 export NCDP_PROMETHEUS_CONTAINER="${project}-prometheus"
@@ -65,7 +67,7 @@ quality_python() {
 private_get() {
   local url=$1
   local output=$2
-  docker run --rm --network "${snmp_network}" "${quality_image}" \
+  docker run --rm --network "${snmp_control_network}" "${quality_image}" \
     /app/.venv/bin/python -c '
 import sys, urllib.request
 with urllib.request.urlopen(sys.argv[1], timeout=20) as response:
@@ -76,7 +78,7 @@ with urllib.request.urlopen(sys.argv[1], timeout=20) as response:
 private_status() {
   local method=$1
   local url=$2
-  docker run --rm --network "${snmp_network}" "${quality_image}" \
+  docker run --rm --network "${snmp_control_network}" "${quality_image}" \
     /app/.venv/bin/python -c '
 import sys, urllib.error, urllib.request
 request = urllib.request.Request(sys.argv[2], method=sys.argv[1])
@@ -246,7 +248,7 @@ for index in 1 2; do
   directory_var="agent_${index}_root"
   directory=${!directory_var}
   docker run --detach --name "${project}-agent-${index}" \
-    --network "${snmp_network}" \
+    --network "${snmp_device_network}" \
     --network-alias "synthetic-snmp-agent-${index}" \
     --read-only --cap-drop ALL --security-opt no-new-privileges \
     --tmpfs /var/lib/snmp:rw,noexec,nosuid,nodev,size=8m \
@@ -260,7 +262,7 @@ done
 for index in 1 2; do
   directory_var="agent_${index}_root"
   directory=${!directory_var}
-  docker run --rm --network "${snmp_network}" --read-only --cap-drop ALL \
+  docker run --rm --network "${snmp_device_network}" --read-only --cap-drop ALL \
     --security-opt no-new-privileges \
     --env SNMPCONFPATH=/run/ncdp-client \
     --volume "${directory}:/run/ncdp-client:ro" \
@@ -269,6 +271,48 @@ for index in 1 2; do
     >"${evidence_root}/agent-${index}-authpriv.txt"
 done
 "${compose[@]}" up --detach --pull never --no-build >/dev/null
+
+topology_file=${evidence_root}/network-topology.json
+network_file=${evidence_root}/network-definitions.json
+docker inspect \
+  "${NCDP_PROMETHEUS_CONTAINER}" "${NCDP_SNMP_EXPORTER_CONTAINER}" \
+  "${project}-agent-1" "${project}-agent-2" >"${topology_file}"
+docker network inspect "${snmp_control_network}" "${snmp_device_network}" \
+  >"${network_file}"
+quality_python -c '
+import json, sys
+from pathlib import Path
+
+containers = {
+    item["Name"].lstrip("/"): item
+    for item in json.loads(Path(sys.argv[1]).read_text())
+}
+networks = {
+    item["Name"]: item
+    for item in json.loads(Path(sys.argv[2]).read_text())
+}
+telemetry, control, device, project = sys.argv[3:]
+prometheus = f"{project}-prometheus"
+exporter = f"{project}-snmp-exporter"
+agent_1 = f"{project}-agent-1"
+agent_2 = f"{project}-agent-2"
+
+def attached(name):
+    return set(containers[name]["NetworkSettings"]["Networks"])
+
+assert attached(prometheus) == {telemetry, control}
+assert attached(exporter) == {control, device}
+assert attached(agent_1) == {device}
+assert attached(agent_2) == {device}
+assert networks[control]["Internal"] is True
+assert networks[device]["Internal"] is False
+control_members = {item["Name"] for item in networks[control]["Containers"].values()}
+device_members = {item["Name"] for item in networks[device]["Containers"].values()}
+assert control_members == {prometheus, exporter}
+assert device_members == {exporter, agent_1, agent_2}
+' /test-root/evidence/network-topology.json \
+  /test-root/evidence/network-definitions.json "${telemetry_network}" \
+  "${snmp_control_network}" "${snmp_device_network}" "${project}"
 
 for _ in $(seq 1 60); do
   if private_get "http://snmp_exporter:9116/-/healthy" \
@@ -330,7 +374,8 @@ export NCDP_TEST_RECEIVER_IMAGE_ID=${receiver_image_id}
 export NCDP_TEST_EXPORTER_IMAGE_ID=${exporter_image_id}
 export NCDP_TEST_PROJECT=${project}
 export NCDP_TEST_TELEMETRY_NETWORK=${telemetry_network}
-export NCDP_TEST_SNMP_NETWORK=${snmp_network}
+export NCDP_TEST_SNMP_CONTROL_NETWORK=${snmp_control_network}
+export NCDP_TEST_SNMP_DEVICE_NETWORK=${snmp_device_network}
 export NCDP_TEST_PROMETHEUS_PORT=${prometheus_port}
 export NCDP_TEST_GRAFANA_PORT=${grafana_port}
 export NCDP_TEST_CONFIG_ROOT=${config_root}
@@ -343,7 +388,8 @@ docker run --rm --user "${uid}:${gid}" \
   -e NCDP_TEST_GRAFANA_IMAGE_ID -e NCDP_TEST_ALERTMANAGER_IMAGE_ID \
   -e NCDP_TEST_RECEIVER_IMAGE_ID -e NCDP_TEST_EXPORTER_IMAGE_ID \
   -e NCDP_TEST_PROJECT -e NCDP_TEST_TELEMETRY_NETWORK \
-  -e NCDP_TEST_SNMP_NETWORK -e NCDP_TEST_PROMETHEUS_PORT \
+  -e NCDP_TEST_SNMP_CONTROL_NETWORK -e NCDP_TEST_SNMP_DEVICE_NETWORK \
+  -e NCDP_TEST_PROMETHEUS_PORT \
   -e NCDP_TEST_GRAFANA_PORT -e NCDP_TEST_CONFIG_ROOT \
   -e NCDP_TEST_STATE_ROOT -e NCDP_TEST_RUNTIME_ROOT \
   -e NCDP_TEST_MODULE_ROOT -e NCDP_TEST_AUTH_ROOT \
@@ -376,7 +422,7 @@ verify_container_definitions(
     runtime_root=Path(os.environ["NCDP_TEST_RUNTIME_ROOT"]),
     project_name=os.environ["NCDP_TEST_PROJECT"],
     network_name=os.environ["NCDP_TEST_TELEMETRY_NETWORK"],
-    prometheus_additional_networks=frozenset({os.environ["NCDP_TEST_SNMP_NETWORK"]}),
+    prometheus_additional_networks=frozenset({os.environ["NCDP_TEST_SNMP_CONTROL_NETWORK"]}),
     prometheus_host_port=os.environ["NCDP_TEST_PROMETHEUS_PORT"],
     grafana_host_port=os.environ["NCDP_TEST_GRAFANA_PORT"],
 )
@@ -385,7 +431,8 @@ verify_snmp_exporter_definition(
     module_root=Path(os.environ["NCDP_TEST_MODULE_ROOT"]),
     auth_root=Path(os.environ["NCDP_TEST_AUTH_ROOT"]),
     project_name=os.environ["NCDP_TEST_PROJECT"],
-    network_name=os.environ["NCDP_TEST_SNMP_NETWORK"],
+    control_network_name=os.environ["NCDP_TEST_SNMP_CONTROL_NETWORK"],
+    device_network_name=os.environ["NCDP_TEST_SNMP_DEVICE_NETWORK"],
     container_name=services["snmp_exporter"]["Name"].lstrip("/"),
 )
 '
@@ -482,7 +529,7 @@ docker start "${project}-agent-2" >/dev/null
 
 # The private `/config` endpoint exposes the controlled SNMPv3 principal while
 # redacting both confidentiality-bearing passphrases. Do not persist the response.
-docker run --rm --network "${snmp_network}" "${quality_image}" \
+docker run --rm --network "${snmp_control_network}" "${quality_image}" \
   /app/.venv/bin/python -c '
 import sys, urllib.request
 content = urllib.request.urlopen("http://snmp_exporter:9116/config", timeout=10).read()
@@ -528,4 +575,4 @@ fi
 rm -rf "${test_root}"
 [ ! -e "${test_root}" ]
 trap - EXIT
-echo "observability 11C-2 synthetic runtime: PASS (SNMPv3 authPriv SHA256/AES128, directory rotation/reload, normalized Prometheus telemetry, secret scan, 11A/11B preserved)"
+echo "observability 11C-2 synthetic runtime: PASS (split control/device networks, SNMPv3 authPriv SHA256/AES128, directory rotation/reload, normalized Prometheus telemetry, secret scan, 11A/11B preserved)"

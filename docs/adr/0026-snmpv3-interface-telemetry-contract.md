@@ -80,19 +80,25 @@ protocol translator on this conceptual path:
 Prometheus -> snmp_exporter -> UDP/161 -> admitted device
 ```
 
-It will be a sixth service in the existing Compose project, with no host port and
-a dedicated private network shared only with Prometheus. It will not receive
-NetBox, CML, OpenBao bootstrap, SSH, AuditStore, or device-write authority. Its
-future private authentication input is a mode-0600 file atomically replaced by a
-host materializer inside a mode-0700 directory. The directory, rather than one
-rotating file, is mounted read-only, and successful publication requires an
-explicit exporter reload or reconciliation. Environment-variable secret
-injection is rejected because container inspection exposes environment values.
-11C-2 implements that topology only as an explicitly selected Compose overlay;
-the accepted five-service production invocation remains unchanged. Synthetic
-rotation uses a private `POST /-/reload`, whose HTTP result provides positive
-acknowledgement without publishing another host port. A rejected reload retains
-the previously active valid exporter configuration.
+It will be a sixth service in the existing Compose project, with no host port.
+An internal control network shared only by Prometheus and the exporter carries
+Prometheus-to-exporter HTTP. A separate ordinary bridge attaches only the
+exporter in the future production topology and provides exporter-to-device
+UDP/161 egress; Prometheus and the other accepted services do not join it. It
+will not receive NetBox, CML, OpenBao bootstrap, SSH, AuditStore, or device-write
+authority. Its future private authentication input is a mode-0600 file
+atomically replaced by a host materializer inside a mode-0700 directory. The
+directory, rather than one rotating file, is mounted read-only, and successful
+publication requires an explicit exporter reload or reconciliation.
+Environment-variable secret injection is rejected because container inspection
+exposes environment values. 11C-2 implements that two-network topology only as
+an explicitly selected Compose overlay; synthetic agents join only the device
+bridge. The accepted five-service production invocation remains unchanged.
+Synthetic rotation uses a private `POST /-/reload`, whose HTTP result provides
+positive acknowledgement without publishing another host port. A rejected
+reload retains the previously active valid exporter configuration. Synthetic
+flow does not prove Docker Desktop-to-router UDP/161 reachability; that remains
+11C-4 live evidence after separately approved provisioning.
 
 SNMP target generation and readiness are separate from
 `ObservabilityReady(service_contract="11A")`. SNMP state distinguishes ACTIVE,

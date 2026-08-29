@@ -20,6 +20,8 @@ IMAGE_ID = "sha256:" + "a" * 64
 CONTAINER_ID = "b" * 64
 MODULE_ROOT = Path("/private/modules")
 AUTH_ROOT = Path("/private/auth")
+CONTROL_NETWORK = "synthetic-snmp-control"
+DEVICE_NETWORK = "synthetic-snmp-device"
 
 
 def inspection() -> dict[str, object]:
@@ -43,13 +45,13 @@ def inspection() -> dict[str, object]:
             },
         },
         "State": {"Running": True},
-        "NetworkSettings": {"Networks": {"synthetic-snmp": {}}},
+        "NetworkSettings": {"Networks": {CONTROL_NETWORK: {}, DEVICE_NETWORK: {}}},
         "HostConfig": {
             "ReadonlyRootfs": True,
             "RestartPolicy": {"Name": "no"},
             "CapDrop": ["ALL"],
             "SecurityOpt": ["no-new-privileges:true"],
-            "NetworkMode": "synthetic-snmp",
+            "NetworkMode": CONTROL_NETWORK,
             "PortBindings": {},
             "Binds": [
                 f"{MODULE_ROOT}:{SNMP_MODULE_TARGET}:ro",
@@ -66,7 +68,8 @@ def verify(value: dict[str, object]) -> str:
         module_root=MODULE_ROOT,
         auth_root=AUTH_ROOT,
         project_name="synthetic-project",
-        network_name="synthetic-snmp",
+        control_network_name=CONTROL_NETWORK,
+        device_network_name=DEVICE_NETWORK,
     )
 
 
@@ -93,14 +96,21 @@ def test_snmp_overlay_is_explicit_private_and_does_not_change_base_runtime() -> 
     assert exporter["security_opt"] == ["no-new-privileges:true"]
     assert "ports" not in exporter
     assert "environment" not in exporter
-    assert exporter["networks"] == ["snmp"]
+    assert exporter["networks"] == ["snmp_control", "snmp_device"]
     assert len(exporter["volumes"]) == 2
     assert all(mount["read_only"] is True for mount in exporter["volumes"])
-    assert overlay["networks"]["snmp"]["internal"] is True
+    assert overlay["networks"]["snmp_control"]["internal"] is True
+    assert overlay["networks"]["snmp_device"]["internal"] is False
     assert set(overlay["services"]["prometheus"]["networks"]) == {
         "telemetry",
-        "snmp",
+        "snmp_control",
     }
+
+
+def test_either_reviewed_exporter_network_may_be_primary() -> None:
+    value = inspection()
+    value["HostConfig"]["NetworkMode"] = DEVICE_NETWORK
+    assert verify(value) == CONTAINER_ID
 
 
 @pytest.mark.parametrize(
@@ -115,8 +125,10 @@ def test_snmp_overlay_is_explicit_private_and_does_not_change_base_runtime() -> 
             Binds=["/var/run/docker.sock:/var/run/docker.sock"]
         ),
         lambda item: item["NetworkSettings"].update(
-            Networks={"synthetic-snmp": {}, "unexpected": {}}
+            Networks={CONTROL_NETWORK: {}, DEVICE_NETWORK: {}, "unexpected": {}}
         ),
+        lambda item: item["NetworkSettings"].update(Networks={CONTROL_NETWORK: {}}),
+        lambda item: item["HostConfig"].update(NetworkMode="unexpected"),
         lambda item: item["Config"].update(
             Cmd=["--config.expand-environment-variables"]
         ),

@@ -542,7 +542,8 @@ class AnsibleRunnerCiscoAdapter:
             if isinstance(message, bytes):
                 message = message.decode("utf-8", errors="replace")
             if isinstance(message, str) and re.search(
-                r"(?m)^\s*%SNMP agent not enabled\s*$", message
+                r"^b'[^%]*\\r\\n%SNMP agent not enabled\\r\\n[^%]*'$",
+                message,
             ):
                 return "%SNMP agent not enabled"
             raise ProviderError("Cisco SNMP preflight result rejected")

@@ -457,6 +457,9 @@ def test_cisco_preflight_reconstructs_four_single_command_results(monkeypatch) -
     assert state.user is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
     playbook = Path("ansible/inspect_snmp_provisioning.yml").read_text()
     assert playbook.count("cisco.ios.ios_command:") == 4
+    assert "ncdp_snmp_disabled_wrapper" in playbook
+    assert r"\\r\\\\n%SNMP agent not enabled" in playbook
+    assert "is search('%SNMP agent not enabled')" not in playbook
 
 
 def test_cisco_preflight_rejects_missing_bounded_task(monkeypatch) -> None:
@@ -498,10 +501,57 @@ def test_cisco_preflight_normalizes_wrapped_disabled_failure(monkeypatch) -> Non
     assert state.safe_to_create_for("cisco_iosxe") is True
 
 
+def test_cisco_preflight_normalizes_stringified_escaped_runner_wrapper(
+    monkeypatch,
+) -> None:
+    value = plan()
+    adapter = AnsibleRunnerCiscoAdapter()
+    wrapped = "b'show snmp engineID\\r\\n%SNMP agent not enabled\\r\\ncore-02#'"
+
+    def run(*_args, **_kwargs):
+        return SimpleNamespace(status="successful", rc=0), {
+            IDENTITY_TASK: {"ansible_facts": {"ansible_net_hostname": "core-02"}},
+            **{
+                task: {"msg": wrapped, "_ncdp_event": "runner_on_failed"}
+                for task in (
+                    SNMP_ENGINE_TASK,
+                    SNMP_VIEW_TASK,
+                    SNMP_GROUP_TASK,
+                    SNMP_USER_TASK,
+                )
+            },
+        }
+
+    monkeypatch.setattr(adapter, "_run", run)
+    state = adapter.snmp_preflight(device(), DeviceCredentials("u", "p"), value)
+    assert state.local_engine_id_present is False
+
+
 def test_cisco_preflight_rejects_phrase_with_unrelated_failure(monkeypatch) -> None:
     value = plan()
     adapter = AnsibleRunnerCiscoAdapter()
     wrapped = b"fatal timeout: %SNMP agent not enabled"
+
+    def run(*_args, **_kwargs):
+        return SimpleNamespace(status="successful", rc=0), {
+            IDENTITY_TASK: {"ansible_facts": {"ansible_net_hostname": "core-02"}},
+            SNMP_ENGINE_TASK: {"msg": wrapped, "_ncdp_event": "runner_on_failed"},
+        }
+
+    monkeypatch.setattr(adapter, "_run", run)
+    with pytest.raises(ProviderError):
+        adapter.snmp_preflight(device(), DeviceCredentials("u", "p"), value)
+
+
+@pytest.mark.parametrize(
+    "prefix", ["timeout", "timed out", "authentication failure", "ssh failure"]
+)
+def test_cisco_preflight_rejects_failed_escaped_wrapper(
+    monkeypatch, prefix: str
+) -> None:
+    value = plan()
+    adapter = AnsibleRunnerCiscoAdapter()
+    wrapped = f"b'{prefix}\\r\\n%SNMP agent not enabled\\r\\ncore-02#'"
 
     def run(*_args, **_kwargs):
         return SimpleNamespace(status="successful", rc=0), {

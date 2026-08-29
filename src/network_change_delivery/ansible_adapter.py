@@ -64,6 +64,40 @@ class DeploymentRuntimeError(ProviderError):
         super().__init__("deployment Ansible runtime prerequisites unavailable")
 
 
+_DISABLED_SNMP_AGENT = "%SNMP agent not enabled"
+
+
+def _normalize_disabled_snmp_agent(value: object) -> str | None:
+    """Recognize only the bounded IOS XE disabled-agent result shapes."""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if not isinstance(value, str):
+        return None
+    lowered = value.casefold()
+    if any(
+        marker in lowered
+        for marker in (
+            "traceback",
+            "exception",
+            "timeout",
+            "timed out",
+            "unreachable",
+            "authentication failure",
+            "ssh failure",
+        )
+    ):
+        return None
+    if re.fullmatch(r"b'[^%]*\\r\\n%SNMP agent not enabled\\r\\n[^%]*'", value):
+        return _DISABLED_SNMP_AGENT
+    lines = value.splitlines()
+    if any(line.strip() == _DISABLED_SNMP_AGENT for line in lines) and not any(
+        line.lstrip().startswith("%") and line.strip() != _DISABLED_SNMP_AGENT
+        for line in lines
+    ):
+        return _DISABLED_SNMP_AGENT
+    return None
+
+
 def _bounded_read_failure(result: object) -> str:
     """Classify a Runner task failure without exposing its provider message."""
     values = result if isinstance(result, dict) else {}
@@ -541,10 +575,8 @@ class AnsibleRunnerCiscoAdapter:
             message = result.get("msg")
             if isinstance(message, bytes):
                 message = message.decode("utf-8", errors="replace")
-            if isinstance(message, str) and re.search(
-                r"(?m)^\s*%SNMP agent not enabled\s*$", message
-            ):
-                return "%SNMP agent not enabled"
+            if _normalize_disabled_snmp_agent(message) is not None:
+                return _DISABLED_SNMP_AGENT
             raise ProviderError("Cisco SNMP preflight result rejected")
 
         try:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -243,15 +244,49 @@ class SnmpTargetGeneration(BaseModel):
         )
 
 
+class SnmpReadinessInterfaceMapping(BaseModel):
+    """Bind one stable device to reviewed, secret-free normalization state."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device: NetBoxDeviceIdentity
+    mapping_digest: Sha256
+
+
 class SnmpReadiness(BaseModel):
-    """Minimal separate readiness pointer without changing 11A's schema."""
+    """Fresh SNMP-only runtime identity without changing 11A's schema."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal["1"] = "1"
     service_contract: Literal["11C"] = "11C"
     state: SnmpTargetState
+    refreshed_at: datetime
+    expires_at: datetime
+    source_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
     target_generation_digest: Sha256
+    target_file_sha256: Sha256
+    interface_mappings: tuple[SnmpReadinessInterfaceMapping, ...] = Field(
+        min_length=1, max_length=MAX_SNMP_TARGETS
+    )
+    exporter_container_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    exporter_image_id: Sha256
+    module_config_sha256: Sha256
+
+    @model_validator(mode="after")
+    def fresh_secret_free_identity(self) -> SnmpReadiness:
+        devices = [item.device for item in self.interface_mappings]
+        if (
+            self.refreshed_at.tzinfo is None
+            or self.refreshed_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+            or self.expires_at <= self.refreshed_at
+            or devices != sorted(devices, key=_identity_number)
+            or len(devices) != len(set(devices))
+        ):
+            raise ValueError("SNMP readiness rejected")
+        return self
 
 
 def _identity_number(value: str) -> int:

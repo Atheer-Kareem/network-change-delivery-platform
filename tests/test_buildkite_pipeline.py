@@ -55,6 +55,7 @@ def test_pipeline_contract() -> None:
         "quality-terraform-cml",
         "quality-snmp-generator",
         "quality-observability-11b",
+        "quality-observability-11c2",
     }
     assert all(
         step["agents"]["queue"] == "ncdp-validation" for step in quality_steps.values()
@@ -93,6 +94,22 @@ def test_pipeline_contract() -> None:
         "scripts/observability/**",
         "src/network_change_delivery/observability_*.py",
         "tests/test_observability_*.py",
+    ]
+
+    snmp_observability = quality_steps["quality-observability-11c2"]
+    assert snmp_observability["depends_on"] == "quality-env"
+    assert snmp_observability["agents"]["queue"] == "ncdp-validation"
+    assert snmp_observability["command"] == (
+        "NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
+        "scripts/observability/verify_snmp_runtime.sh"
+    )
+    assert snmp_observability["if_changed"]["include"] == [
+        "infrastructure/observability/**",
+        "scripts/observability/**",
+        "src/network_change_delivery/observability_*.py",
+        "src/network_change_delivery/snmp_*.py",
+        "tests/test_observability_*.py",
+        "tests/test_snmp_*.py",
     ]
 
     snmp_generator = quality_steps["quality-snmp-generator"]

@@ -111,10 +111,12 @@ ADR 0026 proposes an offline contract for the next independent path:
 11C: Prometheus -> snmp_exporter -> UDP/161 -> admitted device
 ```
 
-The accepted production runtime remains the five 11B services. No running
-`snmp_exporter`, live scrape job, SNMP credential, or device configuration exists
-yet. A later synthetic slice may add the reviewed sixth-service contract, but it
-must not make the 11A target generation or
+The accepted production runtime remains the five 11B services. 11C-2 adds an
+explicitly selected synthetic Compose overlay that attaches Prometheus and a
+sixth `snmp_exporter` service to a dedicated internal network. Ordinary base
+Compose invocation, installation, update, LaunchAgent reconciliation, and live
+Prometheus configuration remain five-service and SNMP-free. The overlay must not
+make the 11A target generation or
 `ObservabilityReady(service_contract="11A")` depend on SNMP health.
 
 The future exporter is a protocol translator, not inventory authority. NetBox
@@ -133,12 +135,22 @@ authority, OpenBao bootstrap, SSH credentials, AuditStore, configuration
 history, or device-write capability. Its private authentication directory will
 be mounted read-only. A host materializer will eventually replace a mode-0600
 auth file atomically inside that mode-0700 directory and then deliberately reload
-or reconcile the exporter. Real materialization, OpenBao identity, and device
-provisioning remain 11C-3.
+or reconcile the exporter. Synthetic evidence selects a private
+`POST /-/reload`: successful replacement is acknowledged without restarting the
+container, while a rejected reload leaves the prior valid configuration active.
+Real materialization, OpenBao identity, and device provisioning remain 11C-3.
+
+Authentication and privacy passphrases or keys are secret. The SNMPv3 username,
+auth selector, and versioned credential reference are non-secret controlled
+identity. The private exporter `/config` response may contain the username but
+must redact both passphrases. Usernames remain forbidden from Prometheus config,
+targets, metric labels, container environment and arguments, ordinary logs, and
+public evidence. The exporter has no host-published port, so `/config` remains
+reachable only on the dedicated private network.
 
 The reviewed `ncdp_if_mib` generator source and generated module use only the
 exact system and interface objects recorded by ADR 0026. The future Cisco and
 Junos read views must match that generated get/walk closure. Expanding the
 module requires a corresponding reviewed device-view change; broad IF-MIB
 authority is not implied. SNMPv3 communities, traps, write access, vendor MIBs,
-dashboards, alerts, rates, and remediation are outside 11C-1. gNMI remains 11D.
+dashboards, alerts, rates, and remediation remain outside 11C. gNMI remains 11D.

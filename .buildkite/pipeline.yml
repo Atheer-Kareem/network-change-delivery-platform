@@ -103,6 +103,21 @@ steps:
             - "src/network_change_delivery/observability_*.py"
             - "tests/test_observability_*.py"
 
+      - label: ":satellite: observability 11C-2 synthetic SNMPv3 validation"
+        key: quality-observability-11c2
+        depends_on: quality-env
+        command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_snmp_runtime.sh
+        agents:
+          queue: ncdp-validation
+        if_changed:
+          include:
+            - "infrastructure/observability/**"
+            - "scripts/observability/**"
+            - "src/network_change_delivery/observability_*.py"
+            - "src/network_change_delivery/snmp_*.py"
+            - "tests/test_observability_*.py"
+            - "tests/test_snmp_*.py"
+
   - label: ":white_check_mark: pipeline contract"
     key: pipeline-contract
     depends_on: quality

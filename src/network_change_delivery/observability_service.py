@@ -300,6 +300,7 @@ def verify_container_definitions(
     runtime_root: Path,
     project_name: str = PROJECT_NAME,
     network_name: str = "ncdp-observability-telemetry",
+    prometheus_additional_networks: frozenset[str] = frozenset(),
     prometheus_host_port: str = "9090",
     grafana_host_port: str = "3000",
 ) -> tuple[str, str]:
@@ -320,6 +321,9 @@ def verify_container_definitions(
         state = item.get("State")
         network_settings = item.get("NetworkSettings")
         identifier = item.get("Id")
+        expected_networks = {network_name}
+        if name == PROMETHEUS_CONTAINER:
+            expected_networks.update(prometheus_additional_networks)
         if (
             re.fullmatch(r"sha256:[0-9a-f]{64}", expected_image) is None
             or not all(
@@ -356,9 +360,9 @@ def verify_container_definitions(
             or not isinstance(labels, dict)
             or labels.get("com.docker.compose.project") != project_name
             or labels.get("com.docker.compose.service") != EXPECTED_SERVICE_NAMES[name]
-            or host.get("NetworkMode") != network_name
+            or host.get("NetworkMode") not in expected_networks
             or not isinstance(networks, dict)
-            or set(networks) != {network_name}
+            or set(networks) != expected_networks
         ):
             raise ObservabilityServiceError(
                 "observability container definition rejected"

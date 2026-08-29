@@ -88,6 +88,11 @@ host materializer inside a mode-0700 directory. The directory, rather than one
 rotating file, is mounted read-only, and successful publication requires an
 explicit exporter reload or reconciliation. Environment-variable secret
 injection is rejected because container inspection exposes environment values.
+11C-2 implements that topology only as an explicitly selected Compose overlay;
+the accepted five-service production invocation remains unchanged. Synthetic
+rotation uses a private `POST /-/reload`, whose HTTP result provides positive
+acknowledgement without publishing another host port. A rejected reload retains
+the previously active valid exporter configuration.
 
 SNMP target generation and readiness are separate from
 `ObservabilityReady(service_contract="11A")`. SNMP state distinguishes ACTIVE,
@@ -104,6 +109,12 @@ or create real OpenBao paths, roles, policies, AppRoles, bootstrap values, or
 device credentials.
 The bounded auth selector is a non-secret routing value that may later populate
 `__param_auth`; it is neither credential material nor durable metric identity.
+The SNMPv3 username is likewise a non-secret but controlled authentication
+principal. It may appear in the private auth file and the exporter's private
+`/config` response, but not in Prometheus configuration, target or metric labels,
+container environment or arguments, ordinary logs, or public evidence. Only the
+authentication and privacy passphrases or keys are confidentiality-bearing;
+`snmp_exporter` must redact those values from `/config`.
 
 ## Delivery decomposition
 
@@ -111,11 +122,13 @@ The bounded auth selector is a non-secret routing value that may later populate
 
 1. **11C-1 — architecture and offline contract:** proposed ADR, generated
    standard-IETF module, pure typed identity/state contracts, closure validation,
-   and unit tests. No SNMP, secret-provider, device, or persistent-runtime access.
+   and unit tests. This slice is complete. It used no SNMP, secret-provider,
+   device, or persistent-runtime access.
 2. **11C-2 — exporter and synthetic integration:** disposable SNMPv3 agent,
    sixth-service container/runtime contract, synthetic `authPriv` collection,
-   Prometheus normalization, and secret-leak tests. It introduces no real OpenBao
-   or device authority.
+   Prometheus normalization, rotation, and secret-leak tests. The implementation
+   uses an opt-in overlay and introduces no real OpenBao, device, or persistent
+   runtime authority.
 3. **11C-3 — credential and device provisioning:** real SNMP credential storage,
    separate provisioning and observability secret-read identities, typed
    vendor-specific device intent, and separately authorized device mutation.

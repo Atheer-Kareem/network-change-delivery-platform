@@ -9,8 +9,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/alerts":
             self.send_error(404)
             return
-        length = int(self.headers.get("Content-Length", "-1"))
-        if length < 0 or length > 64 * 1024:
+        raw_length = self.headers.get("Content-Length")
+        try:
+            length = int(raw_length) if raw_length is not None else -1
+        except ValueError:
+            self.send_error(400)
+            return
+        if length < 0:
+            self.send_error(400)
+            return
+        if length > 64 * 1024:
             self.send_error(413)
             return
         try:

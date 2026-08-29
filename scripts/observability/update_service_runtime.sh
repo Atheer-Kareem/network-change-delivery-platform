@@ -20,13 +20,13 @@ uv pip install --python "${runtime}/bin/python" --no-deps dist/network_change_de
 uv pip install --python "${runtime}/bin/python" 'httpx==0.28.1' 'pydantic==2.13.4' 'pyyaml==6.0.3' >/dev/null
 cp infrastructure/observability/compose.yaml "${runtime}/compose.yaml"
 if [ -f infrastructure/observability/rules/11b-alerts.yml ]; then
-  mkdir -p "${config_root}/rules" "${config_root}/grafana/provisioning/datasources" "${config_root}/grafana/provisioning/dashboards" "${config_root}/grafana/dashboards"
-  cp infrastructure/observability/rules/11b-alerts.yml "${config_root}/rules/11b-alerts.yml"
-  cp infrastructure/observability/alertmanager.yml "${config_root}/alertmanager.yml"
-  cp infrastructure/observability/grafana/provisioning/datasources/prometheus.yml "${config_root}/grafana/provisioning/datasources/prometheus.yml"
-  cp infrastructure/observability/grafana/provisioning/dashboards/dashboards.yml "${config_root}/grafana/provisioning/dashboards/dashboards.yml"
-  cp infrastructure/observability/grafana/dashboards/ncdp-management-reachability.json "${config_root}/grafana/dashboards/ncdp-management-reachability.json"
-  cp scripts/observability/demo_receiver.py "${config_root}/demo_receiver.py"
+  mkdir -p "${runtime}/rules" "${runtime}/alertmanager" "${runtime}/grafana/provisioning/datasources" "${runtime}/grafana/provisioning/dashboards" "${runtime}/grafana/dashboards" "${runtime}/receiver"
+  cp infrastructure/observability/rules/11b-alerts.yml "${runtime}/rules/11b-alerts.yml"
+  cp infrastructure/observability/alertmanager.yml "${runtime}/alertmanager/alertmanager.yml"
+  cp infrastructure/observability/grafana/provisioning/datasources/prometheus.yml "${runtime}/grafana/provisioning/datasources/prometheus.yml"
+  cp infrastructure/observability/grafana/provisioning/dashboards/dashboards.yml "${runtime}/grafana/provisioning/dashboards/dashboards.yml"
+  cp infrastructure/observability/grafana/dashboards/ncdp-management-reachability.json "${runtime}/grafana/dashboards/ncdp-management-reachability.json"
+  cp scripts/observability/demo_receiver.py "${runtime}/receiver/demo_receiver.py"
 fi
 cp infrastructure/observability/prometheus.yml "${config_root}/.prometheus.yml.candidate"
 cp infrastructure/observability/blackbox.yml "${config_root}/.blackbox.yml.candidate"

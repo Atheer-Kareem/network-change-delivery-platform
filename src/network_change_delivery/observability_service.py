@@ -156,7 +156,9 @@ def read_readiness(
     return marker
 
 
-def docker_compose_environment(config_root: Path, state_root: Path) -> dict[str, str]:
+def docker_compose_environment(
+    config_root: Path, state_root: Path, runtime_root: Path | None = None
+) -> dict[str, str]:
     return {
         "HOME": str(Path.home()),
         "PATH": "/usr/local/bin:/usr/bin:/bin",
@@ -165,6 +167,7 @@ def docker_compose_environment(config_root: Path, state_root: Path) -> dict[str,
         "NCDP_OBSERVABILITY_GID": str(os.getgid()),
         "NCDP_OBSERVABILITY_CONFIG_ROOT": str(config_root),
         "NCDP_OBSERVABILITY_STATE_ROOT": str(state_root),
+        "NCDP_OBSERVABILITY_RUNTIME_ROOT": str(runtime_root or config_root),
     }
 
 
@@ -192,7 +195,9 @@ def run_compose(
             check=True,
             timeout=DOCKER_TIMEOUT_SECONDS,
             shell=False,
-            env=docker_compose_environment(config_root, state_root),
+            env=docker_compose_environment(
+                config_root, state_root, compose_path.parent
+            ),
         )
     except (OSError, subprocess.SubprocessError):
         raise ObservabilityServiceError(

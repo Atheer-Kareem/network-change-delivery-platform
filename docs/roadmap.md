@@ -176,13 +176,14 @@ Ordering may change when implementation evidence requires it.
       PR #80 establishes its final persistent `NCDP Live` prerequisite alongside
       separate ephemeral staging. Final merged-main 11A acceptance against that
       running `.14/.20` realization passed on merged-main commit
-      `47a6a856ccc19903b585d2a2605dbea3c67db616` (Build #215). 11B is now the
-      next increment.
+      `47a6a856ccc19903b585d2a2605dbea3c67db616` (Build #215).
     - **11B — dashboards and operator-only alerts:** bounded visualization,
       reachability/staleness/service-health rules, and no remediation authority.
       11B-1 provides the provisioned Grafana dashboard, Prometheus rules,
-      Alertmanager, and local demonstration receiver; merged-main live
-      acceptance remains pending.
+      Alertmanager, and local demonstration receiver. Merged-main Build #231
+      and non-disruptive persistent-runtime acceptance passed on commit
+      `f75b9e9c274a2f2890116cc4c18592c97956c220`. Increment 11B is complete;
+      11C remains unstarted.
     - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling
       and bounded interface identity/counter normalization.
     - **11D — gNMI/OpenConfig streaming telemetry:** reviewed TLS identity,

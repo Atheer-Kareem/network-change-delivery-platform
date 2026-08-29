@@ -144,7 +144,9 @@ deliberately reload or reconcile the exporter. Synthetic evidence selects a
 private `POST /-/reload`: successful replacement is acknowledged without
 restarting the container, while a rejected reload leaves the prior valid
 configuration active.
-Real materialization, OpenBao identity, and device provisioning remain 11C-3.
+Real materialization, OpenBao identity, and device provisioning were deferred to
+11C-3. Its implementation contracts are described below; external authority and
+live acceptance remain deliberately unexecuted.
 Disposable agents prove the two-network protocol flow in 11C-2; actual Docker
 Desktop-to-live-router UDP/161 reachability remains 11C-4 evidence.
 
@@ -162,3 +164,36 @@ Junos read views must match that generated get/walk closure. Expanding the
 module requires a corresponding reviewed device-view change; broad IF-MIB
 authority is not implied. SNMPv3 communities, traps, write access, vendor MIBs,
 dashboards, alerts, rates, and remediation remain outside 11C. gNMI remains 11D.
+
+### Proposed 11C credential and provisioning boundary
+
+11C-3 prepares, without activating, three distinct capabilities:
+
+1. the existing device-specific SSH/NETCONF role connects to exactly one router;
+2. a separate Buildkite JWT role reads exactly that device's immutable SNMP `v1`
+   generation after pre-write validation; and
+3. a separate observability AppRole reads only the two approved SNMP generation
+   paths for later host-side auth publication.
+
+The protected `deploy-gate` remains the only device-write boundary. A typed
+`snmp_provisioning_plan` is promoted and approved through that same path, and a
+single plan targets one NetBox device. Cisco and Junos acceptance will therefore
+use separate commits, builds, approvals, and non-retryable attempts. The plan
+contains the controlled username and logical credential reference but no
+passphrase, localized key, encrypted secret, or secret-derived digest.
+
+The owned device contract is the exact ADR 0026 OID closure in view
+`NCDP_IFMIB`, privacy-level read-only group `NCDP_SNMP_RO`, and a versioned
+principal. Cisco uses a targeted inverse if post-validation fails. Junos uses an
+exclusive candidate, commit check, confirmed commit, independent normalized
+post-validation, and confirmation; failure before confirmation leaves native
+automatic rollback in force. Targeted inspection reduces device output to
+normalized view/group/user/protocol facts and never persists localized keys or
+arbitrary SNMP configuration.
+
+This implementation does not create OpenBao resources or credentials and does
+not configure a device. After merge, an operator must separately prepare the
+reviewed OpenBao authorities. Device 1 then requires its own reviewed live
+request and approval; only after acceptance may device 2 receive a fresh
+commit-bound request. Persistent exporter materialization and polling remain
+11C-4.

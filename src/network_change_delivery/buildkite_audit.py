@@ -34,6 +34,11 @@ from network_change_delivery.plan_assurance import AssuranceOutcome, PlanAssuran
 from network_change_delivery.promotion import (
     DeploymentPromotionManifest,
 )
+from network_change_delivery.snmp_provisioning import (
+    SnmpProvisioningOutcome,
+    SnmpProvisioningPlan,
+    SnmpProvisioningRecord,
+)
 
 MAX_STAGING_EVIDENCE_BYTES = 256 * 1024
 MAX_CHANGE_RECORD_BYTES = 256 * 1024
@@ -60,6 +65,18 @@ FINAL_OUTCOME_MAP: dict[FinalOutcome, AuditFinalOutcome] = {
     FinalOutcome.AUTO_ROLLBACK_PENDING: AuditFinalOutcome.FAILED,
     FinalOutcome.CONFIRMATION_FAILED: AuditFinalOutcome.FAILED,
     FinalOutcome.CONFIRMATION_AMBIGUOUS: AuditFinalOutcome.AMBIGUOUS,
+}
+SNMP_FINAL_OUTCOME_MAP: dict[SnmpProvisioningOutcome, AuditFinalOutcome] = {
+    SnmpProvisioningOutcome.BLOCKED: AuditFinalOutcome.BLOCKED,
+    SnmpProvisioningOutcome.SUCCEEDED: AuditFinalOutcome.SUCCEEDED,
+    SnmpProvisioningOutcome.EXECUTION_FAILED: AuditFinalOutcome.FAILED,
+    SnmpProvisioningOutcome.AMBIGUOUS: AuditFinalOutcome.AMBIGUOUS,
+    SnmpProvisioningOutcome.POST_VALIDATION_FAILED: AuditFinalOutcome.FAILED,
+    SnmpProvisioningOutcome.RECOVERED: AuditFinalOutcome.RECOVERED,
+    SnmpProvisioningOutcome.RECOVERY_FAILED: AuditFinalOutcome.FAILED,
+    SnmpProvisioningOutcome.AUTO_ROLLBACK_PENDING: AuditFinalOutcome.FAILED,
+    SnmpProvisioningOutcome.CONFIRMATION_FAILED: AuditFinalOutcome.FAILED,
+    SnmpProvisioningOutcome.CONFIRMATION_AMBIGUOUS: AuditFinalOutcome.AMBIGUOUS,
 }
 
 
@@ -140,7 +157,11 @@ def validate_staging_correlation(
 
 def load_verified_promotion_artifacts(
     promotion: Path, context: BuildkiteDeploymentContext
-) -> tuple[DeploymentPromotionManifest, DeploymentPlan, PlanAssuranceRecord]:
+) -> tuple[
+    DeploymentPromotionManifest,
+    DeploymentPlan | SnmpProvisioningPlan,
+    PlanAssuranceRecord,
+]:
     """Reuse promotion verification and return its reviewed durable artifacts."""
     manifest, plan = load_promoted_single_plan(promotion, context.commit)
     try:
@@ -187,6 +208,28 @@ def validate_change_record(record: ChangeRecord, plan: DeploymentPlan) -> None:
         raise BuildkiteAuditError("ChangeRecord does not match the promoted plan")
 
 
+def validate_snmp_record(
+    record: SnmpProvisioningRecord, plan: SnmpProvisioningPlan
+) -> None:
+    matches = (
+        record.change_id == plan.change_id,
+        record.plan_digest == plan.digest,
+        record.approval_digest == plan.digest,
+        record.device == plan.inventory_object_id,
+        record.platform == plan.platform,
+        record.generation == plan.generation,
+        record.username == plan.username,
+        record.credential_reference == plan.snmp_credential.reference,
+        record.view_name == plan.view_name,
+        record.group_name == plan.group_name,
+        record.oid_closure_digest == plan.oid_closure_digest,
+    )
+    if not all(matches):
+        raise BuildkiteAuditError(
+            "SnmpProvisioningRecord does not match the promoted plan"
+        )
+
+
 def verify_buildkite_audit_inputs(
     *,
     context: BuildkiteDeploymentContext,
@@ -203,14 +246,16 @@ def verify_buildkite_audit_inputs(
 def _correlation_values(
     context: BuildkiteDeploymentContext,
     repository: str,
-    plan: DeploymentPlan,
+    plan: DeploymentPlan | SnmpProvisioningPlan,
 ) -> tuple[
     GitCorrelation,
     BuildkiteCorrelation,
     StableTargetIdentity,
-    CredentialProvenance,
+    tuple[CredentialProvenance, ...],
 ]:
-    if plan.inventory_object_id is None or plan.inventory_interface_object_id is None:
+    if plan.inventory_object_id is None or (
+        isinstance(plan, DeploymentPlan) and plan.inventory_interface_object_id is None
+    ):
         raise BuildkiteAuditError("promoted plan lacks stable NetBox identity")
     try:
         return (
@@ -227,12 +272,38 @@ def _correlation_values(
             ),
             StableTargetIdentity(
                 device=plan.inventory_object_id,
-                interface=plan.inventory_interface_object_id,
+                interface=(
+                    plan.inventory_interface_object_id
+                    if isinstance(plan, DeploymentPlan)
+                    else None
+                ),
             ),
-            CredentialProvenance(
-                device=plan.inventory_object_id,
-                source="openbao",
-                reference=plan.credential_reference,
+            tuple(
+                sorted(
+                    (
+                        CredentialProvenance(
+                            device=plan.inventory_object_id,
+                            source="openbao",
+                            reference=(
+                                plan.credential_reference
+                                if isinstance(plan, DeploymentPlan)
+                                else plan.connection_credential_reference
+                            ),
+                        ),
+                        *(
+                            (
+                                CredentialProvenance(
+                                    device=plan.inventory_object_id,
+                                    source="openbao_snmp",
+                                    reference=plan.snmp_credential.reference,
+                                ),
+                            )
+                            if isinstance(plan, SnmpProvisioningPlan)
+                            else ()
+                        ),
+                    ),
+                    key=lambda item: (item.device, item.source, item.reference),
+                )
             ),
         )
     except (ValidationError, ValueError):
@@ -254,11 +325,11 @@ def persist_buildkite_audit(
 ) -> tuple[UUID, str, AuditFinalOutcome]:
     """Validate, correlate, and publish one protected deployment audit attempt."""
     manifest, plan, assurance = load_verified_promotion_artifacts(promotion, context)
-    git, buildkite, target, credential = _correlation_values(context, repository, plan)
+    git, buildkite, target, credentials = _correlation_values(context, repository, plan)
     staging = load_staging_evidence(staging_evidence_path)
     validate_staging_correlation(staging, context)
     live_request = load_live_deployment_request_at_commit(context.commit, root=checkout)
-    record: ChangeRecord | None = None
+    record: ChangeRecord | SnmpProvisioningRecord | None = None
     if change_record_path is None:
         if live_request is not None:
             raise BuildkiteAuditError(
@@ -278,17 +349,30 @@ def persist_buildkite_audit(
         if not content or len(content) > MAX_CHANGE_RECORD_BYTES:
             raise BuildkiteAuditError("ChangeRecord evidence size is invalid")
         try:
-            record = ChangeRecord.model_validate_json(content)
+            record = (
+                SnmpProvisioningRecord.model_validate_json(content)
+                if isinstance(plan, SnmpProvisioningPlan)
+                else ChangeRecord.model_validate_json(content)
+            )
         except ValidationError as error:
             raise BuildkiteAuditError("ChangeRecord evidence is invalid") from error
-        validate_change_record(record, plan)
         try:
-            final_outcome = FINAL_OUTCOME_MAP[record.final_outcome]
+            if isinstance(plan, SnmpProvisioningPlan):
+                assert isinstance(record, SnmpProvisioningRecord)
+                validate_snmp_record(record, plan)
+                final_outcome = SNMP_FINAL_OUTCOME_MAP[record.final_outcome]
+            else:
+                assert isinstance(record, ChangeRecord)
+                validate_change_record(record, plan)
+                final_outcome = FINAL_OUTCOME_MAP[record.final_outcome]
         except KeyError:
-            raise BuildkiteAuditError("ChangeRecord outcome is not reviewed") from None
+            raise BuildkiteAuditError("typed outcome is not reviewed") from None
 
     references = [
-        store.persist_artifact(AuditArtifactKind.DEPLOYMENT_PLAN, plan),
+        store.persist_artifact(
+            AuditArtifactKind.DEPLOYMENT_PLAN,
+            plan,
+        ),
         store.persist_artifact(AuditArtifactKind.PLAN_ASSURANCE_RECORD, assurance),
         store.persist_artifact(
             AuditArtifactKind.DEPLOYMENT_PROMOTION_MANIFEST, manifest
@@ -297,7 +381,10 @@ def persist_buildkite_audit(
     ]
     if record is not None:
         references.append(
-            store.persist_artifact(AuditArtifactKind.CHANGE_RECORD, record)
+            store.persist_artifact(
+                AuditArtifactKind.CHANGE_RECORD,
+                record,
+            )
         )
     references.sort(key=lambda item: str(item.kind))
     audit = audit_record_with_digest(
@@ -308,7 +395,7 @@ def persist_buildkite_audit(
         buildkite=buildkite,
         approval=ProtectedApprovalBoundary(),
         targets=(target,),
-        credentials=(credential,),
+        credentials=credentials,
         final_outcome=final_outcome,
         artifacts=tuple(references),
     )

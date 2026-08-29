@@ -121,7 +121,7 @@ class StableTargetIdentity(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     device: NetBoxDeviceIdentity
-    interface: NetBoxInterfaceIdentity
+    interface: NetBoxInterfaceIdentity | None = None
 
 
 class CredentialProvenance(BaseModel):
@@ -129,7 +129,7 @@ class CredentialProvenance(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     device: NetBoxDeviceIdentity
-    source: Literal["environment", "openbao"]
+    source: Literal["environment", "openbao", "openbao_snmp"]
     reference: BoundedText
 
     @model_validator(mode="after")
@@ -139,6 +139,12 @@ class CredentialProvenance(BaseModel):
             pattern = rf"openbao:kv-v2:ncdp/devices/{expected}/ssh"
             if self.reference != pattern:
                 raise ValueError("OpenBao audit credential reference is invalid")
+        elif self.source == "openbao_snmp":
+            device_id = self.device.removeprefix("netbox:dcim.device:")
+            if self.reference != (
+                f"snmpv3:netbox:dcim.device:{device_id}:generation:v1"
+            ):
+                raise ValueError("OpenBao SNMP audit credential reference is invalid")
         elif self.reference != "environment:NCDP_DEVICE_USERNAME/PASSWORD":
             raise ValueError("environment audit credential reference is invalid")
         return self
@@ -170,19 +176,34 @@ class ChangeAuditRecord(BaseModel):
             or self.generated_at.utcoffset() != timedelta(0)
         ):
             raise ValueError("audit timestamp must be timezone-aware UTC")
-        target_keys = [(target.device, target.interface) for target in self.targets]
+        target_keys = [
+            (target.device, target.interface or "") for target in self.targets
+        ]
         if len(target_keys) != len(set(target_keys)) or target_keys != sorted(
             target_keys
         ):
             raise ValueError("audit targets must be unique and ordered")
-        credential_devices = [item.device for item in self.credentials]
-        if len(credential_devices) != len(
-            set(credential_devices)
-        ) or credential_devices != sorted(credential_devices):
+        credential_keys = [
+            (item.device, item.source, item.reference) for item in self.credentials
+        ]
+        if len(credential_keys) != len(
+            set(credential_keys)
+        ) or credential_keys != sorted(credential_keys):
             raise ValueError("audit credential references must be unique and ordered")
         target_devices = {target.device for target in self.targets}
-        if any(device not in target_devices for device in credential_devices):
+        if any(
+            device not in target_devices
+            for device, _source, _reference in credential_keys
+        ):
             raise ValueError("audit credential reference targets an unknown device")
+        device_scoped_targets = {
+            target.device for target in self.targets if target.interface is None
+        }
+        snmp_devices = {
+            item.device for item in self.credentials if item.source == "openbao_snmp"
+        }
+        if device_scoped_targets != snmp_devices:
+            raise ValueError("device-scoped audit target is not SNMP-bound")
         kinds = [artifact.kind for artifact in self.artifacts]
         if len(kinds) != len(set(kinds)) or kinds != sorted(kinds, key=str):
             raise ValueError("audit artifact references must be unique and ordered")

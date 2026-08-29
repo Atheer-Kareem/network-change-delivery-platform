@@ -47,3 +47,26 @@ ordinary logs, and public evidence.
 typed Cisco/Junos provisioning, device mutation, persistent activation, actual
 Docker Desktop-to-router UDP/161 reachability, and live read-only acceptance
 remain 11C-3 and 11C-4.
+
+## 11C-3 implementation preparation
+
+11C-3 implements the offline credential-authority, immutable-generation,
+typed-plan, vendor-rendering, targeted-preflight, recovery, and protected-path
+contracts. `v1` is an exact create-only generation for each logical device.
+Buildkite provisioning JWT policies are exact-path and device-specific; the
+future observability AppRole is separate and read-only. Mocked OpenBao tests
+prove device/path separation, no default policy, one-use clients, create-only
+behavior, schema validation, and secret-safe failures.
+
+The existing `deploy-gate` remains the only live write boundary. A future SNMP
+plan uses the existing SSH/NETCONF OIDC capability plus a second SNMP-only OIDC
+capability acquired after fresh structural preflight and the pre-write audit
+gate. Cisco and Junos implementations render secrets only in process, reduce
+post-state to bounded facts, and preserve unrelated SNMP configuration.
+
+This is implementation evidence, not live acceptance. No OpenBao resource,
+credential, role ID, SecretID, router SNMP object, live request, persistent
+exporter activation, or SNMP poll is created by this change. After merge,
+operator authority preparation and two separate commit/build/approval device
+changes remain required before 11C-3 can close. ADR 0026 remains Proposed and
+11C-4 remains unstarted.

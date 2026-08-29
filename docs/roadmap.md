@@ -194,6 +194,12 @@ Ordering may change when implementation evidence requires it.
       synthetic auth/target publication, Prometheus normalization, and
       Docker-native SNMPv3 evidence; it does not activate the persistent runtime.
       Real credentials, device provisioning, and live polling remain 11C-3/11C-4.
+      11C-3 now prepares the create-only `v1` credential authorities, separate
+      provisioning and observability identities, typed single-device plans, and
+      Cisco/Junos execution and recovery contracts through the existing sole
+      `deploy-gate`. No real OpenBao or router acceptance has occurred. Closing
+      11C-3 still requires separately reviewed Cisco and Junos commit-bound live
+      changes; persistent activation and polling remain 11C-4.
     - **11D — gNMI/OpenConfig streaming telemetry:** reviewed TLS identity,
       vendor-aware capability admission, and streaming normalization.
 12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure

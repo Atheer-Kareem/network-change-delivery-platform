@@ -30,6 +30,7 @@ from network_change_delivery.models import (
     DeploymentPlan,
     FleetDeploymentPlan,
 )
+from network_change_delivery.snmp_provisioning import SnmpProvisioningPlan
 
 
 class PlanAssuranceError(ValueError):
@@ -38,7 +39,9 @@ class PlanAssuranceError(ValueError):
 
 class PlanAssuranceSubject(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    plan_type: Literal["deployment_plan", "fleet_deployment_plan"]
+    plan_type: Literal[
+        "deployment_plan", "fleet_deployment_plan", "snmp_provisioning_plan"
+    ]
     schema_version: Literal["1"]
     change_id: str
     plan_digest: Sha256
@@ -94,6 +97,20 @@ class PlanSnapshotMutation(BaseModel):
     changed: bool
 
 
+class SnmpPlanSnapshotMutation(BaseModel):
+    """Secret-free management-plane subset represented in offline assurance."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    target: str
+    platform: Literal["cisco_iosxe", "junos"]
+    config_relative_path: str
+    generation: str
+    username: str
+    oid_closure_digest: Sha256
+    secret_bearing_user_omitted: Literal[True] = True
+    changed: Literal[True] = True
+
+
 class BaselineConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     hostname: str
@@ -111,7 +128,9 @@ class PlanAssuranceRecord(BaseModel):
     policy_digest: Sha256
     baseline_snapshot_digest: Sha256 | None = None
     candidate_snapshot_digest: Sha256 | None = None
-    candidate_derivation: tuple[PlanSnapshotMutation, ...] = ()
+    candidate_derivation: tuple[
+        PlanSnapshotMutation | SnmpPlanSnapshotMutation, ...
+    ] = ()
     assurance: AssuranceEvidence | None = None
     failure_reason: str | None = None
     outcome: AssuranceOutcome
@@ -171,16 +190,21 @@ class PlanAssuranceRecord(BaseModel):
         return self.digest == self.calculated_digest()
 
 
-def load_plan(path: Path) -> DeploymentPlan | FleetDeploymentPlan:
+def load_plan(
+    path: Path,
+) -> DeploymentPlan | FleetDeploymentPlan | SnmpProvisioningPlan:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise PlanAssuranceError("plan must be a JSON object")
     try:
-        plan = (
-            FleetDeploymentPlan.model_validate(payload)
-            if "members" in payload
-            else DeploymentPlan.model_validate(payload)
-        )
+        if payload.get("plan_type") == "snmp_provisioning_plan":
+            plan = SnmpProvisioningPlan.model_validate(payload)
+        else:
+            plan = (
+                FleetDeploymentPlan.model_validate(payload)
+                if "members" in payload
+                else DeploymentPlan.model_validate(payload)
+            )
     except Exception as exc:
         raise PlanAssuranceError("invalid assurance plan") from exc
     if not plan.verify_digest():
@@ -189,8 +213,15 @@ def load_plan(path: Path) -> DeploymentPlan | FleetDeploymentPlan:
 
 
 def subject_from_plan(
-    plan: DeploymentPlan | FleetDeploymentPlan,
+    plan: DeploymentPlan | FleetDeploymentPlan | SnmpProvisioningPlan,
 ) -> PlanAssuranceSubject:
+    if isinstance(plan, SnmpProvisioningPlan):
+        return PlanAssuranceSubject(
+            plan_type="snmp_provisioning_plan",
+            schema_version=plan.schema_version,
+            change_id=plan.change_id,
+            plan_digest=plan.digest,
+        )
     if isinstance(plan, FleetDeploymentPlan):
         return PlanAssuranceSubject(
             plan_type="fleet_deployment_plan",
@@ -336,9 +367,15 @@ def _transform_junos(
 
 
 def materialize_candidate(
-    prepared: PreparedSnapshot, plan: DeploymentPlan | FleetDeploymentPlan
-) -> tuple[PreparedSnapshot, tuple[PlanSnapshotMutation, ...]]:
+    prepared: PreparedSnapshot,
+    plan: DeploymentPlan | FleetDeploymentPlan | SnmpProvisioningPlan,
+) -> tuple[
+    PreparedSnapshot,
+    tuple[PlanSnapshotMutation | SnmpPlanSnapshotMutation, ...],
+]:
     index = _hostname_index(prepared.root)
+    if isinstance(plan, SnmpProvisioningPlan):
+        return _materialize_snmp_candidate(prepared, index, plan)
     members = (
         (plan,)
         if isinstance(plan, DeploymentPlan)
@@ -443,12 +480,89 @@ def materialize_candidate(
     )
 
 
+def _materialize_snmp_candidate(
+    prepared: PreparedSnapshot,
+    index: dict[str, BaselineConfig],
+    plan: SnmpProvisioningPlan,
+) -> tuple[PreparedSnapshot, tuple[SnmpPlanSnapshotMutation, ...]]:
+    """Represent only non-secret view/access policy for forwarding assurance."""
+    config = index.get(plan.expected_hostname)
+    if config is None or config.platform != plan.platform:
+        raise PlanAssuranceError("SNMP plan target is absent from baseline")
+    lines = config.text.splitlines()
+    if plan.platform == "cisco_iosxe":
+        owned_prefixes = (
+            f"snmp-server view {plan.view_name} ",
+            f"snmp-server group {plan.group_name} ",
+            f"snmp-server user {plan.username} ",
+        )
+        if any(line.strip().startswith(owned_prefixes) for line in lines):
+            raise PlanAssuranceError("SNMP owned names already exist in baseline")
+        additions = [
+            *(
+                f"snmp-server view {plan.view_name} {oid} included"
+                for oid in plan.device_view_oids
+            ),
+            f"snmp-server group {plan.group_name} v3 priv read {plan.view_name}",
+        ]
+    else:
+        owned_needles = (
+            f"set snmp view {plan.view_name} ",
+            f"security-name {plan.username} ",
+            f"access group {plan.group_name} ",
+            f"local-engine user {plan.username} ",
+        )
+        if any(any(needle in line for needle in owned_needles) for line in lines):
+            raise PlanAssuranceError("SNMP owned names already exist in baseline")
+        additions = [
+            *(
+                f"set snmp view {plan.view_name} oid {oid} include"
+                for oid in plan.device_view_oids
+            ),
+            (
+                "set snmp v3 vacm security-to-group security-model usm "
+                f"security-name {plan.username} group {plan.group_name}"
+            ),
+            (
+                f"set snmp v3 vacm access group {plan.group_name} "
+                "default-context-prefix security-model usm security-level privacy "
+                "context-match exact"
+            ),
+            (
+                f"set snmp v3 vacm access group {plan.group_name} "
+                "default-context-prefix security-model usm security-level privacy "
+                f"read-view {plan.view_name}"
+            ),
+        ]
+    transformed = config.text
+    if transformed and not transformed.endswith("\n"):
+        transformed += "\n"
+    transformed += "\n".join(additions) + "\n"
+    replacements = {
+        item.relative_path: (
+            transformed.encode()
+            if item.relative_path == config.relative_path
+            else (prepared.root / "configs" / item.relative_path).read_bytes()
+        )
+        for item in prepared.manifest.files
+    }
+    mutation = SnmpPlanSnapshotMutation(
+        target=plan.target,
+        platform=plan.platform,
+        config_relative_path=config.relative_path,
+        generation=plan.generation,
+        username=plan.username,
+        oid_closure_digest=plan.oid_closure_digest,
+    )
+    return prepare_snapshot_from_bytes(tuple(sorted(replacements.items()))), (mutation,)
+
+
 def _finalize_record(record: PlanAssuranceRecord) -> PlanAssuranceRecord:
     return record.model_copy(update={"digest": record.calculated_digest()})
 
 
 def assure_plan(
-    plan: DeploymentPlan | FleetDeploymentPlan,
+    plan: DeploymentPlan | FleetDeploymentPlan | SnmpProvisioningPlan,
     policy: BatfishAssurancePolicy,
     baseline: Path,
     provider: BatfishAssuranceAdapter | None = None,
@@ -460,7 +574,7 @@ def assure_plan(
 
 
 def assure_prepared_plan(
-    plan: DeploymentPlan | FleetDeploymentPlan,
+    plan: DeploymentPlan | FleetDeploymentPlan | SnmpProvisioningPlan,
     policy: BatfishAssurancePolicy,
     prepared_baseline: PreparedSnapshot,
     provider: BatfishAssuranceAdapter | None = None,
@@ -525,7 +639,7 @@ def assure_prepared_plan(
 
 
 def verify_plan_assurance(
-    plan: DeploymentPlan | FleetDeploymentPlan,
+    plan: DeploymentPlan | FleetDeploymentPlan | SnmpProvisioningPlan,
     policy: BatfishAssurancePolicy,
     baseline: Path,
     record: PlanAssuranceRecord,

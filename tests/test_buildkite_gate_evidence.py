@@ -33,6 +33,7 @@ def run_gate(
     audit_root: bool = True,
     retry_count: str | None = "0",
     ansible_collections_path: str | None = AUTHORIZED_ANSIBLE_COLLECTIONS,
+    live_plan_kind: str = "interface_description",
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     (tmp_path / "scripts/buildkite").mkdir(parents=True)
     executable(tmp_path / "scripts/buildkite/verify_commit.sh", "#!/bin/sh\nexit 0\n")
@@ -99,6 +100,9 @@ case "$command" in
     ;;
   verify-buildkite-openbao-identity) read -r jwt; [[ "$jwt" == bounded-jwt ]] ;;
   verify-buildkite-gate|verify-buildkite-live-request) exit 0 ;;
+  buildkite-live-plan-kind)
+    printf '%s\n' "${LIVE_PLAN_KIND:-interface_description}"
+    ;;
   verify-deployment-ansible-runtime) exit "$RUNTIME_STATUS" ;;
   buildkite-live-request-status)
     if [[ "$LIVE_REQUEST" == 1 ]]; then exit 0; fi
@@ -136,6 +140,7 @@ esac
         "DEPLOY_OUTCOME": outcome,
         "CREATE_EVIDENCE": "1" if evidence else "0",
         "LIVE_REQUEST": "1" if live_request else "0",
+        "LIVE_PLAN_KIND": live_plan_kind,
         "RUNTIME_STATUS": str(runtime_status),
         "AUDIT_STATUS": str(audit_status),
     }
@@ -228,6 +233,26 @@ def test_absent_request_stops_before_second_jwt_and_provider_construction(
     assert not uploads.exists()
     assert "live deployment requested: NO" in result.stdout
     assert "device write executed: NO" in result.stdout
+
+
+def test_snmp_plan_uses_same_gate_without_configuration_history_capture(
+    tmp_path: Path,
+) -> None:
+    result, uploads = run_gate(
+        tmp_path,
+        deployment_status=0,
+        evidence=True,
+        outcome="SUCCEEDED",
+        live_plan_kind="snmpv3_interface_telemetry",
+    )
+    commands = (tmp_path / "commands").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 0
+    assert commands.count("oidc") == 2
+    assert commands.count("deploy-buildkite-promotion") == 1
+    assert "audit:capture-buildkite-configuration" not in commands
+    assert "audit:persist-buildkite-configuration-observation" not in commands
+    assert commands.count("audit:persist-buildkite") == 1
+    assert uploads.exists()
 
 
 def test_missing_audit_root_stops_before_device_capable_boundary(

@@ -1,0 +1,11 @@
+---
+- name: Apply exact approved SNMP provisioning artifact
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: NCDP apply exact SNMP artifact
+      cisco.ios.ios_config:
+        lines: "{{ ncdp_snmp_commands }}"
+        match: none
+        save_when: never
+      no_log: true

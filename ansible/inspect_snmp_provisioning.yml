@@ -1,0 +1,14 @@
+---
+- name: Inspect exact SNMP provisioning state
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: NCDP collect identity
+      cisco.ios.ios_facts:
+        gather_subset:
+          - min
+
+    - name: NCDP inspect exact SNMP owned names
+      cisco.ios.ios_command:
+        commands: "{{ ncdp_snmp_commands }}"
+      changed_when: false

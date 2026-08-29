@@ -32,6 +32,7 @@ from network_change_delivery.secrets import (
     netbox_device_id,
     validate_openbao_url,
 )
+from network_change_delivery.snmp_provisioning import SnmpProvisioningPlan
 
 LIVE_DEPLOYMENT_REQUEST = Path("deployments/live/request.yaml")
 MAX_LIVE_DEPLOYMENT_REQUEST_BYTES = 16 * 1024
@@ -184,7 +185,7 @@ class LiveDeploymentRequest(BaseModel):
             raise ValueError("live deployment request rejected")
         return self
 
-    def verify_plan(self, plan: DeploymentPlan) -> None:
+    def verify_plan(self, plan: DeploymentPlan | SnmpProvisioningPlan) -> None:
         if (
             self.change_id != plan.change_id
             or self.plan_digest != plan.digest
@@ -222,30 +223,36 @@ def load_live_deployment_request_at_commit(
 
 def load_promoted_single_plan(
     promotion: Path, commit: str
-) -> tuple[DeploymentPromotionManifest, DeploymentPlan]:
+) -> tuple[DeploymentPromotionManifest, DeploymentPlan | SnmpProvisioningPlan]:
     manifest = verify_promotion_bundle(promotion, commit)
     try:
         payload = json.loads((promotion / "plan.json").read_text(encoding="utf-8"))
         if not isinstance(payload, dict) or "members" in payload:
             raise ValueError
-        plan = DeploymentPlan.model_validate(payload)
+        plan = (
+            SnmpProvisioningPlan.model_validate(payload)
+            if payload.get("plan_type") == "snmp_provisioning_plan"
+            else DeploymentPlan.model_validate(payload)
+        )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         raise PromotionError("live deployment requires one DeploymentPlan") from error
     if not plan.verify_digest() or plan.digest != manifest.plan_digest:
         raise PromotionError("promoted plan digest does not match manifest")
-    if (
-        plan.inventory_source != "netbox"
-        or plan.inventory_object_id is None
-        or plan.credential_source != "openbao"
-    ):
+    if plan.inventory_source != "netbox" or plan.inventory_object_id is None:
         raise PromotionError("live deployment plan provenance rejected")
     expected_reference = f"openbao:kv-v2:ncdp/devices/{_plan_device_id(plan)}/ssh"
-    if plan.credential_reference != expected_reference:
+    if isinstance(plan, SnmpProvisioningPlan):
+        if plan.connection_credential_reference != expected_reference:
+            raise PromotionError("live deployment plan provenance rejected")
+    elif (
+        plan.credential_source != "openbao"
+        or plan.credential_reference != expected_reference
+    ):
         raise PromotionError("live deployment plan provenance rejected")
     return manifest, plan
 
 
-def _plan_device_id(plan: DeploymentPlan) -> int:
+def _plan_device_id(plan: DeploymentPlan | SnmpProvisioningPlan) -> int:
     value = plan.inventory_object_id or ""
     prefix = "netbox:dcim.device:"
     suffix = value.removeprefix(prefix)

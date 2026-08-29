@@ -23,16 +23,19 @@ from network_change_delivery.oxidized_host_trust import (
 
 SSH_KEYSCAN = Path("/usr/bin/ssh-keyscan")
 SSH_KEYGEN = Path("/usr/bin/ssh-keygen")
-LEGACY_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
+LIVE_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
+LIVE_TITLE = "NCDP Live"
 EXPECTED = {
     "netbox-device-1": {
         "stable_name": "core-02",
+        "cml_label": "cat8000v-0",
         "ip": "192.168.4.14",
         "node_definition": "cat8000v",
         "image": "cat8000v-17-18-02",
     },
     "netbox-device-2": {
         "stable_name": "edge-junos-01",
+        "cml_label": "vjunos-router-0",
         "ip": "192.168.4.20",
         "node_definition": "vjunos-router",
         "image": "vjunos-router-23-2r1-15",
@@ -121,21 +124,14 @@ def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]) -> None
     lab_ids = _get(client, "/api/v0/labs")
     if not isinstance(lab_ids, list) or lab_id not in lab_ids:
         raise EnrollmentError("CML enrollment lab identity rejected")
-    operator_matches = []
+    live_matches = []
     for candidate in lab_ids:
         lab = _get(client, f"/api/v0/labs/{candidate}")
         title = lab.get("lab_title") or lab.get("title")
-        if title == "NCDP Terraform Twin":
-            operator_matches.append(candidate)
-        if isinstance(title, str) and title.startswith("NCDP Staging "):
-            raise EnrollmentError("CML staging realization remains active")
-    if operator_matches != [lab_id]:
+        if title == LIVE_TITLE:
+            live_matches.append(candidate)
+    if live_matches != [lab_id] or lab_id != LIVE_LAB:
         raise EnrollmentError("CML enrollment lab identity rejected")
-    if LEGACY_LAB in lab_ids:
-        for node_id in _get(client, f"/api/v0/labs/{LEGACY_LAB}/nodes"):
-            node = _get(client, f"/api/v0/labs/{LEGACY_LAB}/nodes/{node_id}")
-            if node.get("state") not in {"STOPPED", "DEFINED_ON_CORE"}:
-                raise EnrollmentError("legacy CML realization is active")
     actual_node_ids = _get(client, f"/api/v0/labs/{lab_id}/nodes")
     for logical, expected in EXPECTED.items():
         node_id = node_ids[logical]
@@ -145,7 +141,7 @@ def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]) -> None
         configuration = _configuration(client, lab_id, node_id)
         image = node.get("image_definition") or node.get("image_definition_id")
         checks = {
-            "label": node.get("label") == expected["stable_name"],
+            "label": node.get("label") == expected["cml_label"],
             "node_definition": node.get("node_definition")
             == expected["node_definition"],
             "image": image == expected["image"],

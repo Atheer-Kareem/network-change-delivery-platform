@@ -174,10 +174,10 @@ def test_cml_enrollment_is_anchored_before_fixed_keyscan() -> None:
     for contract in (
         'Path("/usr/bin/ssh-keyscan")',
         'Path("/usr/bin/ssh-keygen")',
-        'title == "NCDP Terraform Twin"',
-        'title.startswith("NCDP Staging ")',
+        "title == LIVE_TITLE",
+        "lab_id != LIVE_LAB",
         'node.get("state") == "BOOTED"',
-        "LEGACY_LAB",
+        'LIVE_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"',
     ):
         assert contract in source
     for forbidden in (

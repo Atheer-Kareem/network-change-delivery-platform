@@ -27,9 +27,9 @@ flowchart LR
 
 - **Change:** GitHub stores source, desired managed state, policy, tests,
   pipeline definitions, review, and history.
-- **Workflow:** Buildkite will orchestrate stages, gates, approvals, queues,
-  concurrency, artifacts, and schedules.
-- **Runtime:** Docker and future Compose provide reproducible execution and
+- **Workflow:** Buildkite orchestrates reviewed CI, staging, promotion,
+  protected deployment gates, approvals, queues, concurrency, and artifacts.
+- **Runtime:** Docker and Compose provide reproducible execution and
   isolated supporting services.
 - **Control/application:** Python 3.12 owns domain policy, target resolution,
   planning, risk, rollout, evidence, recovery decisions, and composition.
@@ -38,12 +38,13 @@ flowchart LR
   owns managed device-configuration intent. A managed property has exactly one
   authority, explicitly assigned before overlapping NetBox/native fields are
   consumed; devices provide observed state.
-- **Secrets:** OpenBao AppRole issues short-lived, single-use, exact-path tokens
-  for the static personal-lab device credential. Future Buildkite OIDC replaces
-  AppRole bootstrap; application models never embed secret values.
-- **Assurance:** Batfish performs offline multi-vendor behavioral checks; the
-  plan-bound 6B path derives candidates from validated plans and remains a
-  verification primitive until Increment 7 workflow enforcement.
+- **Secrets:** OpenBao AppRole supports bounded local-service authority, while
+  protected Buildkite jobs use claim-bound OIDC workload identities and
+  short-lived, single-use, exact-path tokens. Application models never embed
+  secret values.
+- **Assurance:** Batfish performs offline multi-vendor behavioral checks;
+  protected promotion enforces plan-, policy-, snapshot-, and commit-bound
+  assurance before any deployment authorization.
 - **Digital twin:** Increment 8 uses Terraform with CiscoDevNet CML2 to own a
   separate personal-CML twin's infrastructure lifecycle, never production
   device configuration. See the
@@ -54,16 +55,19 @@ flowchart LR
   how without flattening vendor safety semantics.
 - **Live validation:** future pyATS/Genie for Cisco and JSNAPy/PyEZ for Junos
   normalize into platform-owned results.
-- **Audit/evidence:** existing `ChangeRecord` and `FleetChangeRecord` types hold
-  bounded execution evidence. A future top-level record will correlate them
-  with immutable pipeline artifacts by stable identity and digest; see
+- **Audit/evidence:** `ChangeRecord` and `FleetChangeRecord` hold bounded
+  execution evidence. Append-only `ChangeAuditRecord` and
+  `ConfigurationObservationRecord` objects correlate protected delivery and
+  private Oxidized chronology by stable identity and digest; see
   [Audit and configuration history](audit-and-configuration-history.md).
-- **Continuous observability:** Increment 11A introduces persistent Prometheus
-  and credential-free Blackbox TCP probes independently of CI. Stable NetBox
-  identity names each series; private CML realization admission controls whether
-  the NetBox-derived management endpoint is scheduled. Dashboards,
-  operator-only alerts, SNMPv3, and gNMI/OpenConfig remain later increments.
-  Oxidized remains the separate configuration chronology boundary.
+- **Continuous observability:** persistent Prometheus and credential-free
+  Blackbox TCP probes run independently of CI. Stable NetBox identity names
+  each series; private CML realization admission controls whether the
+  NetBox-derived management endpoint is scheduled. Provisioned Grafana,
+  reviewed Prometheus rules, private Alertmanager routing, and a bounded local
+  receiver provide operator visibility without remediation authority. SNMPv3
+  and gNMI/OpenConfig remain later increments. Oxidized remains the separate
+  configuration chronology boundary.
 
 Dependencies point inward to platform-owned policy and types; integrations
 implement explicit boundary contracts. Provider details must not become domain
@@ -99,11 +103,18 @@ identity, commit-bound least-privilege deployment, real personal-CML device
 acceptance, independent validation, and same-build deployment retry hardening
 are externally accepted. See the
 [Buildkite live-deployment boundary](buildkite-live-deployment.md).
-Increment 8 has completed 8A discovery and now implements the accepted 8B
-Terraform foundation and read-only plan. The repository has no
-Terraform-managed CML resource yet; CML topology and lifecycle begin in 8C. See the
+Increment 8 now provides the accepted Terraform/CML ephemeral staging
+lifecycle. The manually owned two-router `NCDP Live` realization remains
+outside Terraform; each staging run creates, validates, and destroys a separate
+two-router realization with run-scoped state. See the
 [Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).
 
-Increment 11A implements the first continuous-observability foundation. Its
-offline/container contract is complete while fresh-CML live acceptance remains
-pending after merge. See [Continuous observability](continuous-observability.md).
+Increment 10 provides durable append-only audit correlation and private
+Oxidized Cisco/Junos configuration chronology, including accepted protected
+PRE/write/POST correlation with causality explicitly not proven. See
+[Audit and configuration history](audit-and-configuration-history.md).
+
+Increments 11A and 11B provide the accepted continuous-observability plane:
+credential-free management-service probes, persistent metrics, an immutable
+Grafana dashboard, and advisory operator alerts. See
+[Continuous observability](continuous-observability.md).

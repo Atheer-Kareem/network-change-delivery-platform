@@ -10,6 +10,10 @@ interface GigabitEthernet1
  ip address ${management_ip} ${management_mask}
  no shutdown
 !
+interface GigabitEthernet4
+ ip address 10.6.12.1 255.255.255.252
+ no shutdown
+!
 ip ssh version 2
 !
 crypto key generate rsa modulus 2048

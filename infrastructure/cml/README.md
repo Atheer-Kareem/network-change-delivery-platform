@@ -32,12 +32,14 @@ only CML lifecycle staging; they are not NCDP targeting metadata.
 
 `core-02` renders `modules/twin/bootstrap/cat8000v.tftpl`, and
 `edge-junos-01` renders `modules/twin/bootstrap/vjunos-router.tftpl`, into their
-respective `cml2_node.configuration` fields. Their templates contain only
-hostname, management addressing, the local lab account, SSH, NETCONF, and
-minimum platform prerequisites. Neither contains an actual credential or
-address in Git, NCDP-managed interface intent, routing, or interface
-descriptions. Staging supplies the NetBox secondary management addresses
-`.30/.40`; the live primary `.14/.20` endpoints remain in `NCDP Live`.
+respective `cml2_node.configuration` fields. Their templates contain hostname,
+management addressing, the local lab account, SSH, NETCONF, minimum platform
+prerequisites, and ADR 0024's shared directly connected transit:
+`core-02` `GigabitEthernet4` `10.6.12.1/30` to `edge-junos-01`
+`ge-0/0/0.0` `10.6.12.2/30`. Neither contains an actual credential in Git,
+NCDP-managed interface-description intent, or static routing. Staging supplies
+the NetBox secondary management addresses `.30/.40`; the live primary `.14/.20`
+endpoints remain in `NCDP Live`.
 
 The operator/local root is retained for historical tooling and static module
 validation; it does not represent `NCDP Live` and must not be used to import,
@@ -142,6 +144,11 @@ fixed. ADR 0014 therefore makes restart persistence an explicit scenario test,
 not a normal staging-readiness requirement. The whole twin was subsequently
 destroyed through its exact historical 13-resource Terraform graph. ADR 0024
 now defines the ten-resource two-router graph.
+
+The persistent ADR 0024 `NCDP Live` vJunos realization is intended to remain
+running after a successful fresh first boot. Same-realization stop/start
+recovery remains historically unreliable; replacement of a failed router node
+is distinct from stopping and restarting the accepted live realization.
 
 ### Ephemeral run contract
 

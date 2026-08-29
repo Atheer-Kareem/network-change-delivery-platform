@@ -1,9 +1,8 @@
 expected_nodes:
   - core-02
   - edge-junos-01
-  - core-03
 critical_flows:
   - source_node: core-02
-    source_ip: 10.6.2.2
-    destination_ip: 10.6.3.3
+    source_ip: 10.6.12.1
+    destination_ip: 10.6.12.2
 require_no_differential_reachability: true

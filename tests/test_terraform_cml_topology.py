@@ -138,6 +138,9 @@ def test_router_day0_templates_are_sensitive_and_narrow() -> None:
 
     template = (MODULE_ROOT / "bootstrap/cat8000v.tftpl").read_text()
     assert "interface GigabitEthernet1" in template
+    assert "interface GigabitEthernet4" in template
+    assert "ip address 10.6.12.1 255.255.255.252" in template
+    assert template.count("no shutdown") == 2
     assert "netconf-yang" in template
     assert "GigabitEthernet2" not in template
     assert "description" not in template
@@ -150,8 +153,9 @@ def test_router_day0_templates_are_sensitive_and_narrow() -> None:
     assert 'encrypted-password "${password_hash}"' in junos_template
     assert "netconf" in junos_template
     assert "fxp0" in junos_template
+    assert "ge-0/0/0" in junos_template
+    assert "address 10.6.12.2/30" in junos_template
     for forbidden in (
-        "ge-0/0/",
         "description",
         "static",
         "protocols",

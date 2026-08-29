@@ -59,8 +59,8 @@ class PassingProvider:
             flows=(
                 FlowResult(
                     source_node="core-02",
-                    source_ip="10.6.2.2",
-                    destination_ip="10.6.3.3",
+                    source_ip="10.6.12.1",
+                    destination_ip="10.6.12.2",
                     baseline_reachable=True,
                     candidate_reachable=True,
                 ),

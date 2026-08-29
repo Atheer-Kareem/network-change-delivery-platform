@@ -80,9 +80,11 @@ Canvas placement is deterministic: `system-bridge` at `(-400, -200)`,
 and `edge-junos-01` at `(400, -200)`.
 
 The managed nodes retain their ADR 0013 credential-bearing Day-0 management
-boundary. Live uses NetBox primary addresses `.14/.20`; staging uses secondary
-addresses `.30/.40` assigned to the same management interfaces. Both
-realizations use the existing OpenBao device 1/2 credentials.
+boundary and share ADR 0024's directly connected transit: `core-02`
+`GigabitEthernet4` `10.6.12.1/30` to `edge-junos-01` `ge-0/0/0.0`
+`10.6.12.2/30`. Live uses NetBox primary addresses `.14/.20`; staging uses
+secondary addresses `.30/.40` assigned to the same management interfaces.
+Both realizations use the existing OpenBao device 1/2 credentials.
 
 ### Provider lifecycle state machine
 

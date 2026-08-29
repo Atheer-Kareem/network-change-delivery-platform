@@ -90,10 +90,10 @@ def test_shared_realization_and_customizer_prerequisite_contract() -> None:
 
     expected_template_hashes = {
         "cat8000v.tftpl": (
-            "c7f2bd6fed987fd9ba8fa8e0d2361b79f7848ca4a71d343d969bc6235ed12e32"
+            "3367be9ae8671104cc9e36c3918ea66578aa4724d5a0913e37e3ec18c22ffea3"
         ),
         "vjunos-router.tftpl": (
-            "76c61083d844683329851c80d789b46f105a27ddf803bfd601cac021b821fdff"
+            "9a80fe144030ffb24b1c7ae8e0c270f1793a9f9e0a4a5e43b1564417741378c8"
         ),
     }
     for name, digest in expected_template_hashes.items():

@@ -179,6 +179,15 @@ def test_pipeline_contract() -> None:
     assert "--reject-parse-warnings" in contract
 
 
+def test_quality_image_normalizes_editable_source_access_after_final_copy() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    quality = dockerfile.index("FROM application AS quality-base")
+    final_copy = dockerfile.index("COPY . .", quality)
+    source_access = dockerfile.index("chmod -R a=rX /app/src", final_copy)
+    dev_sync = dockerfile.index("uv sync --frozen --all-groups", source_access)
+    assert quality < final_copy < source_access < dev_sync
+
+
 def test_pr_and_main_conditions() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
     steps = _steps_by_key(pipeline)

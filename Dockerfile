@@ -21,7 +21,8 @@ RUN uv sync --frozen --no-group dev \
 
 FROM application AS quality-base
 COPY . .
-RUN uv sync --frozen --all-groups
+RUN chmod -R a=rX /app/src \
+    && uv sync --frozen --all-groups
 
 FROM quality-base AS quality
 RUN uv run ruff check . \

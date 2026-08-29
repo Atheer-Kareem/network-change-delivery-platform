@@ -222,8 +222,12 @@ def _reconcile_locked() -> str:
         inspected,
         prometheus_image_id=_private_text(CONFIG_ROOT / "prometheus-image-id"),
         blackbox_image_id=_private_text(CONFIG_ROOT / "blackbox-image-id"),
+        grafana_image_id=_private_text(CONFIG_ROOT / "grafana-image-id"),
+        alertmanager_image_id=_private_text(CONFIG_ROOT / "alertmanager-image-id"),
+        receiver_image_id=_private_text(CONFIG_ROOT / "receiver-image-id"),
         config_root=CONFIG_ROOT,
         state_root=STATE_ROOT,
+        runtime_root=compose_path.parent,
     )
     wait_service_health(require_device_targets=admission_exists)
     if not admission_exists:

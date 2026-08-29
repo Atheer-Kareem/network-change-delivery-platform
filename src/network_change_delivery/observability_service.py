@@ -30,6 +30,50 @@ SERVICE_LABEL = "com.ncdp.observability"
 PROJECT_NAME = "ncdp-observability"
 PROMETHEUS_CONTAINER = "ncdp-prometheus"
 BLACKBOX_CONTAINER = "ncdp-blackbox-exporter"
+GRAFANA_CONTAINER = "ncdp-grafana"
+ALERTMANAGER_CONTAINER = "ncdp-alertmanager"
+RECEIVER_CONTAINER = "ncdp-alert-receiver"
+PROMETHEUS_IMAGE_REFERENCE = (
+    "prom/prometheus:v3.14.0@sha256:"
+    "5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0"
+)
+BLACKBOX_IMAGE_REFERENCE = (
+    "prom/blackbox-exporter:v0.27.0@sha256:"
+    "a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d"
+)
+GRAFANA_IMAGE_REFERENCE = (
+    "grafana/grafana:12.1.1@sha256:"
+    "a1701c2180249361737a99a01bc770db39381640e4d631825d38ff4535efa47d"
+)
+ALERTMANAGER_IMAGE_REFERENCE = (
+    "prom/alertmanager:v0.29.0@sha256:"
+    "88743b63b3e09ea6e31e140ced5bf45f4a8e82c617c2a963f78841f4995ad1d7"
+)
+RECEIVER_IMAGE_REFERENCE = (
+    "python:3.12.13-slim@sha256:"
+    "2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a"
+)
+EXPECTED_CONTAINERS = {
+    PROMETHEUS_CONTAINER,
+    BLACKBOX_CONTAINER,
+    GRAFANA_CONTAINER,
+    ALERTMANAGER_CONTAINER,
+    RECEIVER_CONTAINER,
+}
+EXPECTED_IMAGE_REFERENCES = {
+    PROMETHEUS_CONTAINER: PROMETHEUS_IMAGE_REFERENCE,
+    BLACKBOX_CONTAINER: BLACKBOX_IMAGE_REFERENCE,
+    GRAFANA_CONTAINER: GRAFANA_IMAGE_REFERENCE,
+    ALERTMANAGER_CONTAINER: ALERTMANAGER_IMAGE_REFERENCE,
+    RECEIVER_CONTAINER: RECEIVER_IMAGE_REFERENCE,
+}
+EXPECTED_SERVICE_NAMES = {
+    PROMETHEUS_CONTAINER: "prometheus",
+    BLACKBOX_CONTAINER: "blackbox",
+    GRAFANA_CONTAINER: "grafana",
+    ALERTMANAGER_CONTAINER: "alertmanager",
+    RECEIVER_CONTAINER: "receiver",
+}
 PROMETHEUS_URL = "http://127.0.0.1:9090"
 ENSURE_INTERVAL_SECONDS = 300
 DOCKER_TIMEOUT_SECONDS = 45
@@ -215,6 +259,9 @@ def inspect_containers() -> dict[str, dict[str, object]]:
                 "inspect",
                 PROMETHEUS_CONTAINER,
                 BLACKBOX_CONTAINER,
+                GRAFANA_CONTAINER,
+                ALERTMANAGER_CONTAINER,
+                RECEIVER_CONTAINER,
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -228,14 +275,14 @@ def inspect_containers() -> dict[str, dict[str, object]]:
         raise ObservabilityServiceError(
             "observability container inspection failed"
         ) from None
-    if not isinstance(values, list) or len(values) != 2:
+    if not isinstance(values, list) or len(values) != len(EXPECTED_CONTAINERS):
         raise ObservabilityServiceError("observability container inspection failed")
     inspected = {
         item.get("Name", "").lstrip("/"): item
         for item in values
         if isinstance(item, dict)
     }
-    if set(inspected) != {PROMETHEUS_CONTAINER, BLACKBOX_CONTAINER}:
+    if set(inspected) != EXPECTED_CONTAINERS:
         raise ObservabilityServiceError("observability container inspection failed")
     return inspected
 
@@ -245,23 +292,43 @@ def verify_container_definitions(
     *,
     prometheus_image_id: str,
     blackbox_image_id: str,
+    grafana_image_id: str,
+    alertmanager_image_id: str,
+    receiver_image_id: str,
     config_root: Path,
     state_root: Path,
+    runtime_root: Path,
+    project_name: str = PROJECT_NAME,
+    network_name: str = "ncdp-observability-telemetry",
+    prometheus_host_port: str = "9090",
+    grafana_host_port: str = "3000",
 ) -> tuple[str, str]:
     expected_images = {
         PROMETHEUS_CONTAINER: prometheus_image_id,
         BLACKBOX_CONTAINER: blackbox_image_id,
+        GRAFANA_CONTAINER: grafana_image_id,
+        ALERTMANAGER_CONTAINER: alertmanager_image_id,
+        RECEIVER_CONTAINER: receiver_image_id,
     }
+    if set(inspected) != EXPECTED_CONTAINERS:
+        raise ObservabilityServiceError("observability container inspection failed")
     identifiers: dict[str, str] = {}
     for name, expected_image in expected_images.items():
         item = inspected[name]
         host = item.get("HostConfig")
         config = item.get("Config")
         state = item.get("State")
+        network_settings = item.get("NetworkSettings")
         identifier = item.get("Id")
-        if not all(
-            isinstance(value, dict) for value in (host, config, state)
-        ) or not isinstance(identifier, str):
+        if (
+            re.fullmatch(r"sha256:[0-9a-f]{64}", expected_image) is None
+            or not all(
+                isinstance(value, dict)
+                for value in (host, config, state, network_settings)
+            )
+            or not isinstance(identifier, str)
+            or re.fullmatch(r"[0-9a-f]{64}", identifier) is None
+        ):
             raise ObservabilityServiceError(
                 "observability container definition rejected"
             )
@@ -269,13 +336,16 @@ def verify_container_definitions(
             isinstance(host, dict)
             and isinstance(config, dict)
             and isinstance(state, dict)
+            and isinstance(network_settings, dict)
         )
         restart = host.get("RestartPolicy")
         security = host.get("SecurityOpt") or []
         cap_drop = host.get("CapDrop") or []
         labels = config.get("Labels") or {}
+        networks = network_settings.get("Networks") or {}
         if (
             item.get("Image") != expected_image
+            or config.get("Image") != EXPECTED_IMAGE_REFERENCES[name]
             or state.get("Running") is not True
             or host.get("ReadonlyRootfs") is not True
             or not isinstance(restart, dict)
@@ -284,31 +354,50 @@ def verify_container_definitions(
             or not any(str(value).startswith("no-new-privileges") for value in security)
             or config.get("User") != f"{os.getuid()}:{os.getgid()}"
             or not isinstance(labels, dict)
-            or labels.get("com.docker.compose.project") != PROJECT_NAME
-            or host.get("NetworkMode") != "ncdp-observability-telemetry"
+            or labels.get("com.docker.compose.project") != project_name
+            or labels.get("com.docker.compose.service") != EXPECTED_SERVICE_NAMES[name]
+            or host.get("NetworkMode") != network_name
+            or not isinstance(networks, dict)
+            or set(networks) != {network_name}
         ):
             raise ObservabilityServiceError(
                 "observability container definition rejected"
             )
         ports = host.get("PortBindings") or {}
-        if name == PROMETHEUS_CONTAINER:
-            binding = ports.get("9090/tcp") if isinstance(ports, dict) else None
-            if binding != [{"HostIp": "127.0.0.1", "HostPort": "9090"}]:
-                raise ObservabilityServiceError(
-                    "observability port publication rejected"
-                )
-        elif ports:
+        expected_ports = {
+            PROMETHEUS_CONTAINER: {
+                "9090/tcp": [{"HostIp": "127.0.0.1", "HostPort": prometheus_host_port}]
+            },
+            GRAFANA_CONTAINER: {
+                "3000/tcp": [{"HostIp": "127.0.0.1", "HostPort": grafana_host_port}]
+            },
+        }.get(name, {})
+        if not isinstance(ports, dict) or ports != expected_ports:
             raise ObservabilityServiceError("observability port publication rejected")
         binds = host.get("Binds") or []
-        expected_binds = (
-            {
+        expected_binds = {
+            PROMETHEUS_CONTAINER: {
                 f"{config_root}/prometheus.yml:/etc/ncdp/prometheus.yml:ro",
+                f"{runtime_root}/rules:/etc/ncdp/rules:ro",
                 f"{state_root}/discovery:/etc/ncdp/targets:ro",
                 f"{state_root}/prometheus:/prometheus:rw",
-            }
-            if name == PROMETHEUS_CONTAINER
-            else {f"{config_root}/blackbox.yml:/etc/ncdp/blackbox.yml:ro"}
-        )
+            },
+            BLACKBOX_CONTAINER: {
+                f"{config_root}/blackbox.yml:/etc/ncdp/blackbox.yml:ro"
+            },
+            GRAFANA_CONTAINER: {
+                f"{runtime_root}/grafana/provisioning:/etc/grafana/provisioning:ro",
+                f"{runtime_root}/grafana/dashboards:/etc/grafana/dashboards:ro",
+                f"{state_root}/grafana:/var/lib/grafana:rw",
+            },
+            ALERTMANAGER_CONTAINER: {
+                f"{runtime_root}/alertmanager/alertmanager.yml:/etc/ncdp/alertmanager.yml:ro",
+                f"{state_root}/alertmanager:/alertmanager:rw",
+            },
+            RECEIVER_CONTAINER: {
+                f"{runtime_root}/receiver/demo_receiver.py:/opt/ncdp/demo_receiver.py:ro"
+            },
+        }[name]
         if not isinstance(binds, list) or set(binds) != expected_binds:
             raise ObservabilityServiceError(
                 "observability container definition rejected"

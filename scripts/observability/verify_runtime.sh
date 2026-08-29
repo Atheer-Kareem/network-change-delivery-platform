@@ -33,12 +33,24 @@ export NCDP_OBSERVABILITY_RUNTIME_ROOT="${runtime_root}"
 quality_python() {
   docker run --rm \
     --user "${uid}:${gid}" \
-    -e NCDP_TEST_STATE_ROOT=/test-state \
+    -e NCDP_TEST_STATE_ROOT=/test-root/state \
     -e NCDP_EXPECTED_UID="${uid}" \
     -e NCDP_EXPECTED_GID="${gid}" \
     -e NCDP_TEST_CISCO_IP \
     -e NCDP_TEST_JUNOS_IP \
-    -v "${state_root}:/test-state" \
+    -e NCDP_TEST_CONFIG_ROOT="${config_root}" \
+    -e NCDP_TEST_RUNTIME_ROOT="${runtime_root}" \
+    -e NCDP_TEST_HOST_STATE_ROOT="${state_root}" \
+    -e NCDP_TEST_PROJECT="${project}" \
+    -e NCDP_TEST_NETWORK="${network}" \
+    -e NCDP_TEST_PROMETHEUS_PORT="${NCDP_PROMETHEUS_PORT}" \
+    -e NCDP_TEST_GRAFANA_PORT="${NCDP_GRAFANA_PORT}" \
+    -e NCDP_TEST_PROMETHEUS_IMAGE_ID="${prometheus_image_id:-}" \
+    -e NCDP_TEST_BLACKBOX_IMAGE_ID="${blackbox_image_id:-}" \
+    -e NCDP_TEST_GRAFANA_IMAGE_ID="${grafana_image_id:-}" \
+    -e NCDP_TEST_ALERTMANAGER_IMAGE_ID="${alertmanager_image_id:-}" \
+    -e NCDP_TEST_RECEIVER_IMAGE_ID="${receiver_image_id:-}" \
+    -v "${test_root}:/test-root" \
     "${quality_image}" /app/.venv/bin/python "$@"
 }
 
@@ -236,6 +248,52 @@ for container in "${NCDP_BLACKBOX_CONTAINER}" "${NCDP_ALERTMANAGER_CONTAINER}" "
     '((.[0].HostConfig.PortBindings // {}) | length) == 0' >/dev/null
 done
 
+inspection_file=${state_root}/container-inspection.json
+docker inspect "${containers[@]}" > "${inspection_file}"
+chmod 0600 "${inspection_file}"
+quality_python -c '
+import json
+import os
+from pathlib import Path
+from network_change_delivery.observability_service import (
+    ALERTMANAGER_CONTAINER,
+    BLACKBOX_CONTAINER,
+    GRAFANA_CONTAINER,
+    PROMETHEUS_CONTAINER,
+    RECEIVER_CONTAINER,
+    verify_container_definitions,
+)
+service_names = {
+    "prometheus": PROMETHEUS_CONTAINER,
+    "blackbox": BLACKBOX_CONTAINER,
+    "grafana": GRAFANA_CONTAINER,
+    "alertmanager": ALERTMANAGER_CONTAINER,
+    "receiver": RECEIVER_CONTAINER,
+}
+with open("/test-root/state/container-inspection.json", encoding="utf-8") as stream:
+    values = json.load(stream)
+inspected = {
+    service_names[item["Config"]["Labels"]["com.docker.compose.service"]]: item
+    for item in values
+}
+verify_container_definitions(
+    inspected,
+    prometheus_image_id=os.environ["NCDP_TEST_PROMETHEUS_IMAGE_ID"],
+    blackbox_image_id=os.environ["NCDP_TEST_BLACKBOX_IMAGE_ID"],
+    grafana_image_id=os.environ["NCDP_TEST_GRAFANA_IMAGE_ID"],
+    alertmanager_image_id=os.environ["NCDP_TEST_ALERTMANAGER_IMAGE_ID"],
+    receiver_image_id=os.environ["NCDP_TEST_RECEIVER_IMAGE_ID"],
+    config_root=Path(os.environ["NCDP_TEST_CONFIG_ROOT"]),
+    runtime_root=Path(os.environ["NCDP_TEST_RUNTIME_ROOT"]),
+    state_root=Path(os.environ["NCDP_TEST_HOST_STATE_ROOT"]),
+    project_name=os.environ["NCDP_TEST_PROJECT"],
+    network_name=os.environ["NCDP_TEST_NETWORK"],
+    prometheus_host_port=os.environ["NCDP_TEST_PROMETHEUS_PORT"],
+    grafana_host_port=os.environ["NCDP_TEST_GRAFANA_PORT"],
+)
+'
+rm "${inspection_file}"
+
 for _ in $(seq 1 60); do
   grafana_health=$(curl --silent --fail \
     "http://127.0.0.1:${NCDP_GRAFANA_PORT}/api/health" || true)
@@ -287,7 +345,7 @@ devices = (
 )
 inventory = SimpleNamespace(resolve_managed_devices=lambda: devices)
 realization = SimpleNamespace(lab_id="11111111-1111-1111-1111-111111111111", digest="sha256:" + "a" * 64)
-publish_generation(Path("/test-state"), state=TargetGenerationState.ACTIVE, targets=targets_from_inventory(inventory), realization=realization)
+publish_generation(Path(os.environ["NCDP_TEST_STATE_ROOT"]), state=TargetGenerationState.ACTIVE, targets=targets_from_inventory(inventory), realization=realization)
 '
 
 for _ in $(seq 1 45); do
@@ -375,7 +433,7 @@ NCDP_OBSERVABILITY_STATE_ROOT=${state_root} \
 after=$(find "${state_root}/prometheus" -type f | wc -l | tr -d ' ')
 [ "${before}" -gt 0 ] && [ "${after}" -gt 0 ]
 
-quality_python -c 'from pathlib import Path; from network_change_delivery.observability_targets import TargetGenerationState,publish_generation; publish_generation(Path("/test-state"),state=TargetGenerationState.RETIRED)'
+quality_python -c 'import os; from pathlib import Path; from network_change_delivery.observability_targets import TargetGenerationState,publish_generation; publish_generation(Path(os.environ["NCDP_TEST_STATE_ROOT"]),state=TargetGenerationState.RETIRED)'
 for _ in $(seq 1 30); do
   active=$(curl --silent --fail "http://127.0.0.1:${NCDP_PROMETHEUS_PORT}/api/v1/targets" | \
     jq '[.data.activeTargets[] | select(.labels.job == "ncdp-management-service")] | length')

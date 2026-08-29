@@ -160,3 +160,20 @@ The intended state after PASS is that `NCDP Live` remains running, Prometheus
 and Blackbox remain ACTIVE under normal reconciliation, and `.14/.20` remain
 the live targets. This stable state is the prerequisite for 11B. PR #80 does
 not itself claim final live acceptance.
+
+## Final merged-main acceptance
+
+On merged-main commit `47a6a856ccc19903b585d2a2605dbea3c67db616` (Build #215
+accepted), final acceptance completed against the running persistent `NCDP
+Live` realization. Read-only admission bound the exact lab UUID and fresh
+core-02 and edge-junos-01 node identities. Normal launchd reconciliation
+published repeated ACTIVE generations with fresh readiness, and Prometheus
+retained its existing TSDB history. Blackbox TCP probes repeatedly succeeded
+for NetBox devices 1 (`.14:22`, SSH) and 2 (`.20:830`, NETCONF); stable NetBox
+identity labels were used and private endpoints/CML IDs were not durable
+metric identity. The observability plane performed no device authentication,
+credential read, command, configuration read/write, remediation, Oxidized
+collection, or AuditStore mutation. `NCDP Live` remained STARTED and was not
+stopped, destroyed, or retired.
+
+`11A ACCEPTANCE: PASS`

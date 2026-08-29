@@ -175,7 +175,9 @@ Ordering may change when implementation evidence requires it.
       identity and realization-scoped CML admission. Implementation exists, and
       PR #80 establishes its final persistent `NCDP Live` prerequisite alongside
       separate ephemeral staging. Final merged-main 11A acceptance against that
-      running `.14/.20` realization is next. 11B starts only after it passes.
+      running `.14/.20` realization passed on merged-main commit
+      `47a6a856ccc19903b585d2a2605dbea3c67db616` (Build #215). 11B is now the
+      next increment.
     - **11B — dashboards and operator-only alerts:** bounded visualization,
       reachability/staleness/service-health rules, and no remediation authority.
     - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling

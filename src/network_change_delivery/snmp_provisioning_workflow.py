@@ -160,7 +160,7 @@ def deploy_snmp_provisioning_plan(
         return _record(
             plan, SnmpProvisioningOutcome.BLOCKED, preflight=blocked, now=now
         )
-    if state != plan.preconditions or not state.safe_to_create:
+    if state != plan.preconditions or not state.safe_to_create_for(plan.platform):
         return _record(
             plan,
             SnmpProvisioningOutcome.BLOCKED,
@@ -307,7 +307,7 @@ def deploy_snmp_provisioning_plan(
         final = adapter.post_validate(device, connection_credentials, plan)
     except (OSError, RuntimeError, ValueError):
         final = None
-    absent = final is not None and final.safe_to_create
+    absent = final is not None and final.safe_to_create_for(plan.platform)
     return _record(
         plan,
         (

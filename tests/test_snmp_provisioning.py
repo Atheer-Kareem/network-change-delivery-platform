@@ -291,6 +291,60 @@ def test_cisco_targeted_preflight_normalizes_exact_or_conflicting_owned_state() 
     assert conflict.user is SnmpOwnedStateDisposition.ABSENT
 
 
+def test_cisco_disabled_agent_is_safe_bootstrap_state() -> None:
+    value = intent()
+    state = parse_cisco_snmp_state(
+        value,
+        observed_hostname="core-02",
+        engine_output="%SNMP agent not enabled",
+        view_output="%SNMP agent not enabled",
+        group_output="%SNMP agent not enabled",
+        user_output="%SNMP agent not enabled",
+    )
+    assert state.local_engine_id_present is False
+    assert state.safe_to_create_for("cisco_iosxe") is True
+    assert state.safe_to_create_for("junos") is False
+    created = build_snmp_provisioning_plan(value, device(), state)
+    assert created.preconditions.local_engine_id_present is False
+
+
+@pytest.mark.parametrize(
+    "engine,view,group,user",
+    [
+        (
+            "",
+            "%SNMP agent not enabled",
+            "%SNMP agent not enabled",
+            "%SNMP agent not enabled",
+        ),
+        (
+            "%SNMP agent unavailable",
+            "%SNMP agent not enabled",
+            "%SNMP agent not enabled",
+            "%SNMP agent not enabled",
+        ),
+        (
+            "%SNMP agent not enabled",
+            "% Invalid input",
+            "%SNMP agent not enabled",
+            "%SNMP agent not enabled",
+        ),
+    ],
+)
+def test_cisco_unknown_or_error_disabled_state_fails_closed(
+    engine: str, view: str, group: str, user: str
+) -> None:
+    with pytest.raises(SnmpProvisioningError):
+        parse_cisco_snmp_state(
+            intent(),
+            observed_hostname="core-02",
+            engine_output=engine,
+            view_output=view,
+            group_output=group,
+            user_output=user,
+        )
+
+
 def test_junos_targeted_filter_and_parser_drop_localized_secret_bytes() -> None:
     value = plan("junos", 2)
     filter_root = ElementTree.fromstring(junos_snmp_filter(value))

@@ -108,7 +108,7 @@ tests:
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:1"}'
         values: '0x19'
     alert_rule_test:
-      - eval_time: 5m
+      - eval_time: 4m
         alertname: NCDPBlackboxPipelineDown
         exp_alerts: []
 
@@ -130,6 +130,6 @@ tests:
             exp_annotations:
               summary: Blackbox probe pipeline unavailable
               description: The Blackbox exporter scrape path is unavailable; this is distinct from endpoint probe failure.
-      - eval_time: 4m
+      - eval_time: 5m
         alertname: NCDPBlackboxPipelineDown
         exp_alerts: []

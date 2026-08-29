@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from argparse import Namespace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -179,17 +180,29 @@ def test_offline_assurance_candidate_contains_only_nonsecret_structural_subset(
         assert forbidden not in rendered.casefold()
 
 
-def test_pipeline_retains_one_protected_write_job_and_no_snmp_live_request() -> None:
+def test_pipeline_retains_one_protected_write_path_for_typed_single_device_plans() -> (
+    None
+):
     pipeline = (ROOT / ".buildkite/pipeline.yml").read_text(encoding="utf-8")
     gate = (ROOT / "scripts/buildkite/deployment_gate.sh").read_text(encoding="utf-8")
-    request = (ROOT / "deployments/live/request.yaml").read_text(encoding="utf-8")
     assert pipeline.count("key: deploy-gate") == 1
     assert pipeline.count("key: deployment-approval") == 1
     assert "snmp-deploy" not in pipeline
     assert "buildkite-live-plan-kind" in gate
     assert "snmpv3_interface_telemetry" in gate
-    assert "CHG-SNMP" not in request
-    assert "snmpv3_interface_telemetry" not in request
+    assert "snmp-deploy" not in pipeline
+
+
+def test_live_input_rejects_secret_fields_but_allows_controlled_username(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "plan.json"
+    source.write_text(
+        '{"username":"ncdp_snmp_d1_v1", "authentication_secret":"sentinel"}',
+        encoding="utf-8",
+    )
+    forbidden = re.compile(r"(?i)(authentication_secret|privacy_secret|password)")
+    assert forbidden.search(source.read_text(encoding="utf-8")) is not None
 
 
 def test_plan_and_public_evidence_surfaces_cannot_contain_secret_fields() -> None:

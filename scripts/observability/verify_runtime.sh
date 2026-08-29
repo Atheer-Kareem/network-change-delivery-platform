@@ -32,7 +32,10 @@ export NCDP_OBSERVABILITY_RUNTIME_ROOT="${runtime_root}"
 
 quality_python() {
   docker run --rm \
+    --user "${uid}:${gid}" \
     -e NCDP_TEST_STATE_ROOT=/test-state \
+    -e NCDP_EXPECTED_UID="${uid}" \
+    -e NCDP_EXPECTED_GID="${gid}" \
     -e NCDP_TEST_CISCO_IP \
     -e NCDP_TEST_JUNOS_IP \
     -v "${state_root}:/test-state" \
@@ -109,6 +112,9 @@ chmod 0600 "${config_root}/prometheus.yml" "${config_root}/blackbox.yml" \
   "${runtime_root}/grafana/provisioning/dashboards/dashboards.yml" \
   "${runtime_root}/grafana/dashboards/ncdp-management-reachability.json" \
   "${runtime_root}/receiver/demo_receiver.py"
+
+quality_python -c 'import os; assert os.getuid() == int(os.environ["NCDP_EXPECTED_UID"]); assert os.getgid() == int(os.environ["NCDP_EXPECTED_GID"])' \
+  </dev/null
 
 docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "${uid}:${gid}" \

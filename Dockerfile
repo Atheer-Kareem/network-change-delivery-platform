@@ -21,7 +21,11 @@ RUN uv sync --frozen --no-group dev \
 
 FROM application AS quality-base
 COPY . .
-RUN chmod -R a=rX /app/src \
+RUN chmod a+rx /app/scripts /app/infrastructure \
+    && chmod -R a=rX \
+      /app/src \
+      /app/scripts/observability \
+      /app/infrastructure/observability \
     && uv sync --frozen --all-groups
 
 FROM quality-base AS quality

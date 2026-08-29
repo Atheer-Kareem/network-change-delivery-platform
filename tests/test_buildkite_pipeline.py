@@ -208,13 +208,18 @@ def test_pipeline_contract() -> None:
     assert "--reject-parse-warnings" in contract
 
 
-def test_quality_image_normalizes_editable_source_access_after_final_copy() -> None:
+def test_quality_image_normalizes_helper_access_after_final_copy() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
     quality = dockerfile.index("FROM application AS quality-base")
     final_copy = dockerfile.index("COPY . .", quality)
-    source_access = dockerfile.index("chmod -R a=rX /app/src", final_copy)
-    dev_sync = dockerfile.index("uv sync --frozen --all-groups", source_access)
-    assert quality < final_copy < source_access < dev_sync
+    access = dockerfile.index("chmod a+rx /app/scripts /app/infrastructure", final_copy)
+    dev_sync = dockerfile.index("uv sync --frozen --all-groups", access)
+    normalized = dockerfile[access:dev_sync]
+    assert quality < final_copy < access < dev_sync
+    assert "chmod -R a=rX" in normalized
+    assert "/app/src" in normalized
+    assert "/app/scripts/observability" in normalized
+    assert "/app/infrastructure/observability" in normalized
 
 
 def test_pr_and_main_conditions() -> None:

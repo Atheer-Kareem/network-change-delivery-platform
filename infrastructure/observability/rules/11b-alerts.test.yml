@@ -42,7 +42,7 @@ tests:
             exp_annotations:
               summary: Management TCP connection unavailable
               description: The admitted management TCP connection is unavailable; this does not indicate authentication or device failure.
-      - eval_time: 5m
+      - eval_time: 6m
         alertname: NCDPManagementServiceDown
         exp_alerts: []
 
@@ -108,7 +108,7 @@ tests:
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:1"}'
         values: '0x19'
     alert_rule_test:
-      - eval_time: 4m
+      - eval_time: 5m
         alertname: NCDPBlackboxPipelineDown
         exp_alerts: []
 

@@ -117,6 +117,7 @@ def test_active_plan_is_single_device_digest_verified_and_exactly_provenanced() 
     assert request["plan_digest"] == plan.digest
     assert request["inventory_object_id"] == plan.inventory_object_id
     if isinstance(plan, DeploymentPlan):
+        assert plan.inventory_object_id == "netbox:dcim.device:1"
         assert plan.inventory_interface_object_id == "netbox:dcim.interface:2"
         assert plan.credential_source == "openbao"
         assert plan.credential_reference == "openbao:kv-v2:ncdp/devices/1/ssh"
@@ -128,6 +129,11 @@ def test_active_plan_is_single_device_digest_verified_and_exactly_provenanced() 
         device_id = int(plan.inventory_object_id.rsplit(":", 1)[1])
         assert plan.platform in {"cisco_iosxe", "junos"}
         assert device_id in {1, 2}
+        expected_device = {
+            1: ("core-02", "cisco_iosxe"),
+            2: ("edge-junos-01", "junos"),
+        }[device_id]
+        assert (plan.target, plan.platform) == expected_device
         assert plan.generation == "v1"
         assert plan.username == snmp_username(device_id, plan.generation)
         assert plan.security_level == "authPriv"

@@ -543,6 +543,25 @@ def test_cisco_preflight_rejects_phrase_with_unrelated_failure(monkeypatch) -> N
         adapter.snmp_preflight(device(), DeviceCredentials("u", "p"), value)
 
 
+@pytest.mark.parametrize("prefix", ["timeout", "authentication failure", "ssh failure"])
+def test_cisco_preflight_rejects_failed_escaped_wrapper(
+    monkeypatch, prefix: str
+) -> None:
+    value = plan()
+    adapter = AnsibleRunnerCiscoAdapter()
+    wrapped = f"b'{prefix}\\r\\n%SNMP agent not enabled\\r\\ncore-02#'"
+
+    def run(*_args, **_kwargs):
+        return SimpleNamespace(status="successful", rc=0), {
+            IDENTITY_TASK: {"ansible_facts": {"ansible_net_hostname": "core-02"}},
+            SNMP_ENGINE_TASK: {"msg": wrapped, "_ncdp_event": "runner_on_failed"},
+        }
+
+    monkeypatch.setattr(adapter, "_run", run)
+    with pytest.raises(ProviderError):
+        adapter.snmp_preflight(device(), DeviceCredentials("u", "p"), value)
+
+
 def test_junos_adapter_loads_checks_and_commits_confirmed_exactly_once(
     monkeypatch,
 ) -> None:

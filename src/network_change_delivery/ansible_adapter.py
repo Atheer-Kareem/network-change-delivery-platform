@@ -73,14 +73,22 @@ def _normalize_disabled_snmp_agent(value: object) -> str | None:
         value = value.decode("utf-8", errors="replace")
     if not isinstance(value, str):
         return None
-    if re.fullmatch(r"b'[^%]*\\r\\n%SNMP agent not enabled\\r\\n[^%]*'", value):
-        return _DISABLED_SNMP_AGENT
     lowered = value.casefold()
     if any(
         marker in lowered
-        for marker in ("traceback", "exception", "timeout", "unreachable")
+        for marker in (
+            "traceback",
+            "exception",
+            "timeout",
+            "timed out",
+            "unreachable",
+            "authentication failure",
+            "ssh failure",
+        )
     ):
         return None
+    if re.fullmatch(r"b'[^%]*\\r\\n%SNMP agent not enabled\\r\\n[^%]*'", value):
+        return _DISABLED_SNMP_AGENT
     lines = value.splitlines()
     if any(line.strip() == _DISABLED_SNMP_AGENT for line in lines) and not any(
         line.lstrip().startswith("%") and line.strip() != _DISABLED_SNMP_AGENT

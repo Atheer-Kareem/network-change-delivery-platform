@@ -180,6 +180,9 @@ Ordering may change when implementation evidence requires it.
       next increment.
     - **11B — dashboards and operator-only alerts:** bounded visualization,
       reachability/staleness/service-health rules, and no remediation authority.
+      11B-1 provides the provisioned Grafana dashboard, Prometheus rules,
+      Alertmanager, and local demonstration receiver; merged-main live
+      acceptance remains pending.
     - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling
       and bounded interface identity/counter normalization.
     - **11D — gNMI/OpenConfig streaming telemetry:** reviewed TLS identity,

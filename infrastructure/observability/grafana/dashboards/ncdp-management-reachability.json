@@ -1,0 +1,13 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"type":"stat","title":"Reachability","gridPos":{"h":4,"w":24,"x":0,"y":0},"targets":[{"expr":"probe_success{job=\"ncdp-management-service\"}","legendFormat":"{{device_name}}"}]},
+    {"type":"timeseries","title":"Reachability history","gridPos":{"h":8,"w":24,"x":0,"y":4},"targets":[{"expr":"probe_success{job=\"ncdp-management-service\"}","legendFormat":"{{instance}}"}]},
+    {"type":"table","title":"Managed targets","gridPos":{"h":8,"w":24,"x":0,"y":12},"targets":[{"expr":"probe_success{job=\"ncdp-management-service\"}","format":"table","instant":true}]} 
+  ],
+  "schemaVersion": 39,
+  "title": "NCDP Management Reachability",
+  "uid": "ncdp-management-reachability",
+  "version": 1
+}

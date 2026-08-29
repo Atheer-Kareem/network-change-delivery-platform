@@ -17,6 +17,7 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=15d
       - --storage.tsdb.retention.size=1GB
+      - --web.enable-lifecycle
     ports:
       - 127.0.0.1:9090:9090
     tmpfs:
@@ -25,6 +26,10 @@ services:
       - type: bind
         source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/prometheus.yml
         target: /etc/ncdp/prometheus.yml
+        read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/rules
+        target: /etc/ncdp/rules
         read_only: true
       - type: bind
         source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/discovery
@@ -37,6 +42,68 @@ services:
       - telemetry
     depends_on:
       - blackbox
+      - alertmanager
+
+  grafana:
+    image: grafana/grafana:12.1.1@sha256:2c6f6f1d5f9d2a6c4c0a8e2dc4f6d8b5b8e2c1a0f4b6c8d2e1f0a9b7c6d5e4f3
+    container_name: ncdp-grafana
+    pull_policy: never
+    restart: "no"
+    user: "472:472"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/grafana/provisioning
+        target: /etc/grafana/provisioning
+        read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/grafana/dashboards
+        target: /var/lib/grafana/dashboards
+        read_only: true
+    networks: [telemetry]
+
+  alertmanager:
+    image: prom/alertmanager:v0.29.0@sha256:8a4d7b6c5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8
+    container_name: ncdp-alertmanager
+    pull_policy: never
+    restart: "no"
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: ["--config.file=/etc/ncdp/alertmanager.yml", "--storage.path=/alertmanager"]
+    volumes:
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/alertmanager.yml
+        target: /etc/ncdp/alertmanager.yml
+        read_only: true
+    networks: [telemetry]
+    depends_on: [receiver]
+
+  receiver:
+    image: python:3.12.13-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a
+    container_name: ncdp-alert-receiver
+    pull_policy: never
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: ["python", "/opt/ncdp/demo_receiver.py"]
+    volumes:
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/demo_receiver.py
+        target: /opt/ncdp/demo_receiver.py
+        read_only: true
+    networks: [telemetry]
 
   blackbox:
     image: prom/blackbox-exporter:v0.27.0@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d

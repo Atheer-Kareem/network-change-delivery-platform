@@ -96,3 +96,8 @@ AuditStore. Metrics contain no configuration, diff, credential, arbitrary error,
 or high-cardinality ephemeral identity. Observability cannot invoke NCDP
 deployment or automated remediation. Dashboards/alerts, SNMPv3, and gNMI are
 separate later increments.
+11B-1 adds Grafana and Alertmanager as read-only consumers of these metrics.
+Grafana is provisioned from reviewed files and exposed only on loopback;
+Alertmanager routes advisory alerts to a private bounded demonstration
+receiver. Neither service has credentials, device access, or remediation
+authority.

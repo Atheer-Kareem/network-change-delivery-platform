@@ -1,0 +1,30 @@
+groups:
+  - name: ncdp-management-reachability
+    rules:
+      - alert: NCDPManagementServiceDown
+        expr: probe_success{job="ncdp-management-service"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: management-reachability
+        annotations:
+          summary: "Management TCP connection unavailable"
+          description: "The admitted management TCP connection is unavailable; this does not indicate authentication or device failure."
+      - alert: NCDPManagementTargetsStale
+        expr: absent_over_time(probe_success{job="ncdp-management-service"}[2m])
+        for: 1m
+        labels:
+          severity: critical
+          component: target-population
+        annotations:
+          summary: "Management target population is stale"
+          description: "No recent admitted management reachability samples are present."
+      - alert: NCDPBlackboxPipelineDown
+        expr: up{job="ncdp-blackbox-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: blackbox-pipeline
+        annotations:
+          summary: "Blackbox probe pipeline unavailable"
+          description: "The Blackbox exporter scrape path is unavailable; this is distinct from endpoint probe failure."

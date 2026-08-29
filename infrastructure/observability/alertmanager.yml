@@ -1,0 +1,13 @@
+global:
+  resolve_timeout: 5m
+route:
+  receiver: ncdp-demonstration
+  group_by: [alertname, instance, component]
+  group_wait: 5s
+  group_interval: 1m
+  repeat_interval: 4h
+receivers:
+  - name: ncdp-demonstration
+    webhook_configs:
+      - url: http://receiver:8080/alerts
+        send_resolved: true

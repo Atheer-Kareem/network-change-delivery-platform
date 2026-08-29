@@ -2,13 +2,59 @@
 - name: Inspect exact SNMP provisioning state
   hosts: all
   gather_facts: false
+  vars:
+    ansible_user: "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_USERNAME') }}"
+    ansible_password: "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_PASSWORD') }}"
   tasks:
     - name: NCDP collect identity
       cisco.ios.ios_facts:
         gather_subset:
           - min
 
-    - name: NCDP inspect exact SNMP owned names
+    - name: NCDP inspect SNMP engine
       cisco.ios.ios_command:
-        commands: "{{ ncdp_snmp_commands }}"
+        commands:
+          - "{{ ncdp_snmp_commands[0] }}"
+      register: ncdp_snmp_engine
       changed_when: false
+      failed_when: >-
+        ncdp_snmp_engine is failed and
+        not ((ncdp_snmp_engine.stdout | default([]) | join('\n') |
+        trim) == '%SNMP agent not enabled') and
+        not ((ncdp_snmp_engine.msg | default('') | string) is regex_search('(?m)^\\s*%SNMP agent not enabled\\s*$'))
+
+    - name: NCDP inspect SNMP view
+      cisco.ios.ios_command:
+        commands:
+          - "{{ ncdp_snmp_commands[1] }}"
+      register: ncdp_snmp_view
+      changed_when: false
+      failed_when: >-
+        ncdp_snmp_view is failed and
+        not ((ncdp_snmp_view.stdout | default([]) | join('\n') |
+        trim) == '%SNMP agent not enabled') and
+        not ((ncdp_snmp_view.msg | default('') | string) is regex_search('(?m)^\\s*%SNMP agent not enabled\\s*$'))
+
+    - name: NCDP inspect SNMP group
+      cisco.ios.ios_command:
+        commands:
+          - "{{ ncdp_snmp_commands[2] }}"
+      register: ncdp_snmp_group
+      changed_when: false
+      failed_when: >-
+        ncdp_snmp_group is failed and
+        not ((ncdp_snmp_group.stdout | default([]) | join('\n') |
+        trim) == '%SNMP agent not enabled') and
+        not ((ncdp_snmp_group.msg | default('') | string) is regex_search('(?m)^\\s*%SNMP agent not enabled\\s*$'))
+
+    - name: NCDP inspect SNMP user
+      cisco.ios.ios_command:
+        commands:
+          - "{{ ncdp_snmp_commands[3] }}"
+      register: ncdp_snmp_user
+      changed_when: false
+      failed_when: >-
+        ncdp_snmp_user is failed and
+        not ((ncdp_snmp_user.stdout | default([]) | join('\n') |
+        trim) == '%SNMP agent not enabled') and
+        not ((ncdp_snmp_user.msg | default('') | string) is regex_search('(?m)^\\s*%SNMP agent not enabled\\s*$'))

@@ -121,7 +121,7 @@ def test_snmp_overlay_is_explicit_private_and_does_not_change_base_runtime() -> 
             Cmd=["--config.expand-environment-variables"]
         ),
         lambda item: item["Config"].update(Env=["SNMP_USERNAME=controlled-principal"]),
-        lambda item: item["Config"].update(User="0:0"),
+        lambda item: item["Config"].update(User=f"{os.getuid() + 1}:{os.getgid() + 1}"),
         lambda item: item["Config"].update(Image="prom/snmp-exporter:latest"),
     ],
 )

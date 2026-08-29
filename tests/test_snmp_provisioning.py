@@ -460,6 +460,8 @@ def test_cisco_preflight_reconstructs_four_single_command_results(monkeypatch) -
     assert "ncdp_snmp_disabled_wrapper" in playbook
     assert r"\\r\\\\n%SNMP agent not enabled" in playbook
     assert "is search('%SNMP agent not enabled')" not in playbook
+    assert "is regex_search" not in playbook
+    assert playbook.count("| regex_search") == 20
 
 
 def test_cisco_preflight_rejects_missing_bounded_task(monkeypatch) -> None:

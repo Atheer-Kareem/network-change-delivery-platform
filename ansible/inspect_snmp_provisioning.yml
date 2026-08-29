@@ -25,11 +25,11 @@
         ncdp_snmp_engine is failed and
         not ((ncdp_snmp_engine.stdout | default([]) | join('\n') |
         trim) == '%SNMP agent not enabled') and
-        not (((ncdp_snmp_engine.msg | default('') | string) is regex_search(ncdp_snmp_disabled_line) and
-        not ((ncdp_snmp_engine.msg | default('') | string) is regex_search(ncdp_snmp_other_error_line)) and
-        not ((ncdp_snmp_engine.msg | default('') | string) is regex_search(ncdp_snmp_non_cli_failure))) or
-        (((ncdp_snmp_engine.msg | default('') | string) is regex_search(ncdp_snmp_disabled_wrapper)) and
-        not ((ncdp_snmp_engine.msg | default('') | string) is regex_search(ncdp_snmp_non_cli_failure))))
+        not ((((ncdp_snmp_engine.msg | default('') | string) | regex_search(ncdp_snmp_disabled_line)) is not none and
+        not (((ncdp_snmp_engine.msg | default('') | string) | regex_search(ncdp_snmp_other_error_line)) is not none) and
+        not (((ncdp_snmp_engine.msg | default('') | string) | regex_search(ncdp_snmp_non_cli_failure)) is not none)) or
+        ((((ncdp_snmp_engine.msg | default('') | string) | regex_search(ncdp_snmp_disabled_wrapper)) is not none) and
+        not (((ncdp_snmp_engine.msg | default('') | string) | regex_search(ncdp_snmp_non_cli_failure)) is not none)))
 
     - name: NCDP inspect SNMP view
       cisco.ios.ios_command:
@@ -41,11 +41,11 @@
         ncdp_snmp_view is failed and
         not ((ncdp_snmp_view.stdout | default([]) | join('\n') |
         trim) == '%SNMP agent not enabled') and
-        not (((ncdp_snmp_view.msg | default('') | string) is regex_search(ncdp_snmp_disabled_line) and
-        not ((ncdp_snmp_view.msg | default('') | string) is regex_search(ncdp_snmp_other_error_line)) and
-        not ((ncdp_snmp_view.msg | default('') | string) is regex_search(ncdp_snmp_non_cli_failure))) or
-        (((ncdp_snmp_view.msg | default('') | string) is regex_search(ncdp_snmp_disabled_wrapper)) and
-        not ((ncdp_snmp_view.msg | default('') | string) is regex_search(ncdp_snmp_non_cli_failure))))
+        not ((((ncdp_snmp_view.msg | default('') | string) | regex_search(ncdp_snmp_disabled_line)) is not none and
+        not (((ncdp_snmp_view.msg | default('') | string) | regex_search(ncdp_snmp_other_error_line)) is not none) and
+        not (((ncdp_snmp_view.msg | default('') | string) | regex_search(ncdp_snmp_non_cli_failure)) is not none)) or
+        ((((ncdp_snmp_view.msg | default('') | string) | regex_search(ncdp_snmp_disabled_wrapper)) is not none) and
+        not (((ncdp_snmp_view.msg | default('') | string) | regex_search(ncdp_snmp_non_cli_failure)) is not none)))
 
     - name: NCDP inspect SNMP group
       cisco.ios.ios_command:
@@ -57,11 +57,11 @@
         ncdp_snmp_group is failed and
         not ((ncdp_snmp_group.stdout | default([]) | join('\n') |
         trim) == '%SNMP agent not enabled') and
-        not (((ncdp_snmp_group.msg | default('') | string) is regex_search(ncdp_snmp_disabled_line) and
-        not ((ncdp_snmp_group.msg | default('') | string) is regex_search(ncdp_snmp_other_error_line)) and
-        not ((ncdp_snmp_group.msg | default('') | string) is regex_search(ncdp_snmp_non_cli_failure))) or
-        (((ncdp_snmp_group.msg | default('') | string) is regex_search(ncdp_snmp_disabled_wrapper)) and
-        not ((ncdp_snmp_group.msg | default('') | string) is regex_search(ncdp_snmp_non_cli_failure))))
+        not ((((ncdp_snmp_group.msg | default('') | string) | regex_search(ncdp_snmp_disabled_line)) is not none and
+        not (((ncdp_snmp_group.msg | default('') | string) | regex_search(ncdp_snmp_other_error_line)) is not none) and
+        not (((ncdp_snmp_group.msg | default('') | string) | regex_search(ncdp_snmp_non_cli_failure)) is not none)) or
+        ((((ncdp_snmp_group.msg | default('') | string) | regex_search(ncdp_snmp_disabled_wrapper)) is not none) and
+        not (((ncdp_snmp_group.msg | default('') | string) | regex_search(ncdp_snmp_non_cli_failure)) is not none)))
 
     - name: NCDP inspect SNMP user
       cisco.ios.ios_command:
@@ -73,8 +73,8 @@
         ncdp_snmp_user is failed and
         not ((ncdp_snmp_user.stdout | default([]) | join('\n') |
         trim) == '%SNMP agent not enabled') and
-        not (((ncdp_snmp_user.msg | default('') | string) is regex_search(ncdp_snmp_disabled_line) and
-        not ((ncdp_snmp_user.msg | default('') | string) is regex_search(ncdp_snmp_other_error_line)) and
-        not ((ncdp_snmp_user.msg | default('') | string) is regex_search(ncdp_snmp_non_cli_failure))) or
-        (((ncdp_snmp_user.msg | default('') | string) is regex_search(ncdp_snmp_disabled_wrapper)) and
-        not ((ncdp_snmp_user.msg | default('') | string) is regex_search(ncdp_snmp_non_cli_failure))))
+        not ((((ncdp_snmp_user.msg | default('') | string) | regex_search(ncdp_snmp_disabled_line)) is not none and
+        not (((ncdp_snmp_user.msg | default('') | string) | regex_search(ncdp_snmp_other_error_line)) is not none) and
+        not (((ncdp_snmp_user.msg | default('') | string) | regex_search(ncdp_snmp_non_cli_failure)) is not none)) or
+        ((((ncdp_snmp_user.msg | default('') | string) | regex_search(ncdp_snmp_disabled_wrapper)) is not none) and
+        not (((ncdp_snmp_user.msg | default('') | string) | regex_search(ncdp_snmp_non_cli_failure)) is not none)))

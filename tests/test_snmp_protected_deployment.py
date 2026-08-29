@@ -137,20 +137,35 @@ def test_read_only_planner_creates_promotable_plan_without_snmp_secret(
             return DeviceCredentials("ssh-user", "ssh-secret-sentinel")
 
     class Adapter:
+        def __init__(self, *, known_hosts: Path) -> None:
+            events.append("host-trust-adapter")
+            assert known_hosts == cli.DEFAULT_TRUST_ROOT / cli.KNOWN_HOSTS_NAME
+
         def preflight(self, _device, credentials, subject):
             events.append("read-only-preflight")
             assert credentials.password == "ssh-secret-sentinel"
             assert isinstance(subject, SnmpV3InterfaceTelemetryIntent)
             return value.preconditions
 
+    def validate_trust(root: Path) -> None:
+        events.append("host-trust")
+        assert root == cli.DEFAULT_TRUST_ROOT
+
     monkeypatch.setattr(cli, "NetBoxInventoryProvider", Inventory)
     monkeypatch.setattr(cli, "OpenBaoSecretProvider", Secrets)
     monkeypatch.setattr(cli, "MultiVendorAdapter", Adapter)
+    monkeypatch.setattr(cli, "validate_host_trust", validate_trust)
     assert cli._run_snmp_provisioning_plan(Namespace(change=change, output=output)) == 0
     generated = SnmpProvisioningPlan.model_validate_json(output.read_text())
     assert generated.inventory_object_id == value.inventory_object_id
     assert generated.snmp_credential == value.snmp_credential
-    assert events == ["inventory", "ssh-secret", "read-only-preflight"]
+    assert events == [
+        "host-trust",
+        "host-trust-adapter",
+        "inventory",
+        "ssh-secret",
+        "read-only-preflight",
+    ]
     assert "ssh-secret-sentinel" not in output.read_text()
     assert "authentication_secret" not in output.read_text()
 

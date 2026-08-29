@@ -775,9 +775,10 @@ def _run_snmp_provisioning_plan(arguments: argparse.Namespace) -> int:
     """Create one secret-free SNMP plan after targeted read-only preflight."""
     _require_unused_fleet_plan_path(arguments.output)
     intent = _load_snmp_provisioning_intent(arguments.change)
+    validate_host_trust(DEFAULT_TRUST_ROOT)
     inventory = NetBoxInventoryProvider()
     secrets = OpenBaoSecretProvider()
-    adapter = MultiVendorAdapter()
+    adapter = MultiVendorAdapter(known_hosts=DEFAULT_TRUST_ROOT / KNOWN_HOSTS_NAME)
     device = inventory.resolve(intent.target)
     if (
         device.inventory_object_id != intent.device

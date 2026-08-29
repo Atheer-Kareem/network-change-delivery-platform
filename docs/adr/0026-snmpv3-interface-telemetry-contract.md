@@ -164,6 +164,12 @@ can prove its original passphrases through a secret-free configuration read.
 Conflicts fail closed and recovery removes only objects created by that exact
 plan. Junos also requires a stable existing local engine identity because its
 stored USM keys are engine-localized; this intent does not change engine ID.
+For Cisco IOS XE, first provisioning may instead begin from the exact bounded
+`%SNMP agent not enabled` response: the first reviewed `snmp-server` command
+enables the agent and establishes its normal local engine identity. No explicit
+engine-ID command is added. Cisco post-validation remains strict and requires
+the resulting engine identity plus the exact owned view, group, and user;
+Junos retains its pre-existing engine-identity requirement.
 
 ## Delivery decomposition
 

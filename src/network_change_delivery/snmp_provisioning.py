@@ -121,14 +121,22 @@ class SnmpOwnedObjectState(BaseModel):
     user: SnmpOwnedStateDisposition
     foreign_objects_present: bool = False
 
-    @property
-    def safe_to_create(self) -> bool:
+    def safe_to_create_for(self, platform: str) -> bool:
+        """Return whether this state is safe for first creation on a platform."""
+        if platform not in {"cisco_iosxe", "junos"}:
+            return False
+        engine_ready = platform == "cisco_iosxe" or self.local_engine_id_present
         return (
-            self.local_engine_id_present
+            engine_ready
             and self.view is SnmpOwnedStateDisposition.ABSENT
             and self.group is SnmpOwnedStateDisposition.ABSENT
             and self.user is SnmpOwnedStateDisposition.ABSENT
         )
+
+    @property
+    def safe_to_create(self) -> bool:
+        """Backward-compatible strict predicate for callers without platform."""
+        return self.safe_to_create_for("junos")
 
 
 class SnmpProvisioningPlan(BaseModel):
@@ -193,7 +201,7 @@ class SnmpProvisioningPlan(BaseModel):
             or self.confirmed_timeout_minutes is not None
         ):
             raise ValueError("SNMP Cisco transaction contract rejected")
-        if not self.preconditions.safe_to_create:
+        if not self.preconditions.safe_to_create_for(self.platform):
             raise ValueError("SNMP plan requires absent owned objects")
         if self.preconditions.observed_hostname != self.expected_hostname:
             raise ValueError("SNMP plan hostname precondition rejected")
@@ -471,7 +479,14 @@ def parse_cisco_snmp_state(
     """Immediately reduce targeted IOS output to secret-free owned-name facts."""
     if plan.platform != "cisco_iosxe":
         raise SnmpProvisioningError("Cisco SNMP preflight plan rejected")
-    engine = bool(re.search(r"(?im)^\s*(?:Local )?SNMP engineID\s*:", engine_output))
+    disabled = "%SNMP agent not enabled"
+    engine_text = engine_output.strip()
+    if re.search(r"(?im)^\s*(?:Local )?SNMP engineID\s*:", engine_output):
+        engine = True
+    elif engine_text == disabled:
+        engine = False
+    else:
+        raise SnmpProvisioningError("Cisco SNMP engine state rejected")
     symbolic_oids = {
         "sysUpTime": "1.3.6.1.2.1.1.3",
         "ifNumber": "1.3.6.1.2.1.2.1",
@@ -509,6 +524,19 @@ def parse_cisco_snmp_state(
         if re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", value):
             return value
         return symbol_to_oid.get(value.casefold())
+
+    if not engine:
+        disabled_outputs = (view_output, group_output, user_output)
+        if any(value.strip() not in {"", disabled} for value in disabled_outputs):
+            raise SnmpProvisioningError("Cisco disabled SNMP state rejected")
+        return SnmpOwnedObjectState(
+            observed_hostname=observed_hostname,
+            local_engine_id_present=False,
+            view=SnmpOwnedStateDisposition.ABSENT,
+            group=SnmpOwnedStateDisposition.ABSENT,
+            user=SnmpOwnedStateDisposition.ABSENT,
+            foreign_objects_present=False,
+        )
 
     view_oids: list[str] = []
     view_named = False

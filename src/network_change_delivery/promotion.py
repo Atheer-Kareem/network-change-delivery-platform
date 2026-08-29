@@ -21,6 +21,7 @@ from network_change_delivery.plan_assurance import (
     PlanAssuranceRecord,
     verify_plan_assurance,
 )
+from network_change_delivery.snmp_provisioning import SnmpProvisioningPlan
 
 GitSha = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
 Sha256 = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
@@ -123,14 +124,19 @@ def _write_bytes(path: Path, data: bytes) -> None:
         os.close(fd)
 
 
-def _load_plan_bytes(data: bytes) -> DeploymentPlan | FleetDeploymentPlan:
+def _load_plan_bytes(
+    data: bytes,
+) -> DeploymentPlan | FleetDeploymentPlan | SnmpProvisioningPlan:
     try:
         payload = json.loads(data)
-        plan = (
-            FleetDeploymentPlan.model_validate(payload)
-            if "members" in payload
-            else DeploymentPlan.model_validate(payload)
-        )
+        if payload.get("plan_type") == "snmp_provisioning_plan":
+            plan = SnmpProvisioningPlan.model_validate(payload)
+        else:
+            plan = (
+                FleetDeploymentPlan.model_validate(payload)
+                if "members" in payload
+                else DeploymentPlan.model_validate(payload)
+            )
     except Exception as exc:
         raise PromotionError("invalid promotion plan") from exc
     if not plan.verify_digest():

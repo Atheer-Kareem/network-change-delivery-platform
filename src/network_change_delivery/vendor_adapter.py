@@ -17,6 +17,12 @@ from network_change_delivery.models import (
     JunosConfigArtifact,
 )
 from network_change_delivery.secrets import DeviceCredentials
+from network_change_delivery.snmp_provisioning import (
+    SecretRenderedArtifact,
+    SnmpOwnedObjectState,
+    SnmpPreflightSubject,
+    SnmpProvisioningPlan,
+)
 
 
 class MultiVendorAdapter:
@@ -55,6 +61,64 @@ class MultiVendorAdapter:
         return self._junos.transaction(device, credentials, artifact)
 
     def confirm(
+        self, device: InventoryDevice, credentials: DeviceCredentials
+    ) -> ExecutionResult:
+        return self._junos.confirm(device, credentials)
+
+    def preflight(
+        self,
+        device: InventoryDevice,
+        credentials: DeviceCredentials,
+        plan: SnmpPreflightSubject,
+    ) -> SnmpOwnedObjectState:
+        if device.platform == "cisco_iosxe":
+            return self._cisco.snmp_preflight(device, credentials, plan)
+        if device.platform == "junos":
+            return self._junos.snmp_preflight(device, credentials, plan)
+        raise ProviderError("target platform is unsupported")
+
+    def execute_cisco(
+        self,
+        device: InventoryDevice,
+        credentials: DeviceCredentials,
+        artifact: SecretRenderedArtifact,
+    ) -> ExecutionResult:
+        return self._cisco.execute_snmp(device, credentials, artifact)
+
+    def execute_junos_confirmed(
+        self,
+        device: InventoryDevice,
+        credentials: DeviceCredentials,
+        artifact: SecretRenderedArtifact,
+        minutes: int,
+    ) -> ExecutionResult:
+        return self._junos.execute_snmp_confirmed(
+            device, credentials, artifact, minutes
+        )
+
+    def post_validate(
+        self,
+        device: InventoryDevice,
+        credentials: DeviceCredentials,
+        plan: SnmpProvisioningPlan,
+    ) -> SnmpOwnedObjectState:
+        return self.preflight(device, credentials, plan)
+
+    def recover_cisco(
+        self,
+        device: InventoryDevice,
+        credentials: DeviceCredentials,
+        plan: SnmpProvisioningPlan,
+        commands: tuple[str, ...],
+    ) -> ExecutionResult:
+        artifact = SecretRenderedArtifact(
+            "cisco_iosxe",
+            plan,
+            payload=commands,
+        )
+        return self._cisco.execute_snmp(device, credentials, artifact)
+
+    def confirm_junos(
         self, device: InventoryDevice, credentials: DeviceCredentials
     ) -> ExecutionResult:
         return self._junos.confirm(device, credentials)

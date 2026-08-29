@@ -122,6 +122,49 @@ container environment or arguments, ordinary logs, or public evidence. Only the
 authentication and privacy passphrases or keys are confidentiality-bearing;
 `snmp_exporter` must redact those values from `/config`.
 
+11C-3 fixes the first generation at `v1`. The non-secret principals are
+`ncdp_snmp_d1_v1` and `ncdp_snmp_d2_v1`; both satisfy the reviewed IOS XE and
+Junos 32-character naming bounds. Immutable OpenBao logical paths are
+`ncdp/devices/1/snmpv3/v1` and `ncdp/devices/2/snmpv3/v1`. Each record contains
+only the controlled username plus independently generated authentication and
+privacy passphrases. Protocol choices remain code and plan policy rather than
+mutable secret data. A later rotation creates a new generation and principal;
+it never overwrites `v1` or aliases authority through a mutable `current` path.
+
+Protected provisioning remains inside the existing commit-changed live request,
+promotion, approval, and sole `deploy-gate`. The job uses the existing exact
+device SSH/NETCONF role and a second, separate OIDC exchange for one exact
+device/generation SNMP read role. The SNMP capability is requested only after
+secret-free identity, plan, device-structure, and pre-write audit checks. It
+cannot read SSH. The SSH capability cannot read SNMP. No new write job, approval
+block, local administrative device-write command, fleet write, or automatic
+retry is introduced. The read-only `snmp-provisioning-plan` command creates the
+typed plan after NetBox resolution and targeted device preflight; it cannot
+acquire an SNMP secret or execute a device write.
+
+The future persistent materializer uses a separate AppRole that can read only
+the two approved `v1` paths. Its bootstrap can issue only a bounded SecretID for
+that source role; every source login produces one short, one-use client token
+for one exact device read. It has no SSH, CML, NetBox, AuditStore, default-policy,
+list, or write capability. 11C-3 implements and tests these resources and their
+three-file private bootstrap contract (`bootstrap-role-id`,
+`bootstrap-secret-id`, and `source-role-id`) offline; it does not configure
+OpenBao. Provisioning JWT tokens are limited to 300 seconds and one use. A
+source SecretID is limited to 1,800 seconds and two logins (one per exact device
+read), while each resulting source client token is limited to 300 seconds and
+one use. The private machine bootstrap can issue only source-role SecretIDs;
+each bootstrap login yields a 60-second, one-use issuer token.
+
+Device objects use deterministic names `NCDP_IFMIB`, `NCDP_SNMP_RO`, and the
+versioned principal. A targeted preflight classifies the owned names as ABSENT,
+EXACT_NCDP_STATE, or CONFLICT while preserving unrelated FOREIGN SNMP state.
+The initial provisioning plan is created only from ABSENT owned names. An
+existing user cannot be called idempotently correct because neither platform
+can prove its original passphrases through a secret-free configuration read.
+Conflicts fail closed and recovery removes only objects created by that exact
+plan. Junos also requires a stable existing local engine identity because its
+stored USM keys are engine-localized; this intent does not change engine ID.
+
 ## Delivery decomposition
 
 11C is divided by authority and evidence boundary:
@@ -138,6 +181,9 @@ authentication and privacy passphrases or keys are confidentiality-bearing;
 3. **11C-3 — credential and device provisioning:** real SNMP credential storage,
    separate provisioning and observability secret-read identities, typed
    vendor-specific device intent, and separately authorized device mutation.
+   The offline implementation and protected-path preparation exist, but no real
+   OpenBao resource, credential, or device object has been created. Live closure
+   requires separate future Cisco and Junos commit-bound changes.
 4. **11C-4 — persistent live activation and acceptance:** supported service
    update and read-only Cisco/Junos telemetry acceptance while preserving 11A/11B.
 
@@ -156,3 +202,16 @@ The exact Cisco interface rows, UDP/161 Docker reachability, scrape timing, and
 credential failure behavior remain evidence for later synthetic or explicitly
 authorized live slices. No SNMP configuration, collection, OpenBao mutation,
 NetBox mutation, CML mutation, or persistent-service change is authorized here.
+
+## Vendor references
+
+- Cisco IOS XE 17 SNMP configuration and command references specify
+  `snmp-server user ... auth sha-2 256 ... priv aes 128`, privacy-level groups,
+  read views, and `show snmp user` verification:
+  <https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/snmp/configuration/xe-17-x/snmp-xe-17-book.html>
+- Juniper documents `authentication-sha256`, `privacy-aes128`, USM/VACM
+  security-to-group mapping, privacy-level read views, and engine-ID key
+  localization:
+  <https://www.juniper.net/documentation/us/en/software/junos/network-mgmt/topics/topic-map/configure-snmpv3.html>
+  and
+  <https://www.juniper.net/documentation/us/en/software/junos/network-mgmt/topics/topic-map/configure-the-local-engine-id.html>.

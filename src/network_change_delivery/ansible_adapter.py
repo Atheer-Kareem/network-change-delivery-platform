@@ -25,11 +25,20 @@ from network_change_delivery.models import (
     InventoryDevice,
 )
 from network_change_delivery.secrets import DeviceCredentials
+from network_change_delivery.snmp_provisioning import (
+    SecretRenderedArtifact,
+    SnmpOwnedObjectState,
+    SnmpPreflightSubject,
+    cisco_preflight_commands,
+    parse_cisco_snmp_state,
+)
 
 IDENTITY_TASK = "NCDP collect identity"
 INTERFACES_TASK = "NCDP collect interfaces"
 L3_INTERFACES_TASK = "NCDP collect layer 3 interfaces"
 EXECUTION_TASK = "NCDP apply exact approved artifact"
+SNMP_PREFLIGHT_TASK = "NCDP inspect exact SNMP owned names"
+SNMP_EXECUTION_TASK = "NCDP apply exact SNMP artifact"
 
 
 class ProviderError(RuntimeError):
@@ -325,6 +334,8 @@ class AnsibleRunnerCiscoAdapter:
                 INTERFACES_TASK,
                 L3_INTERFACES_TASK,
                 EXECUTION_TASK,
+                SNMP_PREFLIGHT_TASK,
+                SNMP_EXECUTION_TASK,
             }:
                 result = data.get("res", {})
                 if isinstance(result, dict):
@@ -490,6 +501,88 @@ class AnsibleRunnerCiscoAdapter:
             disposition=ExecutionDisposition.SUCCEEDED,
             changed=bool(selected[EXECUTION_TASK].get("changed", False)),
             message="exact approved configuration artifact completed successfully",
+        )
+
+    def snmp_preflight(
+        self,
+        device: InventoryDevice,
+        credentials: DeviceCredentials,
+        plan: SnmpPreflightSubject,
+    ) -> SnmpOwnedObjectState:
+        """Collect only identity and deterministic SNMP-owned names read-only."""
+        commands = cisco_preflight_commands(plan)
+        runner, selected = self._run(
+            device,
+            credentials,
+            "inspect_snmp_provisioning.yml",
+            extravars={"ncdp_snmp_commands": list(commands)},
+        )
+        if (
+            getattr(runner, "status", None) != "successful"
+            or getattr(runner, "rc", 1) != 0
+        ):
+            raise ProviderError("Cisco SNMP targeted preflight failed")
+        try:
+            hostname = str(
+                selected[IDENTITY_TASK]["ansible_facts"]["ansible_net_hostname"]
+            )
+            output = selected[SNMP_PREFLIGHT_TASK]["stdout"]
+            if not isinstance(output, list) or len(output) != len(commands):
+                raise KeyError
+            values = tuple(str(value) for value in output)
+        except (KeyError, TypeError):
+            raise ProviderError("Cisco SNMP preflight result rejected") from None
+        return parse_cisco_snmp_state(
+            plan,
+            observed_hostname=hostname,
+            engine_output=values[0],
+            view_output=values[1],
+            group_output=values[2],
+            user_output=values[3],
+        )
+
+    def execute_snmp(
+        self,
+        device: InventoryDevice,
+        credentials: DeviceCredentials,
+        artifact: SecretRenderedArtifact,
+    ) -> ExecutionResult:
+        """Apply one in-memory secret-bearing artifact with Runner no_log."""
+        if artifact.platform != "cisco_iosxe" or not isinstance(
+            artifact.payload, tuple
+        ):
+            raise ProviderError("Cisco SNMP artifact rejected")
+        runner, selected = self._run(
+            device,
+            credentials,
+            "apply_snmp_provisioning.yml",
+            extravars={"ncdp_snmp_commands": list(artifact.payload)},
+        )
+        status = str(getattr(runner, "status", "failed"))
+        rc = getattr(runner, "rc", None)
+        event = selected.get(SNMP_EXECUTION_TASK, {}).get("_ncdp_event")
+        if (
+            status in {"timeout", "canceled"}
+            or rc in {254, 255}
+            or event
+            in {
+                "runner_on_failed",
+                "runner_on_unreachable",
+            }
+        ):
+            return ExecutionResult(
+                disposition=ExecutionDisposition.AMBIGUOUS,
+                message="Cisco SNMP write outcome is ambiguous; no retry authorized",
+            )
+        if status != "successful" or rc != 0 or SNMP_EXECUTION_TASK not in selected:
+            return ExecutionResult(
+                disposition=ExecutionDisposition.FAILED,
+                message="Cisco SNMP write failed before known success",
+            )
+        return ExecutionResult(
+            disposition=ExecutionDisposition.SUCCEEDED,
+            changed=True,
+            message="exact Cisco SNMP artifact completed once",
         )
 
 

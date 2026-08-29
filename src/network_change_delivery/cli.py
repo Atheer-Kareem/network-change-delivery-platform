@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -47,6 +48,7 @@ from network_change_delivery.buildkite_deployment import (
     load_promoted_single_plan,
 )
 from network_change_delivery.buildkite_identity import (
+    BuildkiteOIDCJWT,
     OpenBaoBuildkiteJWTAuthenticator,
     read_buildkite_oidc_jwt,
 )
@@ -96,6 +98,19 @@ from network_change_delivery.secrets import (
     EnvironmentSecretProvider,
     OpenBaoSecretProvider,
     SecretError,
+)
+from network_change_delivery.snmp_credentials import (
+    BuildkiteOpenBaoSnmpProvisioningProvider,
+)
+from network_change_delivery.snmp_provisioning import (
+    SnmpProvisioningError,
+    SnmpProvisioningOutcome,
+    SnmpProvisioningPlan,
+    SnmpV3InterfaceTelemetryIntent,
+    build_snmp_provisioning_plan,
+)
+from network_change_delivery.snmp_provisioning_workflow import (
+    deploy_snmp_provisioning_plan,
 )
 from network_change_delivery.vendor_adapter import MultiVendorAdapter
 from network_change_delivery.workflow import SafetyError, deploy_plan, plan_change
@@ -168,6 +183,11 @@ def _load_fleet_change(path: Path) -> FleetInterfaceDescriptionIntent:
 
 def _load_fleet_plan(path: Path) -> FleetDeploymentPlan:
     return FleetDeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _load_snmp_provisioning_intent(path: Path) -> SnmpV3InterfaceTelemetryIntent:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return SnmpV3InterfaceTelemetryIntent.model_validate(payload)
 
 
 def _reserve_assurance_evidence(path: Path) -> TextIOWrapper:
@@ -350,6 +370,13 @@ def _run_verify_buildkite_live_request(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_buildkite_live_plan_kind(arguments: argparse.Namespace) -> int:
+    context = buildkite_deployment_context_from_environment(os.environ)
+    _manifest, plan, _request = _verified_live_request(arguments.promotion, context)
+    print(plan.kind)
+    return 0
+
+
 def _run_buildkite_live_request_status(arguments: argparse.Namespace) -> int:
     del arguments
     context = buildkite_deployment_context_from_environment(os.environ)
@@ -383,6 +410,47 @@ def _run_deploy_buildkite_promotion(arguments: argparse.Namespace) -> int:
     inventory = NetBoxInventoryProvider()
     secrets = BuildkiteOpenBaoDeploymentSecretProvider(jwt, context)
     adapter = MultiVendorAdapter(known_hosts=DEFAULT_TRUST_ROOT / KNOWN_HOSTS_NAME)
+    if isinstance(plan, SnmpProvisioningPlan):
+        device = inventory.resolve(plan.target)
+        if (
+            device.inventory_object_id != plan.inventory_object_id
+            or device.platform != plan.platform
+            or device.host != plan.host
+            or device.port != plan.port
+            or device.expected_hostname != plan.expected_hostname
+            or secrets.reference(device).reference
+            != plan.connection_credential_reference
+        ):
+            raise PromotionError("SNMP live deployment inventory binding rejected")
+        connection_credentials = secrets.load(device)
+        openbao_url = os.environ.get("NCDP_OPENBAO_URL", "")
+        snmp_source = BuildkiteOpenBaoSnmpProvisioningProvider(
+            _request_buildkite_snmp_oidc_jwt,
+            context,
+            plan.snmp_credential,
+            plan.username,
+            openbao_url,
+        )
+        record = deploy_snmp_provisioning_plan(
+            plan,
+            plan.digest,
+            device,
+            connection_credentials,
+            snmp_source,
+            adapter,
+            _consume_buildkite_audit_prewrite_gate,
+        )
+        _write_new_fleet_plan(
+            arguments.report_json, record.model_dump_json(indent=2) + "\n"
+        )
+        print(f"Final outcome: {record.final_outcome}")
+        print(f"Evidence: {arguments.report_json}")
+        return (
+            0
+            if record.final_outcome
+            in {SnmpProvisioningOutcome.SUCCEEDED, SnmpProvisioningOutcome.RECOVERED}
+            else 2
+        )
     record = deploy_plan(
         plan,
         plan.digest,
@@ -405,6 +473,38 @@ def _run_deploy_buildkite_promotion(arguments: argparse.Namespace) -> int:
         }
         else 2
     )
+
+
+def _consume_buildkite_audit_prewrite_gate() -> None:
+    """Consume the outer gate's post-AuditStore marker exactly once."""
+    if os.environ.pop("NCDP_AUDIT_PREWRITE_VERIFIED", None) != "1":
+        raise SecretError("Buildkite audit pre-write gate was not verified")
+
+
+def _request_buildkite_snmp_oidc_jwt() -> BuildkiteOIDCJWT:
+    """Request the separate SNMP capability only from the protected job."""
+    try:
+        completed = subprocess.run(
+            [
+                "buildkite-agent",
+                "oidc",
+                "request-token",
+                "--audience",
+                "urn:ncdp:openbao:deploy",
+                "--lifetime",
+                "300",
+                "--subject-claim",
+                "pipeline_id",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        raise SecretError("Buildkite SNMP OIDC request failed") from None
+    if completed.returncode != 0:
+        raise SecretError("Buildkite SNMP OIDC request failed")
+    return read_buildkite_oidc_jwt(io.StringIO(completed.stdout))
 
 
 def _run_verify_buildkite_openbao_identity(arguments: argparse.Namespace) -> int:
@@ -671,6 +771,31 @@ def _run_plan(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_snmp_provisioning_plan(arguments: argparse.Namespace) -> int:
+    """Create one secret-free SNMP plan after targeted read-only preflight."""
+    _require_unused_fleet_plan_path(arguments.output)
+    intent = _load_snmp_provisioning_intent(arguments.change)
+    inventory = NetBoxInventoryProvider()
+    secrets = OpenBaoSecretProvider()
+    adapter = MultiVendorAdapter()
+    device = inventory.resolve(intent.target)
+    if (
+        device.inventory_object_id != intent.device
+        or device.platform != intent.platform
+    ):
+        raise SnmpProvisioningError("SNMP plan inventory identity rejected")
+    connection_credentials = secrets.load(device)
+    preflight = adapter.preflight(device, connection_credentials, intent)
+    plan = build_snmp_provisioning_plan(intent, device, preflight)
+    _write_new_fleet_plan(arguments.output, plan.model_dump_json(indent=2) + "\n")
+    print(f"Target: {plan.target}")
+    print(f"Device identity: {plan.inventory_object_id}")
+    print(f"Credential reference: {plan.snmp_credential.reference}")
+    print(f"Owned-name preflight: {plan.preconditions.view}")
+    print(f"Plan digest: {plan.digest}")
+    return 0
+
+
 def _run_deploy(arguments: argparse.Namespace) -> int:
     plan = _load_plan(arguments.plan)
     inventory = _inventory(arguments)
@@ -825,6 +950,16 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument("--output", required=True, type=Path)
     plan_parser.set_defaults(handler=_run_plan)
 
+    snmp_plan_parser = subparsers.add_parser(
+        "snmp-provisioning-plan",
+        help="read-only preflight and create one secret-free SNMPv3 plan",
+    )
+    snmp_plan_parser.add_argument("--change", required=True, type=Path)
+    snmp_plan_parser.add_argument("--output", required=True, type=Path)
+    snmp_plan_parser.add_argument("--netbox", required=True, action="store_true")
+    snmp_plan_parser.add_argument("--openbao", required=True, action="store_true")
+    snmp_plan_parser.set_defaults(handler=_run_snmp_provisioning_plan)
+
     fleet_plan_parser = subparsers.add_parser(
         "fleet-plan",
         help="resolve and read-only preflight one NetBox-selected fleet",
@@ -926,6 +1061,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="check whether this commit changed the fixed live request",
     )
     live_status_parser.set_defaults(handler=_run_buildkite_live_request_status)
+
+    live_kind_parser = subparsers.add_parser(
+        "buildkite-live-plan-kind",
+        help="print the verified promoted live plan kind",
+    )
+    live_kind_parser.add_argument("--promotion", required=True, type=Path)
+    live_kind_parser.set_defaults(handler=_run_buildkite_live_plan_kind)
 
     deployment_runtime_parser = subparsers.add_parser(
         "verify-deployment-ansible-runtime",

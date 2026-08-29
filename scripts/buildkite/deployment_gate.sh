@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset NCDP_AUDIT_PREWRITE_VERIFIED
 
 [[ "${BUILDKITE_STEP_KEY:-}" == deploy-gate ]]
 [[ "${BUILDKITE_AGENT_META_DATA_QUEUE:-}" == ncdp-deploy ]]
@@ -48,6 +49,7 @@ uv run ncdp verify-buildkite-gate \
 uv run ncdp audit verify-buildkite \
   --promotion "$promotion" \
   --staging-evidence "$staging_evidence"
+export NCDP_AUDIT_PREWRITE_VERIFIED=1
 if uv run ncdp buildkite-live-request-status; then
   :
 else
@@ -60,6 +62,12 @@ else
   exit 0
 fi
 uv run ncdp verify-buildkite-live-request --promotion "$promotion"
+live_plan_kind="$(uv run ncdp buildkite-live-plan-kind --promotion "$promotion")"
+if [[ "$live_plan_kind" != interface_description \
+  && "$live_plan_kind" != snmpv3_interface_telemetry ]]; then
+  echo "live deployment plan kind is not authorized" >&2
+  exit 2
+fi
 authorized_ansible_collections=/Users/netdevops/.local/share/ncdp/ansible/collections
 if [[ "${ANSIBLE_COLLECTIONS_PATH:-}" != "$authorized_ansible_collections" ]]; then
   echo "deployment Ansible collection path is not authorized" >&2
@@ -70,9 +78,11 @@ observation_dir="$tmpdir/observation"
 mkdir -m 0700 "$observation_dir"
 pre_observation="$observation_dir/pre.json"
 post_observation="$observation_dir/post.json"
-uv run ncdp audit capture-buildkite-configuration \
-  --promotion "$promotion" \
-  --output "$pre_observation"
+if [[ "$live_plan_kind" == interface_description ]]; then
+  uv run ncdp audit capture-buildkite-configuration \
+    --promotion "$promotion" \
+    --output "$pre_observation"
+fi
 report_relative="deployment-evidence/change-record.json"
 report="$tmpdir/$report_relative"
 set +e
@@ -85,12 +95,15 @@ buildkite-agent oidc request-token \
     --report-json "$report"
 deployment_status=$?
 set -e
-set +e
-uv run ncdp audit capture-buildkite-configuration \
-  --promotion "$promotion" \
-  --output "$post_observation"
-post_observation_status=$?
-set -e
+post_observation_status=0
+if [[ "$live_plan_kind" == interface_description ]]; then
+  set +e
+  uv run ncdp audit capture-buildkite-configuration \
+    --promotion "$promotion" \
+    --output "$post_observation"
+  post_observation_status=$?
+  set -e
+fi
 upload_status=1
 if [[ -f "$report" && ! -L "$report" ]]; then
   set +e
@@ -112,7 +125,9 @@ if [[ -f "$report" && ! -L "$report" ]]; then
   set -e
 fi
 observation_status=1
-if [[ "$audit_status" -eq 0 \
+if [[ "$live_plan_kind" == snmpv3_interface_telemetry ]]; then
+  observation_status=0
+elif [[ "$audit_status" -eq 0 \
   && -f "$pre_observation" && ! -L "$pre_observation" \
   && -f "$post_observation" && ! -L "$post_observation" ]]; then
   set +e

@@ -1,9 +1,10 @@
 name: ncdp-observability
+# Production defaults retain loopback 127.0.0.1:9090:9090; synthetic verifier overrides ports.
 
 services:
   prometheus:
     image: prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
-    container_name: ncdp-prometheus
+    container_name: ${NCDP_PROMETHEUS_CONTAINER:-ncdp-prometheus}
     pull_policy: never
     restart: "no"
     user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
@@ -18,13 +19,17 @@ services:
       - --storage.tsdb.retention.time=15d
       - --storage.tsdb.retention.size=1GB
     ports:
-      - 127.0.0.1:9090:9090
+      - 127.0.0.1:${NCDP_PROMETHEUS_PORT:-9090}:9090
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m
     volumes:
       - type: bind
         source: ${NCDP_OBSERVABILITY_CONFIG_ROOT:?private config root required}/prometheus.yml
         target: /etc/ncdp/prometheus.yml
+        read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_RUNTIME_ROOT:?runtime root required}/rules
+        target: /etc/ncdp/rules
         read_only: true
       - type: bind
         source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/discovery
@@ -37,10 +42,79 @@ services:
       - telemetry
     depends_on:
       - blackbox
+      - alertmanager
+
+  grafana:
+    image: grafana/grafana:12.1.1@sha256:a1701c2180249361737a99a01bc770db39381640e4d631825d38ff4535efa47d
+    container_name: ${NCDP_GRAFANA_CONTAINER:-ncdp-grafana}
+    pull_policy: never
+    restart: "no"
+    user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ["127.0.0.1:${NCDP_GRAFANA_PORT:-3000}:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_RUNTIME_ROOT:?runtime root required}/grafana/provisioning
+        target: /etc/grafana/provisioning
+        read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_RUNTIME_ROOT:?runtime root required}/grafana/dashboards
+        target: /etc/grafana/dashboards
+        read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/grafana
+        target: /var/lib/grafana
+    networks: [telemetry]
+
+  alertmanager:
+    image: prom/alertmanager:v0.29.0@sha256:88743b63b3e09ea6e31e140ced5bf45f4a8e82c617c2a963f78841f4995ad1d7
+    container_name: ${NCDP_ALERTMANAGER_CONTAINER:-ncdp-alertmanager}
+    pull_policy: never
+    restart: "no"
+    user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: ["--config.file=/etc/ncdp/alertmanager.yml", "--storage.path=/alertmanager"]
+    volumes:
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_RUNTIME_ROOT:?runtime root required}/alertmanager/alertmanager.yml
+        target: /etc/ncdp/alertmanager.yml
+        read_only: true
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/alertmanager
+        target: /alertmanager
+    networks: [telemetry]
+    depends_on: [receiver]
+
+  receiver:
+    image: python:3.12.13-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a
+    container_name: ${NCDP_RECEIVER_CONTAINER:-ncdp-alert-receiver}
+    pull_policy: never
+    restart: "no"
+    user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: ["python", "/opt/ncdp/demo_receiver.py"]
+    volumes:
+      - type: bind
+        source: ${NCDP_OBSERVABILITY_RUNTIME_ROOT:?runtime root required}/receiver/demo_receiver.py
+        target: /opt/ncdp/demo_receiver.py
+        read_only: true
+    networks: [telemetry]
 
   blackbox:
     image: prom/blackbox-exporter:v0.27.0@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d
-    container_name: ncdp-blackbox-exporter
+    container_name: ${NCDP_BLACKBOX_CONTAINER:-ncdp-blackbox-exporter}
     pull_policy: never
     restart: "no"
     user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
@@ -66,6 +140,6 @@ services:
 
 networks:
   telemetry:
-    name: ncdp-observability-telemetry
+    name: ${NCDP_OBSERVABILITY_NETWORK:-ncdp-observability-telemetry}
     labels:
       com.ncdp.service: observability

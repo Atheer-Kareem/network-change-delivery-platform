@@ -53,6 +53,7 @@ def test_pipeline_contract() -> None:
         "quality-ansible-lint",
         "quality-package-build",
         "quality-terraform-cml",
+        "quality-observability-11b",
     }
     assert all(
         step["agents"]["queue"] == "ncdp-validation" for step in quality_steps.values()
@@ -78,6 +79,20 @@ def test_pipeline_contract() -> None:
             "docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
             f"{validation_command}"
         )
+
+    observability = quality_steps["quality-observability-11b"]
+    assert observability["depends_on"] == "quality-env"
+    assert observability["agents"]["queue"] == "ncdp-validation"
+    assert observability["command"] == (
+        "NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
+        "scripts/observability/verify_runtime.sh"
+    )
+    assert observability["if_changed"]["include"] == [
+        "infrastructure/observability/**",
+        "scripts/observability/**",
+        "src/network_change_delivery/observability_*.py",
+        "tests/test_observability_*.py",
+    ]
 
     terraform = quality_steps["quality-terraform-cml"]
     terraform_command = terraform["command"]
@@ -162,6 +177,15 @@ def test_pipeline_contract() -> None:
     assert "--format yaml" in contract
     assert "--reject-secrets" in contract
     assert "--reject-parse-warnings" in contract
+
+
+def test_quality_image_normalizes_editable_source_access_after_final_copy() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    quality = dockerfile.index("FROM application AS quality-base")
+    final_copy = dockerfile.index("COPY . .", quality)
+    source_access = dockerfile.index("chmod -R a=rX /app/src", final_copy)
+    dev_sync = dockerfile.index("uv sync --frozen --all-groups", source_access)
+    assert quality < final_copy < source_access < dev_sync
 
 
 def test_pr_and_main_conditions() -> None:

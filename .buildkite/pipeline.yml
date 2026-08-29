@@ -79,6 +79,18 @@ steps:
         agents:
           queue: ncdp-validation
 
+      - label: ":chart_with_upwards_trend: observability 11B Docker validation"
+        key: quality-observability-11b
+        command: scripts/observability/verify_runtime.sh
+        agents:
+          queue: ncdp-validation
+        if_changed:
+          include:
+            - "infrastructure/observability/**"
+            - "scripts/observability/**"
+            - "src/network_change_delivery/observability_*.py"
+            - "tests/test_observability_*.py"
+
   - label: ":white_check_mark: pipeline contract"
     key: pipeline-contract
     depends_on: quality

@@ -11,14 +11,14 @@ groups:
           summary: "Management TCP connection unavailable"
           description: "The admitted management TCP connection is unavailable; this does not indicate authentication or device failure."
       - alert: NCDPManagementTargetsStale
-        expr: count(probe_success{job="ncdp-management-service"}) < 2
+        expr: (count(max_over_time(probe_success{job="ncdp-management-service"}[2m])) or vector(0)) < 2
         for: 1m
         labels:
           severity: critical
           component: target-population
         annotations:
           summary: "Management target population is stale"
-          description: "No recent admitted management reachability samples are present."
+          description: "Fewer than two admitted management reachability series have recent samples."
       - alert: NCDPBlackboxPipelineDown
         expr: up{job="ncdp-blackbox-exporter"} == 0
         for: 2m

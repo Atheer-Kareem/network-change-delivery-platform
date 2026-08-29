@@ -1,0 +1,21 @@
+rule_files:
+  - 11b-alerts.yml
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:1"}'
+        values: '1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:2"}'
+        values: '1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'up{job="ncdp-blackbox-exporter"}'
+        values: '1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: NCDPManagementServiceDown
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: NCDPManagementTargetsStale
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: NCDPBlackboxPipelineDown
+        exp_alerts: []

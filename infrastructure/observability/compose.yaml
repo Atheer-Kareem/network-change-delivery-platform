@@ -1,4 +1,5 @@
 name: ncdp-observability
+# Production defaults retain loopback 127.0.0.1:9090:9090; synthetic verifier overrides ports.
 
 services:
   prometheus:
@@ -18,7 +19,7 @@ services:
       - --storage.tsdb.retention.time=15d
       - --storage.tsdb.retention.size=1GB
     ports:
-      - 127.0.0.1:9090:9090
+      - 127.0.0.1:${NCDP_PROMETHEUS_PORT:-9090}:9090
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m
     volumes:
@@ -48,11 +49,11 @@ services:
     container_name: ncdp-grafana
     pull_policy: never
     restart: "no"
-    user: "472:472"
+    user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    ports: ["127.0.0.1:3000:3000"]
+    ports: ["127.0.0.1:${NCDP_GRAFANA_PORT:-3000}:3000"]
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
@@ -66,7 +67,7 @@ services:
         read_only: true
       - type: bind
         source: ${NCDP_OBSERVABILITY_RUNTIME_ROOT:?runtime root required}/grafana/dashboards
-        target: /var/lib/grafana/dashboards
+        target: /etc/grafana/dashboards
         read_only: true
       - type: bind
         source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/grafana
@@ -78,7 +79,7 @@ services:
     container_name: ncdp-alertmanager
     pull_policy: never
     restart: "no"
-    user: "65534:65534"
+    user: "${NCDP_OBSERVABILITY_UID:?current UID required}:${NCDP_OBSERVABILITY_GID:?current GID required}"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -91,6 +92,7 @@ services:
       - type: bind
         source: ${NCDP_OBSERVABILITY_STATE_ROOT:?private state root required}/alertmanager
         target: /alertmanager
+    ports: ["127.0.0.1:${NCDP_RECEIVER_PORT:-8080}:8080"]
     networks: [telemetry]
     depends_on: [receiver]
 
@@ -138,6 +140,6 @@ services:
 
 networks:
   telemetry:
-    name: ncdp-observability-telemetry
+    name: ${NCDP_OBSERVABILITY_NETWORK:-ncdp-observability-telemetry}
     labels:
       com.ncdp.service: observability

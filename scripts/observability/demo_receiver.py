@@ -23,12 +23,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length))
+            status = payload.get("status") if isinstance(payload, dict) else None
+            if status not in {"firing", "resolved"}:
+                self.send_error(400)
+                return
             count = len(payload.get("alerts", [])) if isinstance(payload, dict) else 0
         except (ValueError, TypeError):
             self.send_error(400)
             return
         print(
-            json.dumps({"event": "alert_notification", "alert_count": count}),
+            json.dumps(
+                {"event": "alert_notification", "alert_count": count, "status": status}
+            ),
             flush=True,
         )
         self.send_response(200)

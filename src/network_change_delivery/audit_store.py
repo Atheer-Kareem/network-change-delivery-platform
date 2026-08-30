@@ -79,8 +79,9 @@ class AuditStoreError(ValueError):
 class AuditStore:
     """Append-only content-addressed artifact and audit-record store."""
 
-    def __init__(self, root: Path, *, checkout: Path) -> None:
+    def __init__(self, root: Path, *, checkout: Path, create: bool = True) -> None:
         self.root = self._validate_root(root, checkout)
+        self._create = create
         self._uid = os.getuid()
         metadata = self.root.stat(follow_symlinks=False)
         self._root_identity = (metadata.st_dev, metadata.st_ino)
@@ -244,8 +245,9 @@ class AuditStore:
     def _managed_directory(self, path: Path) -> Path:
         if hasattr(self, "_root_identity"):
             self._validate_root_identity()
-        with suppress(FileExistsError):
-            path.mkdir(mode=0o700)
+        if self._create:
+            with suppress(FileExistsError):
+                path.mkdir(mode=0o700)
         self._validate_managed_directory(path)
         return path
 

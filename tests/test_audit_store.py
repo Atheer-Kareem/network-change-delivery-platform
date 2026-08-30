@@ -227,6 +227,45 @@ def test_managed_directories_and_final_files_are_private(tmp_path: Path) -> None
     assert record_path.stat().st_mode & 0o777 == 0o600
 
 
+def test_create_false_opens_only_an_existing_complete_store(tmp_path: Path) -> None:
+    created = make_store(tmp_path)
+    reopened = AuditStore(created.root, checkout=tmp_path / "checkout", create=False)
+    assert reopened.root == created.root
+    assert (created.root / "artifacts").is_dir()
+    assert (created.root / "records").is_dir()
+
+
+@pytest.mark.parametrize("missing", ["artifacts", "records"])
+def test_create_false_never_creates_a_missing_managed_directory(
+    tmp_path: Path, missing: str
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    root = tmp_path / "audit"
+    root.mkdir(mode=0o700)
+    for name in {"artifacts", "records"} - {missing}:
+        (root / name).mkdir(mode=0o700)
+
+    with pytest.raises(AuditStoreError, match="managed directory"):
+        AuditStore(root, checkout=checkout, create=False)
+
+    assert not (root / missing).exists()
+
+
+def test_create_false_retains_managed_directory_security_checks(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    root = tmp_path / "audit"
+    root.mkdir(mode=0o700)
+    (root / "records").mkdir(mode=0o700)
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    (root / "artifacts").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(AuditStoreError, match="managed directory"):
+        AuditStore(root, checkout=checkout, create=False)
+
+
 def test_intrinsic_artifact_identity_agrees_with_model_digest(tmp_path: Path) -> None:
     store = make_store(tmp_path)
     approved = plan()

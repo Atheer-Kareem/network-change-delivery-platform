@@ -71,6 +71,21 @@ def test_observation_namespace_is_separate_private_and_directly_readable(
     assert not list((store.root / "artifacts").glob("**/configuration_observation*"))
 
 
+def test_create_false_requires_existing_observation_namespace(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    reopened = ConfigurationObservationStore(
+        store.root, checkout=tmp_path / "checkout", create=False
+    )
+    assert reopened.root == store.root
+
+    (store.root / "observation-records").rmdir()
+    with pytest.raises(AuditStoreError, match="managed directory"):
+        ConfigurationObservationStore(
+            store.root, checkout=tmp_path / "checkout", create=False
+        )
+    assert not (store.root / "observation-records").exists()
+
+
 def test_parent_digest_mismatch_and_unknown_target_fail_before_publication(
     tmp_path: Path,
 ) -> None:

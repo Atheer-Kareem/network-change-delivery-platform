@@ -103,7 +103,11 @@ acceptance records.
       a repository-hosted flagship architecture visualization of current
       authority, staging, assurance, delivery, evidence, and observability
       boundaries.
-    - **12D — next:** browser-first demonstration.
-    - **12E — planned:** readiness, reset, and evidence package.
+    - **12D — complete:** a browser-first native-surface audit established the
+      demonstration boundary; a curated safe-surface catalog records primary,
+      supporting, and avoided views; and a minimal foreground, loopback-only
+      viewer presents validated durable audit and metadata-only configuration
+      chronology without becoming a control plane.
+    - **12E — next:** readiness, reset, and evidence package.
     - **12F — planned:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

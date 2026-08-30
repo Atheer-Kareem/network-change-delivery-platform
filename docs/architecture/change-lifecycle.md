@@ -1,8 +1,7 @@
 # Change lifecycle
 
-The lifecycle binds review, execution, and evidence to the same immutable plan
-while treating fleet rollout as a controlled state machine rather than a simple
-device loop.
+The current protected Buildkite lifecycle binds review, execution, and evidence
+to the same immutable single-device plan.
 
 ```mermaid
 flowchart TD
@@ -15,9 +14,8 @@ flowchart TD
   P --> A[Human authorization]
   A --> G[Commit-bound deployment gate]
   G --> F[Fresh pre-write verification]
-  F --> K[Representative canaries]
-  K --> W[Deployment waves]
-  W --> I[Independent post-validation]
+  F --> X[Vendor-aware single-device execution]
+  X --> I[Independent post-validation]
   I --> E[AuditStore and Oxidized evidence]
   E --> M[Continuous monitoring]
   M -->|later problem| D[New reviewed restoration change]
@@ -30,20 +28,28 @@ the protected-delivery group is ineligible on PRs. On non-PR `main` builds,
 first-class Batfish assurance and CML staging can run independently after the
 same barrier, and immutable promotion requires both before human authorization.
 
-Target resolution freezes the complete fleet, including no-op targets, before
-writes. Planning records canonical intent, inventory identity, preconditions,
-vendor-aware operations, validation, and recovery expectations; its canonical
-digest binds the human preview to machine execution. Batfish evidence is bound
-to the exact plan, policy, baseline, derived candidate, and commit. CML staging
-proves the independently disposable two-router runtime and real read-only
-provider paths; it does not apply the proposed live plan.
+The current protected promotion contains one `DeploymentPlan`. Planning records
+canonical intent, inventory identity, preconditions, vendor-aware operations,
+validation, and recovery expectations; its canonical digest binds the human
+preview to machine execution. Batfish evidence is bound to the exact plan,
+policy, baseline, derived candidate, and commit. CML staging proves the
+independently disposable two-router runtime and real read-only provider paths;
+it does not apply the proposed live plan.
 
 Immediately before execution, fresh checks confirm commit, plan, target
 identity, state, support, and still-required work. A stale, changed, missing, or
-unsupported plan stops. One canary per representative platform is validated
-before bounded waves. Each failed wave stops later waves; ambiguous writes are
-not retried and partial outcomes remain explicit. Command success is
-insufficient—independent post-change validation decides deployment success.
+unsupported plan stops. The gate performs one vendor-aware device attempt;
+ambiguous writes are not retried, and command success is insufficient because
+independent post-change validation decides deployment success.
+
+## Fleet engine boundary
+
+Separately, the platform fleet engine accepted through Increment 5C supports
+frozen fleets including no-op targets, representative canaries, bounded waves,
+strict stop gates, honest partial evidence, and final whole-fleet validation.
+The current protected Buildkite path does not promote or execute a fleet plan;
+Buildkite fleet deployment remains unsupported/deferred. Neither the fleet
+engine nor the protected path implies fleet-wide atomicity.
 
 Immediate recovery uses proven vendor-native semantics for the supported
 change. A later regression is handled as a new reviewed desired-state change

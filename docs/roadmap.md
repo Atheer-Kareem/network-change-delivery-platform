@@ -96,8 +96,9 @@ acceptance records.
       plus sanitized typed annotations. The personal validation agent currently
       uses bounded two-worker capacity as a local operational setting, not a
       portable architecture requirement.
-    - **12B — current:** reconcile product, architecture, roadmap, ADR, and
-      cumulative acceptance documents with accepted current truth.
-    - **Later Increment 12 work:** README and architecture visualization,
-      browser-first demonstration, readiness/evidence packaging, operator
-      runbook and rehearsal, and final acceptance remain to come.
+    - **12B — complete:** authoritative product, architecture, roadmap, ADR,
+      and cumulative acceptance documents are reconciled with accepted current
+      truth.
+    - **Next Increment 12 work:** README and flagship architecture
+      visualization, browser-first demonstration, readiness/evidence packaging,
+      operator runbook and rehearsal, and final acceptance remain to come.

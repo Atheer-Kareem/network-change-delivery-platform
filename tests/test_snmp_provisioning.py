@@ -632,6 +632,159 @@ def test_cisco_preflight_rejects_failed_escaped_wrapper(
         adapter.snmp_preflight(device(), DeviceCredentials("u", "p"), value)
 
 
+def junos_preflight_connection(
+    configuration_xml: str, operational_xml: str, calls: list[object]
+) -> SimpleNamespace:
+    class Rpc:
+        def get_config(self, **kwargs):
+            calls.append(("get-config", kwargs))
+            return etree.fromstring(configuration_xml.encode())
+
+        def get_snmp_v3_information(self):
+            calls.append("get-snmp-v3-information")
+            return etree.fromstring(operational_xml.encode())
+
+        def get_snmp_information(self):
+            pytest.fail("SNMP statistics cannot establish the SNMPv3 engine identity")
+
+    return SimpleNamespace(facts={"hostname": "edge-junos-01"}, rpc=Rpc())
+
+
+def test_junos_preflight_uses_structured_snmp_v3_local_engine_identity(
+    monkeypatch,
+) -> None:
+    value = plan("junos", 2)
+    calls: list[object] = []
+    connection = junos_preflight_connection(
+        "<configuration/>",
+        "<snmp-v3-information><snmp-v3-engine-information>"
+        "<engine-id>80 00 00 00 01 02 03 04 05 06</engine-id>"
+        "</snmp-v3-engine-information></snmp-v3-information>",
+        calls,
+    )
+    adapter = JunosPyEZAdapter()
+
+    @contextmanager
+    def session(_device, _credentials):
+        yield connection
+
+    monkeypatch.setattr(adapter, "_session", session)
+    state = adapter.snmp_preflight(
+        device("junos", 2), DeviceCredentials("netconf-user", "netconf-secret"), value
+    )
+    assert state.local_engine_id_present is True
+    assert state.view is SnmpOwnedStateDisposition.ABSENT
+    assert state.group is SnmpOwnedStateDisposition.ABSENT
+    assert state.user is SnmpOwnedStateDisposition.ABSENT
+    assert calls[1] == "get-snmp-v3-information"
+    assert calls[0] == (
+        "get-config",
+        {
+            "filter_xml": junos_snmp_filter(value),
+            "options": {"database": "committed"},
+        },
+    )
+
+
+def test_junos_preflight_reports_missing_structured_local_engine_identity(
+    monkeypatch,
+) -> None:
+    value = plan("junos", 2)
+    connection = junos_preflight_connection(
+        "<configuration/>", "<snmp-v3-information/>", []
+    )
+    adapter = JunosPyEZAdapter()
+
+    @contextmanager
+    def session(_device, _credentials):
+        yield connection
+
+    monkeypatch.setattr(adapter, "_session", session)
+    state = adapter.snmp_preflight(
+        device("junos", 2), DeviceCredentials("netconf-user", "netconf-secret"), value
+    )
+    assert state.local_engine_id_present is False
+
+
+@pytest.mark.parametrize(
+    "operational_xml",
+    [
+        (
+            "<snmp-v3-information><snmp-v3-engine-information>"
+            "<engine-id>not-an-engine-identity</engine-id>"
+            "</snmp-v3-engine-information></snmp-v3-information>"
+        ),
+        (
+            "<snmp-v3-information><snmp-v3-engine-information>"
+            "<engine-id>80000000010203040506</engine-id>"
+            "<engine-id>80000000010203040507</engine-id>"
+            "</snmp-v3-engine-information></snmp-v3-information>"
+        ),
+        (
+            "<snmp-v3-information><snmp-v3-engine-information>"
+            "<engine-id>80000000010203040506</engine-id>"
+            "</snmp-v3-engine-information><snmp-v3-engine-information>"
+            "<engine-id>80000000010203040507</engine-id>"
+            "</snmp-v3-engine-information></snmp-v3-information>"
+        ),
+    ],
+)
+def test_junos_preflight_rejects_malformed_or_ambiguous_engine_response(
+    monkeypatch, operational_xml: str
+) -> None:
+    value = plan("junos", 2)
+    connection = junos_preflight_connection("<configuration/>", operational_xml, [])
+    adapter = JunosPyEZAdapter()
+
+    @contextmanager
+    def session(_device, _credentials):
+        yield connection
+
+    monkeypatch.setattr(adapter, "_session", session)
+    with pytest.raises(ProviderError) as caught:
+        adapter.snmp_preflight(
+            device("junos", 2),
+            DeviceCredentials("netconf-user", "netconf-secret"),
+            value,
+        )
+    assert str(caught.value) == "Junos SNMPv3 engine response rejected"
+    assert "800000000102030405" not in str(caught.value)
+
+
+def test_junos_preflight_keeps_owned_state_on_committed_configuration(
+    monkeypatch,
+) -> None:
+    value = plan("junos", 2)
+    artifact = render_junos_provisioning(
+        value, SnmpProvisioningCredentials(snmp_username(2), AUTH, PRIV)
+    )
+    calls: list[object] = []
+    connection = junos_preflight_connection(
+        artifact.payload,
+        "<snmp-v3-information><snmp-v3-engine-information>"
+        "<engine-id>80 00 00 00 01 02 03 04 05 06</engine-id>"
+        "</snmp-v3-engine-information></snmp-v3-information>",
+        calls,
+    )
+    adapter = JunosPyEZAdapter()
+
+    @contextmanager
+    def session(_device, _credentials):
+        yield connection
+
+    monkeypatch.setattr(adapter, "_session", session)
+    state = adapter.snmp_preflight(
+        device("junos", 2), DeviceCredentials("netconf-user", "netconf-secret"), value
+    )
+    assert state.view is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
+    assert state.group is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
+    assert state.user is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
+    serialized = state.model_dump_json()
+    assert AUTH not in serialized
+    assert PRIV not in serialized
+    assert "80 00 00 00 01 02 03 04 05 06" not in serialized
+
+
 def test_junos_adapter_loads_checks_and_commits_confirmed_exactly_once(
     monkeypatch,
 ) -> None:

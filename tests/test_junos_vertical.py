@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +15,7 @@ from jnpr.junos.exception import RpcError, RpcTimeoutError
 from pydantic import ValidationError
 
 import network_change_delivery.junos_adapter as junos_module
-from network_change_delivery.ansible_adapter import ProviderError
+from network_change_delivery.ansible_adapter import HostTrustError, ProviderError
 from network_change_delivery.inventory import NetBoxInventoryProvider
 from network_change_delivery.junos_adapter import (
     JunosPyEZAdapter,
@@ -278,6 +280,178 @@ def test_pyez_session_disables_auth_and_proxy_fallback(monkeypatch) -> None:
     assert options["ssh_private_key_file"] is None
     assert options["proxy_command"] is None
     assert Path(str(options["ssh_config"])).name == "config"
+
+
+def host_key(seed: bytes = b"trusted-junos-host-public-key") -> str:
+    return base64.b64encode(seed).decode()
+
+
+def use_python_endpoint_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    def lookup(target: InventoryDevice, path: Path | None = None) -> str:
+        assert path is not None
+        query = target.host if target.port == 22 else f"[{target.host}]:{target.port}"
+        for line in path.read_text(encoding="ascii").splitlines():
+            fields = line.split()
+            if len(fields) == 3 and fields[0] == query:
+                return "trusted"
+        raise HostTrustError("trusted host key is absent")
+
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", lookup)
+
+
+def test_existing_port_qualified_trust_is_used_without_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_python_endpoint_lookup(monkeypatch)
+    trusted = tmp_path / "staging" / "known_hosts"
+    trusted.parent.mkdir()
+    trusted.write_text(
+        f"192.0.2.20 ssh-ed25519 {host_key()}\n"
+        f"[192.0.2.20]:830 ssh-ed25519 {host_key()}\n",
+        encoding="ascii",
+    )
+    trusted.chmod(0o600)
+    original = trusted.read_bytes()
+    captured: dict[str, object] = {}
+
+    def factory(**kwargs: object) -> FakeConnection:
+        config = Path(str(kwargs["ssh_config"])).read_text(encoding="utf-8")
+        captured["config"] = config
+        captured["temporary_files"] = tuple(
+            path.name for path in Path(str(kwargs["ssh_config"])).parent.iterdir()
+        )
+        return FakeConnection()
+
+    JunosPyEZAdapter(device_factory=factory, known_hosts=trusted).discover(
+        device(), DeviceCredentials(username="u", password="p")
+    )
+    assert f"UserKnownHostsFile {trusted}" in str(captured["config"])
+    assert captured["temporary_files"] == ("config",)
+    assert trusted.read_bytes() == original
+
+
+def test_unqualified_private_trust_is_projected_for_netconf_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_python_endpoint_lookup(monkeypatch)
+    trusted = tmp_path / "persistent" / "known_hosts"
+    trusted.parent.mkdir()
+    encoded = host_key()
+    source_line = f"192.0.2.20 ssh-ed25519 {encoded}\n"
+    trusted.write_text(source_line, encoding="ascii")
+    trusted.chmod(0o600)
+    original = trusted.read_bytes()
+    captured: dict[str, object] = {}
+
+    def factory(**kwargs: object) -> FakeConnection:
+        config_path = Path(str(kwargs["ssh_config"]))
+        config = config_path.read_text(encoding="utf-8")
+        projected_line = next(
+            line for line in config.splitlines() if "UserKnownHostsFile" in line
+        )
+        projected = Path(projected_line.split(maxsplit=1)[1])
+        captured.update(
+            {
+                "config": config,
+                "projected": projected,
+                "content": projected.read_text(encoding="ascii"),
+                "mode": stat.S_IMODE(projected.stat().st_mode),
+                "hostkey_verify": kwargs["hostkey_verify"],
+                "look_for_keys": kwargs["look_for_keys"],
+                "allow_agent": kwargs["allow_agent"],
+                "proxy_command": kwargs["proxy_command"],
+            }
+        )
+        return FakeConnection()
+
+    JunosPyEZAdapter(device_factory=factory, known_hosts=trusted).discover(
+        device(), DeviceCredentials(username="u", password="p")
+    )
+    assert captured["content"] == f"[192.0.2.20]:830 ssh-ed25519 {encoded}\n"
+    assert captured["mode"] == 0o600
+    assert "StrictHostKeyChecking yes" in str(captured["config"])
+    assert captured["hostkey_verify"] is True
+    assert captured["look_for_keys"] is False
+    assert captured["allow_agent"] is False
+    assert captured["proxy_command"] is None
+    assert trusted.read_bytes() == original
+    assert not Path(str(captured["projected"])).exists()
+
+
+def test_netconf_projection_rejects_missing_base_trust(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_python_endpoint_lookup(monkeypatch)
+    trusted = tmp_path / "private" / "known_hosts"
+    trusted.parent.mkdir()
+    trusted.write_text(f"192.0.2.99 ssh-ed25519 {host_key()}\n", encoding="ascii")
+    trusted.chmod(0o600)
+    adapter = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: pytest.fail(
+            "connection must not be attempted"
+        ),
+        known_hosts=trusted,
+    )
+    with pytest.raises(HostTrustError, match="base host key is absent"):
+        adapter.discover(device(), DeviceCredentials(username="u", password="p"))
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        (
+            f"192.0.2.20 ssh-ed25519 {host_key(b'first-trusted-host-key')}\n"
+            f"192.0.2.20 ssh-rsa {host_key(b'second-trusted-host-key')}\n"
+        ),
+        "192.0.2.20 ssh-ed25519 not-base64!\n",
+        f"192.0.2.20 ssh-dss {host_key()}\n",
+    ],
+)
+def test_netconf_projection_rejects_ambiguous_or_malformed_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
+) -> None:
+    use_python_endpoint_lookup(monkeypatch)
+    trusted = tmp_path / "private" / "known_hosts"
+    trusted.parent.mkdir()
+    trusted.write_text(content, encoding="ascii")
+    trusted.chmod(0o600)
+    adapter = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: pytest.fail(
+            "connection must not be attempted"
+        ),
+        known_hosts=trusted,
+    )
+    with pytest.raises(HostTrustError):
+        adapter.discover(device(), DeviceCredentials(username="u", password="p"))
+
+
+def test_projected_endpoint_lookup_failure_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trusted = tmp_path / "persistent" / "known_hosts"
+    trusted.parent.mkdir()
+    trusted.write_text(f"192.0.2.20 ssh-ed25519 {host_key()}\n", encoding="ascii")
+    trusted.chmod(0o600)
+    checked: list[Path] = []
+
+    def reject(_device: InventoryDevice, path: Path | None = None) -> str:
+        assert path is not None
+        checked.append(path)
+        raise HostTrustError("trusted host key is absent")
+
+    monkeypatch.setattr(junos_module, "verify_existing_host_trust", reject)
+    adapter = JunosPyEZAdapter(
+        device_factory=lambda **_kwargs: pytest.fail(
+            "connection must not be attempted"
+        ),
+        known_hosts=trusted,
+    )
+    with pytest.raises(HostTrustError):
+        adapter.discover(device(), DeviceCredentials(username="u", password="p"))
+    assert checked[0] == trusted
+    assert checked[1].name == "known_hosts"
+    assert checked[1] != trusted
+    assert not checked[1].exists()
 
 
 def test_junos_collection_normalizes_committed_interface_state(monkeypatch) -> None:

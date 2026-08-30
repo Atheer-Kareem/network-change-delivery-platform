@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import os
+import re
+import stat
 import tempfile
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
@@ -22,6 +26,7 @@ from jnpr.junos.utils.config import Config
 from lxml import etree
 
 from network_change_delivery.ansible_adapter import (
+    HostTrustError,
     ProviderError,
     verify_existing_host_trust,
 )
@@ -62,6 +67,137 @@ def _interface_filter(interface: str | None = None) -> str:
         item = ElementTree.SubElement(interfaces, "interface")
         ElementTree.SubElement(item, "name").text = interface
     return ElementTree.tostring(root, encoding="unicode")
+
+
+_PROJECTABLE_HOST_KEY_ALGORITHMS = frozenset(
+    {"ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"}
+)
+_MAX_PRIVATE_KNOWN_HOSTS_BYTES = 64 * 1024
+_MAX_HOST_KEY_BYTES = 16 * 1024
+_JUNOS_SNMP_ENGINE_ID = re.compile(r"(?:0x)?([0-9A-Fa-f]{10,64})")
+_JUNOS_SNMP_ENGINE_ID_OCTETS = re.compile(r"([0-9A-Fa-f]{2}(?: [0-9A-Fa-f]{2}){4,31})")
+
+
+def _project_junos_endpoint_trust(
+    device: InventoryDevice, source: Path, directory: Path
+) -> Path:
+    """Project one already-trusted host key onto a run-scoped NETCONF endpoint."""
+    if device.port == 22:
+        raise HostTrustError("trusted endpoint key is absent")
+    descriptor = -1
+    try:
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or metadata.st_mode & 0o077
+            or metadata.st_nlink != 1
+            or metadata.st_size < 1
+            or metadata.st_size > _MAX_PRIVATE_KNOWN_HOSTS_BYTES
+        ):
+            raise HostTrustError("trusted host key source is invalid")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            content = stream.read(_MAX_PRIVATE_KNOWN_HOSTS_BYTES + 1)
+    except HostTrustError:
+        raise
+    except OSError:
+        raise HostTrustError("trusted host key source is invalid") from None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(content) > _MAX_PRIVATE_KNOWN_HOSTS_BYTES:
+        raise HostTrustError("trusted host key source is invalid")
+    try:
+        source_lines = content.decode("ascii").splitlines()
+    except UnicodeDecodeError:
+        raise HostTrustError("trusted host key source is invalid") from None
+    lines = []
+    for line in source_lines:
+        candidate = line.split()
+        if (
+            candidate
+            and not candidate[0].startswith("#")
+            and candidate[0] == device.host
+        ):
+            lines.append(line)
+    if not lines:
+        raise HostTrustError("trusted base host key is absent")
+    if len(lines) != 1:
+        raise HostTrustError("trusted base host key is ambiguous")
+    fields = lines[0].split()
+    if (
+        len(fields) != 3
+        or fields[0] != device.host
+        or fields[1] not in _PROJECTABLE_HOST_KEY_ALGORITHMS
+    ):
+        raise HostTrustError("trusted base host key is invalid")
+    try:
+        key_bytes = base64.b64decode(fields[2], validate=True)
+    except ValueError:
+        raise HostTrustError("trusted base host key is invalid") from None
+    if not 16 <= len(key_bytes) <= _MAX_HOST_KEY_BYTES:
+        raise HostTrustError("trusted base host key is invalid")
+    projected = directory / "known_hosts"
+    line = f"[{device.host}]:{device.port} {fields[1]} {fields[2]}\n"
+    try:
+        descriptor = os.open(
+            projected,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        with os.fdopen(descriptor, "w", encoding="ascii", newline="") as stream:
+            stream.write(line)
+        projected.chmod(0o600)
+        verify_existing_host_trust(device, projected)
+    except HostTrustError:
+        raise
+    except (OSError, UnicodeError):
+        raise HostTrustError("projected endpoint host trust is invalid") from None
+    return projected
+
+
+def _junos_session_known_hosts(
+    device: InventoryDevice, source: Path, directory: Path
+) -> Path:
+    """Prefer exact endpoint trust and otherwise project one private base key."""
+    try:
+        verify_existing_host_trust(device, source)
+    except HostTrustError:
+        return _project_junos_endpoint_trust(device, source, directory)
+    return source
+
+
+def _junos_local_engine_id_present(operational: Any) -> bool:
+    """Reduce one structured SNMPv3 local engine identity to a boolean."""
+    try:
+        containers = [
+            element
+            for element in operational.iter()
+            if _local_name(str(element.tag)) == "snmp-v3-engine-information"
+        ]
+    except (AttributeError, TypeError):
+        raise ProviderError("Junos SNMPv3 engine response rejected") from None
+    if not containers:
+        return False
+    if len(containers) != 1:
+        raise ProviderError("Junos SNMPv3 engine response rejected")
+    candidates = [
+        element
+        for element in containers[0]
+        if _local_name(str(element.tag)) == "engine-id"
+    ]
+    if not candidates:
+        return False
+    if len(candidates) != 1 or not isinstance(candidates[0].text, str):
+        raise ProviderError("Junos SNMPv3 engine response rejected")
+    value = candidates[0].text.strip()
+    match = _JUNOS_SNMP_ENGINE_ID.fullmatch(value)
+    octets = _JUNOS_SNMP_ENGINE_ID_OCTETS.fullmatch(value)
+    if (match is None or len(match.group(1)) % 2) and octets is None:
+        raise ProviderError("Junos SNMPv3 engine response rejected")
+    return True
 
 
 def _configured_ipv4_addresses(interface: Any) -> tuple[str, ...]:
@@ -306,17 +442,21 @@ class JunosPyEZAdapter:
     def _session(self, device: InventoryDevice, credentials: DeviceCredentials) -> Any:
         if device.platform != "junos" or device.port != 830:
             raise ProviderError("Junos requires the approved NETCONF port 830")
-        if self._known_hosts is None:
-            verify_existing_host_trust(device)
-        else:
-            verify_existing_host_trust(device, self._known_hosts)
         with tempfile.TemporaryDirectory(prefix="ncdp-junos-ssh-") as directory:
+            session_directory = Path(directory)
+            if self._known_hosts is None:
+                verify_existing_host_trust(device)
+                session_known_hosts: Path | None = None
+            else:
+                session_known_hosts = _junos_session_known_hosts(
+                    device, self._known_hosts, session_directory
+                )
             ssh_config = Path(directory) / "config"
             config = "Host *\n  ProxyCommand none\n"
-            if self._known_hosts is not None:
+            if session_known_hosts is not None:
                 config += (
                     "  StrictHostKeyChecking yes\n"
-                    f"  UserKnownHostsFile {self._known_hosts}\n"
+                    f"  UserKnownHostsFile {session_known_hosts}\n"
                 )
             ssh_config.write_text(config, encoding="utf-8")
             ssh_config.chmod(0o600)
@@ -529,19 +669,15 @@ class JunosPyEZAdapter:
                     filter_xml=junos_snmp_filter(plan),
                     options={"database": "committed"},
                 )
-                operational = connection.rpc.get_snmp_information()
+                operational = connection.rpc.get_snmp_v3_information()
+                engine_present = _junos_local_engine_id_present(operational)
+                del operational
         except ProviderError:
             raise
         except Exception:
             raise ProviderError("Junos SNMP targeted preflight failed") from None
-        if not hostname or configuration is None or operational is None:
+        if not hostname or configuration is None:
             raise ProviderError("Junos SNMP preflight result rejected")
-        engine_present = any(
-            "engine-id" in _local_name(str(element.tag))
-            and isinstance(element.text, str)
-            and bool(element.text.strip())
-            for element in operational.iter()
-        )
         try:
             configuration_xml = etree.tostring(configuration, encoding="unicode")
         except (TypeError, ValueError):

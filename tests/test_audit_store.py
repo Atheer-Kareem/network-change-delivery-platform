@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from test_snmp_protected_deployment import snmp_plan
 
 import network_change_delivery.audit_store as audit_store_module
 from network_change_delivery.audit import (
@@ -28,12 +29,20 @@ from network_change_delivery.audit_store import (
 )
 from network_change_delivery.ephemeral_staging import StagingEvidence
 from network_change_delivery.models import (
+    ChangeRecord,
     DesiredDescription,
+    FinalOutcome,
     InterfaceDescriptionIntent,
     InterfaceState,
     InventoryDevice,
+    StageResult,
 )
 from network_change_delivery.secrets import CredentialReference
+from network_change_delivery.snmp_provisioning import (
+    SnmpProvisioningOutcome,
+    SnmpProvisioningRecord,
+    SnmpProvisioningStage,
+)
 from network_change_delivery.workflow import build_plan
 
 RECORD_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -102,6 +111,66 @@ def record(reference: AuditArtifactReference, **changes: object):
     return audit_record_with_digest(**values)
 
 
+def snmp_record(
+    outcome: SnmpProvisioningOutcome = SnmpProvisioningOutcome.SUCCEEDED,
+) -> SnmpProvisioningRecord:
+    approved = snmp_plan()
+    completed = SnmpProvisioningStage(
+        attempted=True, succeeded=True, message="bounded test stage"
+    )
+    skipped = SnmpProvisioningStage(message="not required")
+    return SnmpProvisioningRecord(
+        generated_at=datetime(2026, 8, 29, tzinfo=UTC),
+        change_id=approved.change_id,
+        plan_digest=approved.digest,
+        approval_digest=approved.digest,
+        device=approved.inventory_object_id,
+        platform=approved.platform,
+        generation=approved.generation,
+        username=approved.username,
+        credential_reference=approved.snmp_credential.reference,
+        view_name=approved.view_name,
+        group_name=approved.group_name,
+        oid_closure_digest=approved.oid_closure_digest,
+        preflight=completed,
+        execution=completed,
+        post_validation=completed,
+        recovery=skipped,
+        final_outcome=outcome,
+    )
+
+
+def change_record() -> ChangeRecord:
+    approved = plan()
+    stage = StageResult(message="bounded", attempted=False)
+    return ChangeRecord(
+        generated_at=datetime(2026, 8, 27, tzinfo=UTC),
+        change_id=approved.change_id,
+        plan_digest=approved.digest,
+        target=approved.target,
+        inventory_source=approved.inventory_source,
+        inventory_object_id=approved.inventory_object_id,
+        inventory_interface_object_id=approved.inventory_interface_object_id,
+        credential_source=approved.credential_source,
+        credential_reference=approved.credential_reference,
+        host=approved.host,
+        port=approved.port,
+        expected_hostname=approved.expected_hostname,
+        platform=approved.platform,
+        interface=approved.interface,
+        previous_description=approved.current_description,
+        desired_description=approved.desired_description,
+        approval_digest=approved.digest,
+        preflight=stage,
+        execution=stage,
+        post_validation=stage,
+        recovery=stage,
+        transaction_strategy=approved.transaction_strategy,
+        final_outcome=FinalOutcome.SUCCEEDED,
+        provider="bounded-test",
+    )
+
+
 def test_root_must_be_absolute_private_owned_and_outside_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -164,6 +233,54 @@ def test_intrinsic_artifact_identity_agrees_with_model_digest(tmp_path: Path) ->
     reference = store.persist_artifact(AuditArtifactKind.DEPLOYMENT_PLAN, approved)
     assert reference.sha256 == approved.digest
     assert store.read_artifact(reference) == approved
+
+
+def test_snmp_plan_and_record_round_trip_under_exact_artifact_kinds(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path)
+    approved = snmp_plan()
+    plan_reference = store.persist_artifact(
+        AuditArtifactKind.SNMP_PROVISIONING_PLAN, approved
+    )
+    assert plan_reference.sha256 == approved.digest
+    assert store.read_artifact(plan_reference) == approved
+
+    evidence = snmp_record()
+    record_reference = store.persist_artifact(
+        AuditArtifactKind.SNMP_PROVISIONING_RECORD, evidence
+    )
+    expected = canonical_json_bytes(evidence.model_dump(mode="json"))
+    assert record_reference.sha256 == sha256_identity(expected)
+    assert store.read_artifact(record_reference) == evidence
+    serialized = expected.decode().casefold()
+    for forbidden in (
+        "authentication_secret",
+        "privacy_secret",
+        "password",
+        "localized",
+    ):
+        assert forbidden not in serialized
+
+
+def test_existing_deployment_plan_and_change_record_round_trip_unchanged(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path)
+    approved = plan()
+    plan_reference = store.persist_artifact(AuditArtifactKind.DEPLOYMENT_PLAN, approved)
+    assert plan_reference.sha256 == approved.digest
+    assert store.read_artifact(plan_reference) == approved
+    evidence = change_record()
+    record_reference = store.persist_artifact(AuditArtifactKind.CHANGE_RECORD, evidence)
+    assert store.read_artifact(record_reference) == evidence
+
+
+def test_snmp_plan_intrinsic_digest_is_enforced(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    tampered = snmp_plan().model_copy(update={"digest": "sha256:" + "0" * 64})
+    with pytest.raises(AuditStoreError, match="intrinsic audit artifact digest"):
+        store.persist_artifact(AuditArtifactKind.SNMP_PROVISIONING_PLAN, tampered)
 
 
 def test_nonintrinsic_artifact_hashes_complete_canonical_json(tmp_path: Path) -> None:
@@ -369,5 +486,11 @@ def test_artifact_kind_cannot_be_used_as_a_generic_payload_label(
     store = make_store(tmp_path)
     with pytest.raises(AuditStoreError, match="kind and schema"):
         store.persist_artifact(AuditArtifactKind.CHANGE_RECORD, plan())
+    with pytest.raises(AuditStoreError, match="kind and schema"):
+        store.persist_artifact(AuditArtifactKind.DEPLOYMENT_PLAN, snmp_plan())
+    with pytest.raises(AuditStoreError, match="kind and schema"):
+        store.persist_artifact(AuditArtifactKind.SNMP_PROVISIONING_PLAN, plan())
+    with pytest.raises(AuditStoreError, match="kind and schema"):
+        store.persist_artifact(AuditArtifactKind.CHANGE_RECORD, snmp_record())
     with pytest.raises(AuditStoreError, match="unsupported"):
         store.persist_artifact("arbitrary_json", plan())  # type: ignore[arg-type]

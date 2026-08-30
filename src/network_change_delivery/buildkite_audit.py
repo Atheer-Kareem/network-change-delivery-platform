@@ -370,7 +370,11 @@ def persist_buildkite_audit(
 
     references = [
         store.persist_artifact(
-            AuditArtifactKind.DEPLOYMENT_PLAN,
+            (
+                AuditArtifactKind.SNMP_PROVISIONING_PLAN
+                if isinstance(plan, SnmpProvisioningPlan)
+                else AuditArtifactKind.DEPLOYMENT_PLAN
+            ),
             plan,
         ),
         store.persist_artifact(AuditArtifactKind.PLAN_ASSURANCE_RECORD, assurance),
@@ -382,7 +386,11 @@ def persist_buildkite_audit(
     if record is not None:
         references.append(
             store.persist_artifact(
-                AuditArtifactKind.CHANGE_RECORD,
+                (
+                    AuditArtifactKind.SNMP_PROVISIONING_RECORD
+                    if isinstance(record, SnmpProvisioningRecord)
+                    else AuditArtifactKind.CHANGE_RECORD
+                ),
                 record,
             )
         )

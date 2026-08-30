@@ -9,13 +9,19 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-from test_audit_store import plan
+from test_audit_store import plan, snmp_record
 from test_promotion import _record as assurance_record
+from test_snmp_protected_deployment import snmp_plan
 
 import network_change_delivery.buildkite_audit as audit_module
-from network_change_delivery.audit import AuditArtifactReference, AuditFinalOutcome
+from network_change_delivery.audit import (
+    AuditArtifactKind,
+    AuditArtifactReference,
+    AuditFinalOutcome,
+)
 from network_change_delivery.buildkite_audit import (
     FINAL_OUTCOME_MAP,
+    SNMP_FINAL_OUTCOME_MAP,
     BuildkiteAuditError,
     normalize_buildkite_repository,
     persist_buildkite_audit,
@@ -25,6 +31,7 @@ from network_change_delivery.buildkite_audit import (
 from network_change_delivery.buildkite_policy import BuildkiteDeploymentContext
 from network_change_delivery.ephemeral_staging import StagingEvidence
 from network_change_delivery.models import ChangeRecord, FinalOutcome, StageResult
+from network_change_delivery.snmp_provisioning import SnmpProvisioningOutcome
 
 PIPELINE_ID = "11111111-1111-4111-8111-111111111111"
 BUILD_ID = "22222222-2222-4222-8222-222222222222"
@@ -155,6 +162,77 @@ def test_missing_change_record_cannot_be_called_no_write_when_request_exists(
             staging_evidence_path=evidence_path,
             checkout=tmp_path,
         )
+
+
+@pytest.mark.parametrize(
+    ("typed_outcome", "audit_outcome"),
+    [
+        (SnmpProvisioningOutcome.AMBIGUOUS, AuditFinalOutcome.AMBIGUOUS),
+        (SnmpProvisioningOutcome.SUCCEEDED, AuditFinalOutcome.SUCCEEDED),
+    ],
+)
+def test_snmp_attempt_persists_exact_plan_record_and_credential_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    typed_outcome: SnmpProvisioningOutcome,
+    audit_outcome: AuditFinalOutcome,
+) -> None:
+    approved = snmp_plan()
+    evidence = snmp_record(typed_outcome)
+    monkeypatch.setattr(
+        audit_module,
+        "load_verified_promotion_artifacts",
+        lambda *_args: (SimpleNamespace(), approved, SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "load_live_deployment_request_at_commit",
+        lambda *_args, **_kwargs: SimpleNamespace(verify_plan=lambda _plan: None),
+    )
+    staging_path = tmp_path / "staging.json"
+    write_staging(staging_path, staging())
+    record_path = tmp_path / "snmp-record.json"
+    record_path.write_text(evidence.model_dump_json(), encoding="utf-8")
+    store = FakeStore()
+    _record_id, _digest, outcome = persist_buildkite_audit(
+        store=store,
+        context=context(),
+        repository="https://github.com/owner/repo.git",
+        promotion=tmp_path,
+        staging_evidence_path=staging_path,
+        checkout=tmp_path,
+        change_record_path=record_path,
+        now=datetime(2026, 8, 29, tzinfo=UTC),
+    )
+    assert outcome is audit_outcome
+    assert SNMP_FINAL_OUTCOME_MAP[typed_outcome] is audit_outcome
+    assert store.kinds == [
+        AuditArtifactKind.SNMP_PROVISIONING_PLAN,
+        AuditArtifactKind.PLAN_ASSURANCE_RECORD,
+        AuditArtifactKind.DEPLOYMENT_PROMOTION_MANIFEST,
+        AuditArtifactKind.STAGING_EVIDENCE,
+        AuditArtifactKind.SNMP_PROVISIONING_RECORD,
+    ]
+    assert [(target.device, target.interface) for target in store.record.targets] == [
+        (approved.inventory_object_id, None)
+    ]
+    assert [
+        (item.device, item.source, item.reference) for item in store.record.credentials
+    ] == [
+        (
+            approved.inventory_object_id,
+            "openbao",
+            approved.connection_credential_reference,
+        ),
+        (
+            approved.inventory_object_id,
+            "openbao_snmp",
+            approved.snmp_credential.reference,
+        ),
+    ]
+    serialized = store.record.model_dump_json().casefold()
+    for forbidden in ("authentication_secret", "privacy_secret", "password"):
+        assert forbidden not in serialized
 
 
 @pytest.mark.parametrize(

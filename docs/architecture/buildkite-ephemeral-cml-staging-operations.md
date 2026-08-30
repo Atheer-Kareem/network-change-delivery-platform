@@ -14,7 +14,10 @@ agent-owned command hook outside all checkouts. It admits only the exact staging
 step, queue, and repository command and rejects a pull request whose source
 repository differs from the canonical pipeline repository. This external hook
 is essential: pipeline OIDC identity does not make PR-controlled code trusted.
-Fork PRs retain unprivileged quality coverage but cannot use staging credentials.
+Fork PRs retain unprivileged validation and Batfish coverage but cannot use
+staging credentials. A runtime-affecting fork PR therefore cannot satisfy the
+trusted CML merge gate directly; a maintainer must reproduce or adopt its commit
+in the canonical repository and obtain a new trusted run.
 
 An agent-owned `staging.env` file supplies, outside pipeline YAML:
 
@@ -76,6 +79,14 @@ only `staging-evidence/staging-run.json`. The authoritative state machine remain
 `network_change_delivery.ephemeral_staging.run_staging_lifecycle`; Buildkite log
 presentation does not split lifecycle or cleanup ownership across jobs.
 
+For runtime-relevant pull requests, `cml-staging` explicitly waits for both
+`validation-complete` and successful `pr-batfish-assurance`. This orders the
+cheaper offline candidate-model check before CML resource creation. On main the
+PR-only Batfish dependency is skipped and satisfied, so CML still fans out in
+parallel with the protected-main `batfish-assurance` branch. The staging key,
+queue, trusted hook, workload identity, concurrency, and retry rules are
+unchanged.
+
 Expanded log groups identify admission/authority, Terraform create, topology
 and stored Day-0 verification, lab start, device readiness, strict host trust,
 Cisco and Junos read-only NCDP validation, Terraform destroy, independent
@@ -83,7 +94,9 @@ absence verification, run-scoped state retirement, and final result. Readiness
 emits low-volume progress using the existing ARP, ICMP, TCP/22, and TCP/830
 criteria, ten-second polling, and 1,200-second operational timeout. Cisco and
 Junos phases are explicitly labelled `READ-ONLY`; neither invokes a device
-write.
+write. Staging does not apply the proposed live candidate configuration; it
+proves real-vendor topology, readiness, trust, and read-only NCDP provider
+integration complementary to Batfish's offline candidate assurance.
 
 Each realization gets a run-scoped `known_hosts` file for exact
 `192.168.4.30` and `192.168.4.40` trust. NetBox device 1/2 primary addresses

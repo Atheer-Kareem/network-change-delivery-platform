@@ -46,6 +46,7 @@ def test_pipeline_contract() -> None:
         "buildkite-definition",
         "ncdp-pipeline-contract",
         "validation-complete",
+        "pr-batfish-assurance",
         "cml-staging",
         "protected-delivery",
     }
@@ -192,14 +193,40 @@ def test_pipeline_contract() -> None:
     ordered_keys = [step["key"] for step in pipeline["steps"]]
     barrier = steps["validation-complete"]
     assert barrier == {"wait": None, "key": "validation-complete"}
-    assert ordered_keys.index("validation-complete") < ordered_keys.index("cml-staging")
+    assert (
+        ordered_keys.index("validation-complete")
+        < ordered_keys.index("pr-batfish-assurance")
+        < ordered_keys.index("cml-staging")
+    )
+
+    pr_batfish = steps["pr-batfish-assurance"]
+    assert pr_batfish["label"] == ":fish: PR Batfish candidate assurance"
+    assert pr_batfish["depends_on"] == "validation-complete"
+    assert pr_batfish["if"] == "build.pull_request.id != null"
+    assert pr_batfish["command"] == ".buildkite/scripts/batfish_assurance.sh"
+    assert pr_batfish["agents"]["queue"] == "ncdp-validation"
+    assert pr_batfish["concurrency"] == 1
+    assert pr_batfish["concurrency_group"] == "ncdp/batfish-assurance"
+    assert pr_batfish["retry"] == {
+        "automatic": False,
+        "manual": {
+            "allowed": False,
+            "reason": (
+                "A fresh commit and build are required after assurance failure."
+            ),
+        },
+    }
+    assert pr_batfish["if_changed"] == RUNTIME_CHANGE_CONDITION
 
     staging = steps["cml-staging"]
     assert staging["label"] == (
         ":cloud: Ephemeral CML staging · create → validate → destroy"
     )
     assert staging["agents"]["queue"] == "ncdp-staging"
-    assert "depends_on" not in staging
+    assert staging["depends_on"] == [
+        "validation-complete",
+        "pr-batfish-assurance",
+    ]
     assert staging["command"] == "scripts/buildkite/ephemeral_staging.sh"
     assert staging["concurrency"] == 1
     assert staging["concurrency_group"] == "ncdp/cml-ephemeral-staging"
@@ -233,6 +260,7 @@ def test_pipeline_contract() -> None:
         },
     }
     assert "depends_on" not in batfish
+    assert "pr-batfish-assurance" not in {step["key"] for step in protected["steps"]}
     assert steps["promotion"]["agents"]["queue"] == "ncdp-validation"
     assert "concurrency" not in steps["promotion"]
     assert "concurrency_group" not in steps["promotion"]
@@ -285,6 +313,7 @@ def test_pr_and_main_conditions() -> None:
     assert 'build.branch == "main"' in protected["if"]
     assert "build.pull_request.id == null" in protected["if"]
     assert "if" not in steps["cml-staging"]
+    assert steps["pr-batfish-assurance"]["if"] == ("build.pull_request.id != null")
     for key in (
         "batfish-assurance",
         "promotion",
@@ -294,10 +323,122 @@ def test_pr_and_main_conditions() -> None:
         assert "if" not in steps[key]
 
 
+def test_commit_verifier_accepts_only_an_exact_clean_pr_assurance_checkout(
+    tmp_path: Path,
+) -> None:
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("Git is not installed in this test environment")
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run([git, "init", "-q"], cwd=repository, check=True)
+    subprocess.run(
+        [git, "config", "user.email", "ncdp-test@example.invalid"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        [git, "config", "user.name", "NCDP Test"], cwd=repository, check=True
+    )
+    (repository / "reviewed.txt").write_text("reviewed\n")
+    subprocess.run([git, "add", "reviewed.txt"], cwd=repository, check=True)
+    subprocess.run([git, "commit", "-qm", "reviewed"], cwd=repository, check=True)
+    commit = subprocess.run(
+        [git, "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    environment = {
+        **os.environ,
+        "BUILDKITE_BRANCH": "feature/network-assurance",
+        "BUILDKITE_COMMIT": commit,
+        "BUILDKITE_PULL_REQUEST": "108",
+        "BUILDKITE_STEP_KEY": "pr-batfish-assurance",
+    }
+
+    accepted = subprocess.run(
+        [str(ROOT / "scripts/buildkite/verify_commit.sh")],
+        cwd=repository,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert accepted.returncode == 0
+    assert accepted.stdout == f"commit binding verified: {commit}\n"
+
+    wrong_commit = subprocess.run(
+        [str(ROOT / "scripts/buildkite/verify_commit.sh")],
+        cwd=repository,
+        env={**environment, "BUILDKITE_COMMIT": "f" * 40},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert wrong_commit.returncode == 2
+    assert wrong_commit.stderr == "checkout does not match Buildkite commit\n"
+
+    not_a_pr = subprocess.run(
+        [str(ROOT / "scripts/buildkite/verify_commit.sh")],
+        cwd=repository,
+        env={**environment, "BUILDKITE_PULL_REQUEST": "false"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert not_a_pr.returncode == 2
+    assert not_a_pr.stderr == "PR assurance requires a pull request build\n"
+
+    (repository / "untracked.txt").write_text("not reviewed\n")
+    rejected = subprocess.run(
+        [str(ROOT / "scripts/buildkite/verify_commit.sh")],
+        cwd=repository,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rejected.returncode == 2
+    assert rejected.stderr == "non-ignored untracked files present\n"
+
+
+@pytest.mark.parametrize(
+    ("step_key", "queue", "retry", "message"),
+    [
+        ("unreviewed-step", "ncdp-validation", "0", "execution context"),
+        ("pr-batfish-assurance", "ncdp-deploy", "0", "queue"),
+        ("batfish-assurance", "ncdp-validation", "1", "Retried"),
+    ],
+)
+def test_batfish_wrapper_rejects_unapproved_execution_context_before_runtime(
+    step_key: str, queue: str, retry: str, message: str
+) -> None:
+    result = subprocess.run(
+        [str(ROOT / ".buildkite/scripts/batfish_assurance.sh")],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "BUILDKITE_STEP_KEY": step_key,
+            "BUILDKITE_AGENT_META_DATA_QUEUE": queue,
+            "BUILDKITE_RETRY_COUNT": retry,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert message in result.stderr
+    assert result.stdout == ""
+
+
 def test_live_paths_use_fail_closed_allowlist() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
     steps = _steps_by_key(pipeline)
     assert steps["cml-staging"]["if_changed"] == RUNTIME_CHANGE_CONDITION
+    assert steps["pr-batfish-assurance"]["if_changed"] == RUNTIME_CHANGE_CONDITION
     assert steps["protected-delivery"]["if_changed"] == RUNTIME_CHANGE_CONDITION
 
     assert RUNTIME_CHANGE_CONDITION["include"] == "**"
@@ -381,7 +522,7 @@ def test_installed_buildkite_change_evaluation(
     ):
         assert "skip" in rendered_steps[key]
     assert "skip" not in rendered_steps["validation-complete"]
-    for key in ("cml-staging", "protected-delivery"):
+    for key in ("pr-batfish-assurance", "cml-staging", "protected-delivery"):
         assert ("skip" not in rendered_steps[key]) is live_path_expected
 
 
@@ -420,6 +561,7 @@ def test_installed_buildkite_change_evaluation_runs_applicable_checks_before_bar
         "quality-observability-11b",
         "quality-observability-11c2",
         "validation-complete",
+        "pr-batfish-assurance",
         "cml-staging",
         "protected-delivery",
     ):
@@ -430,6 +572,20 @@ def test_external_bootstrap_fetches_diff_base() -> None:
     setup = (ROOT / "docs/acceptance/buildkite-external-setup.md").read_text()
     assert "buildkite-agent pipeline upload --fetch-diff-base" in setup
     assert "Settings → Steps → Commands" in setup
+    assert "buildkite/network-change-delivery-platform" in setup
+    assert "required GitHub status unsatisfied" in setup
+
+    staging_hook = (
+        ROOT / "scripts/buildkite/staging_agent_command_hook.sh"
+    ).read_text()
+    assert '"${BUILDKITE_STEP_KEY:-}" != cml-staging' in staging_hook
+    assert '"${BUILDKITE_AGENT_META_DATA_QUEUE:-}" != ncdp-staging' in staging_hook
+    assert (
+        '"${BUILDKITE_COMMAND:-}" != scripts/buildkite/ephemeral_staging.sh'
+        in staging_hook
+    )
+    assert "fork-origin staging jobs are not authorized" in staging_hook
+    assert "pr-batfish-assurance" not in staging_hook
 
 
 def test_promotion_container_contract() -> None:
@@ -460,6 +616,7 @@ def test_scripts_static_contract() -> None:
     gate = (ROOT / "scripts/buildkite/deployment_gate.sh").read_text()
     batfish = (ROOT / ".buildkite/scripts/batfish_assurance.sh").read_text()
     promotion = (ROOT / ".buildkite/scripts/promotion.sh").read_text()
+    verifier = (ROOT / "scripts/buildkite/verify_commit.sh").read_text()
     promoted_keys = {
         "promoted-plan-digest",
         "promoted-assurance-digest",
@@ -575,6 +732,19 @@ def test_scripts_static_contract() -> None:
 
     assert batfish.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
     assert "umask 077" in batfish
+    assert "pr-batfish-assurance | batfish-assurance" in batfish
+    assert '"${BUILDKITE_AGENT_META_DATA_QUEUE:-}" != ncdp-validation' in batfish
+    assert '"${BUILDKITE_RETRY_COUNT:-}" != 0' in batfish
+    assert "execution context is not authorized" in batfish
+    assert "queue is not authorized" in batfish
+    assert "Retried Batfish assurance is not authorized" in batfish
+    for context_check in (
+        "BUILDKITE_STEP_KEY",
+        "BUILDKITE_AGENT_META_DATA_QUEUE",
+        "BUILDKITE_RETRY_COUNT",
+    ):
+        assert batfish.index(context_check) < batfish.index("verify_commit.sh")
+        assert batfish.index(context_check) < batfish.index("docker compose")
     assert batfish.index("verify_commit.sh") < batfish.index("assure-plan")
     assert "docker compose" in batfish
     assert "--project-name ncdp-batfish-assurance" in batfish
@@ -659,6 +829,8 @@ def test_scripts_static_contract() -> None:
     assert 'image="ncdp-promotion:$BUILDKITE_BUILD_NUMBER"' in promotion
     assert '"assurance/assurance.json" .' in promotion
     assert "--step batfish-assurance" in promotion
+    assert promotion.count("--step batfish-assurance") == 1
+    assert "pr-batfish-assurance" not in promotion
     assert '--build "$BUILDKITE_BUILD_ID"' in promotion
     empty_tree_check = "assert_artifact_tree_count 1"
     exact_tree_check = "assert_artifact_tree_count 3"
@@ -702,3 +874,14 @@ def test_scripts_static_contract() -> None:
     metadata_section = promotion[digest:]
     assert "grep" not in metadata_section
     assert "sed" not in metadata_section
+
+    assert '"${BUILDKITE_STEP_KEY:-}" == pr-batfish-assurance' in verifier
+    assert '"${BUILDKITE_PULL_REQUEST:-}" =~ ^[1-9][0-9]*$' in verifier
+    assert "pr_assurance=1" in verifier
+    assert "if (( pr_assurance == 0 )); then" in verifier
+    assert verifier.index("git rev-parse HEAD") < verifier.index(
+        "if (( pr_assurance == 0 )); then"
+    )
+    assert verifier.index("git diff --quiet") > verifier.index(
+        "if (( pr_assurance == 0 )); then"
+    )

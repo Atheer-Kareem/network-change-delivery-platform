@@ -69,23 +69,44 @@ remain outside staging.
 
 ## Execution and evidence
 
-Pipeline YAML calls only `scripts/buildkite/ephemeral_staging.sh`. The wrapper
-verifies job/checkout identity, pipes the JWT to the existing Python driver, and
-uploads only `staging-evidence/staging-run.json`. The authoritative state machine
-remains `network_change_delivery.ephemeral_staging.run_staging_lifecycle`.
+Pipeline YAML exposes one `Ephemeral CML staging · create → validate → destroy`
+job and calls only `scripts/buildkite/ephemeral_staging.sh`. The wrapper verifies
+job/checkout identity, pipes the JWT to the existing Python driver, and uploads
+only `staging-evidence/staging-run.json`. The authoritative state machine remains
+`network_change_delivery.ephemeral_staging.run_staging_lifecycle`; Buildkite log
+presentation does not split lifecycle or cleanup ownership across jobs.
+
+Expanded log groups identify admission/authority, Terraform create, topology
+and stored Day-0 verification, lab start, device readiness, strict host trust,
+Cisco and Junos read-only NCDP validation, Terraform destroy, independent
+absence verification, run-scoped state retirement, and final result. Readiness
+emits low-volume progress using the existing ARP, ICMP, TCP/22, and TCP/830
+criteria, ten-second polling, and 1,200-second operational timeout. Cisco and
+Junos phases are explicitly labelled `READ-ONLY`; neither invokes a device
+write.
 
 Each realization gets a run-scoped `known_hosts` file for exact
 `192.168.4.30` and `192.168.4.40` trust. NetBox device 1/2 primary addresses
 remain `.14/.20`; staging verifies the secondary addresses are assigned to the
 same authoritative management interfaces before creating the lab. SSH and
-NETCONF remain strict; no human trust file or earlier-build key is used. Staging performs read-only NCDP
-planning/validation and never invokes `ncdp deploy`.
+NETCONF remain strict; no human trust file or earlier-build key is used. Staging
+performs read-only NCDP planning/validation and never invokes `ncdp deploy`.
 
 Evidence contains only job binding, disposable CML IDs, stable NetBox identity,
 credential references, timings, and outcomes. Tokens, credentials, Day-0,
-device configuration, provider bodies, and state are excluded. The wrapper
-preserves the staging status when artifact upload succeeds; upload failure also
-fails the job.
+device configuration, provider bodies, and state are excluded. The full JSON is
+no longer dumped into ordinary logs. A strict typed renderer validates the
+regular non-symlink evidence and publishes a bounded browser annotation with
+allowlisted lifecycle, readiness, read-only validation, cleanup, and retirement
+facts. Raw failures, credential references, node/link IDs, NetBox object IDs,
+Day-0, state, and provider detail are not rendered.
+
+Successful annotation evidence requires the exact four-node/four-link topology,
+complete readiness and validation observations for both routers, all lifecycle
+outcomes passed, and no primary or cleanup failure. Failed evidence may remain
+partial while using only known roles. If staging fails, renderer, artifact, or
+annotation publication failure cannot replace the primary staging status. If
+staging succeeds, required evidence publication must also succeed.
 
 ## Retained-state recovery
 

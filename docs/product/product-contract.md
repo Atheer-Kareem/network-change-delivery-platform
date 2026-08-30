@@ -10,8 +10,8 @@ a personal lab implementation.
 
 Its goals are safe change intent, deterministic planning, vendor-aware
 execution, fleet-aware rollout, independent validation, durable evidence,
-recovery, and continuous monitoring. Eventual vendor scope is Cisco IOS/IOS XE
-and Junos. Fortinet is deferred.
+recovery, and continuous monitoring. The implemented vendor scope is Cisco
+IOS/IOS XE and Junos. Fortinet is deferred.
 
 ## Reference-environment and authority boundary
 
@@ -20,7 +20,7 @@ not production-ready and must contain no company device, credential,
 configuration, address, topology, internal document, or proprietary data.
 
 Git is authoritative for code, policy, reviewed change requests, and managed
-device-configuration intent. NetBox will be authoritative for infrastructure
+device-configuration intent. NetBox is authoritative for infrastructure
 identity, topology and IPAM relationships, platforms, roles, tags,
 target-selection data, and other inventory metadata. No managed property may be
 authoritative in both systems. Before automation consumes an overlapping NetBox
@@ -44,13 +44,13 @@ reported honestly; the system does not claim multi-device atomicity.
 
 ## Audit, recovery, and observability
 
-Existing typed `ChangeRecord` and `FleetChangeRecord` evidence describes bounded
-device and fleet execution. A future top-level durable audit record correlates
-those records by identity and digest with change and PR identity, exact commit,
-Buildkite build and trustworthy execution-image identity when available,
+Typed `ChangeRecord` and `FleetChangeRecord` evidence describes bounded device
+and fleet execution. Append-only `ChangeAuditRecord` and
+`ConfigurationObservationRecord` objects durably correlate those records by
+identity and digest with change and PR identity, exact commit, Buildkite build,
 inventory and frozen targets, immutable plans, approval, assurance, staging,
-promotion, outcome, and later Oxidized history. It references large immutable
-artifacts instead of copying their payloads and excludes credentials,
+promotion, outcome, and private Oxidized chronology. They reference large
+immutable artifacts instead of copying payloads and exclude credentials,
 secret-bearing data, and full device configurations.
 
 Immediate recovery uses the strongest proven mechanism for each vendor and
@@ -60,15 +60,14 @@ the ordinary validation, staging, approval, deployment, and validation pipeline.
 `git revert` may help produce that Git change, but Git history alone never
 authorizes a device write. Automated historical ancestry reconstruction,
 inverse-plan generation, and later-change conflict handling are deferred.
-Continuous observability operates independently of pipeline completion. The
-eventual reference implementation must route actionable alerts through
-Alertmanager to at least one configured demonstration notification receiver; the
-concrete receiver is deferred.
+Continuous observability operates independently of pipeline completion.
+Alertmanager routes actionable advisory alerts to a bounded private local
+demonstration receiver; neither component has remediation authority.
 
 ## First vertical and acceptance outcomes
 
-The first eventual vertical is managed interface descriptions across Cisco
-IOS/IOS XE and Junos. Acceptance requires reviewed vendor-neutral intent where
+The first implemented vertical is managed interface descriptions across Cisco
+IOS/IOS XE and Junos. Its contract requires reviewed vendor-neutral intent where
 semantics genuinely match, frozen target and plan identity, complete preflight,
 canary and wave controls, vendor-aware execution and recovery, independent
 validation, honest outcomes, and correlated evidence without secrets.

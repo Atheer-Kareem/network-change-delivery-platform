@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted through 11C-3; 11C-4 deferred
 
 ## Context
 
@@ -11,13 +11,15 @@ reachability, dashboards, and operator-only alerts through a persistent
 five-service observability runtime. They do not collect interface state or
 counters. Roadmap Increment 11C adds that bounded telemetry without granting the
 observability plane inventory, configuration, deployment, or remediation
-authority. Increment 11D gNMI/OpenConfig streaming telemetry remains separate.
+authority. Increment 11D gNMI/OpenConfig streaming telemetry is deferred/skipped
+for the current reference implementation.
 
 The two admitted managed devices support SNMPv3 user-based security and
 view-based access control with one common strong profile: authentication and
-privacy (`authPriv`), SHA256 authentication, and AES128 privacy. Neither device
-currently has SNMP configured; live provisioning and collection are not evidence
-for this offline decision.
+privacy (`authPriv`), SHA256 authentication, and AES128 privacy. At the time of
+the original decision neither device had SNMP configured. Separate protected
+Cisco and Junos provisioning is now accepted through 11C-3; persistent exporter
+activation and live collection remain outside that acceptance.
 
 SNMP interface rows are indexed by `ifIndex`, whose value can change when an
 agent is reinitialized. NetBox already owns stable numeric device and interface
@@ -52,7 +54,7 @@ The reviewed module is `ncdp_if_mib`, generated with upstream
 | `ifCounterDiscontinuityTime` | `1.3.6.1.2.1.31.1.1.1.19` |
 | `ifTableLastChange.0` | `1.3.6.1.2.1.31.1.5.0` |
 
-The future Cisco view and Junos VACM read view must correspond to this exact
+The implemented Cisco view and Junos VACM read view correspond to this exact
 closure, not a generic IF-MIB subtree. A reviewed generator change that expands
 or contracts the closure requires a matching reviewed device-view change.
 Device-view validation uses the base object OID for each scalar while the
@@ -73,20 +75,21 @@ identity. Duplicate IDs, duplicate names, malformed or unbounded populations,
 missing expected rows, and ambiguous observed rows fail closed. SNMP-only rows
 are not promoted into managed identity.
 
-Prometheus remains metrics authority. A future `snmp_exporter` is only a
+Prometheus remains metrics authority. The `snmp_exporter` is only a
 protocol translator on this conceptual path:
 
 ```text
 Prometheus -> snmp_exporter -> UDP/161 -> admitted device
 ```
 
-It will be a sixth service in the existing Compose project, with no host port.
+In the deferred persistent topology it would be a sixth service in the existing
+Compose project, with no host port.
 An internal control network shared only by Prometheus and the exporter carries
 Prometheus-to-exporter HTTP. A separate ordinary bridge attaches only the
-exporter in the future production topology and provides exporter-to-device
+exporter in that deferred topology and provides exporter-to-device
 UDP/161 egress; Prometheus and the other accepted services do not join it. It
 will not receive NetBox, CML, OpenBao bootstrap, SSH, AuditStore, or device-write
-authority. Its future private authentication input is a mode-0600 file
+authority. Its deferred private authentication input is a mode-0600 file
 atomically replaced by a host materializer inside a mode-0700 directory. The
 directory, rather than one rotating file, is mounted read-only, and successful
 publication requires an explicit exporter reload or reconciliation.
@@ -106,13 +109,15 @@ DEGRADED, RETIRED, FAILED, and AMBIGUOUS outcomes. A per-device SNMP failure mus
 not invalidate existing TCP reachability or remove another device's valid SNMP
 identity without a separate population/realization failure.
 
-Each logical device will use a separate versioned SNMP credential. Authentication
+Each logical device uses a separate versioned SNMP credential. Authentication
 and privacy values are secret; SSH and SNMP credentials remain separate.
 Device-provisioning secret-read authority and observability source authority are
 also separate. Secret values never enter plans, evidence, Git, container
-environment, Prometheus configuration, or metric labels. This ADR does not select
-or create real OpenBao paths, roles, policies, AppRoles, bootstrap values, or
-device credentials.
+environment, Prometheus configuration, or metric labels. The original offline
+decision created no external OpenBao state. Accepted 11C-3 subsequently fixed
+the immutable device credential paths and exercised device-specific provisioning
+authority; persistent observability-source authority remains a separate 11C-4
+boundary whose current external state is not claimed here.
 The bounded auth selector is a non-secret routing value that may later populate
 `__param_auth`; it is neither credential material nor durable metric identity.
 The SNMPv3 username is likewise a non-secret but controlled authentication
@@ -142,14 +147,16 @@ retry is introduced. The read-only `snmp-provisioning-plan` command creates the
 typed plan after NetBox resolution and targeted device preflight; it cannot
 acquire an SNMP secret or execute a device write.
 
-The future persistent materializer uses a separate AppRole that can read only
-the two approved `v1` paths. Its bootstrap can issue only a bounded SecretID for
+The deferred persistent materializer is designed to use a separate AppRole that
+can read only the two approved `v1` paths. Its bootstrap can issue only a
+bounded SecretID for
 that source role; every source login produces one short, one-use client token
 for one exact device read. It has no SSH, CML, NetBox, AuditStore, default-policy,
-list, or write capability. 11C-3 implements and tests these resources and their
-three-file private bootstrap contract (`bootstrap-role-id`,
-`bootstrap-secret-id`, and `source-role-id`) offline; it does not configure
-OpenBao. Provisioning JWT tokens are limited to 300 seconds and one use. A
+list, or write capability. The repository implements and tests these resources
+and their three-file private bootstrap contract (`bootstrap-role-id`,
+`bootstrap-secret-id`, and `source-role-id`) offline. This ADR does not assert
+that the observability-source AppRole is currently configured externally.
+Provisioning JWT tokens are limited to 300 seconds and one use. A
 source SecretID is limited to 1,800 seconds and two logins (one per exact device
 read), while each resulting source client token is limited to 300 seconds and
 one use. The private machine bootstrap can issue only source-role SecretIDs;
@@ -175,7 +182,7 @@ Junos retains its pre-existing engine-identity requirement.
 
 11C is divided by authority and evidence boundary:
 
-1. **11C-1 — architecture and offline contract:** proposed ADR, generated
+1. **11C-1 — architecture and offline contract:** accepted ADR foundation, generated
    standard-IETF module, pure typed identity/state contracts, closure validation,
    and unit tests. This slice is complete. It used no SNMP, secret-provider,
    device, or persistent-runtime access.
@@ -184,30 +191,34 @@ Junos retains its pre-existing engine-identity requirement.
    Prometheus normalization, rotation, and secret-leak tests. The implementation
    uses an opt-in overlay and introduces no real OpenBao, device, or persistent
    runtime authority.
-3. **11C-3 — credential and device provisioning:** real SNMP credential storage,
-   separate provisioning and observability secret-read identities, typed
-   vendor-specific device intent, and separately authorized device mutation.
-   The offline implementation and protected-path preparation exist, but no real
-   OpenBao resource, credential, or device object has been created. Live closure
-   requires separate future Cisco and Junos commit-bound changes.
-4. **11C-4 — persistent live activation and acceptance:** supported service
-   update and read-only Cisco/Junos telemetry acceptance while preserving 11A/11B.
+3. **11C-3 — credential and device provisioning:** complete. Real versioned SNMP
+   credentials and device-specific provisioning authority support typed
+   vendor-specific intent and separately authorized mutation. Cisco Build #267
+   accepted `CHG-SNMP-11C3-CISCO-004`; Junos Build #275 accepted
+   `CHG-SNMP-11C3-JUNOS-001` after disposable `.40` rehearsal. Both produced
+   successful independently validated AuditStore evidence. The external state
+   of the separate observability-source AppRole is not asserted here.
+4. **11C-4 — persistent live activation and acceptance:** deferred work would
+   cover the service update and read-only Cisco/Junos telemetry acceptance while
+   preserving 11A/11B.
 
-Later slices are not implemented or accepted by this decision. ADR status remains
-Proposed until the required implementation and live acceptance evidence exists.
+11C-1 through 11C-3 are implemented and accepted. 11C-4 remains deliberately
+deferred, so this ADR does not claim persistent exporter activation, live
+polling, or Docker-to-router UDP/161 acceptance.
 
 ## Consequences
 
-The first SNMP slice is reproducible and reviewable without using live devices as
-a debugger. Stable identity survives `ifIndex` changes, and the generated module
-cannot silently expand device read authority. The later runtime must add a
-separate private auth lifecycle and sixth-service verification, while the later
-device slice must implement honest vendor-specific provisioning and recovery.
+The SNMP contract remains reproducible and reviewable without using live devices
+as a debugger. Stable identity survives `ifIndex` changes, and the generated
+module cannot silently expand device read authority. Accepted Cisco and Junos
+provisioning preserves honest vendor-specific execution and recovery. Any later
+persistent runtime must add the separate private auth lifecycle and sixth-service
+verification without changing the accepted five-service runtime implicitly.
 
-The exact Cisco interface rows, UDP/161 Docker reachability, scrape timing, and
-credential failure behavior remain evidence for later synthetic or explicitly
-authorized live slices. No SNMP configuration, collection, OpenBao mutation,
-NetBox mutation, CML mutation, or persistent-service change is authorized here.
+Exact live exporter interface rows, Docker-to-router UDP/161 reachability,
+scrape timing, and live credential-failure behavior remain 11C-4 evidence. This
+decision authorizes no persistent-service activation, live polling, NetBox/CML
+mutation, or remediation.
 
 ## Vendor references
 

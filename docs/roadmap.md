@@ -1,206 +1,104 @@
-# Dependency-based roadmap
+# Current roadmap
 
-Each increment begins only when predecessor contracts and evidence justify it.
-Ordering may change when implementation evidence requires it.
+This roadmap records current increment status and major accepted capability.
+Detailed attempt history and fail-closed incident evidence belong in the linked
+acceptance records.
 
-1. **Repository/executable foundation — complete:** product and architecture contracts,
-   CLI shell, deterministic quality gates, container foundations, and CI definition.
-2. **Thin local Cisco vertical — complete:** executed typed interface-description intent on
-   one manually prepared personal CML IOS XE target using synthetic, non-company
-   data. Acceptance covered preflight, immutable digest approval, exact-artifact
-   execution, independent post-validation, bounded evidence, and a read-only
-   idempotency no-op; tested change-specific Cisco recovery semantics remain in
-   place, although successful live validation did not require recovery. See the
-   [live acceptance report](acceptance/cisco-interface-description-increment-2.md).
-   Terraform-managed CML topology and lifecycle remain increment 8.
-3. **NetBox and OpenBao — complete:** NetBox provides authoritative inventory
-   identity and OpenBao AppRole provides short-lived, least-privilege
-   secret-manager access to the static lab device credential. Buildkite JWT/OIDC
-   and stronger or dynamic device authorization remain later work.
-4. **Juniper vertical — complete:** the common interface-description intent,
-   direct-PyEZ exclusive candidate validation, commit-confirmed lifecycle, and
-   bounded evidence are implemented. Real vJunos read-only discovery, immutable
-   plan review, exact-digest commit-confirmed execution, independent validation,
-   confirmation, and read-only idempotency acceptance are recorded in the
-   [Increment 4 acceptance report](acceptance/junos-interface-description-increment-4.md).
-5. **Fleet rollout — complete through Increment 5C:** Increment 5A implements frozen narrow NetBox
-   selectors, nested immutable child plans, first-class no-ops, canonical fleet
-   digests, deterministic representative canaries and fixed waves, and complete
-   fleet-wide read-only preflight. Increment 5B implements digest-approved
-   sequential exact canary/wave execution through the existing device workflow,
-   strict stop gates, honest partial evidence, and final whole-fleet read-only
-   validation and is complete. Increment 5C adds process-local same-device
-   overlap admission and has completed mixed-vendor live CML acceptance,
-   including exact canary/wave execution, final validation, and a read-only
-   idempotency check proving three compliant members and zero deployable work.
-   Distributed/cross-run locks, runner concurrency groups, and multi-worker
-   coordination remain in the later Buildkite hardening increment; they do not
-   replace local rollout overlap safety.
-6. **Batfish assurance — complete after review/merge:** Increment 6A
-   establishes the offline provider and behavioral evidence boundary. Increment
-   6B binds exact validated plans, policy, frozen baseline bytes, derived
-   candidates, and self-digested assurance records. Deployment enforcement and
-   provenance remain Increment 7.
-7. **Buildkite approval and hardened deployment — complete:** 7A completed
-   protected promotion and exact human approval; 7B completed real Buildkite
-   OIDC-to-OpenBao federation; and 7C completed commit-bound, least-privilege,
-   single-device protected deployment. External acceptance includes a real CML
-   IOS XE write and independent validation, deployment-runtime prerequisite
-   verification before privileged identity, prohibition of same-build
-   deployment-job retries, and protected-main acceptance of the unchanged-request
-   no-write path. See the
-   [Increment 7C acceptance report](acceptance/buildkite-live-deployment-increment-7c.md).
-8. **Terraform/CML infrastructure as code — Increment 8D complete:** Increment 8A read-only
-   discovery and architecture are complete. The 8B foundation and read-only
-   plan are accepted after merge: exact toolchain and lock pins, credential-free
-   CI validation, provider data-source discovery, external state handling, and
-   zero CML mutation. Increment 8C is complete: topology creation,
-   `DEFINED_ON_CORE`, controlled `STARTED`, operational `STOPPED`, configuration
-   secrecy, and legacy-runtime restoration are accepted. Increment 8D records
-   the Day-0 manageability investigation: IOS XE first-boot automation was
-   accepted; vJunos fresh-first-boot automation and the exact customizer payload
-   were proven independently; and explicit replacement of the lab, five nodes,
-   six links, and lifecycle resource proved a complete Terraform reset/recreate.
-   The same vJunos realization did not preserve management connectivity across
-   restart, so persistent 8D-3 acceptance failed. ADR 0014 supersedes that
-   staging model with an ephemeral lifecycle, and the current Terraform twin
-   was completely destroyed. Terraform never manages production or NCDP-managed
-   device configuration. See the
-   [Terraform/CML digital-twin architecture](architecture/terraform-cml-digital-twin.md).
-   **Increment 8E — Ephemeral CML staging pipeline** is split into explicit
-   stages. 8E-1 provides the reusable Terraform realization module, protected
-   operator root, intentionally destroyable ephemeral root, required run
-   identity, build/run-scoped state contract, safe outputs, and credential-free
-   static validation. 8E-2 is locally accepted: fresh creation, first-boot
-   readiness, both read-only NCDP vendor chains, direct destroy from STARTED,
-   independent absence, and guarded state retirement passed. 8E-3 adds the
-   serialized Buildkite gate, staging workload identity, dedicated read-only
-   authority boundaries, trusted-agent PR admission, evidence publication, and
-   retained-state recovery. Increment 8E-3 is complete: PR #44 merged and the
-   merged commit passed Buildkite build #115, including the ephemeral CML staging
-   gate before promotion. ADR 0024 now fixes the active lab model at two logical
-   routers: manually owned `NCDP Live` remains running on primary `.14/.20`,
-   while the ten-resource Terraform staging graph uses secondary `.30/.40`, the
-   same device 1/2 credentials, and exact create/validate/destroy ownership.
-9. **Failure recovery — complete:** vendor-aware immediate recovery,
-   failed-validation handling, honest ambiguous-write behavior, recovery
-   verification, and strict fleet stop semantics. Sophisticated historical
-   rollback with ancestry, automatic inverse planning, and later-change conflict
-   detection is deferred; a later rollback is a new reviewed desired-state
-   change through the ordinary delivery pipeline. The subsequent change-aware
-   Buildkite optimization is also complete: known documentation, test, and
-   repository-metadata-only changes retain quality/status checks while live
-   staging and protected delivery remain fail-closed for every runtime-relevant
-   or unknown path.
-10. **Audit/configuration history:** split to preserve existing evidence
-    semantics and separate metadata durability from sensitive actual-state
-    chronology. **10A — audit architecture and durable-correlation contract**
-    defines the evidence inventory, a top-level correlation envelope, external
-    append-only storage, authority boundaries, and the Oxidized integration
-    boundary. **10B-1 — durable audit models and append-only store** implements
-    the typed envelope, reviewed artifact references, canonical integrity,
-    bounded filesystem persistence, no-overwrite publication, and validated
-    programmatic reads independently of deployment. **10B-2 — Buildkite
-    correlation and CLI query integration** implements same-build semantic
-    correlation, a pre-write durable-store gate, honest post-outcome audit
-    failures, and bounded `show`/`find` reads without Oxidized. **10C —
-    Oxidized Git-backed actual-state chronology and audit correlation** will add
-    private external Cisco/Junos configuration history, bounded collection, and
-    non-secret Git references without changing desired intent authority.
-    **10C-1 — offline configuration-observation contracts and append-only
-    correlation persistence** adds a separate metadata-only follow-up record,
-    exact parent UUID/digest linkage, and bounded reads and queries without
-    installing or running Oxidized. 10A, 10B-1, and 10B-2 are complete; 10C-1
-    is complete. **10C-2 — reproducible Oxidized runtime packaging** freezes a
-    digest-pinned, non-root Apple-Silicon OCI runtime for Oxidized 0.37.0 and
-    oxidized-web 0.18.1 and proves a loopback-only synthetic API without device
-    collection. NetBox/OpenBao materialization, private Git chronology,
-    persistent service ownership, scheduling, and forced observation remain
-    later 10C increments. **10C-3 — NetBox/OpenBao source materialization** adds
-    the host-side exact-population authority resolver, dedicated read-only
-    OpenBao identity, atomic private JSONFile cache, and no-collection parser
-    proof. **10C-4 — private Git chronology** proves Oxidized's bare Rugged
-    writer, unchanged-byte suppression, multi-node path chronology, and a
-    metadata-only path-scoped `OxidizedRevision` reader in disposable synthetic
-    state. **10C-5 — persistent Oxidized service and collection control plane**
-    adds launchd-owned repository-independent reconciliation, a direct private
-    Git bind mount, source-freshness readiness, minimal OpenBao machine
-    bootstrap, and bounded per-node control while interval zero keeps real
-    collection disabled. Its reboot acceptance is operator-triggered; real
-    baseline collection remains 10C-6. **10C-6 — strict live configuration
-    chronology** adds CML-anchored fresh SSH host trust, readiness schema 2,
-    SSH-only secure collection, path-scoped collection/revision binding, the
-    first private Cisco and Junos baseline commits, unchanged-observation
-    suppression, trust retirement, and fixed-address CML cleanup. Protected
-    pre/post change and audit correlation remains 10C-7. **10C-7A — protected
-    observation-correlation preparation** adds the offline adapter, same-job
-    PRE/deploy/POST ordering, immutable parent/child persistence, and a new
-    commit-bound Cisco change. Real protected execution and durable live
-    correlation remain pending merged-main 10C-7B acceptance. Build #150 failed
-    safely before PRE or any device write when its reboot-persistent deploy
-    environment omitted the intact accepted Ansible collection root. The
-    corrected path guard and comment-only retry authorization 1 produced Build
-    #152, which reached PRE and failed closed because its required post-merge
-    operator twin, realization trust, and schema-2 readiness had not been
-    prepared before approval. Neither failed build performed a device write or
-    created observation/audit evidence; both are permanently non-retriable.
-    Comment-only retry authorization 2 produced Build #154, which was prepared
-    and authorized. Its successful PRE collection created a legitimate third
-    private-history revision, but durable conversion rejected the Git timestamp
-    because it followed the upstream job end by one second. The gate stopped
-    before deployment and created no audit evidence. Build #154 is permanently
-    non-retriable. The corrected durable completion boundary and comment-only
-    retry authorization 3 prepare another semantically identical attempt. Real
-    acceptance remains pending fresh post-merge runtime preparation and
-    explicit approval of only that new main build. Build #156 then completed
-    PRE, created a legitimate fourth private-history commit, and reached the
-    device-capable boundary. Fresh NetBox and one-use OpenBao resolution
-    succeeded, but read-only deployment preflight used a stale generic-user SSH
-    key instead of the accepted realization trust, so execution remained
-    unattempted and device writes remained zero. Its immutable `BLOCKED` parent
-    and successful CHANGED/UNCHANGED temporally bracketed child were persisted.
-    Protected deployment now projects validated realization trust into its
-    private Ansible runtime; retry authorization 4 prepares the next
-    semantically identical attempt. Build #158 completed that attempt: PRE,
-    protected Cisco execution, independent post-validation, and POST succeeded;
-    the immutable parent and temporally bracketed child validate as
-    `SUCCEEDED`, with causality correctly retained as `NOT_PROVEN`. Trust and
-    readiness were then retired and the exact operator twin destroyed while
-    preserving six private-history commits. Increment 10C-7B is complete. No
-    later increment has started.
-11. **Continuous observability:** an independent, read-only operational plane,
-    decomposed into bounded increments:
-    - **11A — NetBox-bound management-service reachability:** persistent
-      Prometheus and credential-free Blackbox TCP probes with stable NetBox
-      identity and realization-scoped CML admission. Implementation exists, and
-      PR #80 establishes its final persistent `NCDP Live` prerequisite alongside
-      separate ephemeral staging. Final merged-main 11A acceptance against that
-      running `.14/.20` realization passed on merged-main commit
-      `47a6a856ccc19903b585d2a2605dbea3c67db616` (Build #215).
-    - **11B — dashboards and operator-only alerts:** bounded visualization,
-      reachability/staleness/service-health rules, and no remediation authority.
-      11B-1 provides the provisioned Grafana dashboard, Prometheus rules,
-      Alertmanager, and local demonstration receiver. Merged-main Build #231
-      and non-disruptive persistent-runtime acceptance passed on commit
-      `f75b9e9c274a2f2890116cc4c18592c97956c220`. Increment 11B is complete.
-    - **11C — SNMPv3 interface telemetry:** least-privilege authenticated polling
-      and bounded interface identity/counter normalization. Proposed ADR 0026
-      divides delivery into four authority-separated slices: 11C-1 architecture,
-      generated standard-IETF module, and pure offline contracts; 11C-2 synthetic
-      exporter/Prometheus integration without real OpenBao authority; 11C-3
-      separate credential and typed device-provisioning authority; and 11C-4
-      supported persistent activation plus read-only live acceptance. 11C-1 is
-      complete. 11C-2 adds only an opt-in disposable exporter overlay, private
-      synthetic auth/target publication, Prometheus normalization, and
-      Docker-native SNMPv3 evidence; it does not activate the persistent runtime.
-      Real credentials, device provisioning, and live polling remain 11C-3/11C-4.
-      11C-3 now prepares the create-only `v1` credential authorities, separate
-      provisioning and observability identities, typed single-device plans, and
-      Cisco/Junos execution and recovery contracts through the existing sole
-      `deploy-gate`. No real OpenBao or router acceptance has occurred. Closing
-      11C-3 still requires separately reviewed Cisco and Junos commit-bound live
-      changes; persistent activation and polling remain 11C-4.
-    - **11D — gNMI/OpenConfig streaming telemetry:** reviewed TLS identity,
-      vendor-aware capability admission, and streaming normalization.
-12. **Final acceptance and demonstration:** mixed-vendor fleet scenario, failure
-    cases, recovery, evidence review, security review, and reproducible runbook.
+## Completed foundation and delivery increments
+
+1. **Repository/executable foundation — complete.** Product and architecture
+   contracts, typed CLI/application foundations, deterministic quality gates,
+   containers, and CI definition are accepted.
+2. **Thin local Cisco vertical — complete.** Reviewed interface-description
+   intent, immutable planning, exact execution, independent validation, bounded
+   evidence, no-op behavior, and change-specific recovery are accepted. See the
+   [Increment 2 acceptance](acceptance/cisco-interface-description-increment-2.md).
+3. **NetBox and OpenBao — complete.** NetBox is authoritative for inventory
+   identity and OpenBao supplies bounded secret-manager authority.
+4. **Junos vertical — complete.** Direct PyEZ exclusive-candidate,
+   commit-confirmed execution and independent validation are accepted. See the
+   [Increment 4 acceptance](acceptance/junos-interface-description-increment-4.md).
+5. **Fleet rollout — complete through 5C.** Frozen selectors, nested plans,
+   no-ops, deterministic canaries/waves, complete preflight, strict stop gates,
+   whole-fleet validation, mixed-vendor acceptance, and process-local overlap
+   admission are implemented. No distributed lock or fleet atomicity is claimed.
+6. **Batfish assurance — complete.** Offline provider normalization, exact plan,
+   policy, baseline/candidate snapshot and digest binding, typed assurance, and
+   protected Buildkite enforcement are implemented.
+7. **Buildkite approval and hardened deployment — complete.** Protected
+   promotion, human authorization, Buildkite OIDC/OpenBao federation,
+   commit-bound least-privilege deployment, independent post-validation, and
+   no-retry semantics are accepted. See the
+   [Increment 7C acceptance](acceptance/buildkite-live-deployment-increment-7c.md).
+8. **Terraform/CML infrastructure and ephemeral staging — complete.** The
+   manually owned `NCDP Live` lab remains outside Terraform. Runtime-relevant
+   changes use a separate exact ten-resource `.30/.40` staging realization with
+   create, start, read-only validation, destroy, independent absence proof, and
+   run-scoped state retirement. See the
+   [Terraform/CML architecture](architecture/terraform-cml-digital-twin.md) and
+   [8E acceptance](acceptance/buildkite-ephemeral-cml-staging-increment-8e.md).
+9. **Failure recovery and change-aware CI — complete.** Vendor-aware immediate
+   recovery, ambiguous-write stop behavior, strict fleet stop semantics, and
+   fail-closed runtime-path classification are implemented. Historical rollback
+   remains a new reviewed desired-state change, not a replay.
+
+## Audit and configuration chronology
+
+10. **Audit/configuration history — complete through accepted protected
+    Oxidized/audit correlation scope.** Append-only `ChangeAuditRecord` and
+    `ConfigurationObservationRecord` persistence, Buildkite correlation,
+    private Git-backed Oxidized chronology, NetBox/OpenBao materialization,
+    persistent service ownership, CML-anchored trust, strict Cisco/Junos
+    collection, and protected PRE/write/POST correlation are accepted.
+    `TEMPORALLY_BRACKETED` chronology remains honest `NOT_PROVEN` causality.
+    The fail-closed attempts leading to Build #158 remain in the
+    [10C-7B acceptance record](acceptance/protected-configuration-observation-increment-10c7b.md),
+    rather than in this current roadmap.
+
+## Continuous observability
+
+11. **Independent read-only observability — accepted through 11C-3.**
+
+    - **11A — complete:** persistent Prometheus and credential-free Blackbox
+      management-service probes use stable NetBox identity plus exact `NCDP
+      Live` realization admission. Build #215 accepted the persistent path.
+    - **11B — complete:** provisioned Grafana, reviewed Prometheus rules,
+      Alertmanager, and a bounded local demonstration receiver provide advisory
+      visibility without remediation authority. Build #231 and persistent
+      runtime acceptance closed 11B.
+    - **11C-1 — complete:** reviewed SNMPv3 architecture, exact generated
+      standard-IETF module, stable interface identity, and offline contracts.
+    - **11C-2 — complete synthetic integration only:** the opt-in disposable
+      exporter overlay proves SNMPv3 `authPriv`, two-network separation,
+      rotation, normalization, and secret-leak controls. It does not alter the
+      accepted persistent five-service runtime or prove live-router polling.
+    - **11C-3 — complete:** separately authorized protected live provisioning
+      succeeded for Cisco Build #267 (`CHG-SNMP-11C3-CISCO-004`) and Junos Build
+      #275 (`CHG-SNMP-11C3-JUNOS-001`). Junos used prior disposable `.40`
+      rehearsal of the exact source plan. Build #273 remains non-retried
+      fail-closed evidence. See the cumulative
+      [11C acceptance record](acceptance/continuous-observability-increment-11c.md).
+    - **11C-4 — deferred:** persistent exporter materialization, activation,
+      Docker-to-live-router UDP/161 evidence, and live polling are not claimed.
+    - **11D — deferred/skipped:** gNMI/OpenConfig is not the next active
+      increment for this reference implementation.
+
+## Final acceptance, usability, and presentation
+
+12. **Final acceptance and demonstration — in progress.** This is refinement of
+    the completed feature set, not a new feature increment after 11C-3.
+
+    - **12A — complete:** validation gates are individually visible and join at
+      `validation-complete`; Buildkite definition validation is separate from
+      the NCDP pipeline safety contract; Batfish assurance is first-class and
+      fans out with CML staging; immutable promotion joins both; and the single
+      serialized staging lifecycle exposes create → validate → destroy phases
+      plus sanitized typed annotations. The personal validation agent currently
+      uses bounded two-worker capacity as a local operational setting, not a
+      portable architecture requirement.
+    - **12B — complete:** authoritative product, architecture, roadmap, ADR,
+      and cumulative acceptance documents are reconciled with accepted current
+      truth.
+    - **Next Increment 12 work:** README and flagship architecture
+      visualization, browser-first demonstration, readiness/evidence packaging,
+      operator runbook and rehearsal, and final acceptance remain to come.

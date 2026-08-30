@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1600 1150"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">Network Change Delivery Platform reference architecture</title>
+  <desc id="description">A reviewed network change flows from GitHub through visible Buildkite validation, disposable read-only CML staging and protected-main Batfish assurance, immutable promotion, human authorization, and a sole protected live-write gate. Python then uses vendor-specific Cisco and Junos execution against a manually owned two-router CML lab. Independent validation produces AuditStore and Oxidized evidence, while read-only Prometheus, Blackbox, Grafana, and Alertmanager observability runs independently.</desc>
+
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08111f"/>
+      <stop offset="1" stop-color="#111c31"/>
+    </linearGradient>
+    <linearGradient id="writeGate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7f1d1d"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </linearGradient>
+    <linearGradient id="humanGate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#78350f"/>
+      <stop offset="1" stop-color="#a16207"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#020617" flood-opacity="0.5"/>
+    </filter>
+    <marker id="arrowControl" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a78bfa"/>
+    </marker>
+    <marker id="arrowRead" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrowEvidence" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#34d399"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .section { fill: #94a3b8; font-size: 17px; font-weight: 700; letter-spacing: 2px; }
+      .title { fill: #f8fafc; font-size: 36px; font-weight: 750; }
+      .subtitle { fill: #cbd5e1; font-size: 19px; }
+      .card-title { fill: #f8fafc; font-size: 22px; font-weight: 700; }
+      .card-title-small { fill: #f8fafc; font-size: 19px; font-weight: 700; }
+      .card-text { fill: #cbd5e1; font-size: 18px; }
+      .small { fill: #94a3b8; font-size: 16px; }
+      .badge { fill: #e2e8f0; font-size: 15px; font-weight: 700; letter-spacing: 0.6px; }
+      .badge-compact { fill: #e2e8f0; font-size: 13.5px; font-weight: 700; letter-spacing: 0.4px; }
+      .panel { fill: #0f1b2e; stroke: #334155; stroke-width: 1.5; }
+      .card { fill: #16243a; stroke: #475569; stroke-width: 1.5; }
+      .control { fill: #211b3b; stroke: #8b5cf6; stroke-width: 2; }
+      .readonly { fill: #0c2b3e; stroke: #38bdf8; stroke-width: 2; }
+      .evidence { fill: #0b2e2a; stroke: #34d399; stroke-width: 2; }
+      .control-line { fill: none; stroke: #a78bfa; stroke-width: 3; marker-end: url(#arrowControl); }
+      .read-line { fill: none; stroke: #38bdf8; stroke-width: 2.5; stroke-dasharray: 9 7; marker-end: url(#arrowRead); }
+      .evidence-line { fill: none; stroke: #34d399; stroke-width: 2.5; marker-end: url(#arrowEvidence); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1150" fill="url(#canvas)"/>
+
+  <!-- heading -->
+  <text x="50" y="49" class="title">Network Change Delivery Platform</text>
+  <text x="50" y="78" class="subtitle">Production-inspired change delivery for a personal two-router NetDevOps reference lab</text>
+
+  <!-- authorities -->
+  <text x="50" y="115" class="section">AUTHORITIES / REVIEW</text>
+  <rect x="50" y="132" width="455" height="112" rx="16" class="card" filter="url(#shadow)"/>
+  <text x="76" y="168" class="card-title">GitHub · reviewed intent</text>
+  <text x="76" y="198" class="card-text">code · plans · policy · tests · pull requests</text>
+  <text x="76" y="226" class="small">PRs have no protected live-write authority</text>
+
+  <rect x="572" y="132" width="455" height="112" rx="16" class="readonly" filter="url(#shadow)"/>
+  <text x="598" y="168" class="card-title">NetBox · infrastructure identity</text>
+  <text x="598" y="198" class="card-text">devices · interfaces · topology · targeting</text>
+  <text x="598" y="226" class="small">read-only automation consumption</text>
+
+  <rect x="1095" y="132" width="455" height="112" rx="16" class="readonly" filter="url(#shadow)"/>
+  <text x="1121" y="168" class="card-title">OpenBao · credential authority</text>
+  <text x="1121" y="198" class="card-text">bounded workload and device capabilities</text>
+  <text x="1121" y="226" class="small">secrets never become Git artifacts</text>
+
+  <!-- validation and assurance -->
+  <rect x="30" y="270" width="1540" height="650" rx="22" class="panel"/>
+  <text x="55" y="304" class="section">DELIVERY / BUILDKITE</text>
+
+  <rect x="55" y="342" width="270" height="126" rx="16" class="control" filter="url(#shadow)"/>
+  <text x="80" y="378" class="card-title">Visible validation gates</text>
+  <text x="80" y="409" class="card-text">lint · tests · package</text>
+  <text x="80" y="437" class="card-text">Terraform · pipeline contracts</text>
+  <rect x="80" y="446" width="185" height="25" rx="12" fill="#334155"/>
+  <text x="95" y="464" class="badge">PR · NO LIVE WRITE</text>
+
+  <rect x="374" y="366" width="214" height="76" rx="14" class="control"/>
+  <text x="397" y="397" class="card-title-small">validation-complete</text>
+  <text x="414" y="424" class="small">explicit barrier</text>
+
+  <rect x="642" y="320" width="300" height="164" rx="16" class="readonly" filter="url(#shadow)"/>
+  <text x="668" y="356" class="card-title">Disposable CML staging</text>
+  <text x="668" y="388" class="card-text">Terraform + CML</text>
+  <text x="668" y="419" class="card-text">create → READ-ONLY validate</text>
+  <text x="668" y="447" class="card-text">→ destroy + absence proof</text>
+  <text x="668" y="472" class="small">never applies the pending live plan</text>
+
+  <rect x="984" y="320" width="300" height="164" rx="16" class="control" filter="url(#shadow)"/>
+  <text x="1010" y="356" class="card-title">Batfish plan assurance</text>
+  <text x="1010" y="388" class="card-text">plan + policy + frozen</text>
+  <text x="1010" y="417" class="card-text">baseline / candidate</text>
+  <text x="1010" y="446" class="card-text">bidirectional critical flows</text>
+  <rect x="1010" y="456" width="160" height="24" rx="12" fill="#4c1d95"/>
+  <text x="1023" y="473" class="badge">PROTECTED MAIN</text>
+
+  <path d="M 277 244 V 325 H 190 V 342" class="control-line"/>
+  <path d="M 325 405 H 374" class="control-line"/>
+  <path d="M 588 404 H 615 V 402 H 642" class="control-line"/>
+  <path d="M 588 404 H 610 V 292 H 1134 V 320" class="control-line"/>
+
+  <rect x="735" y="526" width="340" height="108" rx="16" class="control" filter="url(#shadow)"/>
+  <text x="778" y="563" class="card-title">Immutable promotion</text>
+  <text x="778" y="594" class="card-text">commit · plan · policy · baseline</text>
+  <text x="778" y="620" class="small">verify exact same-build assurance</text>
+  <path d="M 792 484 V 503 H 865 V 526" class="control-line"/>
+  <path d="M 1134 484 V 503 H 949 V 526" class="control-line"/>
+
+  <rect x="1120" y="526" width="214" height="108" rx="16" fill="url(#humanGate)" stroke="#fbbf24" stroke-width="3" filter="url(#shadow)"/>
+  <text x="1147" y="562" class="card-title">HUMAN</text>
+  <text x="1147" y="590" class="card-title">AUTHORIZATION</text>
+  <text x="1147" y="617" class="small" fill="#fde68a">exact promotion boundary</text>
+  <path d="M 1075 580 H 1120" class="control-line"/>
+
+  <rect x="1380" y="526" width="160" height="108" rx="16" fill="url(#writeGate)" stroke="#fb7185" stroke-width="3" filter="url(#shadow)"/>
+  <text x="1402" y="560" class="card-title">Protected</text>
+  <text x="1402" y="588" class="card-title">deploy-gate</text>
+  <text x="1402" y="617" class="small" fill="#fecdd3">SOLE LIVE-WRITE</text>
+  <path d="M 1334 580 H 1380" class="control-line"/>
+  <path d="M 1322 244 V 500 H 1460 V 526" class="read-line"/>
+
+  <!-- execution -->
+  <rect x="620" y="664" width="360" height="112" rx="16" class="card" filter="url(#shadow)"/>
+  <text x="646" y="700" class="card-title">Python delivery control</text>
+  <text x="646" y="731" class="card-text">policy · fresh checks</text>
+  <text x="646" y="758" class="card-text">evidence · recovery decisions</text>
+  <path d="M 1460 634 V 650 H 820 V 664" class="control-line"/>
+  <path d="M 800 244 V 258 H 600 V 638 H 760 V 664" class="read-line"/>
+
+  <rect x="1015" y="664" width="255" height="105" rx="16" class="card"/>
+  <text x="1040" y="700" class="card-title">Cisco execution</text>
+  <text x="1040" y="730" class="card-text">Ansible Runner · cisco.ios</text>
+  <text x="1040" y="756" class="small">validation + recovery</text>
+
+  <rect x="1295" y="664" width="245" height="105" rx="16" class="card"/>
+  <text x="1320" y="700" class="card-title">Junos execution</text>
+  <text x="1320" y="730" class="card-text">direct PyEZ / NETCONF</text>
+  <text x="1320" y="756" class="small">exclusive candidate · confirmed</text>
+  <path d="M 980 713 H 1015" class="control-line"/>
+  <path d="M 980 750 H 995 V 644 H 1418 V 664" class="control-line"/>
+
+  <rect x="1015" y="798" width="525" height="98" rx="16" class="readonly"/>
+  <text x="1040" y="829" class="card-title">NCDP Live · manually/operator owned CML</text>
+  <rect x="1040" y="844" width="223" height="35" rx="10" fill="#163449"/>
+  <text x="1055" y="868" class="card-text">core-02 · Cisco IOS XE</text>
+  <rect x="1280" y="844" width="235" height="35" rx="10" fill="#163449"/>
+  <text x="1295" y="868" class="card-text">edge-junos-01 · Junos</text>
+  <path d="M 1138 769 V 798" class="control-line"/>
+  <path d="M 1418 769 V 798" class="control-line"/>
+
+  <rect x="55" y="792" width="560" height="76" rx="14" fill="#251b30" stroke="#fb7185" stroke-width="1.5"/>
+  <text x="80" y="824" class="card-title">Safety on an uncertain write outcome</text>
+  <text x="80" y="853" class="card-text">stop → never retry the historical job → reconcile independently</text>
+
+  <!-- evidence and operations -->
+  <text x="50" y="958" class="section">EVIDENCE / OPERATIONS</text>
+
+  <rect x="50" y="978" width="300" height="126" rx="16" class="evidence"/>
+  <text x="75" y="1014" class="card-title">Independent validation</text>
+  <text x="75" y="1045" class="card-text">fresh vendor observation</text>
+  <text x="75" y="1075" class="small">success decided independently</text>
+
+  <rect x="370" y="978" width="270" height="126" rx="16" class="evidence"/>
+  <text x="395" y="1014" class="card-title">AuditStore</text>
+  <text x="395" y="1045" class="card-text">append-only evidence</text>
+  <text x="395" y="1075" class="small">plan · outcome · digests</text>
+
+  <rect x="660" y="978" width="290" height="126" rx="16" class="evidence"/>
+  <text x="680" y="1014" class="card-title">Oxidized chronology</text>
+  <text x="680" y="1045" class="card-text">observed config history</text>
+  <text x="680" y="1075" class="small">not intent authority</text>
+
+  <rect x="965" y="958" width="585" height="166" rx="16" class="readonly"/>
+  <text x="990" y="993" class="card-title">Independent continuous observability</text>
+  <text x="990" y="1024" class="card-text">NetBox identity + CML admission</text>
+  <text x="990" y="1053" class="card-text">→ Prometheus / Blackbox → Grafana / Alertmanager</text>
+  <text x="990" y="1081" class="small">read-only · pipeline-independent · no remediation authority</text>
+  <rect x="990" y="1092" width="275" height="24" rx="12" fill="#163449"/>
+  <text x="1005" y="1109" class="badge-compact">SNMPv3 PROVISIONING ACCEPTED</text>
+  <rect x="1275" y="1092" width="245" height="24" rx="12" fill="#163449"/>
+  <text x="1290" y="1109" class="badge">LIVE POLLING DEFERRED</text>
+
+  <path d="M 1095 896 V 932 H 192 V 978" class="evidence-line"/>
+  <path d="M 350 1041 H 370" class="evidence-line"/>
+  <path d="M 1270 896 V 934 H 792 V 978" class="evidence-line"/>
+  <path d="M 1450 896 V 930 H 1257 V 958" class="read-line"/>
+
+  <!-- legend -->
+  <line x1="50" y1="1137" x2="90" y2="1137" stroke="#a78bfa" stroke-width="3"/>
+  <text x="100" y="1143" class="small">review / control flow</text>
+  <line x1="295" y1="1137" x2="335" y2="1137" stroke="#38bdf8" stroke-width="3" stroke-dasharray="9 7"/>
+  <text x="345" y="1143" class="small">read-only authority / observation</text>
+  <line x1="650" y1="1137" x2="690" y2="1137" stroke="#34d399" stroke-width="3"/>
+  <text x="700" y="1143" class="small">validation / evidence flow</text>
+</svg>

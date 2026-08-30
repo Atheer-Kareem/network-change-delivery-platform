@@ -99,6 +99,11 @@ acceptance records.
     - **12B — complete:** authoritative product, architecture, roadmap, ADR,
       and cumulative acceptance documents are reconciled with accepted current
       truth.
-    - **Next Increment 12 work:** README and flagship architecture
-      visualization, browser-first demonstration, readiness/evidence packaging,
-      operator runbook and rehearsal, and final acceptance remain to come.
+    - **12C — complete:** README is the concise public front door, supported by
+      a repository-hosted flagship architecture visualization of current
+      authority, staging, assurance, delivery, evidence, and observability
+      boundaries.
+    - **12D — next:** browser-first demonstration.
+    - **12E — planned:** readiness, reset, and evidence package.
+    - **12F — planned:** demonstration runbook and rehearsal.
+    - **12G — planned:** final acceptance and repository closure.

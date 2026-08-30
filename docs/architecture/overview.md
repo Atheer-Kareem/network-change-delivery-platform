@@ -10,15 +10,16 @@ flowchart LR
   BK --> PY[Control plane\nPython]
   NB[Source of truth\nNetBox] --> PY
   OB[Secrets\nOpenBao] --> EX[Execution\nAnsible + vendor adapters]
-  PY --> BA[Assurance\nBatfish]
-  PY --> DT[Digital twin\nTerraform + CML]
+  BK --> BA[Plan assurance\nBatfish]
+  BK --> DT[Disposable staging\nTerraform + CML]
   PY --> EX
-  EX --> LV[Live validation\npyATS / JSNAPy]
-  PY --> EV[Audit evidence\nChangeRecord]
+  EX --> LV[Independent post-validation\nCisco + Junos provider paths]
+  PY --> EV[Audit evidence\nAuditStore]
   EX --> EV
   LV --> EV
   OX[Configuration history\nOxidized] --> EV
   NB --> OBS[Continuous observability\nPrometheus ecosystem]
+  CL[Live realization admission\nCML] --> OBS
   DK[Runtime plane\nDocker] -. isolates .-> BK
   DK -. packages .-> PY
 ```
@@ -42,9 +43,10 @@ flowchart LR
   protected Buildkite jobs use claim-bound OIDC workload identities and
   short-lived, single-use, exact-path tokens. Application models never embed
   secret values.
-- **Assurance:** Batfish performs offline multi-vendor behavioral checks;
-  protected promotion enforces plan-, policy-, snapshot-, and commit-bound
-  assurance before any deployment authorization.
+- **Assurance:** the first-class protected `batfish-assurance` step performs
+  offline multi-vendor behavioral checks and publishes typed evidence. Immutable
+  promotion independently verifies the same-build assurance artifact before any
+  deployment authorization.
 - **Digital twin:** Increment 8 uses Terraform with CiscoDevNet CML2 to own a
   separate personal-CML twin's infrastructure lifecycle, never production
   device configuration. See the
@@ -53,8 +55,10 @@ flowchart LR
   Direct PyEZ/NETCONF preserves one Junos exclusive candidate session across
   pre-commit policy approval. Python decides what and why; adapters implement
   how without flattening vendor safety semantics.
-- **Live validation:** future pyATS/Genie for Cisco and JSNAPy/PyEZ for Junos
-  normalize into platform-owned results.
+- **Live validation:** platform-owned independent post-validation uses the
+  implemented Cisco Ansible and Junos PyEZ provider paths and normalizes results
+  into typed platform evidence. pyATS/Genie and JSNAPy are not current runtime
+  dependencies.
 - **Audit/evidence:** `ChangeRecord` and `FleetChangeRecord` hold bounded
   execution evidence. Append-only `ChangeAuditRecord` and
   `ConfigurationObservationRecord` objects correlate protected delivery and
@@ -66,8 +70,10 @@ flowchart LR
   NetBox-derived management endpoint is scheduled. Provisioned Grafana,
   reviewed Prometheus rules, private Alertmanager routing, and a bounded local
   receiver provide operator visibility without remediation authority. SNMPv3
-  and gNMI/OpenConfig remain later increments. Oxidized remains the separate
-  configuration chronology boundary.
+  device credential/provisioning capability is accepted for both routers, but
+  persistent exporter materialization and live polling remain deferred.
+  gNMI/OpenConfig is deferred/skipped for this reference implementation.
+  Oxidized remains the separate configuration chronology boundary.
 
 Dependencies point inward to platform-owned policy and types; integrations
 implement explicit boundary contracts. Provider details must not become domain
@@ -118,3 +124,15 @@ Increments 11A and 11B provide the accepted continuous-observability plane:
 credential-free management-service probes, persistent metrics, an immutable
 Grafana dashboard, and advisory operator alerts. See
 [Continuous observability](continuous-observability.md).
+Increment 11C-2 adds a disposable synthetic SNMPv3 exporter overlay without
+changing that persistent five-service runtime. Increment 11C-3 adds accepted,
+separately authorized Cisco and Junos SNMPv3 provisioning through the protected
+delivery path. Persistent live SNMP polling remains deferred as 11C-4, and 11D
+gNMI/OpenConfig is deferred/skipped.
+
+Increment 12A makes the Buildkite engineering story explicit: individual
+validation gates join at `validation-complete`; disposable CML staging and
+first-class Batfish assurance fan out on eligible protected-main builds;
+immutable promotion joins both; and the existing human authorization and
+deployment boundaries remain downstream. Staging stays one serialized,
+non-retriable lifecycle owner with visible create, validate, and destroy phases.

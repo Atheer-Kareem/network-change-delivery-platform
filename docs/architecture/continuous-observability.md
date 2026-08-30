@@ -94,17 +94,18 @@ Successful final 11A acceptance does not retire these targets or stop
 Prometheus is not inventory authority, Oxidized configuration history, or
 AuditStore. Metrics contain no configuration, diff, credential, arbitrary error,
 or high-cardinality ephemeral identity. Observability cannot invoke NCDP
-deployment or automated remediation. SNMPv3 and gNMI are separate later
-increments.
+deployment or automated remediation. SNMPv3 provisioning is accepted through
+11C-3 while persistent polling remains deferred; gNMI/OpenConfig is
+deferred/skipped.
 11B-1 adds Grafana and Alertmanager as read-only consumers of these metrics.
 Grafana is provisioned from reviewed files and exposed only on loopback;
 Alertmanager routes advisory alerts to a private bounded demonstration
 receiver. Neither service has credentials, device access, or remediation
 authority.
 
-## Proposed 11C SNMPv3 boundary
+## Accepted-through-11C-3 SNMPv3 boundary
 
-ADR 0026 proposes an offline contract for the next independent path:
+ADR 0026 defines the independent SNMP path:
 
 ```text
 11A: Prometheus -> Blackbox TCP probe -> admitted management service
@@ -121,7 +122,7 @@ update, LaunchAgent reconciliation, and live Prometheus configuration remain
 five-service and SNMP-free. The overlay must not make the 11A target generation
 or `ObservabilityReady(service_contract="11A")` depend on SNMP health.
 
-The future exporter is a protocol translator, not inventory authority. NetBox
+The exporter is a protocol translator, not inventory authority. NetBox
 continues to own stable device identity and stable numeric interface object
 identity. The host will start from a conservatively bounded NetBox-modeled
 interface population and map each expected interface through case-sensitive
@@ -131,22 +132,25 @@ relationships, pagination failure, and excessive populations fail closed.
 SNMP-only interfaces never acquire managed identity merely because an agent
 reports them.
 
-The future exporter will have no host port. Its internal control network is
-shared only with Prometheus for HTTP collection and reload access. Its separate
-egress-capable device bridge carries exporter-originated UDP/161 and has no
-Prometheus, Grafana, Blackbox, Alertmanager, or receiver membership; future
-production membership is exporter-only. The exporter will not receive the
-NetBox token, CML authority, OpenBao bootstrap, SSH credentials, AuditStore,
-configuration history, or device-write capability. Its private authentication
-directory will be mounted read-only. A host materializer will eventually replace
-a mode-0600 auth file atomically inside that mode-0700 directory and then
+The exporter has no host port in the accepted synthetic overlay. Its internal
+control network is shared only with Prometheus for HTTP collection and reload
+access. Its separate egress-capable device bridge carries exporter-originated
+UDP/161 and has no
+Prometheus, Grafana, Blackbox, Alertmanager, or receiver membership; deferred
+persistent production membership is exporter-only. The exporter does not
+receive the NetBox token, CML authority, OpenBao bootstrap, SSH credentials,
+AuditStore, configuration history, or device-write capability. Its private
+authentication directory is mounted read-only in synthetic validation. A
+persistent host materializer must replace a mode-0600 auth file atomically
+inside that mode-0700 directory and then
 deliberately reload or reconcile the exporter. Synthetic evidence selects a
 private `POST /-/reload`: successful replacement is acknowledged without
 restarting the container, while a rejected reload leaves the prior valid
 configuration active.
-Real materialization, OpenBao identity, and device provisioning were deferred to
-11C-3. Its implementation contracts are described below; external authority and
-live acceptance remain deliberately unexecuted.
+11C-3 subsequently accepted separate protected Cisco and Junos credential and
+device provisioning. Persistent materialization and its observability-source
+authority remain deferred to 11C-4; this document does not assert that the
+source AppRole is currently configured externally.
 Disposable agents prove the two-network protocol flow in 11C-2; actual Docker
 Desktop-to-live-router UDP/161 reachability remains 11C-4 evidence.
 
@@ -159,26 +163,28 @@ public evidence. The exporter has no host-published port, so `/config` remains
 reachable only on the internal control network.
 
 The reviewed `ncdp_if_mib` generator source and generated module use only the
-exact system and interface objects recorded by ADR 0026. The future Cisco and
-Junos read views must match that generated get/walk closure. Expanding the
+exact system and interface objects recorded by ADR 0026. The implemented Cisco
+and Junos read views match that generated get/walk closure. Expanding the
 module requires a corresponding reviewed device-view change; broad IF-MIB
 authority is not implied. SNMPv3 communities, traps, write access, vendor MIBs,
-dashboards, alerts, rates, and remediation remain outside 11C. gNMI remains 11D.
+dashboards, alerts, rates, and remediation remain outside 11C. 11D
+gNMI/OpenConfig is deferred/skipped for the current reference implementation.
 
-### Proposed 11C credential and provisioning boundary
+### Accepted 11C-3 credential and provisioning boundary
 
-11C-3 prepares, without activating, three distinct capabilities:
+11C-3 implements three distinct capability contracts:
 
 1. the existing device-specific SSH/NETCONF role connects to exactly one router;
 2. a separate Buildkite JWT role reads exactly that device's immutable SNMP `v1`
    generation after pre-write validation; and
-3. a separate observability AppRole reads only the two approved SNMP generation
-   paths for later host-side auth publication.
+3. a separate observability-source role is defined to read only the two approved
+   SNMP generation paths for deferred host-side auth publication. Its current
+   external configuration is not asserted.
 
 The protected `deploy-gate` remains the only device-write boundary. A typed
 `snmp_provisioning_plan` is promoted and approved through that same path, and a
-single plan targets one NetBox device. Cisco and Junos acceptance will therefore
-use separate commits, builds, approvals, and non-retryable attempts. The plan
+single plan targets one NetBox device. Cisco and Junos acceptance used separate
+commits, builds, approvals, and non-retryable attempts. The plan
 contains the controlled username and logical credential reference but no
 passphrase, localized key, encrypted secret, or secret-derived digest.
 
@@ -191,9 +197,10 @@ automatic rollback in force. Targeted inspection reduces device output to
 normalized view/group/user/protocol facts and never persists localized keys or
 arbitrary SNMP configuration.
 
-This implementation does not create OpenBao resources or credentials and does
-not configure a device. After merge, an operator must separately prepare the
-reviewed OpenBao authorities. Device 1 then requires its own reviewed live
-request and approval; only after acceptance may device 2 receive a fresh
-commit-bound request. Persistent exporter materialization and polling remain
-11C-4.
+Cisco Build #267 and Junos Build #275 accepted the separately authorized live
+provisioning paths and independently validated bounded device state. Junos used
+the exact source plan previously rehearsed on disposable `.40`; Build #273
+failed closed before credential read or device access and was never retried.
+Persistent exporter materialization, Docker-to-live-router UDP/161 acceptance,
+and polling remain deferred to 11C-4. The persistent five-service 11A/11B
+runtime remains SNMP-free.

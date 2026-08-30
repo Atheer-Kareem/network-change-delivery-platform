@@ -1,137 +1,130 @@
 # Buildkite workflow
 
-The current DAG always begins with `quality` plus `pipeline-contract`. A
-runtime-relevant change then continues through serialized `cml-staging`; on
-main, the protected-delivery group continues through `promotion` →
-`deployment-approval` → serialized `deploy-gate`. `quality` is a visible group:
-one step builds a frozen `quality-base` Docker environment, then separate steps
-run the committed-diff, Ruff, pytest, ansible-lint, and package checks. The five
-tool checks reuse that exact build image. Validation uses `ncdp-validation`; the
-gate uses `ncdp-deploy` with concurrency group
-`ncdp/network-change-deployment` and limit one.
+The current pipeline makes validation, disposable integration, offline network
+assurance, immutable promotion, human authorization, and protected deployment
+separate visible boundaries.
 
-Pull requests run shared validation and, for same-repository PRs, staging.
-Fork-origin staging is rejected by a trusted agent command hook. Promotion and
-approval are main, non-PR steps and promotion depends on same-build staging.
-Promotion has its own concurrency limit one and group
-`ncdp/batfish-promotion`. The host verifies Git identity and orchestrates Docker
-and artifact upload; readiness, assurance, bundle creation, and verification run
-in the pinned project promotion image. Docker Compose attaches that container
-and Batfish to the deterministic `ncdp-promotion` project network, where both
-readiness and assurance use `NCDP_BATFISH_HOST=batfish`. Promotion writes through
-a bounded bind mount before the host agent uploads the artifact. Deployment
-serialization protects write execution separately. Promotion prints the
-verified commit and three exact promotion digest values for visibility.
+```text
+visible validation steps
+        |
+        v
+validation-complete
+   |                 |
+   v                 v
+CML staging     Batfish assurance        protected main only
+   |                 |
+   +--------+--------+
+            v
+    immutable promotion
+            v
+    human authorization
+            v
+       deploy-gate
+```
 
-The promotion stage normalizes its immutable virtual environment, application
-source, Batfish fixtures, and readiness path to read/traverse/execute permissions
-without granting broad write access. Its root-owned image content is therefore
-usable by the arbitrary host UID/GID selected for bind-mounted artifact
-ownership, independent of checkout umask.
+## Visible validation and barrier
+
+There is no visible `quality` group. `quality-env` builds the frozen
+`quality-base` environment used only by validations that consume it: Ruff lint,
+Ruff format, ordinary pytest, ansible-lint, package build, applicable
+observability/SNMP runtime validation, and the containerized half of the NCDP
+pipeline contract. Those checks can run independently after the image exists.
+
+Committed-diff integrity, Terraform CML static validation, SNMP module
+reproducibility, and Buildkite-definition validation are independent roots.
+Change-aware observability and SNMP validations may be skipped when their
+reviewed paths do not change.
+
+Two visible contracts have distinct meanings:
+
+- `buildkite-definition` uses the installed agent to dry-run the pipeline with
+  secret and parse-warning rejection;
+- `ncdp-pipeline-contract` combines containerized structural assertions with
+  genuine host-installed-agent changed-file routing evaluation. It covers the
+  graph, queues, gating, retry prohibition, and runtime-path classification.
+
+All applicable validations join at the keyed `validation-complete` wait.
+Legitimately skipped change-aware steps satisfy the barrier. `cml-staging` has
+no explicit dependency and therefore inherits the wait rather than bypassing
+it. The protected-delivery group explicitly depends on the same barrier.
+Validation runs on the `ncdp-validation` queue. Local worker capacity is an
+operational setting and is not a portable platform contract.
+
+## Pull requests and disposable staging
+
+Runtime-relevant same-repository pull requests run the single
+`cml-staging` job after validation. It is independently serialized in
+`ncdp/cml-ephemeral-staging`, cannot be retried, and uses build-UUID run
+identity, external run-scoped state, dedicated identities, strict run-scoped
+host trust, and sanitized evidence. A trusted agent command hook rejects fork
+PR staging before credentials are exposed.
+
+The staging job remains one Python lifecycle owner. Its visible create →
+validate → destroy phases do not split cleanup authority across Buildkite jobs.
+See [Buildkite ephemeral CML staging operations](buildkite-ephemeral-cml-staging-operations.md).
+
+The protected-delivery group is restricted to non-PR `main` builds and is
+therefore absent/ineligible on pull requests.
+
+## Protected-main assurance and promotion
+
+On a runtime-relevant non-PR `main` build, `batfish-assurance` and
+`cml-staging` become eligible independently after `validation-complete`.
+Batfish uses the `ncdp-validation` queue, concurrency group
+`ncdp/batfish-assurance`, limit one, and no automatic or manual retry. Its fixed
+Compose project is `ncdp-batfish-assurance`. The step verifies commit identity,
+starts Batfish, performs bounded readiness, evaluates the exact plan/policy/
+baseline, independently verifies successful evidence, uploads
+`assurance/assurance.json`, and publishes a typed sanitized annotation.
+
+`promotion` depends explicitly on both `cml-staging` and
+`batfish-assurance`. It does not start, contact, or wait for Batfish. It
+downloads exactly `assurance/assurance.json` from step `batfish-assurance` in
+the current Buildkite build, requires the exact filesystem shape, rejects
+symlinks/non-regular material, and independently verifies the record against
+the checked-out plan, policy, and baseline. Only then does it create and verify
+the immutable promotion, upload `promotion/**`, and record the plan, assurance,
+and promotion digests as `promoted-*` metadata.
 
 Promotion contains plan, policy, assurance, and frozen baseline bytes only.
-After repository-owned verification, manifest confirmation, and successful
-artifact upload, promotion independently re-verifies the bundle and records the
-plan, assurance, and promotion digests as `promoted-*` Buildkite build metadata.
-Buildkite then pauses at a fieldless `deployment-approval` block. Its successful
-completion is the explicit human authorization of the exact promotion belonging
-to that build; the human does not manually transcribe or independently compare
-digests. The deployment gate downloads and independently verifies the artifact,
-then requires its three verified digests to match the machine-recorded promoted
-values exactly. The separation is promotion records → human authorizes → gate
-verifies. Automated metadata is evidence, not authorization, and the gate still
-depends on the human block.
+Buildkite pauses at the fieldless `deployment-approval` block after promotion.
+Its successful completion is explicit human authorization of that exact
+promotion; automated metadata remains evidence rather than authorization.
 
-For a commit-bound live request, the same approved `deploy-gate` job captures a
-successful Oxidized PRE observation, performs the single device attempt, and
-then attempts POST before slower artifact and audit work. It has retry count
-zero. The durable observation child is written only after the immutable parent
-audit exists and is revalidated from the current Buildkite job identity;
-temporal bracketing remains `NOT_PROVEN` causality. PR builds cannot reach this
-main-only protected boundary.
+## Protected deployment
 
-The deployment gate reads one bounded Buildkite OIDC JWT from stdin and submits
-it to OpenBao's fixed JWT role. The main, non-PR job requests that JWT with
-audience `urn:ncdp:openbao:deploy`,
-300-second lifetime, and `pipeline_id` as its subject claim. This makes the
-immutable pipeline UUID the JWT `sub`. OpenBao binds that exact subject, maps
-`/sub` to application metadata named `pipeline_id`, and returns mapped commit,
-branch, step, and job metadata; NCDP then compares all five verified values with
-the current deployment context. The job rejects ambient AppRole bootstrap and
-direct device credentials before requesting identity. Only after identity
-verification does it retrieve and verify the promotion artifact and promoted
-metadata. Final authorization success therefore requires both cryptographic
-workload identity and exact promotion verification. The issued OpenBao token has
-no policies and is discarded; NCDP verifies the actual response contains no
-token, Identity-derived, or aggregate policy capability. OpenBao uses immutable
-`sub` as the stable Identity alias while the required mapped `job_id`
-still has to match the current job exactly. External OpenBao configuration and
-protected-main federation were accepted in normal hardened mode by
-protected-main build #26.
+The serialized `deploy-gate` runs on `ncdp-deploy` in
+`ncdp/network-change-deployment`, limit one, with automatic and manual retries
+disabled. It independently verifies the promotion artifact and its three
+recorded digests. A changed commit-bound live request must bind exactly to that
+promotion before a device-capable identity is requested. An unchanged or absent
+request terminates in the accepted no-write path before privileged device
+authority.
 
-For bounded personal-lab federation troubleshooting only,
-`NCDP_OPENBAO_JWT_DIAGNOSTICS=1` changes the identity command into a terminal
-diagnostic. It decodes, without authenticating, only the JWT algorithm, key ID,
-issuer, subject, audience, five bound identity claims, and time claims; compares
-`sub` and the four job claims with the validated Buildkite environment; submits
-the same in-memory JWT to the fixed OpenBao login path; and reports only the HTTP
-status and bounded JSON `errors` strings on rejection. The JWT and any returned
-OpenBao token are never printed or persisted. The gate exits immediately after
-this attempt, before artifact retrieval, secret retrieval, or deployment. The
-flag is absent by default and does not alter normal authentication behavior.
+Buildkite OIDC and OpenBao bind pipeline, commit, branch, step, and job identity.
+Device-specific, short-lived, one-use authority is derived only after request,
+promotion, runtime, audit, and fresh preflight checks. For a write, the same
+non-retryable job captures Oxidized PRE, performs one vendor-aware attempt,
+attempts POST, and publishes typed AuditStore correlation. Ambiguous or failed
+writes are never replayed inside the historical build. See
+[Buildkite protected live deployment](buildkite-live-deployment.md).
 
-Protected-main diagnostics established why the original role failed: the token
-contained the exact immutable pipeline UUID in `sub`, contained no separate
-`pipeline_id` claim, and OpenBao rejected the required `/pipeline_id` mapping
-with `claim "pipeline_id" not found in token`. The durable contract now uses
-standard `sub`; absence of the optional duplicate claim is expected. After the
-operator migrated the owned role, protected-main build #26 passed signature and
-role validation, exact runtime identity comparison, zero-policy verification,
-and exact promotion authorization without a device write.
-
-7C-A preserves that identity-only exchange on every ordinary main build and adds
-a later conditional boundary. Only an exact commit that changes the fixed live
-request and binds it to the promoted single-device plan can request a second
-fresh JWT for the device-specific read role. All other builds stop with an
-explicit no-write result before privileged identity, NetBox, secrets, or device
-access. See [Buildkite protected live deployment](buildkite-live-deployment.md).
-
-The personal lab may use one Mac, but queues, agent processes, working
-directories, and deployment environment variables remain separate. Physical
-host isolation is not claimed.
-
-The staging queue is `ncdp-staging`, independently serialized in
-`ncdp/cml-ephemeral-staging`. It has no retry and uses build-UUID run identity,
-persistent external state, dedicated identities, run-scoped SSH trust, and
-sanitized evidence. It calls the accepted Python state machine; YAML and shell
-do not implement Terraform lifecycle decisions. See
-[Buildkite ephemeral CML staging operations](buildkite-ephemeral-cml-staging-operations.md).
+The personal lab may use one Mac, but validation, staging, and deployment
+queues, agent processes, working directories, hooks, and environment authority
+remain separate. Physical host isolation is not claimed.
 
 ## Live-path change classification
 
 The repository pipeline's native Buildkite `if_changed` exclusion set is the
-executable classification authority. Quality and pipeline-contract checks run
-for every build. Live CML staging and the complete protected-delivery group are
-omitted only when every changed path is one of `docs/**`, `README.md`,
-`AGENTS.md`, `.github/CODEOWNERS`, `.github/pull_request_template.md`,
-`tests/**`, or `.gitignore`. The condition includes `**` first, so any other
-`.github` path, mixed change, and every unknown or unclassified path retain the
-live path. If Buildkite cannot determine changed files, it runs the guarded
-steps rather than skipping them.
+executable classification authority. Visible validation and contract checks run
+for every build. CML staging and the protected-delivery group are omitted only
+when every changed path is one of `docs/**`, `README.md`, `AGENTS.md`,
+`.github/CODEOWNERS`, `.github/pull_request_template.md`, `tests/**`, or
+`.gitignore`. The condition includes `**` first, so mixed changes and unknown or
+unclassified paths retain the runtime path. Indeterminate classification fails
+closed by running guarded steps.
 
-New top-level repository files and directories are runtime-relevant by default.
-A maintainer may add one to the exclusion set only after demonstrating that it
-cannot affect application or network-execution behavior, Buildkite or
-deployment behavior, infrastructure, credential/security boundaries,
-dependencies/toolchain, or generated execution/promotion artifacts. That
-change requires explicit rationale, this architecture contract to remain
-accurate, pipeline-contract regression coverage, and normal review. Uncertain
-classification stays runtime-relevant. Documentation and tests describe and
-protect this policy; they do not implement a second classifier.
-
-The broad `docs/**` and `tests/**` exclusions are intentional semantic
-boundaries: their contents must remain documentation and non-runtime test
-material respectively. A new top-level path—or a path whose purpose falls
-outside an already reviewed non-runtime semantic boundary—does not inherit an
-exclusion merely because it appears related or is placed beneath a convenient
-directory. It remains runtime-relevant until explicitly reviewed.
+New top-level paths are runtime-relevant by default. An exclusion requires
+explicit rationale, updated architecture, pipeline-contract regression
+coverage, and review. Documentation and tests describe and protect this policy;
+they do not implement a second classifier.

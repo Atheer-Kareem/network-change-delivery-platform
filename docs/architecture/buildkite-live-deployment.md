@@ -1,12 +1,20 @@
 # Buildkite protected live deployment
 
-7C-A adds a fail-closed, single-device composition boundary without changing the
-existing vendor execution lifecycle. Every protected-main build still performs
-the accepted zero-policy 7B identity exchange and exact promotion verification.
-The gate then checks whether that exact commit changed the fixed live request
-relative to its first parent. Authorization reads the bounded regular blob
-directly from that commit's Git object; working-tree creation, modification,
-deletion, symlinks, and oversized content cannot substitute request semantics.
+The accepted 7C boundary provides fail-closed, single-device protected delivery
+without changing the vendor execution lifecycle. Every eligible protected-main
+build performs the accepted zero-policy 7B identity exchange and exact
+promotion verification. The gate then checks whether that exact commit changed
+the fixed live request relative to its first parent. Authorization reads the
+bounded regular blob directly from that commit's Git object; working-tree
+creation, modification, deletion, symlinks, and oversized content cannot
+substitute request semantics.
+
+After the visible validation barrier, disposable CML staging and first-class
+Batfish assurance are independent protected-main prerequisites. Immutable
+promotion waits for both, downloads assurance from the exact same-build
+`batfish-assurance` step, and independently verifies it before creating the
+bundle. Human authorization remains between promotion and the serialized,
+non-retriable `deploy-gate`.
 
 An unchanged or deleted request prints `live deployment requested: NO` and
 `device write executed: NO`, then exits before a privileged JWT, NetBox, OpenBao
@@ -55,7 +63,7 @@ failed or was ambiguous, its typed outcome remains primary and both failures
 are reported. If execution fails before a typed `ChangeRecord` exists, the gate
 does not fabricate a durable execution audit record.
 
-Increment 10C-7A adds metadata-only configuration bracketing inside the same
+Increment 10C-7 adds metadata-only configuration bracketing inside the same
 no-retry deploy-gate job. After all existing authorization checks, a successful
 PRE observation is required before the device command. POST is attempted as
 soon as that command returns, including on a nonzero result. Canonical private
@@ -63,118 +71,37 @@ attempt files exist only below the job temporary directory. After typed
 ChangeRecord handling, the immutable parent audit is persisted first; only a
 verified parent permits append-only `ConfigurationObservationRecord`
 persistence. Metadata failure never retries or rolls back the device attempt,
-and the original device outcome remains primary. Real acceptance is pending a
-new merged-main build in 10C-7B.
+and the original device outcome remains primary. Protected PRE/write/POST
+correlation is accepted; chronology remains temporal bracketing rather than
+proof that the protected write caused the observed revision.
 
-Build #150 failed closed before PRE observation because the reboot-persistent
-deploy-agent environment omitted the intact, previously accepted collection
-root. Protected deploy jobs now require the exact external path
-`/Users/netdevops/.local/share/ncdp/ansible/collections` before the existing
-manifest/version verifier runs; checkout-local, user, system, and Galaxy
-fallbacks are not authorized. No device write occurred. Build #150 remains
-permanently non-retriable, and retry authorization 1 changes the commit-bound
-request blob for a new merged-main attempt without changing its semantic plan.
+## Historical protected-deployment acceptance evolution
 
-Build #152 passed the corrected Ansible runtime check and then failed closed in
-PRE collection-readiness validation. The operator twin intentionally destroyed
-after the prior failed attempt had not been freshly created after merge, so its
-realization trust remained retired and schema-2 readiness remained absent. PRE
-did not submit `node.next`; no deployment, audit mutation, or configuration
-history change occurred. Build #152 is permanently non-retriable. Retry
-authorization 2 changes only the committed request blob; after its merge, a
-fresh operator twin, CML-anchored trust, and bound readiness must be prepared
-before the exact new main build is approved.
+The acceptance history is retained because its failures demonstrate the
+fail-closed and no-retry contracts; it is not the current implementation status:
 
-Build #154 was correctly prepared and authorized. PRE readiness passed,
-`node.next` was submitted once for the Cisco target, and Oxidized completed the
-job successfully. Its fresh-realization output created a third private Git
-revision one second after the upstream job end. That was within the existing
-five-second chronology tolerance, but durable conversion incorrectly treated
-the upstream end as the completed observation boundary and rejected the Git
-timestamp. The gate stopped before its device-capable OIDC request and
-deployment command, and no parent or child audit record was persisted. Build
-#154 is permanently non-retriable. Successful durable attempts now complete at
-the bounded path-metadata settlement boundary; retry authorization 3 changes
-only the committed request blob for the next reviewed main build.
+- Builds #150, #152, #154, and #156 each stopped at a distinct pre-write or
+  evidence boundary. None was retried. Corrections used a new commit, build,
+  request authorization, and fresh preparation.
+- Build #158 accepted the CML-anchored trust and protected Cisco
+  PRE/write/POST correlation path, including immutable parent/child evidence.
+- The earlier 7C sequence likewise retained its blocked attempts rather than
+  replaying them. Its accepted `SUCCEEDED` single-device execution and later
+  unchanged-request no-write acceptance are recorded as Builds #46 and #48 in
+  the cumulative acceptance record.
+- Later protected SNMP provisioning accepted Cisco Build #267 and Junos Build
+  #275 without weakening the same authorization and non-retry boundaries.
 
-Build #156 completed PRE and persisted a valid fresh-realization revision, then
-failed closed during deployment preflight device-state collection. The
-protected adapter still selected the generic user `known_hosts`, whose Cisco
-key was stale, rather than the realization-anchored trust already required by
-PRE. Fresh NetBox resolution and the one-use OpenBao credential boundary had
-succeeded, but the executor was never called and no configuration write
-occurred. POST was unchanged, and one immutable `BLOCKED` parent plus its valid
-`TEMPORALLY_BRACKETED`, `NOT_PROVEN` child were persisted. Protected deployment
-now validates the dedicated CML trust and projects that exact file into a
-private run-scoped Ansible home. Build #156 is permanently non-retriable;
-retry authorization 4 changes only the request blob for a new reviewed build.
+The detailed causes, corrective commits, evidence, and exact scope are preserved
+in the
+[Increment 7C acceptance report](../acceptance/buildkite-live-deployment-increment-7c.md),
+the
+[Increment 10C-7B acceptance report](../acceptance/protected-configuration-observation-increment-10c7b.md),
+and the
+[Increment 11C acceptance report](../acceptance/continuous-observability-increment-11c.md).
 
-Build #158 completed the protected live acceptance at commit
-`6516983b7b66498776d0c1698c9f2fe53065b79e`. The dedicated realization trust
-was exercised by the protected adapter, PRE and POST both settled coherent
-path-scoped revisions, the exact Cisco attempt and fresh post-validation
-succeeded, and immutable `SUCCEEDED` parent/child evidence was persisted. The
-child remains `TEMPORALLY_BRACKETED` with causality `NOT_PROVEN`. Controlled
-cleanup retired readiness and trust before deleting the exact 13-resource
-operator graph while preserving private chronology and durable evidence.
-
-7C-A supports one promoted `DeploymentPlan`; Buildkite fleet deployment remains
-unsupported. NetBox access is inventory-read-only and NCDP performs no NetBox
-mutation. This foundation has no active live request and has not performed or
-externally accepted a device write.
-
-7C-B1 replaces the active synthetic fleet promotion input with the exact
-repository-owned single-device plan under `deployments/live/promotion`. The plan
-was generated through fresh read-only NetBox, OpenBao, and device boundaries.
-Its dedicated baseline is a sanitized plan-bound Batfish model that preserves
-the accepted synthetic critical flow and exact interface-description
-precondition; it is not a claim of full live configuration freshness. B1 keeps
-`deployments/live/request.yaml` absent so protected-main can first validate the
-single-device promotion and terminate in the established no-write path. Live
-device-write acceptance remains pending.
-
-The first externally attempted 7C deployment stopped during preflight with a
-`BLOCKED` outcome before execution. Pre-write failures remain fail-closed, while
-the existing `StageResult.message` now attributes failure only to a fixed
-boundary: inventory resolution, credential-reference resolution, credential
-retrieval, device-state collection, or live safety validation. Provider and
-device exception strings, response bodies, command output, and secret material
-remain suppressed from typed evidence and process output. This attribution does
-not change outcome semantics, the version 1 `ChangeRecord` schema, stale-plan
-checks, or execution and recovery behavior. Live device-write acceptance remains
-pending.
-
-Retry #2 passed inventory and credential retrieval, then blocked during device
-state collection before execution. Read-only diagnosis found that neither
-repository-pinned collection (`ansible.netcommon` 8.6.0 and `cisco.ios` 11.4.2)
-was present in the deployment runtime's effective search path. This was a
-deployment-runtime dependency defect, not a plan, inventory, OpenBao, or device
-write failure. The pre-JWT runtime check now fails closed with one sanitized
-message when requirements, search paths, installed metadata, or exact versions
-are unavailable.
-
-Retry #3 subsequently completed the protected deployment with `SUCCEEDED` typed
-evidence. Independent read-only verification confirmed the exact desired
-description on GigabitEthernet2, retained protection of the GigabitEthernet1
-management interface, and no need for recovery. The successful execution also
-exposed a control-plane gap: after a local macOS permission failure, Buildkite
-could retry the failed `deploy-gate` job inside the already-approved build.
-
-The deployment command step therefore disables both automatic and manual retry.
-As defense in depth, `deployment_gate.sh` accepts only
-`BUILDKITE_RETRY_COUNT=0` (with absence treated as zero for local compatibility)
-and rejects every retried or malformed value before commit verification, either
-OIDC request, promotion authorization, runtime verification, or any
-NetBox/OpenBao/device boundary. This prohibits same-build `deploy-gate` replay.
-Another Buildkite build is a distinct authorization context and requires another
-human approval; normal NCDP operating procedure also requires an explicit
-commit-bound retry marker for an intentional retry. Pipeline-wide Buildkite
-Rebuild disablement is not part of the accepted 7C step-level control.
-
-Increment 7C is complete. Protected-main build #46 produced `SUCCEEDED` typed
-evidence for the exact single-device plan, and independent read-only verification
-confirmed the desired GigabitEthernet2 state and GigabitEthernet1 management
-safety. The single-attempt retry hardening then merged, and protected-main build
-#48 accepted the unchanged-request no-write path without privileged credential
-or device access. The complete evidence and scope boundaries are recorded in the
-[Increment 7C acceptance report](../acceptance/buildkite-live-deployment-increment-7c.md).
+The current accepted boundary supports one promoted `DeploymentPlan`;
+Buildkite fleet deployment remains unsupported. NetBox access is
+inventory-read-only, NCDP performs no NetBox mutation, same-build deploy-gate
+replay is prohibited, and an intentional corrected attempt requires a fresh
+commit, build, request authorization, and human approval.

@@ -45,11 +45,13 @@ class AuditArtifactKind(StrEnum):
 
     DEPLOYMENT_PLAN = "deployment_plan"
     FLEET_DEPLOYMENT_PLAN = "fleet_deployment_plan"
+    SNMP_PROVISIONING_PLAN = "snmp_provisioning_plan"
     PLAN_ASSURANCE_RECORD = "plan_assurance_record"
     DEPLOYMENT_PROMOTION_MANIFEST = "deployment_promotion_manifest"
     STAGING_EVIDENCE = "staging_evidence"
     CHANGE_RECORD = "change_record"
     FLEET_CHANGE_RECORD = "fleet_change_record"
+    SNMP_PROVISIONING_RECORD = "snmp_provisioning_record"
 
 
 class AuditFinalOutcome(StrEnum):
@@ -210,19 +212,22 @@ class ChangeAuditRecord(BaseModel):
         kind_set = set(kinds)
         single = AuditArtifactKind.DEPLOYMENT_PLAN in kind_set
         fleet = AuditArtifactKind.FLEET_DEPLOYMENT_PLAN in kind_set
-        if single == fleet:
+        snmp = AuditArtifactKind.SNMP_PROVISIONING_PLAN in kind_set
+        if sum((single, fleet, snmp)) != 1:
             raise ValueError("audit record requires exactly one plan kind")
-        if single and len(self.targets) != 1:
+        if (single or snmp) and len(self.targets) != 1:
             raise ValueError("single-device audit plan requires one target")
-        if (
-            AuditArtifactKind.CHANGE_RECORD in kind_set
-            and AuditArtifactKind.FLEET_CHANGE_RECORD in kind_set
-        ):
+        change_evidence = AuditArtifactKind.CHANGE_RECORD in kind_set
+        fleet_evidence = AuditArtifactKind.FLEET_CHANGE_RECORD in kind_set
+        snmp_evidence = AuditArtifactKind.SNMP_PROVISIONING_RECORD in kind_set
+        if sum((change_evidence, fleet_evidence, snmp_evidence)) > 1:
             raise ValueError("audit execution evidence is ambiguous")
-        if fleet and AuditArtifactKind.CHANGE_RECORD in kind_set:
+        if fleet and (change_evidence or snmp_evidence):
             raise ValueError("fleet audit cannot flatten child ChangeRecords")
-        if single and AuditArtifactKind.FLEET_CHANGE_RECORD in kind_set:
+        if single and (fleet_evidence or snmp_evidence):
             raise ValueError("single-device audit cannot reference fleet evidence")
+        if snmp and (change_evidence or fleet_evidence):
+            raise ValueError("SNMP audit cannot reference unrelated execution evidence")
         if self.approval is not None and self.buildkite is None:
             raise ValueError("audit approval requires Buildkite correlation")
         return self

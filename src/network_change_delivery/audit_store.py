@@ -29,6 +29,10 @@ from network_change_delivery.models import (
 )
 from network_change_delivery.plan_assurance import PlanAssuranceRecord
 from network_change_delivery.promotion import DeploymentPromotionManifest
+from network_change_delivery.snmp_provisioning import (
+    SnmpProvisioningPlan,
+    SnmpProvisioningRecord,
+)
 
 MAX_AUDIT_RECORD_BYTES = 256 * 1024
 MAX_AUDIT_ARTIFACT_BYTES = 4 * 1024 * 1024
@@ -42,20 +46,25 @@ type AuditArtifact = (
     | StagingEvidence
     | ChangeRecord
     | FleetChangeRecord
+    | SnmpProvisioningPlan
+    | SnmpProvisioningRecord
 )
 
 _ARTIFACT_TYPES: dict[AuditArtifactKind, type[object]] = {
     AuditArtifactKind.DEPLOYMENT_PLAN: DeploymentPlan,
     AuditArtifactKind.FLEET_DEPLOYMENT_PLAN: FleetDeploymentPlan,
+    AuditArtifactKind.SNMP_PROVISIONING_PLAN: SnmpProvisioningPlan,
     AuditArtifactKind.PLAN_ASSURANCE_RECORD: PlanAssuranceRecord,
     AuditArtifactKind.DEPLOYMENT_PROMOTION_MANIFEST: DeploymentPromotionManifest,
     AuditArtifactKind.STAGING_EVIDENCE: StagingEvidence,
     AuditArtifactKind.CHANGE_RECORD: ChangeRecord,
     AuditArtifactKind.FLEET_CHANGE_RECORD: FleetChangeRecord,
+    AuditArtifactKind.SNMP_PROVISIONING_RECORD: SnmpProvisioningRecord,
 }
 _INTRINSIC_DIGEST_KINDS = {
     AuditArtifactKind.DEPLOYMENT_PLAN,
     AuditArtifactKind.FLEET_DEPLOYMENT_PLAN,
+    AuditArtifactKind.SNMP_PROVISIONING_PLAN,
     AuditArtifactKind.PLAN_ASSURANCE_RECORD,
     AuditArtifactKind.DEPLOYMENT_PROMOTION_MANIFEST,
 }

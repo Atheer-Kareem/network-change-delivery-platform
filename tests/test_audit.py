@@ -125,11 +125,13 @@ def test_schema_one_digest_and_artifact_kind_compatibility_are_frozen() -> None:
     assert {item.value for item in AuditArtifactKind} == {
         "deployment_plan",
         "fleet_deployment_plan",
+        "snmp_provisioning_plan",
         "plan_assurance_record",
         "deployment_promotion_manifest",
         "staging_evidence",
         "change_record",
         "fleet_change_record",
+        "snmp_provisioning_record",
     }
 
 
@@ -206,6 +208,47 @@ def test_single_and_fleet_evidence_cannot_be_mixed_or_flattened() -> None:
     child = artifact(AuditArtifactKind.CHANGE_RECORD)
     with pytest.raises(ValidationError, match="flatten"):
         record(artifacts=(child, fleet_plan))
+
+
+def test_snmp_plan_is_one_device_scoped_plan_kind_with_matching_evidence() -> None:
+    snmp_plan = artifact(AuditArtifactKind.SNMP_PROVISIONING_PLAN)
+    snmp_evidence = artifact(AuditArtifactKind.SNMP_PROVISIONING_RECORD)
+    approved = record(
+        targets=(StableTargetIdentity(device="netbox:dcim.device:1"),),
+        credentials=(
+            CredentialProvenance(
+                device="netbox:dcim.device:1",
+                source="openbao",
+                reference="openbao:kv-v2:ncdp/devices/1/ssh",
+            ),
+            CredentialProvenance(
+                device="netbox:dcim.device:1",
+                source="openbao_snmp",
+                reference="snmpv3:netbox:dcim.device:1:generation:v1",
+            ),
+        ),
+        artifacts=(snmp_plan, snmp_evidence),
+    )
+    assert approved.targets[0].interface is None
+    assert [item.source for item in approved.credentials] == [
+        "openbao",
+        "openbao_snmp",
+    ]
+
+    with pytest.raises(ValidationError, match="exactly one plan kind"):
+        record(artifacts=(artifact(), snmp_plan))
+    with pytest.raises(ValidationError, match="unrelated execution evidence"):
+        record(
+            targets=(StableTargetIdentity(device="netbox:dcim.device:1"),),
+            credentials=(
+                CredentialProvenance(
+                    device="netbox:dcim.device:1",
+                    source="openbao_snmp",
+                    reference="snmpv3:netbox:dcim.device:1:generation:v1",
+                ),
+            ),
+            artifacts=(artifact(AuditArtifactKind.CHANGE_RECORD), snmp_plan),
+        )
 
 
 def test_envelope_schema_has_no_raw_secret_or_configuration_fields() -> None:

@@ -1,136 +1,44 @@
+# TEMPORARY JUNOS-001 PR REHEARSAL PIPELINE.
+# Diagnostic only: restore the protected-main pipeline exactly before merge.
 steps:
-  - group: ":white_check_mark: quality"
-    key: quality
-    steps:
-      - label: ":docker: build quality environment"
-        key: quality-env
-        command: docker build --target quality-base --tag ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} .
-        agents:
-          queue: ncdp-validation
-
-      - label: ":git: committed diff"
-        key: quality-committed-diff
-        command: |
-          BASE_BRANCH="$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
-          git fetch --no-tags origin \
-            "$${BASE_BRANCH}:refs/remotes/origin/$${BASE_BRANCH}"
-          if [[ -n "$${BUILDKITE_PULL_REQUEST:-}" \
-             && "$${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
-            git --no-pager diff --check \
-              "$(git merge-base HEAD "origin/$${BASE_BRANCH}")..HEAD"
-          else
-            git --no-pager diff --check HEAD^..HEAD
-          fi
-        agents:
-          queue: ncdp-validation
-
-      - label: ":mag: Ruff lint"
-        key: quality-ruff-lint
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff check .
-        agents:
-          queue: ncdp-validation
-
-      - label: ":art: Ruff format"
-        key: quality-ruff-format
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff format --check .
-        agents:
-          queue: ncdp-validation
-
-      - label: ":pytest: pytest"
-        key: quality-pytest
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run pytest
-        agents:
-          queue: ncdp-validation
-
-      - label: ":ansible: ansible-lint"
-        key: quality-ansible-lint
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ansible-lint
-        agents:
-          queue: ncdp-validation
-
-      - label: ":package: package build"
-        key: quality-package-build
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv build
-        agents:
-          queue: ncdp-validation
-
-      - label: ":terraform: Terraform CML static validation"
-        key: quality-terraform-cml
-        command: |
-          docker run --rm \
-            --volume "$${PWD}:/workspace:ro" \
-            --workdir /workspace \
-            --tmpfs /tmp:exec,mode=1777 \
-            --entrypoint /bin/sh \
-            hashicorp/terraform:1.15.8@sha256:7ae513256f7ce67879e218ae8593d6fbe216ec9e123abe6c94e4e10704857963 \
-            -ec '
-              terraform version
-              terraform -chdir=infrastructure/cml fmt -check -recursive
-              TF_DATA_DIR=/tmp/terraform-data-operator terraform -chdir=infrastructure/cml init -backend=false -input=false -lockfile=readonly
-              TF_DATA_DIR=/tmp/terraform-data-operator terraform -chdir=infrastructure/cml validate
-              TF_DATA_DIR=/tmp/terraform-data-ephemeral terraform -chdir=infrastructure/cml/ephemeral init -backend=false -input=false -lockfile=readonly
-              TF_DATA_DIR=/tmp/terraform-data-ephemeral terraform -chdir=infrastructure/cml/ephemeral validate
-            '
-        agents:
-          queue: ncdp-validation
-
-      - label: ":gear: SNMP module reproducibility"
-        key: quality-snmp-generator
-        command: uv run --frozen python scripts/observability/check_snmp_generator.py
-        agents:
-          queue: ncdp-validation
-        if_changed:
-          include:
-            - "infrastructure/observability/snmp/**"
-            - "scripts/observability/check_snmp_generator.py"
-            - "src/network_change_delivery/snmp_mib.py"
-
-      - label: ":chart_with_upwards_trend: observability 11B Docker validation"
-        key: quality-observability-11b
-        depends_on: quality-env
-        command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_runtime.sh
-        agents:
-          queue: ncdp-validation
-        if_changed:
-          include:
-            - "infrastructure/observability/**"
-            - "scripts/observability/**"
-            - "src/network_change_delivery/observability_*.py"
-            - "tests/test_observability_*.py"
-
-      - label: ":satellite: observability 11C-2 synthetic SNMPv3 validation"
-        key: quality-observability-11c2
-        depends_on: quality-env
-        command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_snmp_runtime.sh
-        agents:
-          queue: ncdp-validation
-        if_changed:
-          include:
-            - "infrastructure/observability/**"
-            - "scripts/observability/**"
-            - "src/network_change_delivery/observability_*.py"
-            - "src/network_change_delivery/snmp_*.py"
-            - "tests/test_observability_*.py"
-            - "tests/test_snmp_*.py"
-
-  - label: ":white_check_mark: pipeline contract"
-    key: pipeline-contract
-    depends_on: quality
-    commands:
-      - buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run --format yaml --reject-secrets --reject-parse-warnings > /dev/null
+  - label: ":white_check_mark: exact PR rehearsal contract"
+    key: rehearsal-contract
+    command: |
+      scripts/buildkite/verify_staging_commit.sh
+      uv run python scripts/buildkite/verify_junos_rehearsal_contract.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+        reason: "A rehearsal commit is immutable and must not be retried."
 
-  - label: ":cloud: ephemeral CML staging"
+  - label: ":package: rehearsal promotion"
+    key: rehearsal-promotion
+    depends_on: rehearsal-contract
+    command: .buildkite/scripts/junos_rehearsal_promotion.sh
+    agents:
+      queue: ncdp-validation
+    concurrency: 1
+    concurrency_group: ncdp/batfish-promotion
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+        reason: "A rehearsal promotion is immutable and must not be retried."
+
+  - block: ":lock: Authorize Junos delivery rehearsal"
+    key: junos-rehearsal-approval
+    depends_on: rehearsal-promotion
+    prompt: >-
+      Authorize the exact PR-commit-bound promoted JUNOS-001 plan for one
+      disposable-CML rehearsal only. This does not authorize live deployment.
+    submit: "Authorize Junos delivery rehearsal"
+
+  - label: ":cloud: disposable Junos SNMP delivery rehearsal"
     key: cml-staging
-    depends_on:
-      - quality
-      - pipeline-contract
+    depends_on: junos-rehearsal-approval
     command: scripts/buildkite/ephemeral_staging.sh
     agents:
       queue: ncdp-staging
@@ -140,58 +48,4 @@ steps:
       automatic: false
       manual:
         allowed: false
-        reason: "Retained staging state requires explicit operator recovery."
-    if_changed:
-      include: "**"
-      exclude:
-        - "docs/**"
-        - "README.md"
-        - "AGENTS.md"
-        - ".github/CODEOWNERS"
-        - ".github/pull_request_template.md"
-        - "tests/**"
-        - ".gitignore"
-
-  - group: ":lock: protected delivery"
-    key: protected-delivery
-    depends_on: cml-staging
-    if: build.branch == "main" && build.pull_request.id == null
-    if_changed:
-      include: "**"
-      exclude:
-        - "docs/**"
-        - "README.md"
-        - "AGENTS.md"
-        - ".github/CODEOWNERS"
-        - ".github/pull_request_template.md"
-        - "tests/**"
-        - ".gitignore"
-    steps:
-      - label: ":package: promotion"
-        key: promotion
-        depends_on: cml-staging
-        command: .buildkite/scripts/promotion.sh
-        agents:
-          queue: ncdp-validation
-        concurrency: 1
-        concurrency_group: ncdp/batfish-promotion
-
-      - block: ":lock: Authorize exact promotion"
-        key: deployment-approval
-        depends_on: promotion
-        prompt: "Authorize the exact immutable promotion verified and recorded by the promotion step."
-        submit: "Authorize exact promotion"
-
-      - label: ":lock: deployment gate"
-        key: deploy-gate
-        depends_on: deployment-approval
-        command: scripts/buildkite/deployment_gate.sh
-        agents:
-          queue: ncdp-deploy
-        concurrency: 1
-        concurrency_group: ncdp/network-change-deployment
-        retry:
-          automatic: false
-          manual:
-            allowed: false
-            reason: "A fresh deployment authorization is required for another attempt."
+        reason: "A commit-confirmed rehearsal operation must never be retried."

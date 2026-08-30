@@ -35,6 +35,7 @@ class ConfigurationObservationStore(AuditStore):
     ) -> Path:
         """Publish only digest-valid metadata linked to a verified parent audit."""
 
+        self._require_writable()
         self._validate_root_identity()
         record = ConfigurationObservationRecord.model_validate(record)
         if not record.verify_digest():

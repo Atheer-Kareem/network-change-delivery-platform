@@ -92,6 +92,7 @@ class AuditStore:
         self, kind: AuditArtifactKind, artifact: AuditArtifact
     ) -> AuditArtifactReference:
         """Durably publish or safely reuse one approved immutable artifact."""
+        self._require_writable()
         self._validate_root_identity()
         try:
             kind = AuditArtifactKind(kind)
@@ -143,6 +144,7 @@ class AuditStore:
 
     def persist_record(self, record: ChangeAuditRecord) -> Path:
         """Publish a record only after every referenced artifact verifies."""
+        self._require_writable()
         self._validate_root_identity()
         record = ChangeAuditRecord.model_validate(record)
         if not record.verify_digest():
@@ -241,6 +243,10 @@ class AuditStore:
             or (metadata.st_dev, metadata.st_ino) != self._root_identity
         ):
             raise AuditStoreError("audit store root changed")
+
+    def _require_writable(self) -> None:
+        if not self._create:
+            raise AuditStoreError("audit store is read-only")
 
     def _managed_directory(self, path: Path) -> Path:
         if hasattr(self, "_root_identity"):

@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from test_audit_store import plan, record
+from test_audit_store import plan, record, store_snapshot
 from test_configuration_observation import observation_record
 
 from network_change_delivery.audit_store import AuditStoreError
@@ -84,6 +84,22 @@ def test_create_false_requires_existing_observation_namespace(tmp_path: Path) ->
             store.root, checkout=tmp_path / "checkout", create=False
         )
     assert not (store.root / "observation-records").exists()
+
+
+def test_create_false_rejects_observation_publication_before_any_mutation(
+    tmp_path: Path,
+) -> None:
+    writable, parent = populated_store(tmp_path)
+    readonly = ConfigurationObservationStore(
+        writable.root, checkout=tmp_path / "checkout", create=False
+    )
+    candidate = linked_record(parent, observation_record_id=UUID(int=3))
+    before = store_snapshot(readonly.root)
+
+    with pytest.raises(AuditStoreError, match="audit store is read-only"):
+        readonly.persist_observation_record(candidate)
+
+    assert store_snapshot(readonly.root) == before
 
 
 def test_parent_digest_mismatch_and_unknown_target_fail_before_publication(

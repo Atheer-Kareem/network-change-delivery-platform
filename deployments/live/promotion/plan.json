@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "plan_type": "snmp_provisioning_plan",
-  "change_id": "CHG-SNMP-11C3-CISCO-002",
+  "change_id": "CHG-SNMP-11C3-CISCO-003",
   "kind": "snmpv3_interface_telemetry",
   "target": "core-02",
   "inventory_source": "netbox",
@@ -51,6 +51,6 @@
     "user": "ABSENT",
     "foreign_objects_present": false
   },
-  "created_at": "2026-08-29T20:36:14.551856Z",
-  "digest": "sha256:769f0e8b115b246b1ddd29b70af5941d62d293b1305f691b25fbfc812ddee9ad"
+  "created_at": "2026-08-30T02:04:38.624966Z",
+  "digest": "sha256:a9dcc444261ad69a2cc1acf54bcea067be90997e5a8a0788ae1b5f6acfa9f797"
 }

@@ -11,6 +11,7 @@ from network_change_delivery.ansible_adapter import (
     EXECUTION_TASK,
     IDENTITY_TASK,
     AnsibleRunnerCiscoAdapter,
+    HostTrustError,
     ProviderError,
     _known_hosts_path,
     effective_ansible_collection_path,
@@ -218,6 +219,7 @@ def test_runner_uses_the_shared_effective_collection_path(
     )
     assert captured["envvars"]["NCDP_DEVICE_USERNAME"] == "user"
     assert captured["envvars"]["NCDP_DEVICE_PASSWORD"] == "secret"
+    assert captured["envvars"]["ANSIBLE_HOST_KEY_CHECKING"] == "True"
     assert captured["envvars"]["ANSIBLE_PERSISTENT_CONTROL_PATH_DIR"].endswith("/pc")
     assert len(captured["envvars"]["ANSIBLE_PERSISTENT_CONTROL_PATH_DIR"]) < 90
     assert os.environ["NCDP_DEVICE_USERNAME"] == "parent-user"
@@ -265,3 +267,34 @@ def test_runner_gives_paramiko_the_run_scoped_known_hosts_home(
     assert captured["known_hosts_mode"] == 0o600
     target = captured["inventory"]["all"]["hosts"]["ncdp_target"]
     assert target["ansible_network_cli_ssh_type"] == "paramiko"
+    assert "ansible_user" not in target
+    assert "ansible_password" not in target
+
+
+@pytest.mark.parametrize("invalid_file", [False, True])
+def test_runner_rejects_missing_or_invalid_private_host_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid_file: bool
+) -> None:
+    known_hosts = tmp_path / "private-trust" / "known_hosts"
+    if invalid_file:
+        known_hosts.parent.mkdir()
+        known_hosts.write_text(
+            "192.0.2.99 ssh-ed25519 AAAA\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "network_change_delivery.ansible_adapter.subprocess.run",
+            lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout=""),
+        )
+    adapter = AnsibleRunnerCiscoAdapter(tmp_path, known_hosts=known_hosts)
+    with pytest.raises(HostTrustError):
+        adapter._run(
+            InventoryDevice(
+                name="router-1",
+                host="192.0.2.10",
+                platform="cisco_iosxe",
+                expected_hostname="lab-router",
+            ),
+            DeviceCredentials(username="user", password="secret"),
+            "apply_snmp_provisioning.yml",
+        )

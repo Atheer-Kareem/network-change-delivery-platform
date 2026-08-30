@@ -48,14 +48,33 @@ buildkite-agent oidc request-token \
 staging_status=$?
 set -e
 
-if [[ -f "$evidence_relative" && ! -L "$evidence_relative" ]]; then
-  buildkite-agent artifact upload "$evidence_relative"
-fi
+rendered_summary=""
+render_summary() {
+  [[ -f "$evidence_relative" && ! -L "$evidence_relative" ]] || return 2
+  rendered_summary="$(
+    uv run --frozen python scripts/buildkite/render_staging_annotation.py \
+      --evidence "$evidence_relative"
+  )" || return 2
+}
+
+publish_evidence() {
+  local style="$1"
+  render_summary || return 2
+  buildkite-agent artifact upload "$evidence_relative" || return 2
+  printf '%s\n' "$rendered_summary" || return 2
+  printf '%s\n' "$rendered_summary" |
+    buildkite-agent annotate \
+      --style "$style" \
+      --context cml-staging || return 2
+}
+
 if [[ "$staging_status" -ne 0 ]]; then
-  if [[ -f "$evidence_relative" && ! -L "$evidence_relative" ]]; then
-    echo "staging failed; inspect the sanitized staging evidence artifact"
-  else
-    echo "staging failed before sanitized evidence was produced"
+  set +e
+  publish_evidence error
+  publication_status=$?
+  set -e
+  if [[ "$publication_status" -ne 0 ]]; then
+    echo "staging failed; safe evidence publication did not complete" >&2
   fi
   exit "$staging_status"
 fi
@@ -63,3 +82,5 @@ if [[ ! -f "$evidence_relative" || -L "$evidence_relative" ]]; then
   echo "staging completed without required sanitized evidence" >&2
   exit 1
 fi
+publish_evidence success
+echo "Ephemeral CML staging evidence published: $evidence_relative"

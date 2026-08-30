@@ -72,6 +72,32 @@ EXPECTED_LINKS = frozenset(
 )
 LEGACY_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
 SCRATCH_LAB = "a824a8b3-bcd1-488a-a791-d0783594ad9a"
+PHASE_MARKERS = (
+    "Admission & authority",
+    "Terraform create",
+    "CML topology & Day-0 verification",
+    "Lab start",
+    "Device readiness",
+    "Strict host trust",
+    "NCDP Cisco staging validation · READ-ONLY",
+    "NCDP Junos staging validation · READ-ONLY",
+    "Terraform destroy",
+    "Independent absence verification",
+    "Run-scoped state retirement",
+    "Final staging result",
+)
+
+
+def emit_phase(name: str) -> None:
+    """Open one supported Buildkite log group for a known staging phase."""
+    if name not in PHASE_MARKERS:
+        raise ValueError("unknown staging presentation phase")
+    print(f"+++ :cloud: {name}", flush=True)
+
+
+def emit_progress(message: str) -> None:
+    """Emit one bounded, secret-free staging progress statement."""
+    print(f"staging: {message}", flush=True)
 
 
 def retry_provider_read(action: Any, *, timeout: int = 180, interval: int = 15) -> int:
@@ -418,6 +444,7 @@ class LocalOperations:
                 active_staging.append((lab_id, title))
         if active_staging:
             raise StagingError("another NCDP staging realization exists")
+        emit_progress("conflicting staging realization absent: PASS")
         self._require_lab_stopped(SCRATCH_LAB, "scratch")
         for host in ("192.168.4.30", "192.168.4.40"):
             probe = subprocess.run(
@@ -428,7 +455,12 @@ class LocalOperations:
             )
             if probe.returncode == 0:
                 raise StagingError("fixed staging management address is already active")
+        emit_progress(
+            "fixed staging endpoints 192.168.4.30 and 192.168.4.40 free: PASS"
+        )
         self._resolve_authority()
+        emit_progress("exact NetBox logical identities accepted: PASS")
+        emit_progress("exact credential references accepted: PASS")
         if self._buildkite_context is not None:
             self.run_directory.parent.mkdir(mode=0o700, exist_ok=True)
             self.run_directory.parent.chmod(0o700)
@@ -445,6 +477,7 @@ class LocalOperations:
                 f"-backend-config=path={self.state_path}",
             ]
         )
+        emit_progress("run-scoped Terraform root admitted: PASS")
 
     def _run_plain(self, command: list[str]) -> str:
         result = subprocess.run(
@@ -507,10 +540,12 @@ class LocalOperations:
         )
 
     def create(self, evidence: StagingEvidence) -> None:
+        emit_phase("Terraform create")
         plan = self._run_safe(["plan"])
         changes = self._changes(plan)
         if changes != dict.fromkeys(self._expected_addresses(), "create"):
             raise StagingError("Terraform create graph was not exactly 10 creates")
+        emit_progress("Terraform plan accepted as exactly 10 creates: PASS")
         self._run_safe(["apply", "-auto-approve"])
         self._managed = True
         self.state_path.chmod(0o600)
@@ -547,9 +582,15 @@ class LocalOperations:
             evidence.build_branch = context.branch
             evidence.step_key = context.step_key
             evidence.job_id = context.job_id
+        emit_progress(f"created lab identity: {evidence.lab_id}")
+        emit_progress(
+            f"expected topology counts: nodes={len(evidence.node_ids)} "
+            f"links={len(evidence.link_ids)}: PASS"
+        )
         self._verify_creation(evidence)
 
     def _verify_creation(self, evidence: StagingEvidence) -> None:
+        emit_phase("CML topology & Day-0 verification")
         lab = self._lab(str(evidence.lab_id))
         if (lab.get("lab_title") or lab.get("title")) != self.lab_title:
             raise StagingError("created CML lab title mismatch")
@@ -563,6 +604,7 @@ class LocalOperations:
             node = self._api(f"/api/v0/labs/{evidence.lab_id}/nodes/{node_id}")
             if node.get("state") != "DEFINED_ON_CORE":
                 raise StagingError("created CML node was not DEFINED_ON_CORE")
+        emit_progress("expected topology identities and node states: PASS")
         self._verify_day0(evidence, "core_02", self._render_core())
         self._verify_day0(evidence, "edge_junos_01", self._render_edge())
 
@@ -605,6 +647,8 @@ class LocalOperations:
             or stored != expected
         ):
             raise StagingError(f"{role} stored Day-0 configuration mismatch")
+        label = "Cisco" if role == "core_02" else "Junos"
+        emit_progress(f"{label} stored Day-0 exact match: PASS")
 
     def _render_core(self) -> str:
         template = (
@@ -638,13 +682,16 @@ class LocalOperations:
         return template
 
     def start(self, evidence: StagingEvidence) -> None:
+        emit_phase("Lab start")
         self._terraform_env["TF_VAR_twin_lifecycle_state"] = "STARTED"
         changes = self._changes(self._run_safe(["plan"]))
         if changes != {"module.twin.cml2_lifecycle.twin": "update"}:
             raise StagingError("Terraform STARTED graph was not lifecycle-only")
+        emit_progress("Terraform STARTED plan is lifecycle-only: PASS")
         self._run_safe(["apply", "-auto-approve"])
         if evidence.lab_id != self._outputs["lab_id"]["value"]:
             raise StagingError("CML realization identity changed during start")
+        emit_progress("realization entered STARTED processing: PASS")
 
     @staticmethod
     def _endpoint_ready(host: str, port: int) -> bool:
@@ -654,8 +701,11 @@ class LocalOperations:
         except OSError:
             return False
 
-    def _wait_device(self, host: str, timeout: int = 1200) -> float:
+    def _wait_device(
+        self, role: str, hostname: str, host: str, timeout: int = 1200
+    ) -> float:
         started = time.monotonic()
+        next_progress = 0.0
         while time.monotonic() - started < timeout:
             ping = (
                 subprocess.run(
@@ -675,13 +725,32 @@ class LocalOperations:
                 ).returncode
                 == 0
             )
-            if (
-                arp
-                and ping
-                and self._endpoint_ready(host, 22)
-                and self._endpoint_ready(host, 830)
-            ):
-                return round(time.monotonic() - started, 1)
+            tcp22 = arp and ping and self._endpoint_ready(host, 22)
+            tcp830 = tcp22 and self._endpoint_ready(host, 830)
+            elapsed = time.monotonic() - started
+            if elapsed >= next_progress:
+                checks = " ".join(
+                    f"{name}={'PASS' if passed else 'WAITING'}"
+                    for name, passed in (
+                        ("ARP", arp),
+                        ("ICMP", ping),
+                        ("TCP/22", tcp22),
+                        ("TCP/830", tcp830),
+                    )
+                )
+                emit_progress(
+                    f"readiness {role}/{hostname} endpoint={host} "
+                    f"elapsed={round(elapsed)}s {checks}"
+                )
+                next_progress += 30
+            if arp and ping and tcp22 and tcp830:
+                duration = round(elapsed, 1)
+                emit_progress(
+                    f"readiness {role}/{hostname} endpoint={host} PASS "
+                    f"ARP=PASS ICMP=PASS TCP/22=PASS TCP/830=PASS "
+                    f"duration={duration}s"
+                )
+                return duration
             time.sleep(10)
         raise StagingError(f"{host} did not reach bounded management readiness")
 
@@ -728,10 +797,13 @@ class LocalOperations:
         known_hosts.chmod(0o600)
 
     def validate(self, evidence: StagingEvidence) -> None:
+        emit_phase("Device readiness")
         verify_deployment_ansible_runtime(ROOT)
         for role in ("core_02", "edge_junos_01"):
             device = self._devices[role]
-            evidence.readiness_seconds[role] = self._wait_device(device.host)
+            evidence.readiness_seconds[role] = self._wait_device(
+                role, device.name, device.host
+            )
             evidence.readiness_checks[role] = {
                 "arp": "passed",
                 "icmp": "passed",
@@ -739,11 +811,14 @@ class LocalOperations:
                 "tcp830": "passed",
             }
         evidence.readiness_outcome = "passed"
+        emit_phase("Strict host trust")
         for role in ("core_02", "edge_junos_01"):
             device = self._devices[role]
             self._establish_host_trust(
                 device.host, (22, 830) if role == "edge_junos_01" else (22,)
             )
+            trust = "strict SSH/NETCONF" if role == "edge_junos_01" else "strict SSH"
+            emit_progress(f"{device.name} {trust} trust acquisition: PASS")
         cached = CachedSecrets(self._credentials)
         targets = {
             "core_02": (
@@ -760,6 +835,21 @@ class LocalOperations:
         inventory = StagingInventory(self._inventory, self._devices)
         for role, (interface, adapter) in targets.items():
             device = inventory.resolve(self._devices[role].name, interface)
+            phase = (
+                "NCDP Cisco staging validation · READ-ONLY"
+                if role == "core_02"
+                else "NCDP Junos staging validation · READ-ONLY"
+            )
+            emit_phase(phase)
+            provider = (
+                "real Cisco Ansible/NCDP planning and preflight path"
+                if role == "core_02"
+                else "real Junos PyEZ/NCDP planning and preflight path"
+            )
+            emit_progress(
+                f"READ-ONLY target={device.name} interface={interface} "
+                f"provider={provider}"
+            )
             intent = InterfaceDescriptionIntent(
                 change_id=f"{self.run_id}-{role}-readonly",
                 kind="interface_description",
@@ -791,25 +881,36 @@ class LocalOperations:
             except Exception:
                 evidence.ncdp_validation_outcome = "failed"
                 raise StagingError(f"{role} NCDP read-only validation failed") from None
+            emit_progress(
+                f"READ-ONLY target={device.name} interface={interface} "
+                f"attempts={evidence.ncdp_validation_attempts[role]} outcome=PASS"
+            )
         evidence.ncdp_validation_outcome = "passed"
 
     def destroy(self, evidence: StagingEvidence) -> None:
         del evidence
+        emit_phase("Terraform destroy")
         changes = self._changes(self._run_safe(["plan", "-destroy"]))
         if changes != dict.fromkeys(self._expected_addresses(), "delete"):
             raise StagingError("Terraform destroy graph was not exactly 10 destroys")
+        emit_progress("Terraform destroy plan accepted as exactly 10 deletes: PASS")
         self._run_safe(["destroy", "-auto-approve"])
+        emit_progress("Terraform destroy operation: PASS")
 
     def verify_absent(self, evidence: StagingEvidence) -> None:
+        emit_phase("Independent absence verification")
         if evidence.lab_id in self._lab_ids():
             raise StagingError("destroyed lab UUID remains present in CML")
+        emit_progress("CML lab UUID absent: PASS")
         for lab_id in self._lab_ids():
             lab = self._lab(lab_id)
             title = lab.get("lab_title") or lab.get("title")
             if title == self.lab_title:
                 raise StagingError("staging run title remains present in CML")
+        emit_progress("run-title realization absent: PASS")
         if self._state_list():
             raise StagingError("Terraform state retains managed resources")
+        emit_progress("Terraform state contains no managed resources: PASS")
 
     def _state_list(self) -> list[str]:
         if not self.state_path.exists() or not self.data_directory.exists():
@@ -824,6 +925,7 @@ class LocalOperations:
 
     def retire_state(self, evidence: StagingEvidence) -> None:
         del evidence
+        emit_phase("Run-scoped state retirement")
         resolved = self.run_directory.resolve()
         if resolved.name != self.run_id or resolved.parent.name != "ephemeral":
             raise StagingError("run directory retirement target is unsafe")
@@ -831,6 +933,7 @@ class LocalOperations:
         self._managed = False
         if resolved.exists():
             raise StagingError("run-scoped state retirement failed")
+        emit_progress("run-scoped state retirement: PASS")
 
     def recover(self, evidence: StagingEvidence) -> None:
         """Destroy only a known retained run; never create or start resources."""
@@ -919,6 +1022,7 @@ def main() -> int:
                 raise StagingError("Buildkite staging run directory mismatch")
             buildkite_jwt = read_buildkite_oidc_jwt(sys.stdin)
         validate_run_directory(args.run_id, args.run_directory)
+        emit_phase("Admission & authority")
         operations = LocalOperations(
             args.run_id,
             args.run_directory,
@@ -947,10 +1051,26 @@ def main() -> int:
     except Exception as error:
         print(f"ephemeral staging admission failed: {error}", file=sys.stderr)
         return 1
+    emit_phase("Final staging result")
+    emit_progress(f"overall result: {evidence.overall_result.upper()}")
+    emit_progress(
+        "primary failure classification: "
+        f"{'PRIMARY FAILURE' if evidence.primary_failure else 'NONE'}"
+    )
+    emit_progress(
+        "cleanup failure classification: "
+        f"{'CLEANUP FAILURE' if evidence.cleanup_failure else 'NONE'}"
+    )
+    emit_progress(
+        f"readiness={evidence.readiness_outcome} "
+        f"ncdp-read-only-validation={evidence.ncdp_validation_outcome} "
+        f"destroy={evidence.destroy_outcome} "
+        f"absence={evidence.absence_verification_outcome} "
+        f"state-retirement={evidence.state_retirement_outcome}"
+    )
     payload = json.dumps(evidence.safe_dict(), indent=2, sort_keys=True) + "\n"
     args.evidence.write_text(payload, encoding="utf-8")
     args.evidence.chmod(0o600)
-    print(payload, end="")
     return 0 if evidence.overall_result == "passed" else 1
 
 

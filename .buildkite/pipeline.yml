@@ -138,7 +138,7 @@ steps:
   - wait: ~
     key: validation-complete
 
-  - label: ":cloud: ephemeral CML staging"
+  - label: ":cloud: Ephemeral CML staging · create → validate → destroy"
     key: cml-staging
     command: scripts/buildkite/ephemeral_staging.sh
     agents:

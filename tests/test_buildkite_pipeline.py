@@ -195,6 +195,9 @@ def test_pipeline_contract() -> None:
     assert ordered_keys.index("validation-complete") < ordered_keys.index("cml-staging")
 
     staging = steps["cml-staging"]
+    assert staging["label"] == (
+        ":cloud: Ephemeral CML staging · create → validate → destroy"
+    )
     assert staging["agents"]["queue"] == "ncdp-staging"
     assert "depends_on" not in staging
     assert staging["command"] == "scripts/buildkite/ephemeral_staging.sh"

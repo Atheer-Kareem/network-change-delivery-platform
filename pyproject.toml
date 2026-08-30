@@ -24,6 +24,7 @@ ncdp-oxidized-observe = "network_change_delivery.oxidized_observation:main"
 ncdp-oxidized-retire-trust = "network_change_delivery.oxidized_host_trust:retire_main"
 ncdp-observability-service = "network_change_delivery.observability_reconciler:main"
 ncdp-evidence-viewer = "network_change_delivery.evidence_viewer:main"
+ncdp-demo-readiness = "network_change_delivery.demo_readiness:main"
 
 [dependency-groups]
 dev = [

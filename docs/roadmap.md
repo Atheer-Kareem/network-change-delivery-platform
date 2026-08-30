@@ -108,6 +108,8 @@ acceptance records.
       supporting, and avoided views; and a minimal foreground, loopback-only
       viewer presents validated durable audit and metadata-only configuration
       chronology without becoming a control plane.
-    - **12E — next:** readiness, reset, and evidence package.
-    - **12F — planned:** demonstration runbook and rehearsal.
+    - **12E — complete:** a read-only demonstration readiness checker, safe
+      reset/recovery contract, and canonical historical/live evidence package
+      make final-demo preparation predictable without recreating state.
+    - **12F — next:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

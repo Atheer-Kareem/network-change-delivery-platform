@@ -1,5 +1,5 @@
 schema_version: "1"
 action: deploy
-change_id: CHG-SNMP-11C3-CISCO-002
-plan_digest: sha256:769f0e8b115b246b1ddd29b70af5941d62d293b1305f691b25fbfc812ddee9ad
+change_id: CHG-SNMP-11C3-CISCO-003
+plan_digest: sha256:a9dcc444261ad69a2cc1acf54bcea067be90997e5a8a0788ae1b5f6acfa9f797
 inventory_object_id: netbox:dcim.device:1

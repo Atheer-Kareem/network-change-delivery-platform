@@ -37,6 +37,7 @@ for path in immutable_directories:
 
 required = (
     Path("scripts/buildkite/batfish_ready.py"),
+    Path("scripts/buildkite/render_assurance_annotation.py"),
     Path("fixtures/batfish/plans/fleet-interface-description.json"),
     Path("fixtures/batfish/policy.yaml"),
     Path("fixtures/batfish/baseline/configs/core-02.cfg"),

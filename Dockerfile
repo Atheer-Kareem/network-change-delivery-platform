@@ -41,7 +41,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1
 COPY fixtures/batfish ./fixtures/batfish
 COPY deployments/live/promotion ./deployments/live/promotion
-COPY scripts/buildkite/batfish_ready.py ./scripts/buildkite/batfish_ready.py
+COPY scripts/buildkite/batfish_ready.py scripts/buildkite/render_assurance_annotation.py ./scripts/buildkite/
 RUN chmod -R a=rX \
       /app/.venv \
       /app/src \

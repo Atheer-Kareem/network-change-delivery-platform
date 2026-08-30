@@ -163,7 +163,7 @@ steps:
 
   - group: ":lock: protected delivery"
     key: protected-delivery
-    depends_on: cml-staging
+    depends_on: validation-complete
     if: build.branch == "main" && build.pull_request.id == null
     if_changed:
       include: "**"
@@ -176,14 +176,27 @@ steps:
         - "tests/**"
         - ".gitignore"
     steps:
-      - label: ":package: promotion"
-        key: promotion
-        depends_on: cml-staging
-        command: .buildkite/scripts/promotion.sh
+      - label: ":fish: Batfish plan assurance"
+        key: batfish-assurance
+        command: .buildkite/scripts/batfish_assurance.sh
         agents:
           queue: ncdp-validation
         concurrency: 1
-        concurrency_group: ncdp/batfish-promotion
+        concurrency_group: ncdp/batfish-assurance
+        retry:
+          automatic: false
+          manual:
+            allowed: false
+            reason: "A fresh build is required for another assurance attempt."
+
+      - label: ":package: Immutable promotion"
+        key: promotion
+        depends_on:
+          - cml-staging
+          - batfish-assurance
+        command: .buildkite/scripts/promotion.sh
+        agents:
+          queue: ncdp-validation
 
       - block: ":lock: Authorize exact promotion"
         key: deployment-approval

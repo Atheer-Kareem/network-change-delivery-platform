@@ -5,4 +5,7 @@ critical_flows:
   - source_node: core-02
     source_ip: 10.6.12.1
     destination_ip: 10.6.12.2
+  - source_node: edge-junos-01
+    source_ip: 10.6.12.2
+    destination_ip: 10.6.12.1
 require_no_differential_reachability: true

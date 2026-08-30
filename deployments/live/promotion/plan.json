@@ -1,23 +1,23 @@
 {
   "schema_version": "1",
   "plan_type": "snmp_provisioning_plan",
-  "change_id": "CHG-SNMP-11C3-CISCO-004",
+  "change_id": "CHG-SNMP-11C3-JUNOS-001",
   "kind": "snmpv3_interface_telemetry",
-  "target": "core-02",
+  "target": "edge-junos-01",
   "inventory_source": "netbox",
-  "inventory_object_id": "netbox:dcim.device:1",
-  "platform": "cisco_iosxe",
-  "host": "192.168.4.14",
-  "port": 22,
-  "expected_hostname": "core-02",
-  "connection_credential_reference": "openbao:kv-v2:ncdp/devices/1/ssh",
+  "inventory_object_id": "netbox:dcim.device:2",
+  "platform": "junos",
+  "host": "192.168.4.20",
+  "port": 830,
+  "expected_hostname": "edge-junos-01",
+  "connection_credential_reference": "openbao:kv-v2:ncdp/devices/2/ssh",
   "snmp_credential": {
-    "device": "netbox:dcim.device:1",
-    "reference": "snmpv3:netbox:dcim.device:1:generation:v1",
-    "auth_selector": "device_1_v1"
+    "device": "netbox:dcim.device:2",
+    "reference": "snmpv3:netbox:dcim.device:2:generation:v1",
+    "auth_selector": "device_2_v1"
   },
   "generation": "v1",
-  "username": "ncdp_snmp_d1_v1",
+  "username": "ncdp_snmp_d2_v1",
   "security_level": "authPriv",
   "authentication_protocol": "SHA256",
   "privacy_protocol": "AES128",
@@ -41,16 +41,16 @@
     "1.3.6.1.2.1.31.1.5"
   ],
   "oid_closure_digest": "sha256:7a7834c141bd20109d661b9d9b76d0a5291d39e89f64898ab033f2b225b09e9d",
-  "transaction_strategy": "cisco_targeted_inverse",
-  "confirmed_timeout_minutes": null,
+  "transaction_strategy": "junos_commit_confirmed",
+  "confirmed_timeout_minutes": 5,
   "preconditions": {
-    "observed_hostname": "core-02",
-    "local_engine_id_present": false,
+    "observed_hostname": "edge-junos-01",
+    "local_engine_id_present": true,
     "view": "ABSENT",
     "group": "ABSENT",
     "user": "ABSENT",
     "foreign_objects_present": false
   },
-  "created_at": "2026-08-30T03:22:04.195106Z",
-  "digest": "sha256:727e72e6effb85e943e343748990bd9e84be232bb2def5edf87ac5295c051ecc"
+  "created_at": "2026-08-30T04:53:25.944131Z",
+  "digest": "sha256:3d07ea20778999dc67b9963d7443427b5125b0892ba0503f37dbc8188a19d7f6"
 }

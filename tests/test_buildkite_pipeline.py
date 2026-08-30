@@ -209,16 +209,30 @@ def test_pipeline_contract() -> None:
     }
     assert staging["if_changed"] == RUNTIME_CHANGE_CONDITION
     protected = steps["protected-delivery"]
-    assert protected["depends_on"] == "cml-staging"
+    assert protected["depends_on"] == "validation-complete"
     assert protected["if_changed"] == RUNTIME_CHANGE_CONDITION
     assert [step["key"] for step in protected["steps"]] == [
+        "batfish-assurance",
         "promotion",
         "deployment-approval",
         "deploy-gate",
     ]
+    batfish = steps["batfish-assurance"]
+    assert batfish["agents"]["queue"] == "ncdp-validation"
+    assert batfish["command"] == ".buildkite/scripts/batfish_assurance.sh"
+    assert batfish["concurrency"] == 1
+    assert batfish["concurrency_group"] == "ncdp/batfish-assurance"
+    assert batfish["retry"] == {
+        "automatic": False,
+        "manual": {
+            "allowed": False,
+            "reason": "A fresh build is required for another assurance attempt.",
+        },
+    }
+    assert "depends_on" not in batfish
     assert steps["promotion"]["agents"]["queue"] == "ncdp-validation"
-    assert steps["promotion"]["concurrency"] == 1
-    assert steps["promotion"]["concurrency_group"] == "ncdp/batfish-promotion"
+    assert "concurrency" not in steps["promotion"]
+    assert "concurrency_group" not in steps["promotion"]
     assert steps["deploy-gate"]["agents"]["queue"] == "ncdp-deploy"
     assert steps["deploy-gate"]["concurrency"] == 1
     assert steps["deploy-gate"]["concurrency_group"] == "ncdp/network-change-deployment"
@@ -239,7 +253,10 @@ def test_pipeline_contract() -> None:
     )
     assert approval["submit"] == "Authorize exact promotion"
     assert "fields" not in approval
-    assert steps["promotion"]["depends_on"] == "cml-staging"
+    assert steps["promotion"]["depends_on"] == [
+        "cml-staging",
+        "batfish-assurance",
+    ]
     assert steps["deployment-approval"]["depends_on"] == "promotion"
     assert steps["deploy-gate"]["depends_on"] == "deployment-approval"
 
@@ -265,7 +282,12 @@ def test_pr_and_main_conditions() -> None:
     assert 'build.branch == "main"' in protected["if"]
     assert "build.pull_request.id == null" in protected["if"]
     assert "if" not in steps["cml-staging"]
-    for key in ("promotion", "deployment-approval", "deploy-gate"):
+    for key in (
+        "batfish-assurance",
+        "promotion",
+        "deployment-approval",
+        "deploy-gate",
+    ):
         assert "if" not in steps[key]
 
 
@@ -418,6 +440,7 @@ def test_promotion_container_contract() -> None:
     assert "FROM application AS promotion" in dockerfile
     assert "COPY fixtures/batfish ./fixtures/batfish" in dockerfile
     assert "COPY deployments/live/promotion ./deployments/live/promotion" in dockerfile
+    assert "scripts/buildkite/render_assurance_annotation.py" in dockerfile
     assert "COPY . ." not in dockerfile.split("FROM application AS promotion", 1)[1]
     assert "RUN chmod -R a=rX" in dockerfile
     for path in (
@@ -432,6 +455,7 @@ def test_promotion_container_contract() -> None:
 
 def test_scripts_static_contract() -> None:
     gate = (ROOT / "scripts/buildkite/deployment_gate.sh").read_text()
+    batfish = (ROOT / ".buildkite/scripts/batfish_assurance.sh").read_text()
     promotion = (ROOT / ".buildkite/scripts/promotion.sh").read_text()
     promoted_keys = {
         "promoted-plan-digest",
@@ -545,16 +569,113 @@ def test_scripts_static_contract() -> None:
     assert 'cd "$tmpdir"' in gate
     assert 'buildkite-agent artifact upload "$report_relative"' in gate
     assert "deployments/live/request.yaml" not in gate
+
+    assert batfish.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
+    assert "umask 077" in batfish
+    assert batfish.index("verify_commit.sh") < batfish.index("assure-plan")
+    assert "docker compose" in batfish
+    assert "--project-name ncdp-batfish-assurance" in batfish
+    assert 'NCDP_PROMOTION_IMAGE_TAG="$BUILDKITE_BUILD_NUMBER"' in batfish
+    assert '"${compose[@]}" build promotion' in batfish
+    assert '"${compose[@]}" up -d batfish' in batfish
+    assert '"${compose[@]}" down' in batfish
+    assert "trap cleanup EXIT" in batfish
+    assert "cleanup_primary_status=$?" in batfish
+    assert "trap - EXIT" in batfish
+    assert 'exit "$cleanup_primary_status"' in batfish
+    assert 'exit "$cleanup_status"' in batfish
+    assert batfish.index('if ! "${compose[@]}" down') < batfish.index(
+        'if ! rm -rf "$tmpdir"'
+    )
+    assert batfish.index('if ! rm -rf "$tmpdir"') < batfish.index(
+        "cleanup_primary_status != 0"
+    )
+    assert "cleanup_status=3" in batfish
+    assert "Compose teardown did not complete" in batfish
+    assert "temporary directory removal did not complete" in batfish
+    assert "ready_deadline=$((SECONDS + 60))" in batfish
+    assert "scripts/buildkite/batfish_ready.py" in batfish
+    assert batfish.count("deployments/live/promotion/plan.json") == 2
+    assert batfish.count("deployments/live/promotion/policy.yaml") == 2
+    assert batfish.count("deployments/live/promotion/baseline") == 2
+    assert "ncdp assure-plan" in batfish
+    assert "ncdp verify-assurance" in batfish
+    assert batfish.index("ncdp assure-plan") < batfish.index("ncdp verify-assurance")
+    assert 'evidence_relative="assurance/assurance.json"' in batfish
+    assert 'buildkite-agent artifact upload "$evidence_relative"' in batfish
+    assert "scripts/buildkite/render_assurance_annotation.py" in batfish
+    assert "buildkite-agent annotate" in batfish
+    assert "assurance_status=$?" in batfish
+    assert 'exit "$assurance_status"' in batfish
+    assert batfish.index("publish_evidence error") < batfish.index(
+        'exit "$assurance_status"'
+    )
+    assert "ncdp promote" not in batfish
+    assert "ncdp verify-promotion" not in batfish
+    for forbidden in (
+        "oidc request-token",
+        "NCDP_OPENBAO",
+        "NCDP_DEVICE",
+        "NCDP_CML",
+        "NETBOX",
+        "AUDITSTORE",
+        "OXIDIZED",
+        "terraform",
+        "ansible-playbook",
+        "deployments/live/request.yaml",
+        "fleet-deploy",
+        "ncdp deploy",
+        "deploy-buildkite-promotion",
+        "deployment_gate.sh",
+    ):
+        assert forbidden not in batfish
+
+    assert promotion.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
+    assert "umask 077" in promotion
+    assert "cleanup_primary_status=$?" in promotion
+    assert "trap - EXIT" in promotion
+    assert "trap cleanup EXIT" in promotion
+    assert 'exit "$cleanup_primary_status"' in promotion
+    assert 'exit "$cleanup_status"' in promotion
+    assert promotion.index('if ! rm -rf "$tmpdir"') < promotion.index(
+        "cleanup_primary_status != 0"
+    )
+    assert "cleanup_status=3" in promotion
+    assert "temporary directory removal did not complete" in promotion
     assert "verify_commit.sh" in promotion
-    assert promotion.index("verify_commit.sh") < promotion.index("assure-plan")
+    assert promotion.index("verify_commit.sh") < promotion.index("artifact download")
     assert 'promotion="$tmpdir/promotion"' in promotion
     assert "uv run" not in promotion
-    assert "docker compose --project-name ncdp-promotion" in promotion
-    assert 'NCDP_PROMOTION_IMAGE_TAG="$BUILDKITE_BUILD_NUMBER"' in promotion
-    assert '"${compose[@]}" build promotion' in promotion
-    assert (
-        '"${promotion_run[@]}" python scripts/buildkite/batfish_ready.py' in promotion
+    assert "docker compose" not in promotion
+    assert "NCDP_BATFISH" not in promotion
+    assert "batfish_ready.py" not in promotion
+    assert "127.0.0.1:9996" not in promotion
+    assert "ncdp assure-plan" not in promotion
+    assert "scripts/buildkite/batfish_ready.py" not in promotion
+    assert "docker build --target promotion" in promotion
+    assert 'image="ncdp-promotion:$BUILDKITE_BUILD_NUMBER"' in promotion
+    assert '"assurance/assurance.json" .' in promotion
+    assert "--step batfish-assurance" in promotion
+    assert '--build "$BUILDKITE_BUILD_ID"' in promotion
+    empty_tree_check = "assert_artifact_tree_count 1"
+    exact_tree_check = "assert_artifact_tree_count 3"
+    assert promotion.count('[[ -d "$tmpdir" && ! -L "$tmpdir" ]]') == 2
+    assert promotion.count(empty_tree_check) == 1
+    assert promotion.count(exact_tree_check) == 1
+    assert 'observed="$(find "$tmpdir" -print | wc -l' in promotion
+    assert "Assurance artifact tree inspection failed" in promotion
+    assert "Assurance artifact tree has an unexpected filesystem shape" in promotion
+    assert promotion.index(empty_tree_check) < promotion.index("artifact download")
+    assert promotion.index("artifact download") < promotion.index(exact_tree_check)
+    assert promotion.index('[[ -d "$assurance_directory"') < promotion.index(
+        exact_tree_check
     )
+    assert promotion.index('[[ -f "$assurance"') < promotion.index(exact_tree_check)
+    assert promotion.index(exact_tree_check) < promotion.index("ncdp verify-assurance")
+    assert promotion.index("artifact download") < promotion.index(
+        "ncdp verify-assurance"
+    )
+    assert promotion.index("ncdp verify-assurance") < promotion.index("ncdp promote")
     assert promotion.count('"${promotion_run[@]}" ncdp ') == 6
     assert promotion.count("deployments/live/promotion/plan.json") == 2
     assert promotion.count("deployments/live/promotion/policy.yaml") == 2

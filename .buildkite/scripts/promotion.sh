@@ -1,30 +1,74 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
+
 scripts/buildkite/verify_commit.sh
 tmpdir="$(mktemp -d)"
-compose=(docker compose --project-name ncdp-promotion -f compose.assurance.yaml)
-export NCDP_PROMOTION_IMAGE_TAG="$BUILDKITE_BUILD_NUMBER"
-trap '"${compose[@]}" down >/dev/null 2>&1 || true; rm -rf "$tmpdir"' EXIT
-"${compose[@]}" down --remove-orphans >/dev/null 2>&1 || true
-"${compose[@]}" build promotion
-"${compose[@]}" up -d batfish
+chmod 700 "$tmpdir"
+cleanup() {
+  cleanup_primary_status=$?
+  trap - EXIT
+  cleanup_status=0
+  if ! rm -rf "$tmpdir" >/dev/null 2>&1; then
+    echo "Promotion cleanup failed: temporary directory removal did not complete" >&2
+    cleanup_status=3
+  fi
+  if (( cleanup_primary_status != 0 )); then
+    exit "$cleanup_primary_status"
+  fi
+  exit "$cleanup_status"
+}
+trap cleanup EXIT
+assert_artifact_tree_count() {
+  local expected="$1"
+  local observed
+  if ! observed="$(find "$tmpdir" -print | wc -l | tr -d '[:space:]')"; then
+    echo "Assurance artifact tree inspection failed" >&2
+    return 2
+  fi
+  if [[ "$observed" != "$expected" ]]; then
+    echo "Assurance artifact tree has an unexpected filesystem shape" >&2
+    return 2
+  fi
+}
+[[ -d "$tmpdir" && ! -L "$tmpdir" ]]
+assert_artifact_tree_count 1
+image="ncdp-promotion:$BUILDKITE_BUILD_NUMBER"
+docker build --target promotion --tag "$image" .
+
+(
+  cd "$tmpdir"
+  buildkite-agent artifact download \
+    "assurance/assurance.json" . \
+    --step batfish-assurance \
+    --build "$BUILDKITE_BUILD_ID"
+)
+assurance_directory="$tmpdir/assurance"
+assurance="$assurance_directory/assurance.json"
+[[ -d "$tmpdir" && ! -L "$tmpdir" ]]
+[[ -d "$assurance_directory" && ! -L "$assurance_directory" ]]
+[[ -f "$assurance" && ! -L "$assurance" ]]
+assert_artifact_tree_count 3
+
 promotion_run=(
-  "${compose[@]}" run --rm --no-deps
+  docker run --rm
   --user "$(id -u):$(id -g)"
   --volume "$tmpdir:/output"
-  promotion
+  "$image"
 )
-ready_deadline=$((SECONDS + 60))
-until "${promotion_run[@]}" python scripts/buildkite/batfish_ready.py; do
-  if (( SECONDS >= ready_deadline )); then
-    echo "Batfish readiness timed out" >&2
-    exit 2
-  fi
-  sleep 2
-done
-"${promotion_run[@]}" ncdp assure-plan --plan deployments/live/promotion/plan.json --policy deployments/live/promotion/policy.yaml --baseline deployments/live/promotion/baseline --report-json /output/assurance.json --batfish
+"${promotion_run[@]}" ncdp verify-assurance \
+  --plan deployments/live/promotion/plan.json \
+  --policy deployments/live/promotion/policy.yaml \
+  --baseline deployments/live/promotion/baseline \
+  --evidence /output/assurance/assurance.json
 promotion="$tmpdir/promotion"
-"${promotion_run[@]}" ncdp promote --plan deployments/live/promotion/plan.json --policy deployments/live/promotion/policy.yaml --baseline deployments/live/promotion/baseline --assurance /output/assurance.json --git-commit "$BUILDKITE_COMMIT" --output /output/promotion
+"${promotion_run[@]}" ncdp promote \
+  --plan deployments/live/promotion/plan.json \
+  --policy deployments/live/promotion/policy.yaml \
+  --baseline deployments/live/promotion/baseline \
+  --assurance /output/assurance/assurance.json \
+  --git-commit "$BUILDKITE_COMMIT" \
+  --output /output/promotion
 "${promotion_run[@]}" ncdp verify-promotion --promotion /output/promotion --git-commit "$BUILDKITE_COMMIT"
 [[ -f "$promotion/manifest.json" ]]
 (

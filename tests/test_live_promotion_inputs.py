@@ -80,14 +80,15 @@ class PassingProvider:
             batfish_version="2026.07.20.3565",
             baseline=summary(baseline),
             candidate=summary(candidate),
-            flows=(
+            flows=tuple(
                 FlowResult(
-                    source_node="core-02",
-                    source_ip="10.6.12.1",
-                    destination_ip="10.6.12.2",
+                    source_node=flow.source_node,
+                    source_ip=flow.source_ip,
+                    destination_ip=flow.destination_ip,
                     baseline_reachable=True,
                     candidate_reachable=True,
-                ),
+                )
+                for flow in self.policy.critical_flows
             ),
             differential_changed_flow_count=0,
         )
@@ -103,6 +104,19 @@ def policy() -> BatfishAssurancePolicy:
     return BatfishAssurancePolicy.model_validate(
         yaml.safe_load(POLICY.read_text(encoding="utf-8"))
     )
+
+
+def test_live_policy_has_exact_bidirectional_transit_assurance() -> None:
+    assurance_policy = policy()
+    assert assurance_policy.expected_nodes == ("core-02", "edge-junos-01")
+    assert tuple(
+        (flow.source_node, flow.source_ip, flow.destination_ip)
+        for flow in assurance_policy.critical_flows
+    ) == (
+        ("core-02", "10.6.12.1", "10.6.12.2"),
+        ("edge-junos-01", "10.6.12.2", "10.6.12.1"),
+    )
+    assert assurance_policy.require_no_differential_reachability is True
 
 
 def test_active_plan_is_single_device_digest_verified_and_exactly_provenanced() -> None:

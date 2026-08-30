@@ -23,6 +23,8 @@ def run_script(
     staging_status: int = 0,
     evidence: bool = True,
     upload_status: int = 0,
+    annotation_status: int = 0,
+    renderer_status: int = 0,
     retry_count: str = "0",
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     work = tmp_path / "work"
@@ -36,18 +38,26 @@ def run_script(
     binary.mkdir()
     command_log = tmp_path / "commands"
     upload_log = tmp_path / "uploads"
+    annotation_log = tmp_path / "annotations"
     executable(
         binary / "buildkite-agent",
         """#!/usr/bin/env bash
 set -eu
-case "$1 $2" in
-  "oidc request-token")
+case "$1" in
+  "oidc")
+    [[ "$2" == request-token ]]
     printf '%s\n' "$*" >> "$COMMAND_LOG"
     printf '%s\n' 'header.payload.signature'
     ;;
-  "artifact upload")
+  "artifact")
+    [[ "$2" == upload ]]
     printf '%s\n' "$3" >> "$UPLOAD_LOG"
     exit "$UPLOAD_STATUS"
+    ;;
+  "annotate")
+    printf '%s\n' "$*" >> "$COMMAND_LOG"
+    cat > "$ANNOTATION_LOG"
+    exit "$ANNOTATION_STATUS"
     ;;
   *) exit 90 ;;
 esac
@@ -57,6 +67,11 @@ esac
         binary / "uv",
         """#!/usr/bin/env bash
 set -eu
+if [[ "$*" == *render_staging_annotation.py* ]]; then
+  printf '%s\n' '## :cloud: Ephemeral CML staging'
+  printf '%s\n' '**Overall result:** `PASSED`'
+  exit "$RENDERER_STATUS"
+fi
 read -r jwt
 [[ "$jwt" == header.payload.signature ]]
 printf '%s\n' "$*" >> "$COMMAND_LOG"
@@ -84,7 +99,10 @@ exit "$STAGING_STATUS"
         "NCDP_STAGING_STATE_ROOT": str(state_root),
         "COMMAND_LOG": str(command_log),
         "UPLOAD_LOG": str(upload_log),
+        "ANNOTATION_LOG": str(annotation_log),
         "UPLOAD_STATUS": str(upload_status),
+        "ANNOTATION_STATUS": str(annotation_status),
+        "RENDERER_STATUS": str(renderer_status),
         "STAGING_STATUS": str(staging_status),
         "CREATE_EVIDENCE": "1" if evidence else "0",
     }
@@ -119,6 +137,8 @@ def test_shell_requests_exact_oidc_and_uploads_evidence(tmp_path: Path) -> None:
     assert "--identity buildkite" in logged
     assert "bk-79c012df-23bf-49b3-a6dd-f28799c4bb24" in logged
     assert uploads.read_text().strip() == "staging-evidence/staging-run.json"
+    assert "annotate --style success --context cml-staging" in logged
+    assert "Ephemeral CML staging" in (tmp_path / "annotations").read_text()
     evidence = tmp_path / "work/staging-evidence/staging-run.json"
     assert stat.S_IMODE(evidence.stat().st_mode) == 0o600
 
@@ -153,17 +173,63 @@ def test_primary_failure_preserved_when_evidence_upload_succeeds(
     result, _commands, uploads = run_script(tmp_path, staging_status=7)
     assert result.returncode == 7
     assert uploads.read_text().strip() == "staging-evidence/staging-run.json"
+    assert (
+        "annotate --style error --context cml-staging"
+        in (tmp_path / "commands").read_text()
+    )
+
+
+@pytest.mark.parametrize(
+    ("upload_status", "annotation_status", "renderer_status"),
+    [(9, 0, 0), (0, 8, 0), (0, 0, 6)],
+)
+def test_primary_failure_survives_publication_failure(
+    tmp_path: Path,
+    upload_status: int,
+    annotation_status: int,
+    renderer_status: int,
+) -> None:
+    result, _commands, _uploads = run_script(
+        tmp_path,
+        staging_status=7,
+        upload_status=upload_status,
+        annotation_status=annotation_status,
+        renderer_status=renderer_status,
+    )
+    assert result.returncode == 7
+    assert "safe evidence publication did not complete" in result.stderr
 
 
 def test_artifact_upload_failure_fails_successful_job(tmp_path: Path) -> None:
     result, _commands, _uploads = run_script(tmp_path, upload_status=9)
-    assert result.returncode == 9
+    assert result.returncode == 2
+
+
+def test_annotation_failure_fails_successful_job(tmp_path: Path) -> None:
+    result, _commands, _uploads = run_script(tmp_path, annotation_status=8)
+    assert result.returncode == 2
+
+
+def test_invalid_evidence_presentation_fails_successful_job(tmp_path: Path) -> None:
+    result, _commands, uploads = run_script(tmp_path, renderer_status=6)
+    assert result.returncode == 2
+    assert not uploads.exists()
 
 
 def test_no_evidence_is_not_fabricated(tmp_path: Path) -> None:
     result, _commands, uploads = run_script(tmp_path, staging_status=3, evidence=False)
     assert result.returncode == 3
     assert not uploads.exists()
+
+
+def test_shell_presentation_contract_contains_no_device_write() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "render_staging_annotation.py" in source
+    assert "artifact upload" in source
+    assert "annotate" in source
+    assert '--style "$style"' in source
+    assert "deploy" not in source
+    assert "apply_interface_description" not in source
 
 
 def test_agent_hook_rejects_fork_and_non_staging_commands(tmp_path: Path) -> None:

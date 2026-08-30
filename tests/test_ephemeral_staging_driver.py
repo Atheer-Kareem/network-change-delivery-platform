@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import stat
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,65 @@ SPEC = importlib.util.spec_from_file_location("run_ephemeral_cml_staging", SCRIP
 assert SPEC is not None and SPEC.loader is not None
 driver = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(driver)
+
+
+def test_staging_phase_markers_are_complete_and_ordered() -> None:
+    assert driver.PHASE_MARKERS == (
+        "Admission & authority",
+        "Terraform create",
+        "CML topology & Day-0 verification",
+        "Lab start",
+        "Device readiness",
+        "Strict host trust",
+        "NCDP Cisco staging validation · READ-ONLY",
+        "NCDP Junos staging validation · READ-ONLY",
+        "Terraform destroy",
+        "Independent absence verification",
+        "Run-scoped state retirement",
+        "Final staging result",
+    )
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "+++ :cloud:" in source
+    assert source.count("emit_phase(") == len(driver.PHASE_MARKERS)
+
+
+def test_readiness_progress_preserves_checks_timeout_and_low_volume(
+    monkeypatch, capsys
+) -> None:
+    operations = object.__new__(driver.LocalOperations)
+    monotonic = iter((0.0, 0.0, 1.0, 31.0, 32.0))
+    probes = iter((1, 1, 0, 0))
+    ports: list[int] = []
+    sleeps: list[int] = []
+
+    monkeypatch.setattr(driver.time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(driver.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        driver.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=next(probes)),
+    )
+
+    def endpoint_ready(_host: str, port: int) -> bool:
+        ports.append(port)
+        return True
+
+    operations._endpoint_ready = endpoint_ready
+    duration = operations._wait_device("core_02", "core-02", "192.168.4.30")
+
+    output = capsys.readouterr().out
+    assert duration == 32.0
+    assert sleeps == [10]
+    assert ports == [22, 830]
+    assert output.count("readiness core_02/core-02") == 3
+    assert "ARP=WAITING ICMP=WAITING TCP/22=WAITING TCP/830=WAITING" in output
+    assert "ARP=PASS ICMP=PASS TCP/22=PASS TCP/830=PASS duration=32.0s" in output
+    assert (
+        inspect.signature(driver.LocalOperations._wait_device)
+        .parameters["timeout"]
+        .default
+        == 1200
+    )
 
 
 def device(name: str, device_id: int, host: str, platform: str) -> InventoryDevice:

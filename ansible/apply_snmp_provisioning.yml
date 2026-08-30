@@ -2,6 +2,9 @@
 - name: Apply exact approved SNMP provisioning artifact
   hosts: all
   gather_facts: false
+  vars:
+    ansible_user: "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_USERNAME') }}"
+    ansible_password: "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_PASSWORD') }}"
   tasks:
     - name: NCDP apply exact SNMP artifact
       cisco.ios.ios_config:

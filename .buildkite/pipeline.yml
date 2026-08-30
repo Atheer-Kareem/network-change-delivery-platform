@@ -1,136 +1,145 @@
 steps:
-  - group: ":white_check_mark: quality"
-    key: quality
-    steps:
-      - label: ":docker: build quality environment"
-        key: quality-env
-        command: docker build --target quality-base --tag ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} .
-        agents:
-          queue: ncdp-validation
-
-      - label: ":git: committed diff"
-        key: quality-committed-diff
-        command: |
-          BASE_BRANCH="$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
-          git fetch --no-tags origin \
-            "$${BASE_BRANCH}:refs/remotes/origin/$${BASE_BRANCH}"
-          if [[ -n "$${BUILDKITE_PULL_REQUEST:-}" \
-             && "$${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
-            git --no-pager diff --check \
-              "$(git merge-base HEAD "origin/$${BASE_BRANCH}")..HEAD"
-          else
-            git --no-pager diff --check HEAD^..HEAD
-          fi
-        agents:
-          queue: ncdp-validation
-
-      - label: ":mag: Ruff lint"
-        key: quality-ruff-lint
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff check .
-        agents:
-          queue: ncdp-validation
-
-      - label: ":art: Ruff format"
-        key: quality-ruff-format
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff format --check .
-        agents:
-          queue: ncdp-validation
-
-      - label: ":pytest: pytest"
-        key: quality-pytest
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run pytest
-        agents:
-          queue: ncdp-validation
-
-      - label: ":ansible: ansible-lint"
-        key: quality-ansible-lint
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ansible-lint
-        agents:
-          queue: ncdp-validation
-
-      - label: ":package: package build"
-        key: quality-package-build
-        depends_on: quality-env
-        command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv build
-        agents:
-          queue: ncdp-validation
-
-      - label: ":terraform: Terraform CML static validation"
-        key: quality-terraform-cml
-        command: |
-          docker run --rm \
-            --volume "$${PWD}:/workspace:ro" \
-            --workdir /workspace \
-            --tmpfs /tmp:exec,mode=1777 \
-            --entrypoint /bin/sh \
-            hashicorp/terraform:1.15.8@sha256:7ae513256f7ce67879e218ae8593d6fbe216ec9e123abe6c94e4e10704857963 \
-            -ec '
-              terraform version
-              terraform -chdir=infrastructure/cml fmt -check -recursive
-              TF_DATA_DIR=/tmp/terraform-data-operator terraform -chdir=infrastructure/cml init -backend=false -input=false -lockfile=readonly
-              TF_DATA_DIR=/tmp/terraform-data-operator terraform -chdir=infrastructure/cml validate
-              TF_DATA_DIR=/tmp/terraform-data-ephemeral terraform -chdir=infrastructure/cml/ephemeral init -backend=false -input=false -lockfile=readonly
-              TF_DATA_DIR=/tmp/terraform-data-ephemeral terraform -chdir=infrastructure/cml/ephemeral validate
-            '
-        agents:
-          queue: ncdp-validation
-
-      - label: ":gear: SNMP module reproducibility"
-        key: quality-snmp-generator
-        command: uv run --frozen python scripts/observability/check_snmp_generator.py
-        agents:
-          queue: ncdp-validation
-        if_changed:
-          include:
-            - "infrastructure/observability/snmp/**"
-            - "scripts/observability/check_snmp_generator.py"
-            - "src/network_change_delivery/snmp_mib.py"
-
-      - label: ":chart_with_upwards_trend: observability 11B Docker validation"
-        key: quality-observability-11b
-        depends_on: quality-env
-        command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_runtime.sh
-        agents:
-          queue: ncdp-validation
-        if_changed:
-          include:
-            - "infrastructure/observability/**"
-            - "scripts/observability/**"
-            - "src/network_change_delivery/observability_*.py"
-            - "tests/test_observability_*.py"
-
-      - label: ":satellite: observability 11C-2 synthetic SNMPv3 validation"
-        key: quality-observability-11c2
-        depends_on: quality-env
-        command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_snmp_runtime.sh
-        agents:
-          queue: ncdp-validation
-        if_changed:
-          include:
-            - "infrastructure/observability/**"
-            - "scripts/observability/**"
-            - "src/network_change_delivery/observability_*.py"
-            - "src/network_change_delivery/snmp_*.py"
-            - "tests/test_observability_*.py"
-            - "tests/test_snmp_*.py"
-
-  - label: ":white_check_mark: pipeline contract"
-    key: pipeline-contract
-    depends_on: quality
-    commands:
-      - buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run --format yaml --reject-secrets --reject-parse-warnings > /dev/null
+  - label: ":docker: Build validation environment"
+    key: quality-env
+    command: docker build --target quality-base --tag ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} .
     agents:
       queue: ncdp-validation
 
+  - label: ":git: Committed diff integrity"
+    key: quality-committed-diff
+    command: |
+      BASE_BRANCH="$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
+      git fetch --no-tags origin \
+        "$${BASE_BRANCH}:refs/remotes/origin/$${BASE_BRANCH}"
+      if [[ -n "$${BUILDKITE_PULL_REQUEST:-}" \
+         && "$${BUILDKITE_PULL_REQUEST}" != "false" ]]; then
+        git --no-pager diff --check \
+          "$(git merge-base HEAD "origin/$${BASE_BRANCH}")..HEAD"
+      else
+        git --no-pager diff --check HEAD^..HEAD
+      fi
+    agents:
+      queue: ncdp-validation
+
+  - label: ":mag: Ruff lint"
+    key: quality-ruff-lint
+    depends_on: quality-env
+    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff check .
+    agents:
+      queue: ncdp-validation
+
+  - label: ":art: Ruff format"
+    key: quality-ruff-format
+    depends_on: quality-env
+    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff format --check .
+    agents:
+      queue: ncdp-validation
+
+  - label: ":pytest: Python test suite"
+    key: quality-pytest
+    depends_on: quality-env
+    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run pytest --ignore=tests/test_buildkite_pipeline.py
+    agents:
+      queue: ncdp-validation
+
+  - label: ":ansible: Ansible lint"
+    key: quality-ansible-lint
+    depends_on: quality-env
+    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ansible-lint
+    agents:
+      queue: ncdp-validation
+
+  - label: ":package: Python package build"
+    key: quality-package-build
+    depends_on: quality-env
+    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv build
+    agents:
+      queue: ncdp-validation
+
+  - label: ":terraform: Terraform CML static validation"
+    key: quality-terraform-cml
+    command: |
+      docker run --rm \
+        --volume "$${PWD}:/workspace:ro" \
+        --workdir /workspace \
+        --tmpfs /tmp:exec,mode=1777 \
+        --entrypoint /bin/sh \
+        hashicorp/terraform:1.15.8@sha256:7ae513256f7ce67879e218ae8593d6fbe216ec9e123abe6c94e4e10704857963 \
+        -ec '
+          terraform version
+          terraform -chdir=infrastructure/cml fmt -check -recursive
+          TF_DATA_DIR=/tmp/terraform-data-operator terraform -chdir=infrastructure/cml init -backend=false -input=false -lockfile=readonly
+          TF_DATA_DIR=/tmp/terraform-data-operator terraform -chdir=infrastructure/cml validate
+          TF_DATA_DIR=/tmp/terraform-data-ephemeral terraform -chdir=infrastructure/cml/ephemeral init -backend=false -input=false -lockfile=readonly
+          TF_DATA_DIR=/tmp/terraform-data-ephemeral terraform -chdir=infrastructure/cml/ephemeral validate
+        '
+    agents:
+      queue: ncdp-validation
+
+  - label: ":gear: SNMP module reproducibility"
+    key: quality-snmp-generator
+    command: uv run --frozen python scripts/observability/check_snmp_generator.py
+    agents:
+      queue: ncdp-validation
+    if_changed:
+      include:
+        - "infrastructure/observability/snmp/**"
+        - "scripts/observability/check_snmp_generator.py"
+        - "src/network_change_delivery/snmp_mib.py"
+
+  - label: ":chart_with_upwards_trend: Observability runtime validation"
+    key: quality-observability-11b
+    depends_on: quality-env
+    command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_runtime.sh
+    agents:
+      queue: ncdp-validation
+    if_changed:
+      include:
+        - "infrastructure/observability/**"
+        - "scripts/observability/**"
+        - "src/network_change_delivery/observability_*.py"
+        - "tests/test_observability_*.py"
+
+  - label: ":satellite: Synthetic SNMPv3 validation"
+    key: quality-observability-11c2
+    depends_on: quality-env
+    command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_snmp_runtime.sh
+    agents:
+      queue: ncdp-validation
+    if_changed:
+      include:
+        - "infrastructure/observability/**"
+        - "scripts/observability/**"
+        - "src/network_change_delivery/observability_*.py"
+        - "src/network_change_delivery/snmp_*.py"
+        - "tests/test_observability_*.py"
+        - "tests/test_snmp_*.py"
+
+  - label: ":buildkite: Buildkite definition · parse and secret scan"
+    key: buildkite-definition
+    command: buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run --format yaml --reject-secrets --reject-parse-warnings > /dev/null
+    agents:
+      queue: ncdp-validation
+
+  - label: ":shield: NCDP pipeline safety contract · graph, queues, gating, retries and paths"
+    key: ncdp-pipeline-contract
+    depends_on: quality-env
+    commands:
+      - >-
+        docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER}
+        uv run pytest tests/test_buildkite_pipeline.py
+        -k 'not test_installed_buildkite_change_evaluation'
+      - >-
+        uv run --frozen pytest tests/test_buildkite_pipeline.py
+        -k test_installed_buildkite_change_evaluation
+    agents:
+      queue: ncdp-validation
+
+  - wait: ~
+    key: validation-complete
+
   - label: ":cloud: ephemeral CML staging"
     key: cml-staging
-    depends_on:
-      - quality
-      - pipeline-contract
     command: scripts/buildkite/ephemeral_staging.sh
     agents:
       queue: ncdp-staging

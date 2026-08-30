@@ -93,8 +93,7 @@ def test_lock_and_ignore_contract() -> None:
 def test_buildkite_terraform_contract_and_existing_gates() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
     steps = {step["key"]: step for step in pipeline["steps"]}
-    quality = {step["key"]: step for step in steps["quality"]["steps"]}
-    terraform = quality["quality-terraform-cml"]
+    terraform = steps["quality-terraform-cml"]
     command = terraform["command"]
     assert (
         "hashicorp/terraform:1.15.8@"

@@ -32,19 +32,6 @@ def test_pipeline_contract() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
     top_level_steps = {step["key"]: step for step in pipeline["steps"]}
     assert set(top_level_steps) == {
-        "quality",
-        "pipeline-contract",
-        "cml-staging",
-        "protected-delivery",
-    }
-    steps = _steps_by_key(pipeline)
-    assert "if_changed" not in steps["quality"]
-    assert "if_changed" not in steps["pipeline-contract"]
-    quality = steps["quality"]
-    assert quality["group"] == ":white_check_mark: quality"
-    assert quality["key"] == "quality"
-    quality_steps = {step["key"]: step for step in quality["steps"]}
-    assert set(quality_steps) == {
         "quality-env",
         "quality-committed-diff",
         "quality-ruff-lint",
@@ -56,33 +43,66 @@ def test_pipeline_contract() -> None:
         "quality-snmp-generator",
         "quality-observability-11b",
         "quality-observability-11c2",
+        "buildkite-definition",
+        "ncdp-pipeline-contract",
+        "validation-complete",
+        "cml-staging",
+        "protected-delivery",
     }
+    assert "quality" not in top_level_steps
+    assert all("group" not in step for step in pipeline["steps"][:-1])
+    steps = _steps_by_key(pipeline)
+    validation_keys = {
+        "quality-env",
+        "quality-committed-diff",
+        "quality-ruff-lint",
+        "quality-ruff-format",
+        "quality-pytest",
+        "quality-ansible-lint",
+        "quality-package-build",
+        "quality-terraform-cml",
+        "quality-snmp-generator",
+        "quality-observability-11b",
+        "quality-observability-11c2",
+        "buildkite-definition",
+        "ncdp-pipeline-contract",
+    }
+    assert validation_keys < set(top_level_steps)
     assert all(
-        step["agents"]["queue"] == "ncdp-validation" for step in quality_steps.values()
+        steps[key]["agents"]["queue"] == "ncdp-validation" for key in validation_keys
     )
 
-    environment = quality_steps["quality-env"]["command"]
+    environment = steps["quality-env"]["command"]
     assert environment == (
         "docker build --target quality-base --tag "
         "ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} ."
     )
 
-    checks = {
+    image_checks = {
         "quality-ruff-lint": "uv run ruff check .",
         "quality-ruff-format": "uv run ruff format --check .",
-        "quality-pytest": "uv run pytest",
+        "quality-pytest": "uv run pytest --ignore=tests/test_buildkite_pipeline.py",
         "quality-ansible-lint": "uv run ansible-lint",
         "quality-package-build": "uv build",
     }
-    for key, validation_command in checks.items():
-        step = quality_steps[key]
+    for key, validation_command in image_checks.items():
+        step = steps[key]
         assert step["depends_on"] == "quality-env"
         assert step["command"] == (
             "docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
             f"{validation_command}"
         )
 
-    observability = quality_steps["quality-observability-11b"]
+    independent_roots = {
+        "quality-env",
+        "quality-committed-diff",
+        "quality-terraform-cml",
+        "quality-snmp-generator",
+        "buildkite-definition",
+    }
+    assert all("depends_on" not in steps[key] for key in independent_roots)
+
+    observability = steps["quality-observability-11b"]
     assert observability["depends_on"] == "quality-env"
     assert observability["agents"]["queue"] == "ncdp-validation"
     assert observability["command"] == (
@@ -96,7 +116,7 @@ def test_pipeline_contract() -> None:
         "tests/test_observability_*.py",
     ]
 
-    snmp_observability = quality_steps["quality-observability-11c2"]
+    snmp_observability = steps["quality-observability-11c2"]
     assert snmp_observability["depends_on"] == "quality-env"
     assert snmp_observability["agents"]["queue"] == "ncdp-validation"
     assert snmp_observability["command"] == (
@@ -112,7 +132,7 @@ def test_pipeline_contract() -> None:
         "tests/test_snmp_*.py",
     ]
 
-    snmp_generator = quality_steps["quality-snmp-generator"]
+    snmp_generator = steps["quality-snmp-generator"]
     assert snmp_generator["command"] == (
         "uv run --frozen python scripts/observability/check_snmp_generator.py"
     )
@@ -123,7 +143,7 @@ def test_pipeline_contract() -> None:
     ]
     assert "depends_on" not in snmp_generator
 
-    terraform = quality_steps["quality-terraform-cml"]
+    terraform = steps["quality-terraform-cml"]
     terraform_command = terraform["command"]
     assert "hashicorp/terraform:1.15.8@sha256:" in terraform_command
     assert "${PWD}:/workspace:ro" in terraform_command
@@ -138,7 +158,7 @@ def test_pipeline_contract() -> None:
     for forbidden in (" plan", " apply", " import", " destroy"):
         assert forbidden not in terraform_command
 
-    committed_diff = quality_steps["quality-committed-diff"]["command"]
+    committed_diff = steps["quality-committed-diff"]["command"]
     assert committed_diff.count("git --no-pager diff --check") == 2
     assert "git diff --check" not in committed_diff
     assert committed_diff.count("$${BUILDKITE_PULL_REQUEST") == 3
@@ -146,10 +166,37 @@ def test_pipeline_contract() -> None:
         "$${BUILDKITE_PULL_REQUEST", ""
     )
 
-    assert steps["pipeline-contract"]["agents"]["queue"] == "ncdp-validation"
+    definition = steps["buildkite-definition"]
+    assert "depends_on" not in definition
+    assert definition["command"] == (
+        "buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run "
+        "--format yaml --reject-secrets --reject-parse-warnings > /dev/null"
+    )
+
+    contract = steps["ncdp-pipeline-contract"]
+    assert contract["depends_on"] == "quality-env"
+    assert contract["commands"] == [
+        (
+            "docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
+            "uv run pytest tests/test_buildkite_pipeline.py "
+            "-k 'not test_installed_buildkite_change_evaluation'"
+        ),
+        (
+            "uv run --frozen pytest tests/test_buildkite_pipeline.py "
+            "-k test_installed_buildkite_change_evaluation"
+        ),
+    ]
+    assert "docker run" not in contract["commands"][1]
+    assert "buildkite-agent" not in contract["commands"][0]
+
+    ordered_keys = [step["key"] for step in pipeline["steps"]]
+    barrier = steps["validation-complete"]
+    assert barrier == {"wait": None, "key": "validation-complete"}
+    assert ordered_keys.index("validation-complete") < ordered_keys.index("cml-staging")
+
     staging = steps["cml-staging"]
     assert staging["agents"]["queue"] == "ncdp-staging"
-    assert staging["depends_on"] == ["quality", "pipeline-contract"]
+    assert "depends_on" not in staging
     assert staging["command"] == "scripts/buildkite/ephemeral_staging.sh"
     assert staging["concurrency"] == 1
     assert staging["concurrency_group"] == "ncdp/cml-ephemeral-staging"
@@ -195,17 +242,6 @@ def test_pipeline_contract() -> None:
     assert steps["promotion"]["depends_on"] == "cml-staging"
     assert steps["deployment-approval"]["depends_on"] == "promotion"
     assert steps["deploy-gate"]["depends_on"] == "deployment-approval"
-    assert len(steps["pipeline-contract"]["commands"]) == 1
-    contract = " ".join(steps["pipeline-contract"]["commands"])
-    assert contract == (
-        "buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run "
-        "--format yaml --reject-secrets --reject-parse-warnings > /dev/null"
-    )
-    assert "uv run" not in contract
-    assert "--dry-run" in contract
-    assert "--format yaml" in contract
-    assert "--reject-secrets" in contract
-    assert "--reject-parse-warnings" in contract
 
 
 def test_quality_image_normalizes_helper_access_after_final_copy() -> None:
@@ -313,8 +349,56 @@ def test_installed_buildkite_change_evaluation(
     )
     rendered = yaml.safe_load(result.stdout)
     rendered_steps = {step["key"]: step for step in rendered["steps"]}
+    for key in (
+        "quality-snmp-generator",
+        "quality-observability-11b",
+        "quality-observability-11c2",
+    ):
+        assert "skip" in rendered_steps[key]
+    assert "skip" not in rendered_steps["validation-complete"]
     for key in ("cml-staging", "protected-delivery"):
         assert ("skip" not in rendered_steps[key]) is live_path_expected
+
+
+def test_installed_buildkite_change_evaluation_runs_applicable_checks_before_barrier(
+    tmp_path: Path,
+) -> None:
+    agent = shutil.which("buildkite-agent")
+    if agent is None:
+        pytest.skip("Buildkite agent is not installed in this test environment")
+
+    changed_files_path = tmp_path / "changed-files.txt"
+    changed_files_path.write_text("infrastructure/observability/snmp/snmp.yml\n")
+    result = subprocess.run(
+        [
+            agent,
+            "pipeline",
+            "upload",
+            str(ROOT / ".buildkite/pipeline.yml"),
+            "--dry-run",
+            "--format",
+            "yaml",
+            "--reject-secrets",
+            "--reject-parse-warnings",
+            "--changed-files-path",
+            str(changed_files_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "BUILDKITE_AGENT_ACCESS_TOKEN": "local-dry-run"},
+    )
+    rendered = yaml.safe_load(result.stdout)
+    rendered_steps = {step["key"]: step for step in rendered["steps"]}
+    for key in (
+        "quality-snmp-generator",
+        "quality-observability-11b",
+        "quality-observability-11c2",
+        "validation-complete",
+        "cml-staging",
+        "protected-delivery",
+    ):
+        assert "skip" not in rendered_steps[key]
 
 
 def test_external_bootstrap_fetches_diff_base() -> None:

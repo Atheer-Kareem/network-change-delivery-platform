@@ -1,3 +1,4 @@
+# retry-authorization: 1
 schema_version: "1"
 action: deploy
 change_id: CHG-SNMP-11C3-JUNOS-001

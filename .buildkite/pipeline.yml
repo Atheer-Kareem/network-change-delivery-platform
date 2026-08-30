@@ -138,8 +138,36 @@ steps:
   - wait: ~
     key: validation-complete
 
+  - label: ":fish: PR Batfish candidate assurance"
+    key: pr-batfish-assurance
+    depends_on: validation-complete
+    if: build.pull_request.id != null
+    command: .buildkite/scripts/batfish_assurance.sh
+    agents:
+      queue: ncdp-validation
+    concurrency: 1
+    concurrency_group: ncdp/batfish-assurance
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+        reason: "A fresh commit and build are required after assurance failure."
+    if_changed:
+      include: "**"
+      exclude:
+        - "docs/**"
+        - "README.md"
+        - "AGENTS.md"
+        - ".github/CODEOWNERS"
+        - ".github/pull_request_template.md"
+        - "tests/**"
+        - ".gitignore"
+
   - label: ":cloud: Ephemeral CML staging · create → validate → destroy"
     key: cml-staging
+    depends_on:
+      - validation-complete
+      - pr-batfish-assurance
     command: scripts/buildkite/ephemeral_staging.sh
     agents:
       queue: ncdp-staging

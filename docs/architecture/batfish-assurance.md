@@ -25,12 +25,21 @@ The resolved local arm64 child is
 PyBatfish is pinned to `2025.7.7.2423`; the server reports
 `2026.07.20.3565`. Unit tests use injected providers and do not require Docker.
 
-## First-class protected Buildkite stage
+## First-class Buildkite stages
 
 Increment 12A makes `batfish-assurance` a visible protected-main stage after
-`validation-complete`. It can run in parallel with disposable CML staging. The
-fixed Compose project is serialized in `ncdp/batfish-assurance` with limit one,
-and the job cannot be retried.
+`validation-complete`. ADR 0027 adds a top-level `pr-batfish-assurance` stage
+for runtime-relevant pull requests. Both identities reuse the exact same
+script, fixed Compose project, and typed assurance boundary. The project is
+serialized in `ncdp/batfish-assurance` with limit one, and neither job can be
+retried.
+
+On a pull request, Batfish must pass before trusted disposable CML staging can
+start. This is cost-aware prevention: offline candidate assurance rejects a
+bad modeled behavior before creating the slower vendor runtime. On non-PR
+`main`, the PR step is skipped and the protected `batfish-assurance` step still
+runs in parallel with CML after the validation barrier. Main regenerates its
+own assurance for the exact merged commit and never trusts PR evidence.
 
 The stage verifies the checked-out commit, builds the pinned promotion/assurance
 image from that checkout, starts Batfish, performs bounded readiness, executes
@@ -51,6 +60,17 @@ It also requires no differential reachability. It does not claim to validate
 Mac-to-management reachability, SNMP VACM/polling, or nonexistent protocol
 adjacencies.
 
+Candidate derivation remains part of `ncdp assure-plan`. The record already
+binds the plan, policy, frozen baseline, derived candidate, baseline/candidate
+digests, flows, invariants, and its own digest. A separate candidate-generation
+artifact would add a handoff without a new safety property and is deliberately
+not introduced.
+
+Batfish is complementary to CML rather than a substitute for it. Batfish proves
+offline normalized behavior of the derived candidate. CML proves topology,
+Day-0, real IOS XE/Junos readiness, strict trust, and the read-only NCDP vendor
+paths; CML does not apply or validate the proposed candidate configuration.
+
 ## Assurance-to-promotion handoff
 
 Immutable promotion waits for both CML staging and Batfish assurance. It
@@ -59,3 +79,7 @@ the same Buildkite build, rejects an unexpected filesystem shape or symlink,
 and independently verifies the exact bytes against the checked-out plan,
 policy, and baseline. Promotion then creates and verifies the immutable bundle.
 It no longer starts or contacts Batfish.
+
+The similarly named artifact produced by `pr-batfish-assurance` is pre-merge
+evidence only. Promotion cannot select it: the download is explicitly scoped to
+the protected same-main-build `batfish-assurance` step.

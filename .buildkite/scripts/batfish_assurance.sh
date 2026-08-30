@@ -2,6 +2,22 @@
 set -euo pipefail
 umask 077
 
+case "${BUILDKITE_STEP_KEY:-}" in
+  pr-batfish-assurance | batfish-assurance) ;;
+  *)
+    echo "Batfish assurance execution context is not authorized" >&2
+    exit 2
+    ;;
+esac
+if [[ "${BUILDKITE_AGENT_META_DATA_QUEUE:-}" != ncdp-validation ]]; then
+  echo "Batfish assurance queue is not authorized" >&2
+  exit 2
+fi
+if [[ "${BUILDKITE_RETRY_COUNT:-}" != 0 ]]; then
+  echo "Retried Batfish assurance is not authorized" >&2
+  exit 2
+fi
+
 scripts/buildkite/verify_commit.sh
 tmpdir="$(mktemp -d)"
 chmod 700 "$tmpdir"

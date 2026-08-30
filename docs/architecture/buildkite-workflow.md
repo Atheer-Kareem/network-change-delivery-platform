@@ -5,21 +5,21 @@ assurance, immutable promotion, human authorization, and protected deployment
 separate visible boundaries.
 
 ```text
-visible validation steps
-        |
-        v
-validation-complete
-   |                 |
-   v                 v
-CML staging     Batfish assurance        protected main only
-   |                 |
-   +--------+--------+
-            v
-    immutable promotion
-            v
-    human authorization
-            v
-       deploy-gate
+runtime pull request                 protected non-PR main
+
+visible validation                  visible validation
+        |                                    |
+validation-complete                 validation-complete
+        |                               |             |
+PR Batfish candidate assurance      CML staging      Batfish assurance
+        |                               |             |
+CML staging                            +------+------+
+create -> READ-ONLY validate                  |
+       -> destroy                     immutable promotion
+                                               |
+                                      human authorization
+                                               |
+                                          deploy-gate
 ```
 
 ## Visible validation and barrier
@@ -44,16 +44,24 @@ Two visible contracts have distinct meanings:
   graph, queues, gating, retry prohibition, and runtime-path classification.
 
 All applicable validations join at the keyed `validation-complete` wait.
-Legitimately skipped change-aware steps satisfy the barrier. `cml-staging` has
-no explicit dependency and therefore inherits the wait rather than bypassing
-it. The protected-delivery group explicitly depends on the same barrier.
+Legitimately skipped change-aware steps satisfy the barrier. The PR Batfish
+step and protected-delivery group explicitly depend on it. `cml-staging`
+explicitly depends on both the barrier and the PR Batfish step; Buildkite treats
+the PR-only dependency as satisfied when that step is conditionally skipped on
+main.
 Validation runs on the `ncdp-validation` queue. Local worker capacity is an
 operational setting and is not a portable platform contract.
 
 ## Pull requests and disposable staging
 
-Runtime-relevant same-repository pull requests run the single
-`cml-staging` job after validation. It is independently serialized in
+Runtime-relevant pull requests first run `pr-batfish-assurance` after
+validation. It performs offline normalized behavioral assurance against the
+exact reviewed plan, policy, frozen baseline, and derived candidate. Only after
+it passes can the single `cml-staging` job run. Batfish and staging share the
+same broad fail-closed runtime change classification, and both require a fresh
+commit/build after failure rather than a retry.
+
+CML staging is independently serialized in
 `ncdp/cml-ephemeral-staging`, cannot be retried, and uses build-UUID run
 identity, external run-scoped state, dedicated identities, strict run-scoped
 host trust, and sanitized evidence. A trusted agent command hook rejects fork
@@ -61,10 +69,17 @@ PR staging before credentials are exposed.
 
 The staging job remains one Python lifecycle owner. Its visible create →
 validate → destroy phases do not split cleanup authority across Buildkite jobs.
+It verifies the real IOS XE/Junos disposable runtime and read-only provider
+paths; it does not apply or validate the proposed live candidate. Batfish and
+CML therefore provide complementary model and vendor-runtime evidence.
 See [Buildkite ephemeral CML staging operations](buildkite-ephemeral-cml-staging-operations.md).
 
 The protected-delivery group is restricted to non-PR `main` builds and is
 therefore absent/ineligible on pull requests.
+
+A fork-origin runtime PR may run unprivileged validation and Batfish but cannot
+receive trusted staging credentials. A maintainer must reproduce or adopt that
+commit in the canonical repository before the CML merge gate can pass.
 
 ## Protected-main assurance and promotion
 
@@ -85,6 +100,11 @@ symlinks/non-regular material, and independently verifies the record against
 the checked-out plan, policy, and baseline. Only then does it create and verify
 the immutable promotion, upload `promotion/**`, and record the plan, assurance,
 and promotion digests as `promoted-*` metadata.
+
+The PR artifact is never promotion input. Protected main independently
+re-establishes assurance for the exact merged commit, and promotion remains
+hard-scoped to the same-build step key `batfish-assurance`, not
+`pr-batfish-assurance`.
 
 Promotion contains plan, policy, assurance, and frozen baseline bytes only.
 Buildkite pauses at the fieldless `deployment-approval` block after promotion.
@@ -117,14 +137,19 @@ remain separate. Physical host isolation is not claimed.
 
 The repository pipeline's native Buildkite `if_changed` exclusion set is the
 executable classification authority. Visible validation and contract checks run
-for every build. CML staging and the protected-delivery group are omitted only
-when every changed path is one of `docs/**`, `README.md`, `AGENTS.md`,
-`.github/CODEOWNERS`, `.github/pull_request_template.md`, `tests/**`, or
-`.gitignore`. The condition includes `**` first, so mixed changes and unknown or
-unclassified paths retain the runtime path. Indeterminate classification fails
-closed by running guarded steps.
+for every build. PR Batfish, CML staging, and the protected-delivery group are
+omitted only when every changed path is one of `docs/**`, `README.md`,
+`AGENTS.md`, `.github/CODEOWNERS`, `.github/pull_request_template.md`,
+`tests/**`, or `.gitignore`. The condition includes `**` first, so mixed changes
+and unknown or unclassified paths retain the runtime path. Indeterminate
+classification fails closed by running guarded steps.
 
 New top-level paths are runtime-relevant by default. An exclusion requires
 explicit rationale, updated architecture, pipeline-contract regression
 coverage, and review. Documentation and tests describe and protect this policy;
 they do not implement a second classifier.
+
+GitHub must require the aggregate
+`buildkite/network-change-delivery-platform` status on `main`. With that
+external rule, a runtime PR Batfish or CML failure fails the aggregate status
+and prevents merge. See [ADR 0027](../adr/0027-pre-merge-network-assurance.md).

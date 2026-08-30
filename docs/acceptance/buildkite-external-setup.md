@@ -24,8 +24,25 @@ behavior.
 Quality and pipeline-contract checks remain unconditional. Only changes made
 entirely within `docs/**`, `README.md`, `AGENTS.md`, `.github/CODEOWNERS`,
 `.github/pull_request_template.md`, `tests/**`, or `.gitignore` may omit live
-CML staging and the complete protected-delivery group. Any other `.github`
-path—and any mixed, executable, deployment, or unknown path—runs the live path.
+CML staging, PR Batfish, and the complete protected-delivery group. Any other
+`.github` path—and any mixed, executable, deployment, or unknown path—runs the
+live path.
+
+GitHub `main` protection or its repository ruleset must require the aggregate
+commit status `buildkite/network-change-delivery-platform`. This external
+setting is part of the pre-merge assurance boundary:
+
+```text
+runtime PR
+  -> PR Batfish or CML failure
+  -> aggregate Buildkite failure
+  -> required GitHub status unsatisfied
+  -> merge blocked
+```
+
+The pipeline cannot configure or substitute for that GitHub rule. Verify it
+read-only before merging the hardening change; if it is absent, an operator must
+add the exact status through GitHub repository settings.
 
 This document records the external Buildkite and GitHub acceptance for Increment 7.
 
@@ -61,11 +78,12 @@ NCDP_AUDIT_STORE_ROOT="$audit_root" uv run ncdp audit verify-store
 The agent and an operator CLI may share this local trust boundary. It does not
 isolate the store from arbitrary processes running as the same workstation UID.
 
-PR-side external acceptance is verified. GitHub pull requests trigger Buildkite,
-the validation-only PR path runs without entering promotion or deployment, and
-GitHub reports the `buildkite/network-change-delivery-platform` status context.
-The validated PR path contains the pipeline upload, visible quality checks, and
-pipeline-contract validation.
+Earlier PR-side external acceptance verified that GitHub pull requests trigger
+Buildkite without entering promotion or deployment and that GitHub reports the
+`buildkite/network-change-delivery-platform` status context. ADR 0027 extends
+the runtime PR path to require offline Batfish candidate assurance before
+trusted disposable CML staging. Protected main independently regenerates both
+assurances; PR artifacts never become promotion evidence.
 
 GitHub `main` protection is active. Three protected-main attempts established the
 external acceptance history.

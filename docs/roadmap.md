@@ -111,5 +111,9 @@ acceptance records.
     - **12E — complete:** a read-only demonstration readiness checker, safe
       reset/recovery contract, and canonical historical/live evidence package
       make final-demo preparation predictable without recreating state.
-    - **12F — next:** demonstration runbook and rehearsal.
+    - **Detour A — in progress before 12F:** runtime-relevant pull requests are
+      being hardened to require Batfish candidate assurance before trusted
+      disposable CML staging, while protected main independently re-verifies
+      both branches.
+    - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

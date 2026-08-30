@@ -7,8 +7,11 @@ to the same immutable single-device plan.
 flowchart TD
   PR[Reviewed change] --> V[Visible validation gates]
   V --> VB[validation-complete]
-  VB --> C[Disposable CML staging]
-  VB --> B[Protected-main Batfish assurance]
+  VB -->|runtime PR| PB[PR Batfish candidate assurance]
+  PB --> PC[PR disposable CML staging]
+  PC --> MR[Required Buildkite status / merge eligibility]
+  VB -->|protected main| C[Main disposable CML staging]
+  VB -->|protected main| B[Protected-main Batfish assurance]
   C --> P[Immutable promotion]
   B --> P
   P --> A[Human authorization]
@@ -23,10 +26,12 @@ flowchart TD
 ```
 
 Validation fails closed before privilege. Runtime-relevant same-repository pull
-requests ordinarily run disposable CML staging after the validation barrier;
+requests run offline Batfish candidate assurance before disposable CML staging;
 the protected-delivery group is ineligible on PRs. On non-PR `main` builds,
 first-class Batfish assurance and CML staging can run independently after the
 same barrier, and immutable promotion requires both before human authorization.
+The PR assurance artifact is prevention evidence only and is not reused by
+protected main.
 
 The current protected promotion contains one `DeploymentPlan`. Planning records
 canonical intent, inventory identity, preconditions, vendor-aware operations,

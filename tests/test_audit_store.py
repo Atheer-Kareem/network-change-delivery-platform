@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import os
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -56,13 +57,13 @@ def make_store(tmp_path: Path) -> AuditStore:
     return AuditStore(root, checkout=checkout)
 
 
-def plan():
+def plan(*, change_id: str = "CHG-10B1", description: str = "audit-store-test"):
     intent = InterfaceDescriptionIntent(
-        change_id="CHG-10B1",
+        change_id=change_id,
         kind="interface_description",
         target="core-02",
         interface="GigabitEthernet2",
-        desired=DesiredDescription(description="audit-store-test"),
+        desired=DesiredDescription(description=description),
     )
     device = InventoryDevice(
         name="core-02",
@@ -87,6 +88,25 @@ def plan():
         credential=CredentialReference("openbao", "openbao:kv-v2:ncdp/devices/1/ssh"),
         created_at=datetime(2026, 8, 27, tzinfo=UTC),
     )
+
+
+def store_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
+    """Capture entry identity, metadata, and bytes for mutation assertions."""
+    snapshot: list[tuple[object, ...]] = []
+    for path in sorted((root, *root.rglob("*"))):
+        metadata = path.lstat()
+        snapshot.append(
+            (
+                path.relative_to(root).as_posix() if path != root else ".",
+                stat.S_IFMT(metadata.st_mode),
+                stat.S_IMODE(metadata.st_mode),
+                metadata.st_ino,
+                metadata.st_size,
+                metadata.st_mtime_ns,
+                path.read_bytes() if path.is_file() and not path.is_symlink() else None,
+            )
+        )
+    return tuple(snapshot)
 
 
 def record(reference: AuditArtifactReference, **changes: object):
@@ -225,6 +245,77 @@ def test_managed_directories_and_final_files_are_private(tmp_path: Path) -> None
     assert destination.stat().st_mode & 0o777 == 0o600
     record_path = store.persist_record(record(reference))
     assert record_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_create_false_opens_only_an_existing_complete_store(tmp_path: Path) -> None:
+    created = make_store(tmp_path)
+    reopened = AuditStore(created.root, checkout=tmp_path / "checkout", create=False)
+    assert reopened.root == created.root
+    assert (created.root / "artifacts").is_dir()
+    assert (created.root / "records").is_dir()
+
+
+@pytest.mark.parametrize("missing", ["artifacts", "records"])
+def test_create_false_never_creates_a_missing_managed_directory(
+    tmp_path: Path, missing: str
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    root = tmp_path / "audit"
+    root.mkdir(mode=0o700)
+    for name in {"artifacts", "records"} - {missing}:
+        (root / name).mkdir(mode=0o700)
+
+    with pytest.raises(AuditStoreError, match="managed directory"):
+        AuditStore(root, checkout=checkout, create=False)
+
+    assert not (root / missing).exists()
+
+
+def test_create_false_retains_managed_directory_security_checks(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    root = tmp_path / "audit"
+    root.mkdir(mode=0o700)
+    (root / "records").mkdir(mode=0o700)
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    (root / "artifacts").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(AuditStoreError, match="managed directory"):
+        AuditStore(root, checkout=checkout, create=False)
+
+
+def test_create_false_rejects_artifact_publication_before_any_mutation(
+    tmp_path: Path,
+) -> None:
+    writable = make_store(tmp_path)
+    writable.persist_artifact(AuditArtifactKind.DEPLOYMENT_PLAN, plan())
+    assert (writable.root / "artifacts" / "deployment_plan").is_dir()
+    readonly = AuditStore(writable.root, checkout=tmp_path / "checkout", create=False)
+    before = store_snapshot(readonly.root)
+
+    with pytest.raises(AuditStoreError, match="audit store is read-only"):
+        readonly.persist_artifact(
+            AuditArtifactKind.DEPLOYMENT_PLAN,
+            plan(change_id="CHG-READ-ONLY", description="must-not-publish"),
+        )
+
+    assert store_snapshot(readonly.root) == before
+
+
+def test_create_false_rejects_audit_record_publication_before_any_mutation(
+    tmp_path: Path,
+) -> None:
+    writable = make_store(tmp_path)
+    reference = writable.persist_artifact(AuditArtifactKind.DEPLOYMENT_PLAN, plan())
+    readonly = AuditStore(writable.root, checkout=tmp_path / "checkout", create=False)
+    before = store_snapshot(readonly.root)
+
+    with pytest.raises(AuditStoreError, match="audit store is read-only"):
+        readonly.persist_record(record(reference, record_id=UUID(int=2)))
+
+    assert store_snapshot(readonly.root) == before
 
 
 def test_intrinsic_artifact_identity_agrees_with_model_digest(tmp_path: Path) -> None:

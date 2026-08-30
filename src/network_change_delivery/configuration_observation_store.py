@@ -24,8 +24,8 @@ _DEVICE_IDENTITY_ADAPTER = TypeAdapter(NetBoxDeviceIdentity)
 class ConfigurationObservationStore(AuditStore):
     """Typed sibling store for immutable configuration-observation records."""
 
-    def __init__(self, root: Path, *, checkout: Path) -> None:
-        super().__init__(root, checkout=checkout)
+    def __init__(self, root: Path, *, checkout: Path, create: bool = True) -> None:
+        super().__init__(root, checkout=checkout, create=create)
         self._observation_records = self._managed_directory(
             self.root / "observation-records"
         )
@@ -35,6 +35,7 @@ class ConfigurationObservationStore(AuditStore):
     ) -> Path:
         """Publish only digest-valid metadata linked to a verified parent audit."""
 
+        self._require_writable()
         self._validate_root_identity()
         record = ConfigurationObservationRecord.model_validate(record)
         if not record.verify_digest():

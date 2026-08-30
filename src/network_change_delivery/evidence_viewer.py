@@ -241,6 +241,10 @@ def _timestamp(value: datetime | None) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def _index_timestamp(value: datetime) -> str:
+    return value.strftime("%Y-%m-%d %H:%M:%SZ")
+
+
 def _badge(value: str, *, emphasis: str | None = None) -> str:
     css = emphasis or value.casefold().replace("_", "-")
     return f'<span class="badge badge-{_escape(css)}">{_escape(value)}</span>'
@@ -334,11 +338,10 @@ def render_index(values: tuple[RecordSummaryPresentation, ...]) -> bytes:
   <h2><a href="/records/{value.record_id}">{_escape(value.change_id)}</a></h2>
   <p>{_badge(value.final_outcome)} {approval}</p>
   <dl>
-    <dt>Generated</dt><dd>{_escape(_timestamp(value.generated_at))}</dd>
+    <dt>Generated</dt><dd>{_escape(_index_timestamp(value.generated_at))}</dd>
     <dt>Buildkite build</dt><dd>{_escape(build)}</dd>
-    <dt>Git commit</dt><dd class="mono">{_escape(value.commit)}</dd>
+    <dt>Git commit</dt><dd class="mono">{_escape(value.commit[:12])}</dd>
     <dt>Targets</dt><dd class="mono">{_targets(value.targets)}</dd>
-    <dt>Audit record</dt><dd class="mono">{_escape(value.record_id)}</dd>
   </dl>
 </article>"""
         )
@@ -373,13 +376,16 @@ def _revision_block(label: str, value: RevisionPresentation | None) -> str:
 
 
 def _attempt_block(value: AttemptPresentation) -> str:
-    failure = value.failure_category or "NONE"
+    failure = ""
+    if value.failure_category is not None:
+        failure = (
+            f"\n    <dt>Failure category</dt><dd>{_escape(value.failure_category)}</dd>"
+        )
     return f"""<div class="attempt">
   <h3>{_escape(value.label)} · {_badge(value.status)}</h3>
   <dl>
     <dt>Requested</dt><dd>{_escape(_timestamp(value.requested_at))}</dd>
-    <dt>Completed</dt><dd>{_escape(_timestamp(value.completed_at))}</dd>
-    <dt>Failure category</dt><dd>{_escape(failure)}</dd>
+    <dt>Completed</dt><dd>{_escape(_timestamp(value.completed_at))}</dd>{failure}
   </dl>
   <div class="grid">
     <div>{_revision_block("Before revision", value.before_revision)}</div>

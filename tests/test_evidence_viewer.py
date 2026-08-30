@@ -10,6 +10,7 @@ import sys
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -43,6 +44,8 @@ from network_change_delivery.evidence_viewer import (
     GITHUB_REPOSITORY_URL,
     MAX_PRESENTED_RECORDS,
     SECURITY_HEADERS,
+    AttemptPresentation,
+    _attempt_block,
     create_server,
 )
 
@@ -197,10 +200,18 @@ def test_index_and_detail_are_allowlisted_escaped_and_linked(tmp_path: Path) -> 
     assert "CHG-&lt;script&gt;alert(1)&lt;/script&gt;" in index
     assert "<script>alert(1)</script>" not in index
     assert "APPROVED" in index
+    assert "2026-08-27 01:00:00Z" in index
+    assert "2026-08-27T01:00:00Z" not in index
+    assert "a" * 12 in index
+    assert "a" * 40 not in index
+    assert "<dt>Audit record</dt>" not in index
+    assert "2026-08-27T01:00:00Z" in detail
+    assert "a" * 40 in detail
     assert "TEMPORALLY_BRACKETED" in detail
     assert "Causality: " in detail and "NOT_PROVEN" in detail
     assert "Temporal correlation does not prove" in detail
     assert "PRE" in detail and "POST" in detail
+    assert "Failure category" not in detail
     assert str(observation.observation_record_id) in detail
     assert f"{GITHUB_REPOSITORY_URL}/commit/{'a' * 40}" in detail
     assert f"{GITHUB_REPOSITORY_URL}/pull/101" in detail
@@ -216,6 +227,23 @@ def test_index_and_detail_are_allowlisted_escaped_and_linked(tmp_path: Path) -> 
         assert headers["Content-Type"] == "text/html; charset=utf-8"
         for name, value in SECURITY_HEADERS.items():
             assert headers[name] == value
+
+
+def test_failed_observation_renders_allowlisted_failure_category() -> None:
+    content = _attempt_block(
+        AttemptPresentation(
+            label="POST",
+            status="FAILED",
+            requested_at=datetime(2026, 8, 30, 1, tzinfo=UTC),
+            completed_at=datetime(2026, 8, 30, 1, 1, tzinfo=UTC),
+            failure_category="COLLECTION_FAILED",
+            before_revision=None,
+            after_revision=None,
+        )
+    )
+
+    assert "Failure category" in content
+    assert "COLLECTION_FAILED" in content
 
 
 def test_get_head_missing_and_all_unsupported_methods_are_bounded(

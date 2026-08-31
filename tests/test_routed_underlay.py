@@ -467,7 +467,6 @@ def test_candidate_snapshot_is_exact_four_with_no_management_or_ospf() -> None:
     with build_routed_underlay_candidate_snapshot(
         intent,
         build_routed_underlay_desired_state(intent),
-        population(),  # type: ignore[arg-type]
     ) as candidate:
         assert {item.relative_path for item in candidate.manifest.files} == {
             "access-sw-01.cfg",
@@ -531,7 +530,6 @@ def test_complete_secret_free_proposal_binds_o_d1_render_and_batfish() -> None:
     batfish = assure_routed_underlay_candidate(
         intent,
         desired_state,
-        population(),  # type: ignore[arg-type]
         FakeBatfishProvider(),
     )
     proposal = RoutedUnderlayProposalEvidence(

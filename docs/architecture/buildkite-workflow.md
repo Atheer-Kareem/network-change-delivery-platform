@@ -2,7 +2,7 @@
 
 The accepted pipeline architecture separates validation, disposable
 integration, offline network assurance, immutable promotion, human
-authorization, and protected deployment. During Detour B3, automatic disposable
+authorization, and protected deployment. During Detour B, automatic disposable
 CML and the protected-delivery group are temporarily paused together while the
 four-device Terraform realization is incomplete. Quality validation, Terraform
 static validation, and PR Batfish candidate assurance remain active. The
@@ -17,7 +17,7 @@ visible validation                  visible validation
         |                                    |
 validation-complete                 validation-complete
         |                                    |
-PR Batfish candidate assurance              done
+PR Batfish · profiled four-device           done
         |
        done
 ```
@@ -64,9 +64,12 @@ operational setting and is not a portable platform contract.
 ## Pull requests and disposable staging
 
 Runtime-relevant pull requests run `pr-batfish-assurance` after validation. It
-performs offline normalized behavioral assurance against the exact reviewed
-plan, policy, frozen baseline, and derived candidate. During the B3 pause it is
-the last active network-assurance step; no disposable CML job follows it.
+performs offline normalized behavioral assurance against the exact profiled
+four-device candidate and current explicit service stack. B4-1A's stack is
+`routed_underlay`; its input is the accepted B3-5 allocation evidence copy and
+the Git-owned profile catalog. It does not call NetBox, OpenBao, CML, LIVE
+devices, or trust material. During the Detour B pause it is the last active
+network-assurance step; no disposable CML job follows it.
 
 When restored, CML staging is independently serialized in
 `ncdp/cml-ephemeral-staging`, cannot be retried, and uses build-UUID run
@@ -93,9 +96,10 @@ before the CML merge gate can pass.
 
 ## Protected-main assurance and promotion
 
-This entire accepted branch is temporarily inactive. If the operator explicitly
-restores it with CML staging, a runtime-relevant non-PR `main` build will again
-make `batfish-assurance` and `cml-staging` eligible independently after
+This entire accepted branch is temporarily inactive and remains legacy v1. If
+the operator explicitly restores it with CML staging before its later migration,
+a runtime-relevant non-PR `main` build will again make the legacy
+`batfish-assurance` and `cml-staging` eligible independently after
 `validation-complete`.
 Batfish uses the `ncdp-validation` queue, concurrency group
 `ncdp/batfish-assurance`, limit one, and no automatic or manual retry. Its fixed
@@ -113,10 +117,11 @@ the checked-out plan, policy, and baseline. Only then does it create and verify
 the immutable promotion, upload `promotion/**`, and record the plan, assurance,
 and promotion digests as `promoted-*` metadata.
 
-The PR artifact is never promotion input. Protected main independently
-re-establishes assurance for the exact merged commit, and promotion remains
-hard-scoped to the same-build step key `batfish-assurance`, not
-`pr-batfish-assurance`.
+The profiled PR artifact is never promotion input. The preserved legacy
+promotion remains hard-scoped to the same-build step key `batfish-assurance`,
+not `pr-batfish-assurance`. Migrating protected assurance/promotion is a later
+decision after the profiled service and accepted-state execution architecture
+is ready.
 
 Promotion contains plan, policy, assurance, and frozen baseline bytes only.
 Buildkite pauses at the fieldless `deployment-approval` block after promotion.

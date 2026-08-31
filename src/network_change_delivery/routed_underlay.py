@@ -45,6 +45,7 @@ from network_change_delivery.assurance import (
 )
 from network_change_delivery.audit import canonical_json_bytes, sha256_identity
 from network_change_delivery.profile_inventory import (
+    PROFILED_POPULATION_CATALOG,
     ProfiledInventoryDevice,
     ProfiledInventoryPopulation,
 )
@@ -53,6 +54,7 @@ from network_change_delivery.reference_data_plane import (
     ReferenceDataPlaneAllocation,
     RoutedLinkAllocation,
     RoutedLinkIdentity,
+    reference_allocation_digest,
 )
 from network_change_delivery.secrets import DeviceCredentials
 
@@ -630,55 +632,52 @@ def _render_final_state_ios(
 def build_routed_underlay_candidate_snapshot(
     intent: RoutedUnderlayIntent,
     desired: RoutedUnderlayDesiredState,
-    population: ProfiledInventoryPopulation,
 ) -> PreparedSnapshot:
     """Build a synthetic exact-four final-state candidate from normalized D1."""
     if desired != build_routed_underlay_desired_state(intent):
         raise ValueError("routed-underlay desired state is detached from intent")
-    facts = tuple(
-        (
-            device.device_identity,
-            device.logical_name,
-            device.automation_profile_id,
-        )
-        for device in population.devices
+    candidate_catalog = tuple(
+        (member.logical_name.value, member.automation_profile_id)
+        for member in PROFILED_POPULATION_CATALOG
     )
-    if facts != _PROFILED_BINDINGS:
+    if tuple(name for name, _profile in candidate_catalog) != EXPECTED_PROFILED_NAMES:
         raise ValueError("routed-underlay candidate population is not exact")
     by_identity = {state.device_identity: [] for state in desired.interfaces}
     for state in desired.interfaces:
         by_identity[state.device_identity].append(state)
-    cisco_configs = {
-        name: (
-            f"hostname {name}\n{_render_final_state_ios(tuple(by_identity[identity]))}"
-        )
-        for identity, name in (
-            ("netbox:dcim.device:1", "core-02"),
-            ("netbox:dcim.device:8", "transit-ios-01"),
-        )
+    identity_by_name = {
+        "core-02": "netbox:dcim.device:1",
+        "edge-junos-01": "netbox:dcim.device:2",
+        "transit-ios-01": "netbox:dcim.device:8",
     }
-    junos_lines = ["set system host-name edge-junos-01"]
-    edge_states = tuple(
-        item
-        for item in desired.interfaces
-        if item.device_identity == "netbox:dcim.device:2"
-    )
-    junos_lines.extend(
-        "set interfaces "
-        f"{state.interface.name} unit 0 family inet address {state.ipv4_addresses[0]}"
-        for state in edge_states
-    )
-    files = (
-        (
-            "access-sw-01.cfg",
-            b"version 15.2\nhostname access-sw-01\n"
-            b"interface GigabitEthernet0/0\n no switchport\n no shutdown\n",
-        ),
-        ("core-02.cfg", cisco_configs["core-02"].encode()),
-        ("edge-junos-01.cfg", ("\n".join(junos_lines) + "\n").encode()),
-        ("transit-ios-01.cfg", cisco_configs["transit-ios-01"].encode()),
-    )
-    return prepare_snapshot_from_bytes(files)
+    files: list[tuple[str, bytes]] = []
+    for name, profile_id in candidate_catalog:
+        states = tuple(by_identity.get(identity_by_name.get(name, ""), ()))
+        if profile_id in {
+            AutomationProfileID.CAT8000V_IOSXE,
+            AutomationProfileID.IOSV_159_3_M12,
+        }:
+            content = f"hostname {name}\n{_render_final_state_ios(states)}"
+        elif profile_id is AutomationProfileID.VJUNOS_ROUTER:
+            lines = [f"set system host-name {name}"]
+            lines.extend(
+                "set interfaces "
+                f"{state.interface.name} unit 0 family inet address "
+                f"{state.ipv4_addresses[0]}"
+                for state in states
+            )
+            content = "\n".join(lines) + "\n"
+        elif profile_id is AutomationProfileID.IOSVL2_2020:
+            if states:
+                raise ValueError("access switch cannot join routed underlay")
+            content = (
+                f"version 15.2\nhostname {name}\n"
+                "interface GigabitEthernet0/0\n no switchport\n no shutdown\n"
+            )
+        else:
+            raise ValueError("routed-underlay candidate profile is unsupported")
+        files.append((f"{name}.cfg", content.encode()))
+    return prepare_snapshot_from_bytes(tuple(sorted(files, key=lambda item: item[0])))
 
 
 class RoutedUnderlayFlow(BaseModel):
@@ -1013,13 +1012,10 @@ def evaluate_routed_underlay_assurance(
 def assure_routed_underlay_candidate(
     intent: RoutedUnderlayIntent,
     desired: RoutedUnderlayDesiredState,
-    population: ProfiledInventoryPopulation,
     provider: RoutedUnderlayAssuranceProvider | None = None,
 ) -> RoutedUnderlayAssuranceEvidence:
     """Analyze one frozen candidate and bind the result to the proposed D1 digest."""
-    with build_routed_underlay_candidate_snapshot(
-        intent, desired, population
-    ) as candidate:
+    with build_routed_underlay_candidate_snapshot(intent, desired) as candidate:
         observation = (provider or BatfishRoutedUnderlayAdapter()).analyze(
             candidate.root
         )
@@ -1105,4 +1101,4 @@ class RoutedUnderlayProposalEvidence(BaseModel):
 
 def source_allocation_digest(allocation: ReferenceDataPlaneAllocation) -> str:
     """Return stable evidence identity for one frozen resolved NetBox copy."""
-    return sha256_identity(canonical_json_bytes(allocation.model_dump(mode="json")))
+    return reference_allocation_digest(allocation)

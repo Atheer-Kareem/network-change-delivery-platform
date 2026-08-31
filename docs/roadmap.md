@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — complete through B4-1:** B1 accepts the
+    - **Detour B — complete through B4-1A:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -156,6 +156,10 @@ acceptance records.
       explicitly removed by the proposal artifact while remaining absent from
       the final-state candidate. No routed-underlay configuration was applied,
       and live application remains deferred while protected delivery is
-      disabled.
+      disabled. B4-1A hands the single active PR Batfish step from the legacy
+      v1 two-device promotion baseline to a deterministic offline profiled
+      four-device assurance record with `routed_underlay` as its current
+      explicit service stack. Legacy protected assurance remains preserved and
+      disabled; no protected promotion or execution authority was migrated.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

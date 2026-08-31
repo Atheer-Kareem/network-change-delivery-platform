@@ -144,11 +144,11 @@ steps:
   - wait: ~
     key: validation-complete
 
-  - label: ":fish: PR Batfish candidate assurance"
+  - label: ":fish: PR Batfish · profiled four-device assurance"
     key: pr-batfish-assurance
     depends_on: validation-complete
     if: build.pull_request.id != null
-    command: .buildkite/scripts/batfish_assurance.sh
+    command: .buildkite/scripts/profiled_pr_batfish_assurance.sh
     agents:
       queue: ncdp-validation
     concurrency: 1

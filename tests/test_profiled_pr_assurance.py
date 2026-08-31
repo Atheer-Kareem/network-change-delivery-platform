@@ -1,0 +1,241 @@
+"""Offline contracts for exact four-device profiled PR Batfish assurance."""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+from network_change_delivery.assurance import (
+    AssuranceOutcome,
+    ParseFileResult,
+    ParseSummary,
+)
+from network_change_delivery.profiled_pr_assurance import (
+    PROFILED_CANDIDATE_NODES,
+    ROUTED_UNDERLAY_CANDIDATE_DIGEST,
+    ROUTED_UNDERLAY_D1_DIGEST,
+    ProfiledPrAssuranceEvidence,
+    ProfiledService,
+    assure_profiled_pr_candidate,
+    load_profiled_pr_evidence,
+    write_profiled_pr_evidence,
+)
+from network_change_delivery.reference_data_plane import (
+    ACCEPTED_REFERENCE_ALLOCATION_DIGEST,
+    build_accepted_reference_allocation_evidence,
+    reference_allocation_digest,
+)
+from network_change_delivery.routed_underlay import (
+    BatfishInterfacePrefix,
+    RoutedUnderlayBatfishObservation,
+    RoutedUnderlayFlow,
+    RoutedUnderlayIntent,
+    build_routed_underlay_desired_state,
+)
+
+ROOT = Path(__file__).parents[1]
+
+_SPEC = importlib.util.spec_from_file_location(
+    "render_profiled_pr_assurance_annotation",
+    ROOT / "scripts/buildkite/render_profiled_pr_assurance_annotation.py",
+)
+assert _SPEC and _SPEC.loader
+_RENDERER = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_RENDERER)
+
+
+def desired_state():
+    allocation = build_accepted_reference_allocation_evidence()
+    return build_routed_underlay_desired_state(
+        RoutedUnderlayIntent.from_reference_allocation(allocation)
+    )
+
+
+def batfish_observation(
+    nodes: tuple[str, ...] = PROFILED_CANDIDATE_NODES,
+) -> RoutedUnderlayBatfishObservation:
+    desired = desired_state()
+    node_names = {
+        "netbox:dcim.device:1": "core-02",
+        "netbox:dcim.device:2": "edge-junos-01",
+        "netbox:dcim.device:8": "transit-ios-01",
+    }
+    return RoutedUnderlayBatfishObservation(
+        pybatfish_version="2025.7.7.2423",
+        batfish_version="2026.07.20.3565",
+        candidate_parse=ParseSummary(
+            files=tuple(
+                ParseFileResult(relative_path=f"{name}.cfg", status="PASSED")
+                for name in PROFILED_CANDIDATE_NODES
+            ),
+            nodes=nodes,
+            initialization_issue_count=0,
+        ),
+        interface_prefixes=tuple(
+            BatfishInterfacePrefix(
+                node=node_names[state.device_identity],
+                interface=state.interface.name,
+                prefix=state.ipv4_addresses[0],
+            )
+            for state in desired.interfaces
+        ),
+        flows=(
+            RoutedUnderlayFlow(
+                source_node="core-02",
+                source_ip="10.60.0.1",
+                destination_ip="10.60.0.2",
+                reachable=True,
+            ),
+            RoutedUnderlayFlow(
+                source_node="core-02",
+                source_ip="10.60.0.5",
+                destination_ip="10.60.0.6",
+                reachable=True,
+            ),
+            RoutedUnderlayFlow(
+                source_node="edge-junos-01",
+                source_ip="10.60.0.9",
+                destination_ip="10.60.0.10",
+                reachable=True,
+            ),
+        ),
+        ospf_process_count=0,
+    )
+
+
+class FakeBatfishProvider:
+    def __init__(self, nodes: tuple[str, ...] = PROFILED_CANDIDATE_NODES) -> None:
+        self.nodes = nodes
+        self.candidate_contents = ""
+
+    def analyze(self, candidate: Path) -> RoutedUnderlayBatfishObservation:
+        config_root = candidate / "configs"
+        paths = tuple(sorted(config_root.iterdir()))
+        assert tuple(path.name for path in paths) == tuple(
+            f"{name}.cfg" for name in PROFILED_CANDIDATE_NODES
+        )
+        self.candidate_contents = "\n".join(path.read_text() for path in paths)
+        return batfish_observation(self.nodes)
+
+
+def test_offline_allocation_reconstructs_exact_accepted_b3_5_copy() -> None:
+    allocation = build_accepted_reference_allocation_evidence()
+    assert reference_allocation_digest(allocation) == (
+        ACCEPTED_REFERENCE_ALLOCATION_DIGEST
+    )
+    assert tuple(str(link.prefix) for link in allocation.routed_links) == (
+        "10.60.0.0/30",
+        "10.60.0.4/30",
+        "10.60.0.8/30",
+    )
+    assert tuple(
+        endpoint.interface.interface
+        for link in allocation.routed_links
+        for endpoint in link.endpoints
+    ) == (
+        "netbox:dcim.interface:11",
+        "netbox:dcim.interface:12",
+        "netbox:dcim.interface:2",
+        "netbox:dcim.interface:14",
+        "netbox:dcim.interface:4",
+        "netbox:dcim.interface:15",
+    )
+
+
+def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
+    first_provider = FakeBatfishProvider()
+    second_provider = FakeBatfishProvider()
+    first = assure_profiled_pr_candidate(first_provider)
+    second = assure_profiled_pr_candidate(second_provider)
+
+    assert first == second
+    assert first.verify_digest()
+    assert first.architecture_identity == "profiled-four-device"
+    assert first.active_service_stack == (ProfiledService.ROUTED_UNDERLAY,)
+    assert first.accepted_source_allocation_digest == (
+        ACCEPTED_REFERENCE_ALLOCATION_DIGEST
+    )
+    assert first.proposed_subject_digest == ROUTED_UNDERLAY_D1_DIGEST
+    assert first.candidate_snapshot_digest == ROUTED_UNDERLAY_CANDIDATE_DIGEST
+    assert first.candidate_nodes == PROFILED_CANDIDATE_NODES
+    assert first.outcome is AssuranceOutcome.PASSED
+    assert len(first.invariants) == 10
+    assert all(item.passed for item in first.invariants)
+    for content in (
+        first_provider.candidate_contents,
+        second_provider.candidate_contents,
+    ):
+        assert "10.6.12" not in content
+        assert "192.168.4" not in content
+        assert "ospf" not in content.casefold()
+
+
+@pytest.mark.parametrize(
+    "nodes",
+    [
+        ("core-02", "edge-junos-01"),
+        ("access-sw-01", "core-02", "edge-junos-01"),
+        ("core-02", "edge-junos-01", "transit-ios-01"),
+        (*PROFILED_CANDIDATE_NODES, "rogue-01"),
+    ],
+)
+def test_non_exact_candidate_population_cannot_pass(
+    nodes: tuple[str, ...],
+) -> None:
+    with pytest.raises(ValueError, match="profiled PR assurance evidence"):
+        assure_profiled_pr_candidate(FakeBatfishProvider(nodes))
+
+
+def test_evidence_io_and_annotation_are_typed_and_allowlisted(tmp_path: Path) -> None:
+    evidence = assure_profiled_pr_candidate(FakeBatfishProvider())
+    path = tmp_path / "profiled-pr-assurance.json"
+    write_profiled_pr_evidence(evidence, path)
+    assert load_profiled_pr_evidence(path) == evidence
+
+    annotation = _RENDERER.render_annotation(evidence)
+    for value in (
+        "Profiled PR Batfish assurance",
+        "profiled-four-device",
+        "routed_underlay",
+        "4",
+        "10 / 10 passed",
+        *PROFILED_CANDIDATE_NODES,
+        ROUTED_UNDERLAY_D1_DIGEST,
+        ROUTED_UNDERLAY_CANDIDATE_DIGEST,
+    ):
+        assert value in annotation
+    assert "2026.07.20.3565" not in annotation
+    assert "10.60.0.1" not in annotation
+
+    tampered = evidence.model_copy(update={"digest": "sha256:" + "0" * 64})
+    path.write_text(tampered.model_dump_json())
+    with pytest.raises(ValueError, match="evidence file is invalid"):
+        load_profiled_pr_evidence(path)
+
+
+def test_profiled_entry_point_has_no_live_authority_imports_or_surfaces() -> None:
+    sources = (
+        ROOT / "src/network_change_delivery/profiled_pr_assurance.py",
+        ROOT / "scripts/assurance/verify_profiled_pr_candidate.py",
+    )
+    forbidden = (
+        "NetBoxReferenceDataPlaneProvider",
+        "NetBoxProfileInventoryProvider",
+        "OpenBaoSecretProvider",
+        "ProfileReadOnlyAdapter",
+        "NCDP_NETBOX_TOKEN",
+        "NCDP_OPENBAO",
+        "known_hosts",
+        "paramiko",
+        "ncclient",
+    )
+    for source in sources:
+        text = source.read_text()
+        assert all(value not in text for value in forbidden)
+
+    public = {
+        name for name in dir(ProfiledPrAssuranceEvidence) if not name.startswith("_")
+    }
+    assert not public.intersection({"execute", "deploy", "write", "apply", "commit"})

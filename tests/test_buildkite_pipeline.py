@@ -159,10 +159,17 @@ def test_pipeline_contract() -> None:
     )
 
     pr_batfish = steps["pr-batfish-assurance"]
-    assert pr_batfish["label"] == ":fish: PR Batfish candidate assurance"
+    assert (
+        sum(step.get("key") == "pr-batfish-assurance" for step in pipeline["steps"])
+        == 1
+    )
+    assert pr_batfish["label"] == (":fish: PR Batfish · profiled four-device assurance")
     assert pr_batfish["depends_on"] == "validation-complete"
     assert pr_batfish["if"] == "build.pull_request.id != null"
-    assert pr_batfish["command"] == ".buildkite/scripts/batfish_assurance.sh"
+    assert pr_batfish["command"] == (
+        ".buildkite/scripts/profiled_pr_batfish_assurance.sh"
+    )
+    assert ".buildkite/scripts/batfish_assurance.sh" not in pr_batfish["command"]
     assert pr_batfish["agents"]["queue"] == "ncdp-validation"
     assert pr_batfish["concurrency"] == 1
     assert pr_batfish["concurrency_group"] == "ncdp/batfish-assurance"
@@ -320,18 +327,43 @@ def test_commit_verifier_accepts_only_an_exact_clean_pr_assurance_checkout(
 
 
 @pytest.mark.parametrize(
-    ("step_key", "queue", "retry", "message"),
+    ("script", "step_key", "queue", "retry", "message"),
     [
-        ("unreviewed-step", "ncdp-validation", "0", "execution context"),
-        ("pr-batfish-assurance", "ncdp-deploy", "0", "queue"),
-        ("batfish-assurance", "ncdp-validation", "1", "Retried"),
+        (
+            "batfish_assurance.sh",
+            "pr-batfish-assurance",
+            "ncdp-validation",
+            "0",
+            "execution context",
+        ),
+        (
+            "profiled_pr_batfish_assurance.sh",
+            "batfish-assurance",
+            "ncdp-validation",
+            "0",
+            "execution context",
+        ),
+        (
+            "profiled_pr_batfish_assurance.sh",
+            "pr-batfish-assurance",
+            "ncdp-deploy",
+            "0",
+            "queue",
+        ),
+        (
+            "profiled_pr_batfish_assurance.sh",
+            "pr-batfish-assurance",
+            "ncdp-validation",
+            "1",
+            "Retried",
+        ),
     ],
 )
 def test_batfish_wrapper_rejects_unapproved_execution_context_before_runtime(
-    step_key: str, queue: str, retry: str, message: str
+    script: str, step_key: str, queue: str, retry: str, message: str
 ) -> None:
     result = subprocess.run(
-        [str(ROOT / ".buildkite/scripts/batfish_assurance.sh")],
+        [str(ROOT / ".buildkite/scripts" / script)],
         cwd=ROOT,
         env={
             **os.environ,
@@ -509,7 +541,9 @@ def test_promotion_container_contract() -> None:
     assert "FROM application AS promotion" in dockerfile
     assert "COPY fixtures/batfish ./fixtures/batfish" in dockerfile
     assert "COPY deployments/live/promotion ./deployments/live/promotion" in dockerfile
+    assert "scripts/assurance/verify_profiled_pr_candidate.py" in dockerfile
     assert "scripts/buildkite/render_assurance_annotation.py" in dockerfile
+    assert "scripts/buildkite/render_profiled_pr_assurance_annotation.py" in dockerfile
     assert "COPY . ." not in dockerfile.split("FROM application AS promotion", 1)[1]
     assert "RUN chmod -R a=rX" in dockerfile
     for path in (
@@ -517,6 +551,7 @@ def test_promotion_container_contract() -> None:
         "/app/src",
         "/app/fixtures/batfish",
         "/app/deployments/live/promotion",
+        "/app/scripts/assurance",
         "/app/scripts/buildkite",
     ):
         assert path in dockerfile.split("FROM application AS promotion", 1)[1]
@@ -525,6 +560,9 @@ def test_promotion_container_contract() -> None:
 def test_scripts_static_contract() -> None:
     gate = (ROOT / "scripts/buildkite/deployment_gate.sh").read_text()
     batfish = (ROOT / ".buildkite/scripts/batfish_assurance.sh").read_text()
+    profiled_batfish = (
+        ROOT / ".buildkite/scripts/profiled_pr_batfish_assurance.sh"
+    ).read_text()
     promotion = (ROOT / ".buildkite/scripts/promotion.sh").read_text()
     verifier = (ROOT / "scripts/buildkite/verify_commit.sh").read_text()
     promoted_keys = {
@@ -642,7 +680,8 @@ def test_scripts_static_contract() -> None:
 
     assert batfish.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
     assert "umask 077" in batfish
-    assert "pr-batfish-assurance | batfish-assurance" in batfish
+    assert '"${BUILDKITE_STEP_KEY:-}" != batfish-assurance' in batfish
+    assert "pr-batfish-assurance" not in batfish
     assert '"${BUILDKITE_AGENT_META_DATA_QUEUE:-}" != ncdp-validation' in batfish
     assert '"${BUILDKITE_RETRY_COUNT:-}" != 0' in batfish
     assert "execution context is not authorized" in batfish
@@ -712,6 +751,60 @@ def test_scripts_static_contract() -> None:
         "deployment_gate.sh",
     ):
         assert forbidden not in batfish
+
+    assert profiled_batfish.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
+    assert "umask 077" in profiled_batfish
+    assert '"${BUILDKITE_STEP_KEY:-}" != pr-batfish-assurance' in profiled_batfish
+    assert (
+        '"${BUILDKITE_AGENT_META_DATA_QUEUE:-}" != ncdp-validation' in profiled_batfish
+    )
+    assert '"${BUILDKITE_RETRY_COUNT:-}" != 0' in profiled_batfish
+    for context_check in (
+        "BUILDKITE_STEP_KEY",
+        "BUILDKITE_AGENT_META_DATA_QUEUE",
+        "BUILDKITE_RETRY_COUNT",
+    ):
+        assert profiled_batfish.index(context_check) < profiled_batfish.index(
+            "verify_commit.sh"
+        )
+        assert profiled_batfish.index(context_check) < profiled_batfish.index(
+            "docker compose"
+        )
+    assert "--project-name ncdp-profiled-pr-batfish-assurance" in profiled_batfish
+    assert 'NCDP_PROMOTION_IMAGE_TAG="$BUILDKITE_BUILD_NUMBER"' in profiled_batfish
+    assert '"${compose[@]}" build promotion' in profiled_batfish
+    assert '"${compose[@]}" up -d batfish' in profiled_batfish
+    assert '"${compose[@]}" down' in profiled_batfish
+    assert "trap cleanup EXIT" in profiled_batfish
+    assert "ready_deadline=$((SECONDS + 60))" in profiled_batfish
+    assert "scripts/buildkite/batfish_ready.py" in profiled_batfish
+    assert "scripts/assurance/verify_profiled_pr_candidate.py" in profiled_batfish
+    assert "--verify-only" in profiled_batfish
+    assert (
+        'evidence_relative="assurance/profiled-pr-assurance.json"' in profiled_batfish
+    )
+    assert 'buildkite-agent artifact upload "$evidence_relative"' in profiled_batfish
+    assert (
+        "scripts/buildkite/render_profiled_pr_assurance_annotation.py"
+        in profiled_batfish
+    )
+    assert "buildkite-agent annotate" in profiled_batfish
+    assert "deployments/live/promotion" not in profiled_batfish
+    assert "assure-plan" not in profiled_batfish
+    for forbidden in (
+        "oidc request-token",
+        "NCDP_OPENBAO",
+        "NCDP_DEVICE",
+        "NCDP_CML",
+        "NETBOX",
+        "AUDITSTORE",
+        "OXIDIZED",
+        "terraform",
+        "ansible-playbook",
+        "ncdp deploy",
+        "deployment_gate.sh",
+    ):
+        assert forbidden not in profiled_batfish
 
     assert promotion.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
     assert "umask 077" in promotion

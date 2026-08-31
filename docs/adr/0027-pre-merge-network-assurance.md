@@ -32,10 +32,16 @@ model check fails before the approximately five-minute disposable CML lifecycle
 can create resources. Both steps remain serialized, non-retriable boundaries;
 failure requires a corrected commit and a new build.
 
-The PR Batfish step reuses the same assurance script, fixed Compose project,
-plan, policy, frozen baseline, candidate derivation, verification, typed
-evidence, and sanitized annotation as protected main. It receives no device,
-CML, NetBox, OpenBao, AuditStore, Oxidized, or deployment authority.
+The original PR Batfish step reused the same assurance script, fixed Compose
+project, plan, policy, frozen baseline, candidate derivation, verification,
+typed evidence, and sanitized annotation as protected main. It received no
+device, CML, NetBox, OpenBao, AuditStore, Oxidized, or deployment authority.
+
+B4-1A refines this proposed decision after the four-device profile architecture
+became current truth. The single active PR step now uses a separate offline
+profiled four-device entry point and evidence model. The legacy shared script
+admits only the currently disabled protected `batfish-assurance` context. This
+does not migrate or retire protected delivery.
 
 The runtime-path classifier remains deliberately broad and fail closed:
 `include: "**"` with only the existing reviewed documentation, test, and

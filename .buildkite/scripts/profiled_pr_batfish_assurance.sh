@@ -2,16 +2,16 @@
 set -euo pipefail
 umask 077
 
-if [[ "${BUILDKITE_STEP_KEY:-}" != batfish-assurance ]]; then
-  echo "Legacy Batfish assurance execution context is not authorized" >&2
+if [[ "${BUILDKITE_STEP_KEY:-}" != pr-batfish-assurance ]]; then
+  echo "Profiled PR Batfish assurance execution context is not authorized" >&2
   exit 2
 fi
 if [[ "${BUILDKITE_AGENT_META_DATA_QUEUE:-}" != ncdp-validation ]]; then
-  echo "Batfish assurance queue is not authorized" >&2
+  echo "Profiled PR Batfish assurance queue is not authorized" >&2
   exit 2
 fi
 if [[ "${BUILDKITE_RETRY_COUNT:-}" != 0 ]]; then
-  echo "Retried Batfish assurance is not authorized" >&2
+  echo "Retried profiled PR Batfish assurance is not authorized" >&2
   exit 2
 fi
 
@@ -21,7 +21,7 @@ chmod 700 "$tmpdir"
 mkdir -m 700 "$tmpdir/assurance"
 compose=(
   docker compose
-  --project-name ncdp-batfish-assurance
+  --project-name ncdp-profiled-pr-batfish-assurance
   -f compose.assurance.yaml
 )
 export NCDP_PROMOTION_IMAGE_TAG="$BUILDKITE_BUILD_NUMBER"
@@ -30,11 +30,11 @@ cleanup() {
   trap - EXIT
   cleanup_status=0
   if ! "${compose[@]}" down >/dev/null 2>&1; then
-    echo "Batfish cleanup failed: Compose teardown did not complete" >&2
+    echo "Profiled PR Batfish cleanup failed: Compose teardown did not complete" >&2
     cleanup_status=3
   fi
   if ! rm -rf "$tmpdir" >/dev/null 2>&1; then
-    echo "Batfish cleanup failed: temporary directory removal did not complete" >&2
+    echo "Profiled PR Batfish cleanup failed: temporary removal did not complete" >&2
     cleanup_status=3
   fi
   if (( cleanup_primary_status != 0 )); then
@@ -57,22 +57,19 @@ assurance_run=(
 ready_deadline=$((SECONDS + 60))
 until "${assurance_run[@]}" python scripts/buildkite/batfish_ready.py; do
   if (( SECONDS >= ready_deadline )); then
-    echo "Batfish readiness timed out" >&2
+    echo "Profiled PR Batfish readiness timed out" >&2
     exit 2
   fi
   sleep 2
 done
 
-evidence_relative="assurance/assurance.json"
+evidence_relative="assurance/profiled-pr-assurance.json"
 evidence="$tmpdir/$evidence_relative"
 summary="$tmpdir/assurance/summary.md"
 set +e
-"${assurance_run[@]}" ncdp assure-plan \
-  --plan deployments/live/promotion/plan.json \
-  --policy deployments/live/promotion/policy.yaml \
-  --baseline deployments/live/promotion/baseline \
-  --report-json "/output/$evidence_relative" \
-  --batfish
+"${assurance_run[@]}" python \
+  scripts/assurance/verify_profiled_pr_candidate.py \
+  --evidence "/output/$evidence_relative"
 assurance_status=$?
 set -e
 
@@ -80,7 +77,7 @@ render_summary() {
   [[ -d "$tmpdir/assurance" && ! -L "$tmpdir/assurance" ]] || return 2
   [[ -f "$evidence" && ! -L "$evidence" ]] || return 2
   "${assurance_run[@]}" python \
-    scripts/buildkite/render_assurance_annotation.py \
+    scripts/buildkite/render_profiled_pr_assurance_annotation.py \
     --evidence "/output/$evidence_relative" > "$summary" || return 2
 }
 
@@ -103,16 +100,15 @@ if (( assurance_status != 0 )); then
   publication_status=$?
   set -e
   if (( publication_status != 0 )); then
-    echo "Safe assurance evidence publication did not complete" >&2
+    echo "Safe profiled PR assurance publication did not complete" >&2
   fi
   exit "$assurance_status"
 fi
 
 [[ -f "$evidence" && ! -L "$evidence" ]]
-"${assurance_run[@]}" ncdp verify-assurance \
-  --plan deployments/live/promotion/plan.json \
-  --policy deployments/live/promotion/policy.yaml \
-  --baseline deployments/live/promotion/baseline \
-  --evidence "/output/$evidence_relative"
+"${assurance_run[@]}" python \
+  scripts/assurance/verify_profiled_pr_candidate.py \
+  --evidence "/output/$evidence_relative" \
+  --verify-only
 publish_evidence success
-echo "Batfish plan assurance artifact published: $evidence_relative"
+echo "Profiled PR Batfish artifact published: $evidence_relative"

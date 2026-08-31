@@ -52,7 +52,7 @@ def verify() -> RoutedUnderlayProposalEvidence:
         adapter,
     )
     rendered = render_routed_underlay(intent, observation, desired, population)
-    batfish = assure_routed_underlay_candidate(intent, desired, population)
+    batfish = assure_routed_underlay_candidate(intent, desired)
     proposal = RoutedUnderlayProposalEvidence(
         generated_at=datetime.now(UTC),
         intent=intent,

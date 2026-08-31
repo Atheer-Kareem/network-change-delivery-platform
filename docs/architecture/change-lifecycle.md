@@ -14,7 +14,7 @@ active during the pause.
 flowchart TD
   PR[Reviewed change] --> V[Visible validation gates]
   V --> VB[validation-complete]
-  VB -->|runtime PR| PB[PR Batfish candidate assurance]
+  VB -->|runtime PR| PB[Profiled four-device PR Batfish assurance]
   PB --> PC[PR disposable CML staging]
   PC --> MR[Required Buildkite status / merge eligibility]
   VB -->|protected main| C[Main disposable CML staging]
@@ -33,12 +33,12 @@ flowchart TD
 ```
 
 Validation fails closed before privilege. Runtime-relevant same-repository pull
-requests run offline Batfish candidate assurance before disposable CML staging;
-the protected-delivery group is ineligible on PRs. On non-PR `main` builds,
-first-class Batfish assurance and CML staging can run independently after the
-same barrier, and immutable promotion requires both before human authorization.
-The PR assurance artifact is prevention evidence only and is not reused by
-protected main.
+requests run offline Batfish assurance for the exact profiled four-device
+candidate. Its current service stack is `routed_underlay`, and it requires no
+live inventory, credential, CML, trust, or device surface. Disposable CML and
+the protected-delivery group remain paused. The profiled PR assurance artifact
+is prevention evidence only and is not reused by the preserved legacy
+protected-main branch.
 
 The current protected promotion contains one `DeploymentPlan`. Planning records
 canonical intent, inventory identity, preconditions, vendor-aware operations,
@@ -74,11 +74,13 @@ continues independently after pipeline completion. See
 
 ## Promotion before deployment
 
-Immutable promotion downloads the exact same-build `batfish-assurance`
+The currently disabled legacy immutable promotion downloads the exact
+same-build `batfish-assurance`
 artifact, independently verifies it against the checked-out plan, policy, and
 baseline, packages the promotion, and records its digests. Human approval
 authorizes that exact promotion. The serialized, non-retriable deployment gate
 independently verifies the bundle and commit-bound live request before any
-privileged device boundary. Increment 7C live enforcement is accepted; a
+privileged device boundary. The active profiled PR artifact is deliberately not
+compatible promotion input. Increment 7C live enforcement is accepted; a
 corrected attempt always requires a new commit/build/authorization rather than
 retrying historical work.

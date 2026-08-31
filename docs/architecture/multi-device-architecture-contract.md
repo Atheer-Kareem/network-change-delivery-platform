@@ -398,8 +398,11 @@ an `AcceptedManagedStateRef`.
 The read-only observation path resolves the exact profiled LIVE population,
 loads credentials by stable NetBox device identity, projects only each LIVE
 target, and calls `ProfileReadOnlyAdapter.collect()` for the exact six
-interfaces. Cisco IOS XE/IOS and Junos renderers produce deterministic proposed
-fragments, but B4-1 adds no execution method and grants no write authority.
+interfaces. Cisco IOS XE/IOS and Junos change renderers consume both current O
+and proposed D1. They produce exact managed-address removals/additions and
+admin-enable intent without replacing broader interface subtrees. A separate
+D1-only renderer produces the final-state Batfish candidate. B4-1 adds no
+execution method and grants no write authority.
 
 The offline candidate contains all four profiled nodes but only core, Junos,
 and transit participate in the routed underlay. Batfish verifies exact parse

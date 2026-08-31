@@ -51,7 +51,7 @@ def verify() -> RoutedUnderlayProposalEvidence:
         OpenBaoSecretProvider(),
         adapter,
     )
-    rendered = render_routed_underlay(intent, desired, population)
+    rendered = render_routed_underlay(intent, observation, desired, population)
     batfish = assure_routed_underlay_candidate(intent, desired, population)
     proposal = RoutedUnderlayProposalEvidence(
         generated_at=datetime.now(UTC),

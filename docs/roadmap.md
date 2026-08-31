@@ -150,9 +150,12 @@ acceptance records.
       acceptance remain deferred until explicit operator restoration is useful.
       B4-1 turns the three routed-link allocations into the first Git-owned
       service intent: exact read-only O, normalized proposed D1, deterministic
-      IOS XE/IOS/Junos rendering, and exact-four Batfish candidate assurance.
-      The observed legacy `10.6.12.0/30` on the core/Junos link remains an
-      explicit delta. No routed-underlay configuration was applied, and live
-      application remains deferred while protected delivery is disabled.
+      IOS XE/IOS/Junos O-to-D1 change rendering, and a separate exact-four
+      D1-only Batfish candidate assurance model. The observed legacy
+      `10.6.12.0/30` on the core/Junos link remains an explicit delta and is
+      explicitly removed by the proposal artifact while remaining absent from
+      the final-state candidate. No routed-underlay configuration was applied,
+      and live application remains deferred while protected delivery is
+      disabled.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

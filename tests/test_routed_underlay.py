@@ -238,6 +238,15 @@ def batfish_observation() -> RoutedUnderlayBatfishObservation:
 
 
 def observation() -> RoutedUnderlayObservation:
+    observed_addresses = {
+        "GigabitEthernet4": ("10.6.12.1/30",),
+        "ge-0/0/0": ("10.6.12.2/30",),
+    }
+    enabled_interfaces = {
+        "GigabitEthernet4",
+        "ge-0/0/0",
+        "ge-0/0/1",
+    }
     return RoutedUnderlayObservation(
         observed_at=datetime(2026, 8, 31, tzinfo=UTC),
         interfaces=tuple(
@@ -245,9 +254,11 @@ def observation() -> RoutedUnderlayObservation:
                 device_identity=state.device_identity,
                 interface=state.interface,
                 exists=True,
-                ipv4_addresses=(),
-                admin_enabled=False,
-                operational_status="down",
+                ipv4_addresses=observed_addresses.get(state.interface.name, ()),
+                admin_enabled=state.interface.name in enabled_interfaces,
+                operational_status=(
+                    "up" if state.device_identity == "netbox:dcim.device:2" else None
+                ),
             )
             for state in desired().interfaces
         ),
@@ -295,6 +306,10 @@ def test_normalized_d1_is_deterministic_and_not_an_accepted_baseline() -> None:
     assert first == second
     assert first.verify_digest()
     assert first.digest == second.digest
+    assert (
+        first.digest
+        == "sha256:d25f753ef711677ccdde67bfeb7005f19759800099734a79bca1616bb77baf6b"
+    )
     assert len(first.interfaces) == 6
     assert {str(item.ipv4_addresses[0]) for item in first.interfaces} == {
         "10.60.0.1/30",
@@ -311,11 +326,12 @@ def test_normalized_d1_is_deterministic_and_not_an_accepted_baseline() -> None:
     }
 
 
-def test_vendor_rendering_is_exact_pure_and_excludes_access() -> None:
+def test_vendor_change_rendering_is_exact_o_to_d1_and_excludes_access() -> None:
     intent = RoutedUnderlayIntent.from_reference_allocation(reference_allocation())
     desired_state = build_routed_underlay_desired_state(intent)
     rendered = render_routed_underlay(
         intent,
+        observation(),
         desired_state,
         population(),  # type: ignore[arg-type]
     )
@@ -327,6 +343,7 @@ def test_vendor_rendering_is_exact_pure_and_excludes_access() -> None:
     assert rendered[0].format is RoutedUnderlayRenderFormat.IOS_CLI
     assert rendered[0].content == (
         "interface GigabitEthernet4\n"
+        " no ip address 10.6.12.1 255.255.255.252\n"
         " ip address 10.60.0.1 255.255.255.252\n"
         " no shutdown\n"
         "interface GigabitEthernet2\n"
@@ -343,8 +360,12 @@ def test_vendor_rendering_is_exact_pure_and_excludes_access() -> None:
     )
     assert rendered[1].format is RoutedUnderlayRenderFormat.JUNOS_XML
     assert "ge-0/0/0" in rendered[1].content
+    assert '<address operation="delete"><name>10.6.12.2/30</name></address>' in (
+        rendered[1].content
+    )
     assert "10.60.0.2/30" in rendered[1].content
     assert '<disable operation="delete"' in rendered[1].content
+    assert "192.168.4" not in "".join(item.content for item in rendered)
     assert "access-sw-01" not in "".join(item.content for item in rendered)
     payload = desired_state.model_dump(mode="python")
     payload["interfaces"][0]["ipv4_addresses"] = ("10.60.0.13/30",)
@@ -353,7 +374,29 @@ def test_vendor_rendering_is_exact_pure_and_excludes_access() -> None:
     with pytest.raises(ValueError, match="detached from intent"):
         render_routed_underlay(
             intent,
+            observation(),
             tampered,
+            population(),  # type: ignore[arg-type]
+        )
+
+
+def test_vendor_change_rendering_fails_closed_on_multiple_cisco_addresses() -> None:
+    intent = RoutedUnderlayIntent.from_reference_allocation(reference_allocation())
+    payload = observation().model_dump(mode="python")
+    core = next(
+        item
+        for item in payload["interfaces"]
+        if item["interface"]["name"] == "GigabitEthernet4"
+    )
+    core["ipv4_addresses"] = ("10.6.12.1/30", "10.6.12.5/30")
+    ambiguous = RoutedUnderlayObservation.model_validate(payload)
+    with pytest.raises(
+        ValueError, match="multiple observed Cisco IPv4 addresses are unsupported"
+    ):
+        render_routed_underlay(
+            intent,
+            ambiguous,
+            build_routed_underlay_desired_state(intent),
             population(),  # type: ignore[arg-type]
         )
 
@@ -435,6 +478,7 @@ def test_candidate_snapshot_is_exact_four_with_no_management_or_ospf() -> None:
         config_root = candidate.root / "configs"
         contents = "\n".join(path.read_text() for path in sorted(config_root.iterdir()))
         assert "192.168.4" not in contents
+        assert "10.6.12" not in contents
         assert "ospf" not in contents.casefold()
         assert "ip address" not in (config_root / "access-sw-01.cfg").read_text()
 
@@ -480,6 +524,7 @@ def test_complete_secret_free_proposal_binds_o_d1_render_and_batfish() -> None:
     observed = observation()
     rendered = render_routed_underlay(
         intent,
+        observed,
         desired_state,
         population(),  # type: ignore[arg-type]
     )
@@ -503,7 +548,35 @@ def test_complete_secret_free_proposal_binds_o_d1_render_and_batfish() -> None:
     assert "password" not in serialized
     assert "credentials" not in serialized
     assert all(not item.addresses_match for item in proposal.delta)
-    assert all(not item.admin_matches for item in proposal.delta)
+    assert sum(item.admin_matches for item in proposal.delta) == 3
+
+    changed_payload = observed.model_dump(mode="python")
+    changed_core = next(
+        item
+        for item in changed_payload["interfaces"]
+        if item["interface"]["name"] == "GigabitEthernet4"
+    )
+    changed_core["admin_enabled"] = False
+    changed_observation = RoutedUnderlayObservation.model_validate(changed_payload)
+    changed_render = render_routed_underlay(
+        intent,
+        changed_observation,
+        desired_state,
+        population(),  # type: ignore[arg-type]
+    )
+    assert changed_render != rendered
+    assert changed_render[0].content == rendered[0].content
+    assert (
+        changed_render[0].source_managed_observation_digest
+        != rendered[0].source_managed_observation_digest
+    )
+
+    detached = proposal.model_dump(mode="python")
+    detached["current_observation"] = changed_observation
+    with pytest.raises(
+        ValidationError, match="routed-underlay proposal evidence is inconsistent"
+    ):
+        RoutedUnderlayProposalEvidence.model_validate(detached)
 
 
 def test_invalid_desired_digest_and_extra_interface_fail_closed() -> None:

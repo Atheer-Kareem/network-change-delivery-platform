@@ -26,7 +26,7 @@ No `AcceptedManagedStateRef` was created; B4-1 D1 is proposed state, not D0.
 
 ## Real read-only observed state O
 
-At `2026-08-31T10:38:05.797239+00:00`, the existing exact-four profiled trust,
+At `2026-08-31T11:05:09.599225+00:00`, the existing exact-four profiled trust,
 stable-ID OpenBao credential paths, LIVE-only targets, and
 `ProfileReadOnlyAdapter` returned:
 
@@ -42,15 +42,16 @@ stable-ID OpenBao credential paths, LIVE-only targets, and
 The pre-existing `10.6.12.0/30` core/Junos configuration is therefore a real
 managed-envelope delta. B4-1 neither ignored nor changed it.
 
-The stored personal-lab AppRole SecretID was expired and failed closed before a
-device connection. B4-1 did not issue or change authentication material. For
-this bounded observation, the already-existing local administrative token read
-only the exact stable-ID credential paths for devices 1, 2, and 8; credentials
-remained memory-only and were not printed or persisted. The normal
-`OpenBaoSecretProvider` path was already accepted for all four profiles in
-B3-4 and remains the operator script's default.
+The earlier admin-token observation was superseded by this final run. The
+existing accepted operator mechanism issued one fresh bounded personal-lab
+AppRole SecretID, and the committed verifier used its normal
+`OpenBaoSecretProvider` path to read only the exact stable-ID credential paths
+for devices 1, 2, and 8. Credentials remained memory-only and were not printed
+or persisted. The temporary SecretID was destroyed immediately after the run;
+the AppRole policy, TTL, use limits, credential paths, and stored device
+credentials were unchanged.
 
-## Proposed normalized D1 and renderings
+## Proposed D1, O-to-D1 change renderings, and final-state candidate
 
 The vendor-independent D1 digest is:
 
@@ -60,15 +61,25 @@ It binds the exact six stable interface/IP identities, one desired `/30`
 address per interface, routed L3 presence, and admin enabled. It does not hash
 vendor configuration text.
 
-Rendered target population and managed results are:
+Vendor change artifacts are derived from both observed O and normalized D1.
+They remove only addresses inside the routed-underlay ownership envelope before
+adding the desired address. Each target also binds the normalized managed-O
+digest and the proposed D1 digest, so evidence cannot reuse a render after its
+managed observation changes:
 
-| Target/profile | Interfaces and proposed addresses | Artifact |
+| Target/profile | O-to-D1 managed changes | Artifact |
 |---|---|---|
-| `core-02` / `cat8000v_iosxe` | `GigabitEthernet4` `10.60.0.1/30`; `GigabitEthernet2` `10.60.0.5/30`; `no shutdown` | deterministic IOS CLI |
-| `edge-junos-01` / `vjunos_router` | `ge-0/0/0.0` `10.60.0.2/30`; `ge-0/0/1.0` `10.60.0.9/30`; remove `disable` | deterministic Junos XML |
+| `core-02` / `cat8000v_iosxe` | `GigabitEthernet4`: remove `10.6.12.1/30`, add `10.60.0.1/30`; `GigabitEthernet2`: add `10.60.0.5/30`; `no shutdown` | deterministic IOS CLI |
+| `edge-junos-01` / `vjunos_router` | `ge-0/0/0.0`: exact XML delete of `10.6.12.2/30`, add `10.60.0.2/30`; `ge-0/0/1.0`: add `10.60.0.9/30`; remove `disable` | deterministic Junos XML |
 | `transit-ios-01` / `iosv_159_3_m12` | `GigabitEthernet0/1` `10.60.0.6/30`; `GigabitEthernet0/2` `10.60.0.10/30`; `no shutdown` | deterministic IOS CLI |
 
 `access-sw-01` has no rendered routed-underlay target.
+The Cisco change renderer fails closed if a managed interface has more than one
+observed IPv4 address; B4-1 does not guess primary/secondary semantics.
+
+The Batfish configuration is a separate final-state candidate generated only
+from D1. It contains no `10.6.12.0/30` address or change command and therefore
+analyzes the intended converged topology rather than the transition artifact.
 
 ## Batfish candidate assurance
 
@@ -96,8 +107,9 @@ relationships came from the exact accepted physical/IPAM allocation.
 
 ## Safety and unchanged compatibility
 
-Device configuration writes were zero. NetBox, OpenBao, CML, host trust,
-credentials, Terraform, Buildkite, and pipeline authority were not mutated.
+Device configuration writes were zero. NetBox, CML, host trust, stored OpenBao
+credentials/policies, Terraform, Buildkite, and pipeline authority were not
+mutated. The one bounded acceptance SecretID was issued and then destroyed.
 Legacy `ncdp-managed`, Oxidized, observability, SNMP, and protected-write
 populations remain exact devices 1/2; profiled inventory remains exact devices
 1/2/8/9. The four disabled pipeline runtime blocks remain disabled. Existing

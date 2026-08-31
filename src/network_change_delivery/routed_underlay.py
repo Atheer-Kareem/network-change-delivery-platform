@@ -342,6 +342,20 @@ class RoutedUnderlayObservation(BaseModel):
             raise ValueError("routed-underlay observation is not exact-six")
         return self
 
+    def managed_state_digest(self) -> str:
+        """Bind only observed fields that can influence the managed change render."""
+        managed = {
+            "schema_version": self.schema_version,
+            "interfaces": [
+                state.model_dump(
+                    mode="json",
+                    exclude={"operational_status"},
+                )
+                for state in self.interfaces
+            ],
+        }
+        return sha256_identity(canonical_json_bytes(managed))
+
 
 class RoutedUnderlaySecretProvider(Protocol):
     """Only the ephemeral credential load surface needed by observation."""
@@ -417,30 +431,51 @@ class RoutedUnderlayRenderFormat(StrEnum):
 
 
 class RoutedUnderlayRenderedTarget(BaseModel):
-    """Pure proposed vendor artifact; it carries no execution authority."""
+    """Pure O-to-D1 vendor change artifact; it carries no execution authority."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     device_identity: NetBoxDeviceIdentity
     logical_name: str
     automation_profile_id: AutomationProfileID
+    source_managed_observation_digest: Sha256Digest
+    proposed_desired_state_digest: Sha256Digest
     format: RoutedUnderlayRenderFormat
     content: str = Field(min_length=1)
 
 
-def _junos_xml(states: tuple[DesiredRoutedInterfaceState, ...]) -> str:
+def _junos_change_xml(
+    changes: tuple[
+        tuple[ObservedRoutedInterfaceState, DesiredRoutedInterfaceState], ...
+    ],
+) -> str:
     root = ElementTree.Element("configuration")
     interfaces = ElementTree.SubElement(root, "interfaces")
-    for state in states:
+    for observed, desired in changes:
         interface = ElementTree.SubElement(interfaces, "interface")
-        ElementTree.SubElement(interface, "name").text = state.interface.name
+        ElementTree.SubElement(interface, "name").text = desired.interface.name
         disable = ElementTree.SubElement(interface, "disable")
         disable.set("operation", "delete")
         unit = ElementTree.SubElement(interface, "unit")
         ElementTree.SubElement(unit, "name").text = "0"
         family = ElementTree.SubElement(unit, "family")
         inet = ElementTree.SubElement(family, "inet")
-        address = ElementTree.SubElement(inet, "address")
-        ElementTree.SubElement(address, "name").text = str(state.ipv4_addresses[0])
+        removed = tuple(
+            address
+            for address in observed.ipv4_addresses
+            if address not in desired.ipv4_addresses
+        )
+        added = tuple(
+            address
+            for address in desired.ipv4_addresses
+            if address not in observed.ipv4_addresses
+        )
+        for value in removed:
+            address = ElementTree.SubElement(inet, "address")
+            address.set("operation", "delete")
+            ElementTree.SubElement(address, "name").text = str(value)
+        for value in added:
+            address = ElementTree.SubElement(inet, "address")
+            ElementTree.SubElement(address, "name").text = str(value)
     return ElementTree.tostring(root, encoding="unicode", short_empty_elements=True)
 
 
@@ -471,11 +506,37 @@ _PROFILED_BINDINGS = (
 )
 
 
-def _render_exact(
+def _observation_by_interface(
+    observation: RoutedUnderlayObservation,
+    desired: RoutedUnderlayDesiredState,
+) -> dict[str, ObservedRoutedInterfaceState]:
+    observed = {item.interface.interface: item for item in observation.interfaces}
+    expected = {item.interface.interface for item in desired.interfaces}
+    if set(observed) != expected:
+        raise ValueError("routed-underlay observation is not exact for desired state")
+    for state in desired.interfaces:
+        current = observed[state.interface.interface]
+        if (
+            current.device_identity != state.device_identity
+            or current.interface != state.interface
+        ):
+            raise ValueError("routed-underlay observation identity is inconsistent")
+        if any(
+            address.ip in MANAGEMENT_ADDRESSES for address in current.ipv4_addresses
+        ):
+            raise ValueError(
+                "management address cannot enter routed-underlay rendering"
+            )
+    return observed
+
+
+def _render_change_exact(
+    observation: RoutedUnderlayObservation,
     desired: RoutedUnderlayDesiredState,
 ) -> tuple[RoutedUnderlayRenderedTarget, ...]:
     if not desired.verify_digest():
         raise ValueError("routed-underlay desired-state digest is invalid")
+    observed = _observation_by_interface(observation, desired)
     rendered: list[RoutedUnderlayRenderedTarget] = []
     by_identity = {state.device_identity: [] for state in desired.interfaces}
     for state in desired.interfaces:
@@ -488,19 +549,30 @@ def _render_exact(
         }:
             blocks: list[str] = []
             for state in states:
-                address = state.ipv4_addresses[0]
-                blocks.extend(
-                    (
-                        f"interface {state.interface.name}",
-                        f" ip address {address.ip} {address.network.netmask}",
-                        " no shutdown",
+                current = observed[state.interface.interface]
+                if len(current.ipv4_addresses) > 1:
+                    raise ValueError(
+                        "multiple observed Cisco IPv4 addresses are unsupported"
                     )
+                blocks.append(f"interface {state.interface.name}")
+                blocks.extend(
+                    f" no ip address {address.ip} {address.network.netmask}"
+                    for address in current.ipv4_addresses
+                    if address not in state.ipv4_addresses
                 )
+                blocks.extend(
+                    f" ip address {address.ip} {address.network.netmask}"
+                    for address in state.ipv4_addresses
+                    if address not in current.ipv4_addresses
+                )
+                blocks.append(" no shutdown")
             format_ = RoutedUnderlayRenderFormat.IOS_CLI
             content = "\n".join(blocks) + "\n"
         elif profile_id is AutomationProfileID.VJUNOS_ROUTER:
             format_ = RoutedUnderlayRenderFormat.JUNOS_XML
-            content = _junos_xml(states)
+            content = _junos_change_xml(
+                tuple((observed[state.interface.interface], state) for state in states)
+            )
         else:
             raise ValueError("routed-underlay renderer profile is unsupported")
         rendered.append(
@@ -508,6 +580,8 @@ def _render_exact(
                 device_identity=device_identity,
                 logical_name=logical_name,
                 automation_profile_id=profile_id,
+                source_managed_observation_digest=observation.managed_state_digest(),
+                proposed_desired_state_digest=desired.digest,
                 format=format_,
                 content=content,
             )
@@ -517,10 +591,11 @@ def _render_exact(
 
 def render_routed_underlay(
     intent: RoutedUnderlayIntent,
+    observation: RoutedUnderlayObservation,
     desired: RoutedUnderlayDesiredState,
     population: ProfiledInventoryPopulation,
 ) -> tuple[RoutedUnderlayRenderedTarget, ...]:
-    """Render exact IOS XE, IOS, and Junos candidate fragments deterministically."""
+    """Render exact envelope-scoped IOS XE, IOS, and Junos O-to-D1 changes."""
     if desired != build_routed_underlay_desired_state(intent):
         raise ValueError("routed-underlay desired state is detached from intent")
     facts = tuple(
@@ -533,7 +608,23 @@ def render_routed_underlay(
     )
     if facts != _PROFILED_BINDINGS:
         raise ValueError("routed-underlay rendered population is not exact")
-    return _render_exact(desired)
+    return _render_change_exact(observation, desired)
+
+
+def _render_final_state_ios(
+    states: tuple[DesiredRoutedInterfaceState, ...],
+) -> str:
+    blocks: list[str] = []
+    for state in states:
+        address = state.ipv4_addresses[0]
+        blocks.extend(
+            (
+                f"interface {state.interface.name}",
+                f" ip address {address.ip} {address.network.netmask}",
+                " no shutdown",
+            )
+        )
+    return "\n".join(blocks) + "\n"
 
 
 def build_routed_underlay_candidate_snapshot(
@@ -541,14 +632,30 @@ def build_routed_underlay_candidate_snapshot(
     desired: RoutedUnderlayDesiredState,
     population: ProfiledInventoryPopulation,
 ) -> PreparedSnapshot:
-    """Build a synthetic exact-four candidate from normalized D1."""
-    renders = {
-        item.logical_name: item
-        for item in render_routed_underlay(intent, desired, population)
-    }
+    """Build a synthetic exact-four final-state candidate from normalized D1."""
+    if desired != build_routed_underlay_desired_state(intent):
+        raise ValueError("routed-underlay desired state is detached from intent")
+    facts = tuple(
+        (
+            device.device_identity,
+            device.logical_name,
+            device.automation_profile_id,
+        )
+        for device in population.devices
+    )
+    if facts != _PROFILED_BINDINGS:
+        raise ValueError("routed-underlay candidate population is not exact")
+    by_identity = {state.device_identity: [] for state in desired.interfaces}
+    for state in desired.interfaces:
+        by_identity[state.device_identity].append(state)
     cisco_configs = {
-        name: f"hostname {name}\n{renders[name].content}"
-        for name in ("core-02", "transit-ios-01")
+        name: (
+            f"hostname {name}\n{_render_final_state_ios(tuple(by_identity[identity]))}"
+        )
+        for identity, name in (
+            ("netbox:dcim.device:1", "core-02"),
+            ("netbox:dcim.device:8", "transit-ios-01"),
+        )
     }
     junos_lines = ["set system host-name edge-junos-01"]
     edge_states = tuple(
@@ -985,7 +1092,10 @@ class RoutedUnderlayProposalEvidence(BaseModel):
             != routed_underlay_delta(
                 self.current_observation, self.proposed_desired_state
             )
-            or self.rendered_targets != _render_exact(self.proposed_desired_state)
+            or self.rendered_targets
+            != _render_change_exact(
+                self.current_observation, self.proposed_desired_state
+            )
             or self.batfish.subject_digest != self.proposed_desired_state.digest
             or self.batfish.outcome is not AssuranceOutcome.PASSED
         ):

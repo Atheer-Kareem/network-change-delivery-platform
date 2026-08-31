@@ -76,7 +76,8 @@ paths; CML does not apply or validate the proposed candidate configuration.
 B4-1 adds a separate candidate-only assurance contract for the proposed
 four-device routed underlay. It does not alter the legacy v1 plan-bound policy
 or Buildkite pipeline. The candidate is generated from normalized D1, not from
-PR-supplied CLI, and contains exactly:
+PR-supplied CLI or the O-to-D1 vendor change artifacts. The final-state
+candidate contains no legacy `10.6.12.0/30` address and contains exactly:
 
 - `core-02` with `10.60.0.1/30` and `10.60.0.5/30`;
 - `edge-junos-01` with `10.60.0.2/30` and `10.60.0.9/30`;

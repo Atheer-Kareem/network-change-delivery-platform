@@ -228,11 +228,13 @@ outside the envelope.
 
 Current O is collected through exact profiled LIVE targets and the existing
 collection-only adapters. The vendor-independent D1 digest excludes rendered
-text. IOS XE, classic IOS, and Junos renderings are pure candidate artifacts;
-neither the vertical nor `ProfileReadOnlyAdapter` exposes execution. Offline
-Batfish assurance uses an exact-four snapshot so that `access-sw-01` exclusion
-is positively checked rather than assumed. D0 persistence and live application
-remain deferred.
+text. IOS XE, classic IOS, and Junos change renderings are deterministic O-to-D1
+artifacts: they remove only addresses in the routed-underlay envelope and add
+the desired addresses. A separate final-state renderer builds the clean D1-only
+Batfish candidate. Neither path nor `ProfileReadOnlyAdapter` exposes execution.
+Offline Batfish assurance uses an exact-four snapshot so that `access-sw-01`
+exclusion is positively checked rather than assumed. D0 persistence and live
+application remain deferred.
 
 ## B3-3 OpenBao and pipeline state
 

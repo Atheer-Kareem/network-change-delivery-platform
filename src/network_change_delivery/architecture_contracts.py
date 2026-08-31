@@ -698,6 +698,7 @@ AUTHORITY_ASSIGNMENTS: tuple[AuthorityAssignment, ...] = tuple(
 class ManagedVertical(StrEnum):
     """Initial managed-state ownership-envelope verticals."""
 
+    ROUTED_UNDERLAY = "routed_underlay"
     VLAN = "vlan"
     OSPF = "ospf"
     ACL = "acl"
@@ -706,6 +707,9 @@ class ManagedVertical(StrEnum):
 class ManagedField(StrEnum):
     """Normalized fields that may be owned inside an initial envelope."""
 
+    ROUTED_UNDERLAY_L3_PRESENCE = "routed_underlay.l3_presence"
+    ROUTED_UNDERLAY_ADDRESS = "routed_underlay.address"
+    ROUTED_UNDERLAY_ADMIN_ENABLED = "routed_underlay.admin_enabled"
     VLAN_PRESENCE = "vlan.presence"
     VLAN_PORT_MODE = "vlan.port_mode"
     VLAN_ACCESS_VLAN = "vlan.access_vlan"

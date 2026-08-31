@@ -37,6 +37,7 @@ from network_change_delivery.snmp_provisioning import (
 IDENTITY_TASK = "NCDP collect identity"
 INTERFACES_TASK = "NCDP collect interfaces"
 L3_INTERFACES_TASK = "NCDP collect layer 3 interfaces"
+OSPF_READ_TASK = "NCDP inspect exact OSPF configuration"
 EXECUTION_TASK = "NCDP apply exact approved artifact"
 SNMP_PREFLIGHT_TASK = "NCDP inspect exact SNMP owned names"
 SNMP_ENGINE_TASK = "NCDP inspect SNMP engine"
@@ -378,6 +379,7 @@ class AnsibleRunnerCiscoAdapter:
                 IDENTITY_TASK,
                 INTERFACES_TASK,
                 L3_INTERFACES_TASK,
+                OSPF_READ_TASK,
                 EXECUTION_TASK,
                 SNMP_PREFLIGHT_TASK,
                 SNMP_ENGINE_TASK,
@@ -578,6 +580,38 @@ class AnsibleRunnerCiscoAdapter:
             exists=False,
             protected=False,
         )
+
+    def collect_ospf_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        interfaces: tuple[str, str],
+        *,
+        ssh_type: Literal["paramiko"],
+    ) -> tuple[str, str, str]:
+        """Read only the OSPF process and two exact interface configurations."""
+        runner, selected = self._run(
+            target,
+            credentials,
+            "collect_ospf_state.yml",
+            extravars={"ncdp_ospf_interfaces": list(interfaces)},
+            ssh_type=ssh_type,
+            profile_bound=True,
+        )
+        if (
+            getattr(runner, "status", None) != "successful"
+            or getattr(runner, "rc", 1) != 0
+            or OSPF_READ_TASK not in selected
+        ):
+            raise ProviderError("Cisco OSPF read-only collection failed")
+        stdout = selected[OSPF_READ_TASK].get("stdout")
+        if (
+            not isinstance(stdout, list)
+            or len(stdout) != 3
+            or any(not isinstance(value, str) for value in stdout)
+        ):
+            raise ProviderError("Cisco OSPF read-only result was incomplete")
+        return tuple(stdout)  # type: ignore[return-value]
 
     def execute(
         self,

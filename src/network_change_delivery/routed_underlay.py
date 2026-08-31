@@ -58,6 +58,10 @@ from network_change_delivery.reference_data_plane import (
 )
 from network_change_delivery.secrets import DeviceCredentials
 
+ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST = (
+    "sha256:d25f753ef711677ccdde67bfeb7005f19759800099734a79bca1616bb77baf6b"
+)
+
 EXPECTED_PROFILED_NAMES = (
     "core-02",
     "edge-junos-01",
@@ -895,7 +899,41 @@ def evaluate_routed_underlay_assurance(
     candidate_snapshot_digest: str,
     observation: RoutedUnderlayBatfishObservation,
 ) -> RoutedUnderlayAssuranceEvidence:
-    """Evaluate candidate parsing, participation, reachability, and OSPF absence."""
+    """Evaluate the standalone B4-1 candidate including OSPF isolation."""
+    common = evaluate_routed_underlay_common_invariants(desired, observation)
+    invariants = (
+        *common,
+        InvariantResult(
+            name="ospf_absent",
+            passed=observation.ospf_process_count == 0,
+            detail="candidate contains no OSPF process",
+        ),
+    )
+    outcome = (
+        AssuranceOutcome.PASSED
+        if all(item.passed for item in invariants)
+        else AssuranceOutcome.FAILED
+    )
+    return RoutedUnderlayAssuranceEvidence(
+        generated_at=datetime.now(UTC),
+        subject_digest=desired.digest,
+        candidate_snapshot_digest=candidate_snapshot_digest,
+        pybatfish_version=observation.pybatfish_version,
+        batfish_version=observation.batfish_version,
+        candidate_parse=observation.candidate_parse,
+        interface_prefixes=observation.interface_prefixes,
+        flows=observation.flows,
+        ospf_process_count=observation.ospf_process_count,
+        invariants=invariants,
+        outcome=outcome,
+    )
+
+
+def evaluate_routed_underlay_common_invariants(
+    desired: RoutedUnderlayDesiredState,
+    observation: RoutedUnderlayBatfishObservation,
+) -> tuple[InvariantResult, ...]:
+    """Evaluate the nine underlay invariants shared by composed candidates."""
     expected_nodes = tuple(sorted(EXPECTED_PROFILED_NAMES))
     expected_files = {f"{name}.cfg" for name in EXPECTED_PROFILED_NAMES}
     parse_status = observation.candidate_parse.parse_status
@@ -929,7 +967,7 @@ def evaluate_routed_underlay_assurance(
         ("core-02", "10.60.0.5", "10.60.0.6"),
         ("edge-junos-01", "10.60.0.9", "10.60.0.10"),
     }
-    invariants = (
+    return (
         InvariantResult(
             name="candidate_exact_parse_files",
             passed=set(parse_status) == expected_files,
@@ -983,29 +1021,6 @@ def evaluate_routed_underlay_assurance(
             and all(flow.reachable for flow in observation.flows),
             detail="all three direct-neighbor reachability checks pass",
         ),
-        InvariantResult(
-            name="ospf_absent",
-            passed=observation.ospf_process_count == 0,
-            detail="candidate contains no OSPF process",
-        ),
-    )
-    outcome = (
-        AssuranceOutcome.PASSED
-        if all(item.passed for item in invariants)
-        else AssuranceOutcome.FAILED
-    )
-    return RoutedUnderlayAssuranceEvidence(
-        generated_at=datetime.now(UTC),
-        subject_digest=desired.digest,
-        candidate_snapshot_digest=candidate_snapshot_digest,
-        pybatfish_version=observation.pybatfish_version,
-        batfish_version=observation.batfish_version,
-        candidate_parse=observation.candidate_parse,
-        interface_prefixes=observation.interface_prefixes,
-        flows=observation.flows,
-        ospf_process_count=observation.ospf_process_count,
-        invariants=invariants,
-        outcome=outcome,
     )
 
 

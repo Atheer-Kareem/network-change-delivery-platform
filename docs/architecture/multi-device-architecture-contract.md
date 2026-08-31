@@ -197,7 +197,10 @@ Detour B3-5 establishes this exact NetBox-owned allocation hierarchy:
 ├── 10.60.0.8/30   edge-junos-01 ↔ transit-ios-01
 ├── 10.60.10.0/24  VLAN 10 USERS
 ├── 10.60.20.0/24  VLAN 20 SERVERS
-└── 10.60.255.0/24 future loopback/router-ID allocation pool
+└── 10.60.255.0/24 routing-identity pool
+    ├── 10.60.255.1/32 core-02 OSPF router ID
+    ├── 10.60.255.2/32 edge-junos-01 OSPF router ID
+    └── 10.60.255.3/32 transit-ios-01 OSPF router ID
 ```
 
 The three routed links have exact NetBox-owned interface assignments:
@@ -215,8 +218,9 @@ relationships against the closed Git-owned topology catalog. Missing, extra,
 duplicated, wrong, or swapped facts fail closed. The copied IDs and values in
 the catalog are admission evidence, not a second source of IPAM authority.
 
-No individual loopback/router-ID, VLAN gateway, or endpoint address is allocated
-yet. No routed address or VLAN has been configured on a device. Git will own
+No loopback interface, VLAN gateway, or endpoint address is allocated yet. The
+three `/32` objects are unassigned OSPF router IDs only. No routed address,
+router ID, or VLAN has been configured on a device. Git will own
 only how these resolved objects participate in later VLAN, OSPF, ACL, and
 assurance intent.
 
@@ -413,6 +417,20 @@ layer-1 file for directly connected reachability; its interface/prefix facts
 remain derived from the exact accepted physical and NetBox link relationships.
 See the [B4-1 acceptance record](../acceptance/routed-underlay-detour-b4-1.md).
 
+### Current B4-2 OSPF proposal
+
+B4-2 adds a separate `ospf` envelope over devices 1, 2, and 8, their six routed
+interfaces, IP-address identities 23–25, and `git:policy:ospf-underlay`. Git
+owns exact area-0, point-to-point, non-passive participation. NetBox owns the
+stable router-ID identities and values. The `/32` objects are not loopbacks or
+advertised routes.
+
+Real read-only observation found OSPF absent. Observation-bound IOS XE, IOS,
+and Junos artifacts propose the exact transition while a clean final candidate
+composes `routed_underlay + ospf` for four-node Batfish assurance. Live
+application remains deferred while protected delivery is disabled. See the
+[B4-2 acceptance record](../acceptance/ospf-triangle-detour-b4-2.md).
+
 ### Still future and not configured
 
 The physical realization and NetBox allocations do not configure services.
@@ -424,10 +442,10 @@ These items remain future reviewed increments:
 - configuring the `core-02` to `access-sw-01` trunk;
 - configuring VLAN 10 and VLAN 20 access ports;
 - allocating and configuring VLAN gateways;
-- configuring OSPF;
+- applying the B4-2 OSPF proposal;
 - configuring ACLs or security policy;
 - creating endpoint nodes or allocating endpoint addresses; and
-- allocating individual loopback/router-ID addresses.
+- turning router-ID identities into configured loopbacks or advertised routes.
 
 The initial service design keeps `access-sw-01` as the managed access-switching
 boundary: `GigabitEthernet0/1` will be the 802.1Q trunk,

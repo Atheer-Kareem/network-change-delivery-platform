@@ -40,14 +40,22 @@ def render_annotation(evidence: ProfiledPrAssuranceEvidence) -> str:
             + "` |"
         ),
         f"| Nodes | `{len(evidence.candidate_nodes)}` |",
+        f"| OSPF routers | `{evidence.ospf_router_count}` |",
+        f"| OSPF adjacencies | `{evidence.ospf_adjacency_count}` |",
         f"| Invariants | `{passed} / {len(evidence.invariants)} passed` |",
-        f"| D1 | `{_safe(evidence.proposed_subject_digest)}` |",
         f"| Candidate | `{_safe(evidence.candidate_snapshot_digest)}` |",
         f"| Evidence | `{_safe(evidence.digest)}` |",
         "",
         "### Candidate nodes",
         "",
         *[f"- `{_safe(node)}`" for node in evidence.candidate_nodes],
+        "",
+        "### Service subjects",
+        "",
+        *[
+            f"- `{_safe(subject.service.value)}` — `{_safe(subject.digest)}`"
+            for subject in evidence.service_subjects
+        ],
         "",
         "### Invariants",
         "",

@@ -70,6 +70,15 @@ def _interface_filter(interface: str | None = None) -> str:
     return ElementTree.tostring(root, encoding="unicode")
 
 
+def _ospf_filter() -> str:
+    root = ElementTree.Element("configuration")
+    routing_options = ElementTree.SubElement(root, "routing-options")
+    ElementTree.SubElement(routing_options, "router-id")
+    protocols = ElementTree.SubElement(root, "protocols")
+    ElementTree.SubElement(protocols, "ospf")
+    return ElementTree.tostring(root, encoding="unicode")
+
+
 _PROJECTABLE_HOST_KEY_ALGORITHMS = frozenset(
     {"ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"}
 )
@@ -647,6 +656,26 @@ class JunosPyEZAdapter:
             exists=False,
             protected=False,
         )
+
+    def collect_ospf_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+    ) -> str:
+        """Read only committed router-ID and OSPF configuration."""
+        with self._session(target, credentials, profile_bound=True) as connection:
+            try:
+                reply = connection.rpc.get_config(
+                    filter_xml=_ospf_filter(), options={"database": "committed"}
+                )
+            except Exception:
+                raise ProviderError("Junos OSPF read-only request failed") from None
+        if reply is None:
+            raise ProviderError("Junos OSPF read-only result was incomplete")
+        try:
+            return etree.tostring(reply, encoding="unicode")
+        except Exception:
+            raise ProviderError("Junos OSPF read-only result was incomplete") from None
 
     def confirm(
         self, device: InventoryDevice, credentials: DeviceCredentials

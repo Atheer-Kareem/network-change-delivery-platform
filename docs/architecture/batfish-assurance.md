@@ -1,8 +1,9 @@
 # Batfish assurance
 
-Batfish is the offline behavioral-assurance boundary for the exact promoted
-network plan. It is not a management-plane reachability, live SNMP polling, or
-unmodeled routing-protocol test.
+Batfish provides offline behavioral-assurance boundaries for both the active
+profiled PR candidate and the preserved legacy protected plan. It is not a
+management-plane reachability, live SNMP polling, or unmodeled routing-protocol
+test.
 
 ## Foundation and model boundary
 
@@ -29,29 +30,30 @@ PyBatfish is pinned to `2025.7.7.2423`; the server reports
 
 Increment 12A makes `batfish-assurance` a visible protected-main stage after
 `validation-complete`. ADR 0027 adds a top-level `pr-batfish-assurance` stage
-for runtime-relevant pull requests. Both identities reuse the exact same
-script, fixed Compose project, and typed assurance boundary. The project is
-serialized in `ncdp/batfish-assurance` with limit one, and neither job can be
-retried.
+for runtime-relevant pull requests. B4-1A separates their subjects and entry
+points. Active PR assurance now evaluates the current profiled four-device
+candidate through `profiled_pr_batfish_assurance.sh`. The preserved protected
+`batfish-assurance` path remains legacy v1 plan/policy/baseline assurance and is
+currently disabled with protected delivery. Both retain serialized concurrency
+and prohibit automatic or manual retry.
 
-On a pull request, Batfish must pass before trusted disposable CML staging can
-start. This is cost-aware prevention: offline candidate assurance rejects a
-bad modeled behavior before creating the slower vendor runtime. On non-PR
-`main`, the PR step is skipped and the protected `batfish-assurance` step still
-runs in parallel with CML after the validation barrier. Main regenerates its
-own assurance for the exact merged commit and never trusts PR evidence.
+On a pull request, active Batfish assurance is prevention evidence for the
+reviewed profiled candidate. Disposable CML staging is currently paused. If the
+operator restores it, PR Batfish remains its cheaper prerequisite. The separate
+legacy protected assurance and CML branches also remain paused; they are not
+silently fed by the profiled PR artifact.
 
-The stage verifies the checked-out commit, builds the pinned promotion/assurance
-image from that checkout, starts Batfish, performs bounded readiness, executes
-`ncdp assure-plan`, and independently runs `ncdp verify-assurance` for successful
-evidence. A regular run-scoped `assurance/assurance.json` is uploaded even for a
-FAILED/BLOCKED result when safely produced; the original assurance failure
-remains authoritative. A strict renderer exposes only typed allowlisted outcome,
-identity, digest, flow, differential, and invariant fields in the Buildkite
-annotation.
+The profiled PR stage verifies the checked-out commit, builds the pinned
+assurance image, starts Batfish, performs bounded readiness, evaluates the
+explicit service stack, verifies its typed record, and publishes
+`assurance/profiled-pr-assurance.json`. Its annotation shows the four-device
+architecture, service stack, exact nodes, D1/candidate digests, and invariant
+count without live or credential-bearing data. The legacy protected stage
+retains its existing `ncdp assure-plan`/`ncdp verify-assurance` record and
+artifact contract for later protected-delivery migration.
 
-The current policy expects `core-02` and `edge-junos-01` and checks both
-directions across their directly connected `/30`:
+The preserved legacy protected policy expects `core-02` and `edge-junos-01` and
+checks both directions across their directly connected `/30`:
 
 - `core-02`, `10.6.12.1` → `10.6.12.2`;
 - `edge-junos-01`, `10.6.12.2` → `10.6.12.1`.
@@ -98,14 +100,31 @@ The pinned local run passed on PyBatfish `2025.7.7.2423` and Batfish server
 candidate snapshot and proposed D1 digests. This is proposal evidence only and
 is not accepted D0 or permission to write devices.
 
+## B4-1A profiled PR handoff
+
+B4-1A makes the B4-1 final-state candidate the active PR assurance subject.
+The exact B3-5 accepted allocation is reconstructed offline from its reviewed
+stable-identity catalogs and checked against its accepted digest. Candidate
+population/profile selection comes from `PROFILED_POPULATION_CATALOG`, not a
+live `ProfiledInventoryPopulation`. No normal NetBox provider, credential
+provider, CML client, host trust, or device adapter is available to the new PR
+entry point.
+
+`ProfiledPrAssuranceEvidence` requires the exact four nodes and current explicit
+`routed_underlay` service stack. It preserves the accepted B4-1 D1 and candidate
+digests and all ten invariants. A two-node, missing-member, or extra-node result
+cannot pass. See the
+[B4-1A acceptance record](../acceptance/profiled-pr-batfish-handoff-detour-b4-1a.md).
+
 ## Assurance-to-promotion handoff
 
-Immutable promotion waits for both CML staging and Batfish assurance. It
-downloads `assurance/assurance.json` from the exact `batfish-assurance` step in
-the same Buildkite build, rejects an unexpected filesystem shape or symlink,
-and independently verifies the exact bytes against the checked-out plan,
-policy, and baseline. Promotion then creates and verifies the immutable bundle.
-It no longer starts or contacts Batfish.
+When explicitly restored, the preserved legacy immutable promotion waits for
+both CML staging and legacy Batfish assurance. It downloads
+`assurance/assurance.json` from the exact `batfish-assurance` step in the same
+Buildkite build, rejects an unexpected filesystem shape or symlink, and
+independently verifies the exact bytes against the checked-out plan, policy,
+and baseline. Promotion then creates and verifies the immutable bundle. It no
+longer starts or contacts Batfish.
 
 The similarly named artifact produced by `pr-batfish-assurance` is pre-merge
 evidence only. Promotion cannot select it: the download is explicitly scoped to

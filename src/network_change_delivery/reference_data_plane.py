@@ -21,11 +21,15 @@ from network_change_delivery.architecture_contracts import (
     NetBoxVLANIdentity,
     StableInterfaceIdentity,
 )
+from network_change_delivery.audit import canonical_json_bytes, sha256_identity
 from network_change_delivery.inventory import InventoryError, NetBoxReadOnlyAPI
 
 DATA_PLANE_TAG = "ncdp-data-plane"
 LAB_SITE_ID = 1
 LAB_SITE_SLUG = "lab"
+ACCEPTED_REFERENCE_ALLOCATION_DIGEST = (
+    "sha256:1352521feec8f787eb1a468c586dd3390428289314c3984416ab987a8af61b3d"
+)
 
 
 class RoutedLinkIdentity(StrEnum):
@@ -212,6 +216,73 @@ _LINK_CATALOG = (
 )
 
 
+def reference_allocation_digest(allocation: ReferenceDataPlaneAllocation) -> str:
+    """Return the canonical digest of one frozen resolved NetBox evidence copy."""
+    return sha256_identity(canonical_json_bytes(allocation.model_dump(mode="json")))
+
+
+def _build_reference_allocation(
+    routed_endpoints: dict[str, RoutedLinkEndpoint],
+) -> ReferenceDataPlaneAllocation:
+    routed_links = tuple(
+        RoutedLinkAllocation(
+            logical_link=logical_link,
+            prefix_identity=f"netbox:ipam.prefix:{_PREFIX_IDENTITIES[prefix]}",
+            prefix=prefix,
+            cable_id=cable_id,
+            endpoints=tuple(  # type: ignore[arg-type]
+                routed_endpoints[address] for address in addresses
+            ),
+        )
+        for logical_link, prefix, addresses, cable_id in _LINK_CATALOG
+    )
+    vlan_allocations = tuple(
+        VLANServiceAllocation(
+            vlan_identity=f"netbox:ipam.vlan:{_VLAN_IDENTITIES[vid][0]}",
+            vid=vid,
+            canonical_name=name,
+            prefix_identity=f"netbox:ipam.prefix:{_PREFIX_IDENTITIES[prefix]}",
+            prefix=prefix,
+        )
+        for vid, prefix in ((10, "10.60.10.0/24"), (20, "10.60.20.0/24"))
+        for _vlan_id, name in (_VLAN_IDENTITIES[vid],)
+    )
+    return ReferenceDataPlaneAllocation(
+        parent_prefix_identity="netbox:ipam.prefix:2",
+        parent_prefix="10.60.0.0/16",
+        routed_links=routed_links,  # type: ignore[arg-type]
+        vlans=vlan_allocations,  # type: ignore[arg-type]
+        routing_identity_pool_identity="netbox:ipam.prefix:8",
+        routing_identity_pool="10.60.255.0/24",
+    )
+
+
+def build_accepted_reference_allocation_evidence() -> ReferenceDataPlaneAllocation:
+    """Rebuild the exact B3-5 evidence copy without contacting NetBox.
+
+    This exists only for offline assurance. NetBox remains factual authority;
+    normal runtime resolution must continue to use the GET-only provider.
+    """
+    endpoints: dict[str, RoutedLinkEndpoint] = {}
+    for address, (ip_id, interface_id) in _ROUTED_IP_IDENTITIES.items():
+        device_id, _device_name, interface_name, _cable_id = _INTERFACE_IDENTITIES[
+            interface_id
+        ]
+        endpoints[address] = RoutedLinkEndpoint(
+            interface=StableInterfaceIdentity(
+                device=f"netbox:dcim.device:{device_id}",
+                interface=f"netbox:dcim.interface:{interface_id}",
+                name=interface_name,
+            ),
+            ip_address_identity=f"netbox:ipam.ipaddress:{ip_id}",
+            address=address,
+        )
+    allocation = _build_reference_allocation(endpoints)
+    if reference_allocation_digest(allocation) != ACCEPTED_REFERENCE_ALLOCATION_DIGEST:
+        raise RuntimeError("accepted reference allocation evidence digest changed")
+    return allocation
+
+
 def _positive_id(value: object, noun: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise InventoryError(f"NetBox {noun} identity is invalid")
@@ -275,40 +346,12 @@ class NetBoxReferenceDataPlaneProvider(NetBoxReadOnlyAPI):
         vlans = self._vlans(vlan_payloads)
         interfaces = self._interfaces(interface_payloads)
         ips = self._ips(ip_payloads, interfaces)
-        routed_links = tuple(
-            RoutedLinkAllocation(
-                logical_link=logical_link,
-                prefix_identity=f"netbox:ipam.prefix:{_PREFIX_IDENTITIES[prefix]}",
-                prefix=prefix,
-                cable_id=cable_id,
-                endpoints=tuple(ips[address] for address in addresses),  # type: ignore[arg-type]
-            )
-            for logical_link, prefix, addresses, cable_id in _LINK_CATALOG
-        )
-        vlan_allocations = tuple(
-            VLANServiceAllocation(
-                vlan_identity=f"netbox:ipam.vlan:{_VLAN_IDENTITIES[vid][0]}",
-                vid=vid,
-                canonical_name=name,
-                prefix_identity=f"netbox:ipam.prefix:{_PREFIX_IDENTITIES[prefix]}",
-                prefix=prefix,
-            )
-            for vid, prefix in ((10, "10.60.10.0/24"), (20, "10.60.20.0/24"))
-            for _vlan_id, name in (_VLAN_IDENTITIES[vid],)
-        )
         # Force evaluation of all factual maps before constructing the result.
         if set(prefixes) != set(_PREFIX_IDENTITIES) or set(vlans) != set(
             _VLAN_IDENTITIES
         ):
             raise InventoryError("NetBox data-plane authority is incomplete")
-        return ReferenceDataPlaneAllocation(
-            parent_prefix_identity="netbox:ipam.prefix:2",
-            parent_prefix="10.60.0.0/16",
-            routed_links=routed_links,  # type: ignore[arg-type]
-            vlans=vlan_allocations,  # type: ignore[arg-type]
-            routing_identity_pool_identity="netbox:ipam.prefix:8",
-            routing_identity_pool="10.60.255.0/24",
-        )
+        return _build_reference_allocation(ips)
 
     def _prefixes(
         self, payloads: list[dict[str, object]]

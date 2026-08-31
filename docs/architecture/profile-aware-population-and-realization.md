@@ -42,8 +42,10 @@ or generic IOS fallback.
 `resolve_profiled_population()` issues GET requests only, selects the exact
 profiled tag, and returns an immutable tuple in the table order. Missing,
 extra, inactive, duplicated, mistagged, or mismatched members fail closed.
-Per-device profiled resolution uses the same tag and has no `ncdp-managed`
-fallback.
+Per-device profiled resolution uses the same tag and the same name-to-facts
+catalog check: a name outside the exact four, or an admitted name with mismatched
+role, platform, device type, NOS, automation profile, or CML profile, fails
+closed. It has no `ncdp-managed` fallback.
 
 ## LIVE and STAGING projection
 

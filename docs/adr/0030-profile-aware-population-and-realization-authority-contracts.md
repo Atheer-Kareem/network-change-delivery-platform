@@ -33,7 +33,9 @@ OpenBao.
 - The profiled provider uses only `ncdp-profiled-inventory`. Its population
   resolver requires exactly `core-02`, `edge-junos-01`, `transit-ios-01`, and
   `access-sw-01`, in deterministic catalog order, with exact Git-approved
-  metadata. It has no legacy-tag fallback.
+  metadata. Per-device resolution is limited to those same names and compares
+  independently resolved NetBox facts with that name's catalog member. Neither
+  path has a legacy-tag fallback.
 - Normal targeting remains `ProfiledInventoryDevice.live_read_only_target()`.
   `ProfiledInventoryDevice` has no STAGING method and no generic purpose
   selector.

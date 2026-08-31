@@ -183,8 +183,8 @@ class ProfiledDeviceName(StrEnum):
     ACCESS_SW_01 = "access-sw-01"
 
 
-class ProfiledPopulationMember(BaseModel):
-    """One Git-owned expected member without a future NetBox object ID."""
+class _ProfiledPopulationMember(BaseModel):
+    """One catalog-internal expected member without a future NetBox object ID."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     logical_name: ProfiledDeviceName
@@ -196,7 +196,7 @@ class ProfiledPopulationMember(BaseModel):
     cml_realization_profile_id: CmlRealizationProfileID
 
     @model_validator(mode="after")
-    def exact_profile_admission(self) -> ProfiledPopulationMember:
+    def exact_profile_admission(self) -> _ProfiledPopulationMember:
         admission = admit_profile(self.platform_slug, self.device_type_slug)
         if (
             PLATFORM_NETWORK_OS[self.platform_slug] is not self.network_os
@@ -208,8 +208,8 @@ class ProfiledPopulationMember(BaseModel):
         return self
 
 
-PROFILED_POPULATION_CATALOG: tuple[ProfiledPopulationMember, ...] = (
-    ProfiledPopulationMember(
+PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
+    _ProfiledPopulationMember(
         logical_name=ProfiledDeviceName.CORE_02,
         operational_role=OperationalRole.CORE,
         platform_slug="cisco-ios-xe",
@@ -218,7 +218,7 @@ PROFILED_POPULATION_CATALOG: tuple[ProfiledPopulationMember, ...] = (
         automation_profile_id=AutomationProfileID.CAT8000V_IOSXE,
         cml_realization_profile_id=CmlRealizationProfileID.CAT8000V_17_18_02,
     ),
-    ProfiledPopulationMember(
+    _ProfiledPopulationMember(
         logical_name=ProfiledDeviceName.EDGE_JUNOS_01,
         operational_role=OperationalRole.EDGE,
         platform_slug="juniper-junos",
@@ -227,7 +227,7 @@ PROFILED_POPULATION_CATALOG: tuple[ProfiledPopulationMember, ...] = (
         automation_profile_id=AutomationProfileID.VJUNOS_ROUTER,
         cml_realization_profile_id=(CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15),
     ),
-    ProfiledPopulationMember(
+    _ProfiledPopulationMember(
         logical_name=ProfiledDeviceName.TRANSIT_IOS_01,
         operational_role=OperationalRole.TRANSIT,
         platform_slug="cisco-ios",
@@ -236,7 +236,7 @@ PROFILED_POPULATION_CATALOG: tuple[ProfiledPopulationMember, ...] = (
         automation_profile_id=AutomationProfileID.IOSV_159_3_M12,
         cml_realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
     ),
-    ProfiledPopulationMember(
+    _ProfiledPopulationMember(
         logical_name=ProfiledDeviceName.ACCESS_SW_01,
         operational_role=OperationalRole.ACCESS,
         platform_slug="cisco-ios",
@@ -247,7 +247,7 @@ PROFILED_POPULATION_CATALOG: tuple[ProfiledPopulationMember, ...] = (
     ),
 )
 
-PROFILED_POPULATION_BY_NAME: Mapping[ProfiledDeviceName, ProfiledPopulationMember] = (
+PROFILED_POPULATION_BY_NAME: Mapping[ProfiledDeviceName, _ProfiledPopulationMember] = (
     MappingProxyType(
         {member.logical_name: member for member in PROFILED_POPULATION_CATALOG}
     )
@@ -255,6 +255,16 @@ PROFILED_POPULATION_BY_NAME: Mapping[ProfiledDeviceName, ProfiledPopulationMembe
 
 if len(PROFILED_POPULATION_BY_NAME) != 4:
     raise RuntimeError("profiled population catalog must contain exactly four names")
+
+
+def _expected_profiled_member(logical_name: str) -> _ProfiledPopulationMember:
+    try:
+        admitted_name = ProfiledDeviceName(logical_name)
+    except ValueError:
+        raise InventoryError(
+            "NetBox profile target name is not in the Git-owned population"
+        ) from None
+    return PROFILED_POPULATION_BY_NAME[admitted_name]
 
 
 class ProfileReadOnlyTarget(BaseModel):
@@ -368,6 +378,25 @@ class ProfiledInventoryDevice(BaseModel):
         )
 
 
+def _admit_profiled_device(
+    device: ProfiledInventoryDevice,
+) -> _ProfiledPopulationMember:
+    """Compare resolved NetBox facts with the one Git-owned name binding."""
+    member = _expected_profiled_member(device.logical_name)
+    if (
+        device.operational_role is not member.operational_role
+        or device.platform.slug != member.platform_slug
+        or device.device_type.slug != member.device_type_slug
+        or device.network_os is not member.network_os
+        or device.automation_profile_id is not member.automation_profile_id
+        or device.cml_realization_profile_id is not member.cml_realization_profile_id
+    ):
+        raise InventoryError(
+            "NetBox profile target does not match its Git-owned population member"
+        )
+    return member
+
+
 class ProfiledInventoryPopulation(BaseModel):
     """Immutable deterministic resolution of the exact four-member population."""
 
@@ -387,21 +416,8 @@ class ProfiledInventoryPopulation(BaseModel):
             raise ValueError("profiled inventory population names are not exact")
         if len(identities) != len(set(identities)):
             raise ValueError("profiled inventory population identities are duplicated")
-        for device, member in zip(
-            self.devices, PROFILED_POPULATION_CATALOG, strict=True
-        ):
-            if (
-                device.operational_role is not member.operational_role
-                or device.platform.slug != member.platform_slug
-                or device.device_type.slug != member.device_type_slug
-                or device.network_os is not member.network_os
-                or device.automation_profile_id is not member.automation_profile_id
-                or device.cml_realization_profile_id
-                is not member.cml_realization_profile_id
-            ):
-                raise ValueError(
-                    "profiled inventory population member does not match Git catalog"
-                )
+        for device in self.devices:
+            _admit_profiled_device(device)
         return self
 
 
@@ -477,7 +493,8 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
         super().__init__(url, token, transport=transport)
 
     def resolve(self, target: str) -> ProfiledInventoryDevice:
-        """Resolve one exact device; role never participates in profile selection."""
+        """Resolve one exact Git-owned member from independently factual metadata."""
+        _expected_profiled_member(target)
         payload = self._get(
             self._DEVICE_PATH,
             params={
@@ -492,7 +509,9 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
             raise InventoryError("NetBox profile target not found")
         if len(exact) != 1 or payload.get("count") != 1:
             raise InventoryError("NetBox profile target is ambiguous")
-        return self._resolve_device_payload(exact[0])
+        resolved = self._resolve_device_payload(exact[0])
+        _admit_profiled_device(resolved)
+        return resolved
 
     def resolve_profiled_population(self) -> ProfiledInventoryPopulation:
         """Resolve only the exact four Git-approved profiled inventory members."""

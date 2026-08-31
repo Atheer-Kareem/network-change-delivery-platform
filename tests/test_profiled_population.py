@@ -7,6 +7,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
+import network_change_delivery.profile_inventory as profile_inventory_module
 from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
 from network_change_delivery.profile_inventory import (
     PROFILED_INVENTORY_TAG,
@@ -214,6 +215,10 @@ def test_exact_four_profiled_population_is_deterministic_and_get_only() -> None:
     assert first.url.params["tag"] == PROFILED_INVENTORY_TAG
     assert first.url.params["status"] == "active"
     assert first.url.params["ordering"] == "id"
+
+
+def test_profiled_population_member_model_is_catalog_internal() -> None:
+    assert not hasattr(profile_inventory_module, "ProfiledPopulationMember")
 
 
 @pytest.mark.parametrize("population_size", [3, 5])

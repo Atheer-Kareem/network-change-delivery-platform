@@ -2,7 +2,7 @@
 
 ## Compatibility boundary
 
-Detour B3-1 introduced repository-only authority contracts. B3-2 through B3-4
+Detour B3-1 introduced repository-only authority contracts. B3-2 through B3-5
 then applied the reviewed NetBox, OpenBao, persistent CML, and LIVE trust
 boundaries without changing v1 planning or write behavior.
 
@@ -141,7 +141,7 @@ role, creates no CML object, changes no host trust, expands no Terraform graph,
 and changes no observability or protected delivery authority. Those operations
 require separately reviewed B3 increments and external acceptance evidence.
 
-## NetBox authority state through B3-4
+## NetBox authority state through B3-5
 
 Detour B3-2 migrates only the local NetBox authority. The reviewed,
 no-delete operator tool is
@@ -184,6 +184,35 @@ while `resolve_profiled_population()` now returns exact devices 1/2/8/9.
 
 The exact mutation and independent verification evidence is recorded in the
 [B3-2 acceptance record](../acceptance/profiled-netbox-inventory-detour-b3-2.md).
+
+### Exact data-plane authority
+
+B3-5 adds the exact `10.60.0.0/16` reference allocation to NetBox without
+changing any running network configuration. The `ncdp-data-plane` tag provides
+visibility over the exact seven prefix, two VLAN, six routed-interface, and six
+routed-IP populations; tag membership alone is never admission authority.
+
+`NetBoxReferenceDataPlaneProvider.resolve_reference_allocation()` is a separate
+GET-only profiled resolver. It compares every factual NetBox identity and value
+with one closed Git-owned topology catalog: parent and child prefixes, VLAN IDs
+and canonical names, VLAN-prefix relationships, stable device/interface and
+cable identities, and exact routed IP assignments. Missing, extra, duplicate,
+wrong, or swapped objects fail closed. It does not feed v1 planning or device
+execution and exposes no IPAM write method.
+
+The normal `ncdp-netbox-reader` identity has a dedicated `view`-only object
+permission for `ipam.prefix` and `ipam.vlan`. Its token remains non-write-enabled,
+and an authenticated API write remains denied. The bounded administrative
+writer is the no-delete, transactional
+[`migrate_b3_data_plane.py`](../../scripts/netbox/migrate_b3_data_plane.py)
+operator. A second run must make zero effective changes.
+
+NetBox now owns the exact routed link addresses and VLAN/prefix identities.
+Git owns only how those resolved facts will participate in later routing,
+switching, and security verticals. B3-5 allocates no loopback address, VLAN
+gateway, or endpoint address and applies no data-plane configuration to a
+device. Exact IDs and verification evidence are in the
+[B3-5 acceptance record](../acceptance/data-plane-authority-detour-b3-5.md).
 
 ## B3-3 OpenBao and pipeline state
 

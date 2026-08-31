@@ -6,7 +6,8 @@ Detour B1 defines additive architecture contracts for a multi-device
 reference environment. Detour B2 connects factual NetBox metadata and exact
 automation profiles only through a parallel
 [read-only inventory and adapter path](profile-bound-read-only-inventory.md).
-Detour B3-4 accepts the four-device persistent LIVE realization without
+Detour B3-5 accepts the four-device persistent LIVE realization and its exact
+NetBox data-plane/IPAM authority without
 integrating classic IOS into current planning, rendering, write adapters,
 protected delivery, Terraform, or promotion.
 
@@ -186,21 +187,37 @@ identity. Git owns whether and how that object is deployed on stable interfaces
 and the desired gateway, routing, security, and assurance behavior. The same
 desired property must not be independently authored in both systems.
 
-The provisional later-allocation hierarchy is:
+Detour B3-5 establishes this exact NetBox-owned allocation hierarchy:
 
 ```text
 10.60.0.0/16  NCDP data-plane parent
-├── routed transit pool
-├── VLAN 10 USERS prefix
-├── VLAN 20 SERVERS prefix
-└── loopback/router-ID pool
+├── 10.60.0.0/30   core-02 ↔ edge-junos-01
+├── 10.60.0.4/30   core-02 ↔ transit-ios-01
+├── 10.60.0.8/30   edge-junos-01 ↔ transit-ios-01
+├── 10.60.10.0/24  VLAN 10 USERS
+├── 10.60.20.0/24  VLAN 20 SERVERS
+└── 10.60.255.0/24 future loopback/router-ID allocation pool
 ```
 
-This is an allocation model, not an allocation or Git-owned IPAM source. NetBox
-will own the actual parent/sub-prefix objects, individual IP identities, and
-interface assignments. Prefix lengths, point-to-point subnets, and individual
-host/gateway addresses remain deferred to B2/B3 resolution. Git will own only
-how those resolved objects participate in VLAN, OSPF, ACL, and assurance intent.
+The three routed links have exact NetBox-owned interface assignments:
+`10.60.0.1/30` on `core-02/GigabitEthernet4`, `10.60.0.2/30` on
+`edge-junos-01/ge-0/0/0`, `10.60.0.5/30` on
+`core-02/GigabitEthernet2`, `10.60.0.6/30` on
+`transit-ios-01/GigabitEthernet0/1`, `10.60.0.9/30` on
+`edge-junos-01/ge-0/0/1`, and `10.60.0.10/30` on
+`transit-ios-01/GigabitEthernet0/2`.
+
+`NetBoxReferenceDataPlaneProvider.resolve_reference_allocation()` resolves only
+this exact tagged population through GET requests and validates the accepted
+NetBox identities, values, interface ownership, cables, and VLAN-prefix
+relationships against the closed Git-owned topology catalog. Missing, extra,
+duplicated, wrong, or swapped facts fail closed. The copied IDs and values in
+the catalog are admission evidence, not a second source of IPAM authority.
+
+No individual loopback/router-ID, VLAN gateway, or endpoint address is allocated
+yet. No routed address or VLAN has been configured on a device. Git will own
+only how these resolved objects participate in later VLAN, OSPF, ACL, and
+assurance intent.
 
 ## Logical network and realization identity
 
@@ -312,70 +329,83 @@ execution has begun has different semantics: stop immediately, do not retry, do
 not expose later phases or members, preserve the partial outcome, and reconcile
 independently. It must never be described as necessarily producing zero writes.
 
-## Provisional future reference topology
+## Reference topology and deferred services
 
-The following is a future proposal, not current runtime truth:
+### Current physical realization
 
-```text
-core-02 <-------> edge-junos-01
-   \                  /
-    \                /
-     transit-ios-01
+The operator-owned `NCDP Live` CML lab contains these accepted physical links:
 
-core-02
-   |
-802.1Q trunk
-   |
-access-sw-01
-   |        |
-VLAN 10  VLAN 20
-USERS    SERVERS
-```
+- `core-02 GigabitEthernet4` to `edge-junos-01 ge-0/0/0`;
+- `core-02 GigabitEthernet2` to `transit-ios-01 GigabitEthernet0/1`;
+- `edge-junos-01 ge-0/0/1` to `transit-ios-01 GigabitEthernet0/2`; and
+- `core-02 GigabitEthernet3` to `access-sw-01 GigabitEthernet0/1`.
 
-The accepted current core-to-Junos link is preserved as
-`core-02 GigabitEthernet4` to `edge-junos-01 ge-0/0/0`. Proposed additions are:
+`transit-ios-01 GigabitEthernet0/0` is its physical and routed L3 management
+interface. `access-sw-01 GigabitEthernet0/0` is likewise its dedicated physical
+and routed L3 management interface. These management paths are independent of
+future data-plane service configuration.
 
-- `core-02 GigabitEthernet2` to `transit-ios-01 Gi0/1`;
-- `edge-junos-01 ge-0/0/1` to `transit-ios-01 Gi0/2`;
-- `core-02 GigabitEthernet3` to `access-sw-01 Gi0/1` as the VLAN 10/20 trunk;
-- `access-sw-01 Gi0/2` as the USERS access attachment;
-- `access-sw-01 Gi0/3` as the SERVERS access attachment;
-- `transit-ios-01 Gi0/0` as physical and logical management; and
-- `access-sw-01 Gi0/0` as dedicated routed physical and logical management.
+`transit-ios-01 GigabitEthernet0/3` and `edge-junos-01 ge-0/0/2` remain spare.
+`access-sw-01 GigabitEthernet0/2` and `GigabitEthernet0/3` remain physically
+available for the future USERS and SERVERS endpoint fixtures.
 
-`transit-ios-01 Gi0/3` and `edge-junos-01 ge-0/0/2` remain spare. Endpoint-side
-interfaces depend on a future endpoint node selection.
+### Current management authority
 
-Proposed live management addresses `192.168.4.24/24` and
-`192.168.4.25/24`, and proposed staging addresses `192.168.4.50/24` and
-`192.168.4.60/24`, are synthetic planning values. They are not claimed to be
-available, allocated, or present in NetBox. B1 creates none of the proposed
-device identities or relationships.
+NetBox owns these exact management endpoints:
 
-The initial IOSvL2 role is intentionally the managed ACCESS SWITCHING boundary,
-despite proven routed operation on its dedicated management port:
+| Device | LIVE | STAGING allocation |
+|---|---|---|
+| `core-02` | `192.168.4.14/24` | `192.168.4.30/24` |
+| `edge-junos-01` | `192.168.4.20/24` | `192.168.4.40/24` |
+| `transit-ios-01` | `192.168.4.16/24` | `192.168.4.31/24` |
+| `access-sw-01` | `192.168.4.17/24` | `192.168.4.32/24` |
 
-- `Gi0/0`: dedicated routed management;
-- `Gi0/1`: 802.1Q trunk to `core-02`;
-- `Gi0/2`: VLAN 10 USERS access;
-- `Gi0/3`: VLAN 20 SERVERS access; and
-- `core-02`: inter-VLAN routing through IOS-XE 802.1Q subinterfaces.
+The LIVE endpoints are realized and admitted. The STAGING IP objects are
+allocated in NetBox, but no four-device STAGING realization is claimed or
+active; that realization remains deferred until explicit operator decision.
 
-The initial topology does not make `access-sw-01` a VLAN gateway. This keeps L2
-switching and L3 routing verticals separate, makes management independent of
-VLAN changes under test, and leaves actual IOSvL2 forwarding proof with CML. A
-later gateway migration to switch SVIs can be a distinct coordinated service
-change. No broader IOSvL2 routing capability is claimed.
+### Current B3-5 data-plane authority
 
-Two lightweight future traffic fixtures are reserved:
+NetBox owns the exact allocation hierarchy established by B3-5:
 
-- `users-host-01` behind the USERS access port; and
-- `servers-host-01` behind the SERVERS access port.
+- `10.60.0.0/16`: NCDP data-plane parent;
+- `10.60.0.0/30`: core/Junos routed link;
+- `10.60.0.4/30`: core/transit routed link;
+- `10.60.0.8/30`: Junos/transit routed link;
+- `10.60.10.0/24`: VLAN 10 `USERS`;
+- `10.60.20.0/24`: VLAN 20 `SERVERS`; and
+- `10.60.255.0/24`: future router-ID/loopback allocation pool.
 
-They will likely use Alpine CML nodes. They are traffic/service fixtures, not
-NCDP-managed network devices, fleet members, canaries/waves, network-device
-`DeploymentPlan` recipients, or owners of network-device OpenBao credentials.
-They are not counted in the four managed-device population. Their data-plane
-addresses are identical in LIVE and STAGING. Exact image identity, NetBox
-representation, address allocation, interface names, and service bootstrap are
-deferred to the VLAN/ACL increments; B1 creates no endpoint node.
+The routed interface IP assignments are authoritative NetBox/IPAM
+relationships, not claims about current device running configuration.
+
+### Still future and not configured
+
+The physical realization and NetBox allocations do not configure services.
+These items remain future reviewed increments:
+
+- applying the routed IP assignments to devices;
+- creating VLANs on devices;
+- creating IOS-XE router-on-a-stick subinterfaces on `core-02`;
+- configuring the `core-02` to `access-sw-01` trunk;
+- configuring VLAN 10 and VLAN 20 access ports;
+- allocating and configuring VLAN gateways;
+- configuring OSPF;
+- configuring ACLs or security policy;
+- creating endpoint nodes or allocating endpoint addresses; and
+- allocating individual loopback/router-ID addresses.
+
+The initial service design keeps `access-sw-01` as the managed access-switching
+boundary: `GigabitEthernet0/1` will be the 802.1Q trunk,
+`GigabitEthernet0/2` the VLAN 10 USERS access port, and
+`GigabitEthernet0/3` the VLAN 20 SERVERS access port. `core-02` will initially
+own inter-VLAN routing through IOS-XE 802.1Q subinterfaces. This does not make
+`access-sw-01` a VLAN gateway or claim broader IOSvL2 routing behavior. A later
+gateway migration to switch SVIs remains a distinct coordinated service change.
+
+The reserved future traffic fixtures remain `users-host-01` and
+`servers-host-01`, likely implemented as lightweight Alpine CML nodes. They are
+not NCDP-managed network devices, fleet members, canaries/waves,
+network-device `DeploymentPlan` recipients, credential owners, or members of
+the four-device managed-network population. Their eventual data-plane addresses
+must remain identical between LIVE and STAGING realizations.

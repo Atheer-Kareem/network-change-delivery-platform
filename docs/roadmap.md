@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — complete through B3-4:** B1 accepts the
+    - **Detour B — complete through B3-5:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -141,7 +141,12 @@ acceptance records.
       trust generation, activation of devices 8/9, and real profile-aware LIVE
       read-only collection for all four. Legacy inventory, Oxidized,
       observability targets, SNMP, and protected authority remain exact devices
-      1/2. Four-device disposable STAGING realization and STAGING adapter
+      1/2. B3-5 establishes the exact NetBox-owned `10.60.0.0/16` hierarchy,
+      three routed-link prefix/interface/IP relationships, VLAN 10 `USERS`,
+      VLAN 20 `SERVERS`, and the unallocated loopback/router-ID pool. A closed
+      GET-only profiled resolver admits only those exact factual objects; no
+      network-device data-plane configuration is applied. Four-device
+      disposable STAGING realization and STAGING adapter
       acceptance remain deferred until explicit operator restoration is useful.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

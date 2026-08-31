@@ -114,3 +114,25 @@ endpoint set but exposes only a LIVE read-only target. It is not imported by v1
 planning or delivery. B3 has now established exact profile metadata for devices
 1, 2, 8, and 9; only the parallel profiled provider can represent the classic
 IOS members.
+
+## B3-5 reference data-plane authority
+
+The additive `NetBoxReferenceDataPlaneProvider` resolves the exact reference
+allocation separately from v1 inventory. It issues GET requests only and
+requires exact `ncdp-data-plane` populations: seven prefixes, two VLANs, six
+routed interfaces, and six assigned routed IP objects. The closed Git catalog
+checks every accepted NetBox object ID and value, site, VLAN-prefix association,
+device/interface identity, cable, and address assignment. It does not infer
+authority from a tag, address range, or naming pattern, and it fails closed on
+missing, extra, duplicated, wrong, or swapped facts.
+
+The normal application reader has one additional NetBox object permission,
+`NCDP data-plane read-only`, with only the `view` action and only
+`ipam.prefix` and `ipam.vlan` content types. Existing device, interface, and IP
+GET access is preserved. The normal token remains non-write-enabled; it has no
+create, update, or delete permission. All B3-5 NetBox writes are confined to
+the explicit local administrative migration tool.
+
+These IPAM assignments are authoritative intended relationships. They do not
+claim that the routed addresses, VLANs, gateways, OSPF, or ACLs exist in running
+device configuration. No primary or management address is changed.

@@ -65,10 +65,11 @@ operational setting and is not a portable platform contract.
 
 Runtime-relevant pull requests run `pr-batfish-assurance` after validation. It
 performs offline normalized behavioral assurance against the exact profiled
-four-device candidate and current explicit service stack. B4-1A's stack is
-`routed_underlay`; its input is the accepted B3-5 allocation evidence copy and
-the Git-owned profile catalog. It does not call NetBox, OpenBao, CML, LIVE
-devices, or trust material. During the Detour B pause it is the last active
+four-device candidate and current explicit service stack. B4-2's stack is
+`routed_underlay, ospf`; its inputs are the accepted B3-5 allocation and B4-2
+routing-identity evidence copies plus the Git-owned profile catalog. It does
+not call NetBox, OpenBao, CML, LIVE devices, or trust material. During the
+Detour B pause it is the last active
 network-assurance step; no disposable CML job follows it.
 
 When restored, CML staging is independently serialized in

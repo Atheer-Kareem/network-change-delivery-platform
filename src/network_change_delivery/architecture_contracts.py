@@ -58,6 +58,7 @@ GitPolicyIdentity = Annotated[
 ManagedScopeStableIdentity = (
     NetBoxDeviceIdentity
     | NetBoxInterfaceIdentity
+    | NetBoxIPAddressIdentity
     | NetBoxVLANIdentity
     | NetBoxPrefixIdentity
     | GitPolicyIdentity
@@ -737,6 +738,7 @@ class ManagedScopeKind(StrEnum):
 
     DEVICE = "device"
     INTERFACE = "interface"
+    IP_ADDRESS = "ip_address"
     VLAN = "vlan"
     PREFIX = "prefix"
     POLICY = "policy"
@@ -754,6 +756,7 @@ class ManagedScopeIdentity(BaseModel):
         patterns = {
             ManagedScopeKind.DEVICE: _NETBOX_DEVICE_IDENTITY_PATTERN,
             ManagedScopeKind.INTERFACE: _NETBOX_INTERFACE_IDENTITY_PATTERN,
+            ManagedScopeKind.IP_ADDRESS: _NETBOX_IP_ADDRESS_IDENTITY_PATTERN,
             ManagedScopeKind.VLAN: _NETBOX_VLAN_IDENTITY_PATTERN,
             ManagedScopeKind.PREFIX: _NETBOX_PREFIX_IDENTITY_PATTERN,
             ManagedScopeKind.POLICY: _GIT_POLICY_IDENTITY_PATTERN,

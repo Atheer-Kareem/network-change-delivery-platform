@@ -13,15 +13,24 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from network_change_delivery.architecture_contracts import Sha256Digest
 from network_change_delivery.assurance import AssuranceOutcome, InvariantResult
 from network_change_delivery.audit import canonical_json_bytes, sha256_identity
+from network_change_delivery.ospf_triangle import (
+    OspfTriangleAssuranceProvider,
+    OspfTriangleIntent,
+    assure_ospf_triangle_candidate,
+    build_ospf_desired_state,
+)
 from network_change_delivery.reference_data_plane import (
     ACCEPTED_REFERENCE_ALLOCATION_DIGEST,
     build_accepted_reference_allocation_evidence,
     reference_allocation_digest,
 )
+from network_change_delivery.reference_routing_identity import (
+    ACCEPTED_ROUTING_IDENTITY_ALLOCATION_DIGEST,
+    build_accepted_routing_identity_evidence,
+    routing_identity_allocation_digest,
+)
 from network_change_delivery.routed_underlay import (
-    RoutedUnderlayAssuranceProvider,
     RoutedUnderlayIntent,
-    assure_routed_underlay_candidate,
     build_routed_underlay_desired_state,
 )
 
@@ -35,10 +44,13 @@ PROFILED_CANDIDATE_NODES = (
 ROUTED_UNDERLAY_D1_DIGEST = (
     "sha256:d25f753ef711677ccdde67bfeb7005f19759800099734a79bca1616bb77baf6b"
 )
-ROUTED_UNDERLAY_CANDIDATE_DIGEST = (
-    "sha256:d3f545c5df160c29b82974f9d58f6ec76cbcc52037b69f63051e97a4aeed21f0"
+OSPF_D1_DIGEST = (
+    "sha256:55f5718089228eb4e9f3badebca036135461c10b3c4312184462b5468d463182"
 )
-ROUTED_UNDERLAY_INVARIANTS = (
+PROFILED_COMBINED_CANDIDATE_DIGEST = (
+    "sha256:7e7f67500084682194be69d81d94f58d8ae0f6c8722e5de3b3a6c25521e5c269"
+)
+PROFILED_COMBINED_INVARIANTS = (
     "candidate_exact_parse_files",
     "candidate_parse_status",
     "candidate_exact_nodes",
@@ -48,7 +60,13 @@ ROUTED_UNDERLAY_INVARIANTS = (
     "access_switch_excluded",
     "management_addresses_excluded",
     "exact_direct_neighbor_flows",
-    "ospf_absent",
+    "ospf_exact_routers",
+    "ospf_access_excluded",
+    "ospf_exact_interfaces",
+    "ospf_management_excluded",
+    "ospf_exact_adjacencies",
+    "ospf_remote_routes",
+    "ospf_remote_reachability",
 )
 
 
@@ -56,23 +74,35 @@ class ProfiledService(StrEnum):
     """Closed service stack evaluated by current profiled PR assurance."""
 
     ROUTED_UNDERLAY = "routed_underlay"
+    OSPF = "ospf"
+
+
+class ProfiledServiceSubject(BaseModel):
+    """One independently normalized service subject in the PR candidate."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    service: ProfiledService
+    digest: Sha256Digest
 
 
 class ProfiledPrAssuranceEvidence(BaseModel):
     """Deterministic secret-free evidence for one exact profiled candidate."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     architecture_identity: Literal["profiled-four-device"] = (
         PROFILED_ARCHITECTURE_IDENTITY
     )
     active_service_stack: tuple[ProfiledService, ...]
     accepted_source_allocation_digest: Sha256Digest
-    proposed_subject_digest: Sha256Digest
+    accepted_routing_identity_digest: Sha256Digest
+    service_subjects: tuple[ProfiledServiceSubject, ...]
     candidate_snapshot_digest: Sha256Digest
     candidate_nodes: tuple[str, ...]
     pybatfish_version: str
     batfish_version: str
+    ospf_router_count: int
+    ospf_adjacency_count: int
     invariants: tuple[InvariantResult, ...]
     outcome: AssuranceOutcome
     digest: Sha256Digest
@@ -95,13 +125,28 @@ class ProfiledPrAssuranceEvidence(BaseModel):
             else AssuranceOutcome.FAILED
         )
         if (
-            self.active_service_stack != (ProfiledService.ROUTED_UNDERLAY,)
+            self.active_service_stack
+            != (ProfiledService.ROUTED_UNDERLAY, ProfiledService.OSPF)
             or self.accepted_source_allocation_digest
             != ACCEPTED_REFERENCE_ALLOCATION_DIGEST
-            or self.proposed_subject_digest != ROUTED_UNDERLAY_D1_DIGEST
-            or self.candidate_snapshot_digest != ROUTED_UNDERLAY_CANDIDATE_DIGEST
+            or self.accepted_routing_identity_digest
+            != ACCEPTED_ROUTING_IDENTITY_ALLOCATION_DIGEST
+            or self.service_subjects
+            != (
+                ProfiledServiceSubject(
+                    service=ProfiledService.ROUTED_UNDERLAY,
+                    digest=ROUTED_UNDERLAY_D1_DIGEST,
+                ),
+                ProfiledServiceSubject(
+                    service=ProfiledService.OSPF,
+                    digest=OSPF_D1_DIGEST,
+                ),
+            )
+            or self.candidate_snapshot_digest != PROFILED_COMBINED_CANDIDATE_DIGEST
             or self.candidate_nodes != PROFILED_CANDIDATE_NODES
-            or invariant_names != ROUTED_UNDERLAY_INVARIANTS
+            or self.ospf_router_count != 3
+            or self.ospf_adjacency_count != 3
+            or invariant_names != PROFILED_COMBINED_INVARIANTS
             or self.outcome is not expected_outcome
         ):
             raise ValueError("profiled PR assurance evidence is inconsistent")
@@ -111,30 +156,54 @@ class ProfiledPrAssuranceEvidence(BaseModel):
 
 
 def assure_profiled_pr_candidate(
-    provider: RoutedUnderlayAssuranceProvider | None = None,
+    provider: OspfTriangleAssuranceProvider | None = None,
 ) -> ProfiledPrAssuranceEvidence:
     """Evaluate the current explicit profiled service stack entirely offline."""
     allocation = build_accepted_reference_allocation_evidence()
     allocation_digest = reference_allocation_digest(allocation)
-    intent = RoutedUnderlayIntent.from_reference_allocation(allocation)
-    desired = build_routed_underlay_desired_state(intent)
-    if desired.digest != ROUTED_UNDERLAY_D1_DIGEST:
+    routing = build_accepted_routing_identity_evidence()
+    routing_digest = routing_identity_allocation_digest(routing)
+    underlay_intent = RoutedUnderlayIntent.from_reference_allocation(allocation)
+    underlay_desired = build_routed_underlay_desired_state(underlay_intent)
+    ospf_intent = OspfTriangleIntent.from_allocations(allocation, routing)
+    ospf_desired = build_ospf_desired_state(ospf_intent)
+    if underlay_desired.digest != ROUTED_UNDERLAY_D1_DIGEST:
         raise ValueError("profiled PR routed-underlay D1 digest changed")
-    routed = assure_routed_underlay_candidate(intent, desired, provider)
-    if routed.candidate_snapshot_digest != ROUTED_UNDERLAY_CANDIDATE_DIGEST:
+    if ospf_desired.digest != OSPF_D1_DIGEST:
+        raise ValueError("profiled PR OSPF D1 digest changed")
+    combined = assure_ospf_triangle_candidate(
+        underlay_intent,
+        underlay_desired,
+        ospf_intent,
+        ospf_desired,
+        provider,
+    )
+    if combined.candidate_snapshot_digest != PROFILED_COMBINED_CANDIDATE_DIGEST:
         raise ValueError("profiled PR candidate snapshot digest changed")
     unsigned = ProfiledPrAssuranceEvidence.model_construct(
-        schema_version="1",
+        schema_version="2",
         architecture_identity=PROFILED_ARCHITECTURE_IDENTITY,
-        active_service_stack=(ProfiledService.ROUTED_UNDERLAY,),
+        active_service_stack=(ProfiledService.ROUTED_UNDERLAY, ProfiledService.OSPF),
         accepted_source_allocation_digest=allocation_digest,
-        proposed_subject_digest=desired.digest,
-        candidate_snapshot_digest=routed.candidate_snapshot_digest,
-        candidate_nodes=routed.candidate_parse.nodes,
-        pybatfish_version=routed.pybatfish_version,
-        batfish_version=routed.batfish_version,
-        invariants=routed.invariants,
-        outcome=routed.outcome,
+        accepted_routing_identity_digest=routing_digest,
+        service_subjects=(
+            ProfiledServiceSubject(
+                service=ProfiledService.ROUTED_UNDERLAY,
+                digest=underlay_desired.digest,
+            ),
+            ProfiledServiceSubject(
+                service=ProfiledService.OSPF,
+                digest=ospf_desired.digest,
+            ),
+        ),
+        candidate_snapshot_digest=combined.candidate_snapshot_digest,
+        candidate_nodes=combined.candidate_nodes,
+        pybatfish_version=combined.pybatfish_version,
+        batfish_version=combined.batfish_version,
+        ospf_router_count=combined.ospf_router_count,
+        ospf_adjacency_count=combined.ospf_adjacency_count,
+        invariants=combined.invariants,
+        outcome=combined.outcome,
         digest="sha256:" + "0" * 64,
     )
     return ProfiledPrAssuranceEvidence.model_validate(

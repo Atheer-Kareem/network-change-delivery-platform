@@ -406,6 +406,7 @@ def test_accepted_managed_state_ref_binds_one_exact_envelope() -> None:
     [
         (ManagedScopeKind.DEVICE, "netbox:dcim.device:1"),
         (ManagedScopeKind.INTERFACE, "netbox:dcim.interface:2"),
+        (ManagedScopeKind.IP_ADDRESS, "netbox:ipam.ipaddress:23"),
         (ManagedScopeKind.VLAN, "netbox:ipam.vlan:10"),
         (ManagedScopeKind.PREFIX, "netbox:ipam.prefix:20"),
         (ManagedScopeKind.POLICY, "git:policy:users-to-servers"),
@@ -423,6 +424,7 @@ def test_managed_scope_identity_accepts_only_closed_namespaces(
     [
         (ManagedScopeKind.VLAN, "netbox:dcim.device:1"),
         (ManagedScopeKind.INTERFACE, "arbitrary-interface"),
+        (ManagedScopeKind.IP_ADDRESS, "netbox:ipam.prefix:8"),
         (ManagedScopeKind.DEVICE, "netbox:dcim.device:0"),
         (ManagedScopeKind.VLAN, "netbox:ipam.vlan:-1"),
         (ManagedScopeKind.PREFIX, "netbox:ipam.prefix:0"),

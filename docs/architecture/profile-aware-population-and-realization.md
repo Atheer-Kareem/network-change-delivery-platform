@@ -5,8 +5,9 @@
 Detour B3-1 introduced repository-only authority contracts. B3-2 through B3-5
 then applied the reviewed NetBox, OpenBao, persistent CML, LIVE trust, and
 data-plane IPAM boundaries without changing v1 planning or write behavior.
-B4-1 adds an exact read-only routed-underlay intent/observation/assurance path;
-it still does not broaden any write path.
+B4-1 adds an exact read-only routed-underlay intent/observation/assurance path.
+B4-2 adds exact OSPF router-ID authority and a separate read-only OSPF vertical;
+neither increment broadens any write path.
 
 The two inventory populations are intentionally different:
 
@@ -235,6 +236,19 @@ Batfish candidate. Neither path nor `ProfileReadOnlyAdapter` exposes execution.
 Offline Batfish assurance uses an exact-four snapshot so that `access-sw-01`
 exclusion is positively checked rather than assumed. D0 persistence and live
 application remain deferred.
+
+## B4-2 OSPF read-only path
+
+The OSPF population is exact devices 1, 2, and 8. A separate GET-only routing
+identity resolver admits exactly NetBox IP-address IDs 23–25 from prefix ID 8;
+they remain unassigned, non-primary router IDs rather than loopback addresses.
+`ProfileOspfReadOnlyAdapter` dispatches only IOS-XE, IOS, and Junos profiles and
+has no write surface; the access profile fails closed.
+
+Observation owns only process/router-ID and the six admitted interface facts.
+Transition rendering binds O and the independent OSPF D1. Final-state Batfish
+assurance composes unchanged routed-underlay D1 with OSPF D1 and does not import
+live NetBox, OpenBao, CML, or device access into PR assurance.
 
 ## B3-3 OpenBao and pipeline state
 

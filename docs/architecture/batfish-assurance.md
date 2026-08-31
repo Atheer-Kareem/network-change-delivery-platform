@@ -116,6 +116,19 @@ digests and all ten invariants. A two-node, missing-member, or extra-node result
 cannot pass. See the
 [B4-1A acceptance record](../acceptance/profiled-pr-batfish-handoff-detour-b4-1a.md).
 
+## B4-2 composed OSPF assurance
+
+The canonical profiled PR stack is now exactly `routed_underlay, ospf`, with an
+independent normalized digest for each subject. The combined final-state
+snapshot requires exact four nodes, three OSPF routers/router IDs, six area-0
+point-to-point interfaces, three unordered adjacency pairs, three required
+remote OSPF routes, and representative remote reachability. `access-sw-01` and
+all management interfaces remain excluded.
+
+B4-1 standalone assurance remains 10/10 including `ospf_absent`; that isolation
+contract is not weakened when B4-2 composes the service stack. See the
+[B4-2 acceptance record](../acceptance/ospf-triangle-detour-b4-2.md).
+
 ## Assurance-to-promotion handoff
 
 When explicitly restored, the preserved legacy immutable promotion waits for

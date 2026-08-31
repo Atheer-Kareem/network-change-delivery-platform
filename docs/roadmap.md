@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — complete through B4-1A:** B1 accepts the
+    - **Detour B — complete through B4-2:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -143,7 +143,7 @@ acceptance records.
       observability targets, SNMP, and protected authority remain exact devices
       1/2. B3-5 establishes the exact NetBox-owned `10.60.0.0/16` hierarchy,
       three routed-link prefix/interface/IP relationships, VLAN 10 `USERS`,
-      VLAN 20 `SERVERS`, and the unallocated loopback/router-ID pool. A closed
+      VLAN 20 `SERVERS`, and the then-unallocated routing-identity pool. A closed
       GET-only profiled resolver admits only those exact factual objects; no
       network-device data-plane configuration is applied. Four-device
       disposable STAGING realization and STAGING adapter
@@ -158,8 +158,12 @@ acceptance records.
       and live application remains deferred while protected delivery is
       disabled. B4-1A hands the single active PR Batfish step from the legacy
       v1 two-device promotion baseline to a deterministic offline profiled
-      four-device assurance record with `routed_underlay` as its current
-      explicit service stack. Legacy protected assurance remains preserved and
-      disabled; no protected promotion or execution authority was migrated.
+      four-device assurance record. B4-2 allocates exact unassigned NetBox
+      router-ID identities and adds OSPF intent, real read-only observation,
+      O-to-D1 rendering, and combined `routed_underlay + ospf` assurance. The
+      router IDs are not loopbacks or advertised routes. Live application
+      remains deferred while protected delivery is disabled. Legacy protected
+      assurance remains preserved and disabled; no protected promotion or
+      execution authority was migrated.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

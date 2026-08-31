@@ -34,7 +34,8 @@ flowchart TD
 
 Validation fails closed before privilege. Runtime-relevant same-repository pull
 requests run offline Batfish assurance for the exact profiled four-device
-candidate. Its current service stack is `routed_underlay`, and it requires no
+candidate. Its current service stack is `routed_underlay, ospf`, with separate
+normalized service-subject digests, and it requires no
 live inventory, credential, CML, trust, or device surface. Disposable CML and
 the protected-delivery group remain paused. The profiled PR assurance artifact
 is prevention evidence only and is not reused by the preserved legacy

@@ -12,9 +12,17 @@ from network_change_delivery.assurance import (
     ParseFileResult,
     ParseSummary,
 )
+from network_change_delivery.ospf_triangle import (
+    BatfishOspfEdge,
+    BatfishOspfInterface,
+    BatfishOspfProcess,
+    BatfishOspfRoute,
+    OspfTriangleBatfishObservation,
+)
 from network_change_delivery.profiled_pr_assurance import (
+    OSPF_D1_DIGEST,
     PROFILED_CANDIDATE_NODES,
-    ROUTED_UNDERLAY_CANDIDATE_DIGEST,
+    PROFILED_COMBINED_CANDIDATE_DIGEST,
     ROUTED_UNDERLAY_D1_DIGEST,
     ProfiledPrAssuranceEvidence,
     ProfiledService,
@@ -55,14 +63,14 @@ def desired_state():
 
 def batfish_observation(
     nodes: tuple[str, ...] = PROFILED_CANDIDATE_NODES,
-) -> RoutedUnderlayBatfishObservation:
+) -> OspfTriangleBatfishObservation:
     desired = desired_state()
     node_names = {
         "netbox:dcim.device:1": "core-02",
         "netbox:dcim.device:2": "edge-junos-01",
         "netbox:dcim.device:8": "transit-ios-01",
     }
-    return RoutedUnderlayBatfishObservation(
+    underlay = RoutedUnderlayBatfishObservation(
         pybatfish_version="2025.7.7.2423",
         batfish_version="2026.07.20.3565",
         candidate_parse=ParseSummary(
@@ -101,7 +109,93 @@ def batfish_observation(
                 reachable=True,
             ),
         ),
-        ospf_process_count=0,
+        ospf_process_count=3,
+    )
+    return OspfTriangleBatfishObservation(
+        underlay=underlay,
+        processes=(
+            BatfishOspfProcess(node="core-02", router_id="10.60.255.1"),
+            BatfishOspfProcess(node="edge-junos-01", router_id="10.60.255.2"),
+            BatfishOspfProcess(node="transit-ios-01", router_id="10.60.255.3"),
+        ),
+        interfaces=(
+            BatfishOspfInterface(
+                node="core-02",
+                interface="GigabitEthernet2",
+                area="0.0.0.0",
+                network_type="point-to-point",
+                passive=False,
+            ),
+            BatfishOspfInterface(
+                node="core-02",
+                interface="GigabitEthernet4",
+                area="0.0.0.0",
+                network_type="point-to-point",
+                passive=False,
+            ),
+            BatfishOspfInterface(
+                node="edge-junos-01",
+                interface="ge-0/0/0",
+                area="0.0.0.0",
+                network_type="point-to-point",
+                passive=False,
+            ),
+            BatfishOspfInterface(
+                node="edge-junos-01",
+                interface="ge-0/0/1",
+                area="0.0.0.0",
+                network_type="point-to-point",
+                passive=False,
+            ),
+            BatfishOspfInterface(
+                node="transit-ios-01",
+                interface="GigabitEthernet0/1",
+                area="0.0.0.0",
+                network_type="point-to-point",
+                passive=False,
+            ),
+            BatfishOspfInterface(
+                node="transit-ios-01",
+                interface="GigabitEthernet0/2",
+                area="0.0.0.0",
+                network_type="point-to-point",
+                passive=False,
+            ),
+        ),
+        edges=(
+            BatfishOspfEdge(nodes=("core-02", "edge-junos-01")),
+            BatfishOspfEdge(nodes=("core-02", "transit-ios-01")),
+            BatfishOspfEdge(nodes=("edge-junos-01", "transit-ios-01")),
+        ),
+        routes=(
+            BatfishOspfRoute(node="core-02", prefix="10.60.0.8/30", protocol="ospf"),
+            BatfishOspfRoute(
+                node="edge-junos-01", prefix="10.60.0.4/30", protocol="ospf"
+            ),
+            BatfishOspfRoute(
+                node="transit-ios-01", prefix="10.60.0.0/30", protocol="ospf"
+            ),
+        ),
+        remote_flows=(
+            RoutedUnderlayFlow(
+                source_node="core-02",
+                source_ip="10.60.0.1",
+                destination_ip="10.60.0.10",
+                reachable=True,
+            ),
+            RoutedUnderlayFlow(
+                source_node="edge-junos-01",
+                source_ip="10.60.0.2",
+                destination_ip="10.60.0.6",
+                reachable=True,
+            ),
+            RoutedUnderlayFlow(
+                source_node="transit-ios-01",
+                source_ip="10.60.0.6",
+                destination_ip="10.60.0.2",
+                reachable=True,
+            ),
+        ),
     )
 
 
@@ -110,7 +204,7 @@ class FakeBatfishProvider:
         self.nodes = nodes
         self.candidate_contents = ""
 
-    def analyze(self, candidate: Path) -> RoutedUnderlayBatfishObservation:
+    def analyze(self, candidate: Path) -> OspfTriangleBatfishObservation:
         config_root = candidate / "configs"
         paths = tuple(sorted(config_root.iterdir()))
         assert tuple(path.name for path in paths) == tuple(
@@ -153,15 +247,21 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
     assert first == second
     assert first.verify_digest()
     assert first.architecture_identity == "profiled-four-device"
-    assert first.active_service_stack == (ProfiledService.ROUTED_UNDERLAY,)
+    assert first.active_service_stack == (
+        ProfiledService.ROUTED_UNDERLAY,
+        ProfiledService.OSPF,
+    )
     assert first.accepted_source_allocation_digest == (
         ACCEPTED_REFERENCE_ALLOCATION_DIGEST
     )
-    assert first.proposed_subject_digest == ROUTED_UNDERLAY_D1_DIGEST
-    assert first.candidate_snapshot_digest == ROUTED_UNDERLAY_CANDIDATE_DIGEST
+    assert tuple(subject.digest for subject in first.service_subjects) == (
+        ROUTED_UNDERLAY_D1_DIGEST,
+        OSPF_D1_DIGEST,
+    )
+    assert first.candidate_snapshot_digest == PROFILED_COMBINED_CANDIDATE_DIGEST
     assert first.candidate_nodes == PROFILED_CANDIDATE_NODES
     assert first.outcome is AssuranceOutcome.PASSED
-    assert len(first.invariants) == 10
+    assert len(first.invariants) == 16
     assert all(item.passed for item in first.invariants)
     for content in (
         first_provider.candidate_contents,
@@ -169,7 +269,8 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
     ):
         assert "10.6.12" not in content
         assert "192.168.4" not in content
-        assert "ospf" not in content.casefold()
+        assert "router ospf 1" in content
+        assert "10.60.255.1" in content
 
 
 @pytest.mark.parametrize(
@@ -200,10 +301,11 @@ def test_evidence_io_and_annotation_are_typed_and_allowlisted(tmp_path: Path) ->
         "profiled-four-device",
         "routed_underlay",
         "4",
-        "10 / 10 passed",
+        "16 / 16 passed",
         *PROFILED_CANDIDATE_NODES,
         ROUTED_UNDERLAY_D1_DIGEST,
-        ROUTED_UNDERLAY_CANDIDATE_DIGEST,
+        OSPF_D1_DIGEST,
+        PROFILED_COMBINED_CANDIDATE_DIGEST,
     ):
         assert value in annotation
     assert "2026.07.20.3565" not in annotation

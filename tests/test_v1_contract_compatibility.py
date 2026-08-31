@@ -124,3 +124,20 @@ def test_existing_fleet_fixture_and_child_digests_remain_valid() -> None:
         "sha256:060db13dbe0a938ec80c8d0b66f74be0a8d4f8173223f5b0e9b5e6737fe1f5a0",
         "sha256:cd9200fccf8fe5e0c37b03d3c89561b59c7d828fb2a330d8c4c844752365c467",
     )
+
+
+def test_current_v1_execution_does_not_import_profiled_inventory_or_adapter() -> None:
+    current_runtime_modules = (
+        "cli.py",
+        "workflow.py",
+        "vendor_adapter.py",
+        "fleet.py",
+        "buildkite_deployment.py",
+        "ephemeral_staging.py",
+    )
+    for filename in current_runtime_modules:
+        source = (ROOT / "src/network_change_delivery" / filename).read_text(
+            encoding="utf-8"
+        )
+        assert "profile_inventory" not in source
+        assert "profile_read_only_adapter" not in source

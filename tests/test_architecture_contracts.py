@@ -368,6 +368,7 @@ def test_authority_catalog_assigns_every_property_exactly_once() -> None:
         assignment.property: assignment.owner for assignment in AUTHORITY_ASSIGNMENTS
     }
     assert by_property[AuthorityProperty.VLAN_VID] is AuthorityOwner.NETBOX
+    assert by_property[AuthorityProperty.DEVICE_TYPE_METADATA] is AuthorityOwner.NETBOX
     assert (
         by_property[AuthorityProperty.VLAN_DEPLOYMENT_ATTACHMENT] is AuthorityOwner.GIT
     )

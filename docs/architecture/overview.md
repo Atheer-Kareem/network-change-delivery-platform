@@ -82,9 +82,10 @@ policy, and external observations must be normalized before policy consumes them
 Detour B1 adds an architecture-only
 [multi-device contract](multi-device-architecture-contract.md) that separates
 NOS, role, capability, automation behavior, CML realization, management identity,
-and accepted managed-state references. It is not integrated with current
-execution. ADR 0024 remains authoritative for the current two-router live and
-disposable reference environment.
+and accepted managed-state references. Detour B2 adds a parallel
+[profile-bound read-only inventory and adapter](profile-bound-read-only-inventory.md)
+without changing the v1 planning or write path. ADR 0024 remains authoritative
+for the current two-router live and disposable reference environment.
 
 ## Implemented now
 

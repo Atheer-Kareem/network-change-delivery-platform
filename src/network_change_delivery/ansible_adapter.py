@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import ansible_runner
 import yaml
@@ -24,6 +24,7 @@ from network_change_delivery.models import (
     InterfaceState,
     InventoryDevice,
 )
+from network_change_delivery.read_only_target import ReadOnlyConnectionTarget
 from network_change_delivery.secrets import DeviceCredentials
 from network_change_delivery.snmp_provisioning import (
     SecretRenderedArtifact,
@@ -271,7 +272,7 @@ def verify_deployment_ansible_runtime(
         raise DeploymentRuntimeError from None
 
 
-def _known_hosts_query(device: InventoryDevice) -> str:
+def _known_hosts_query(device: ReadOnlyConnectionTarget) -> str:
     return device.host if device.port == 22 else f"[{device.host}]:{device.port}"
 
 
@@ -292,7 +293,7 @@ def _fingerprint_from_line(line: str) -> str | None:
 
 
 def verify_existing_host_trust(
-    device: InventoryDevice, known_hosts: Path | None = None
+    device: ReadOnlyConnectionTarget, known_hosts: Path | None = None
 ) -> str:
     """Confirm a known_hosts entry exists without discovering or trusting a key."""
     known_hosts = known_hosts or _known_hosts_path()
@@ -327,7 +328,11 @@ class AnsibleRunnerCiscoAdapter:
         self._known_hosts = known_hosts
 
     @staticmethod
-    def _inventory(device: InventoryDevice) -> dict[str, Any]:
+    def _inventory(
+        device: ReadOnlyConnectionTarget,
+        *,
+        ssh_type: Literal["libssh", "paramiko"] = "paramiko",
+    ) -> dict[str, Any]:
         return {
             "all": {
                 "hosts": {
@@ -336,7 +341,7 @@ class AnsibleRunnerCiscoAdapter:
                         "ansible_port": device.port,
                         "ansible_connection": "ansible.netcommon.network_cli",
                         "ansible_network_os": "cisco.ios.ios",
-                        "ansible_network_cli_ssh_type": "paramiko",
+                        "ansible_network_cli_ssh_type": ssh_type,
                     }
                 }
             }
@@ -344,18 +349,20 @@ class AnsibleRunnerCiscoAdapter:
 
     def _run(
         self,
-        device: InventoryDevice,
+        device: ReadOnlyConnectionTarget,
         credentials: DeviceCredentials,
         playbook: str,
         *,
         extravars: dict[str, Any] | None = None,
+        ssh_type: Literal["libssh", "paramiko"] = "paramiko",
+        profile_bound: bool = False,
     ) -> tuple[object, dict[str, dict[str, Any]]]:
         if self._known_hosts is None:
             verify_existing_host_trust(device)
         else:
             verify_existing_host_trust(device, self._known_hosts)
         selected: dict[str, dict[str, Any]] = {}
-        inventory = self._inventory(device)
+        inventory = self._inventory(device, ssh_type=ssh_type)
 
         def handle_event(event: dict[str, Any]) -> None:
             event_kind = event.get("event")
@@ -410,6 +417,14 @@ class AnsibleRunnerCiscoAdapter:
                     "ANSIBLE_PERSISTENT_CONTROL_PATH_DIR": str(private_data / "pc"),
                     "NCDP_DEVICE_USERNAME": credentials.username,
                     "NCDP_DEVICE_PASSWORD": credentials.password,
+                    **(
+                        {
+                            "ANSIBLE_HOST_KEY_AUTO_ADD": "False",
+                            "ANSIBLE_LIBSSH_HOST_KEY_AUTO_ADD": "False",
+                        }
+                        if profile_bound
+                        else {}
+                    ),
                     **({"HOME": str(runner_home)} if runner_home is not None else {}),
                 },
                 event_handler=handle_event,
@@ -424,10 +439,42 @@ class AnsibleRunnerCiscoAdapter:
         credentials: DeviceCredentials,
     ) -> tuple[InterfaceState, ...]:
         """Collect identity, interface, and bounded L3 state read-only."""
-        runner, selected = self._run(
+        return self._discover_read_only(
             device,
             credentials,
+            ssh_type="paramiko",
+            profile_bound=False,
+        )
+
+    def discover_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        *,
+        ssh_type: Literal["libssh", "paramiko"],
+    ) -> tuple[InterfaceState, ...]:
+        """Collect through one explicit B2 profile-bound Cisco SSH backend."""
+        return self._discover_read_only(
+            target,
+            credentials,
+            ssh_type=ssh_type,
+            profile_bound=True,
+        )
+
+    def _discover_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        *,
+        ssh_type: Literal["libssh", "paramiko"],
+        profile_bound: bool,
+    ) -> tuple[InterfaceState, ...]:
+        runner, selected = self._run(
+            target,
+            credentials,
             "collect_interface_state.yml",
+            ssh_type=ssh_type,
+            profile_bound=profile_bound,
         )
         if (
             getattr(runner, "status", None) != "successful"
@@ -477,7 +524,7 @@ class AnsibleRunnerCiscoAdapter:
                 exists=True,
                 description=item.get("description"),
                 protected=_normalized_name(str(item["name"]))
-                in {_normalized_name(name) for name in device.protected_interfaces},
+                in {_normalized_name(name) for name in target.protected_interfaces},
                 enabled=item.get("enabled"),
                 ipv4_addresses=addresses_by_name.get(str(item["name"]), ()),
             )
@@ -493,6 +540,33 @@ class AnsibleRunnerCiscoAdapter:
     ) -> InterfaceState:
         """Return normalized fresh state for exactly one requested interface."""
         states = self.discover(device, credentials)
+        matches = [state for state in states if state.interface == interface]
+        if len(matches) == 1:
+            return matches[0]
+        hostname = states[0].observed_hostname if states else ""
+        version = states[0].software_version if states else None
+        return InterfaceState(
+            observed_hostname=hostname,
+            software_version=version,
+            interface=interface,
+            exists=False,
+            protected=False,
+        )
+
+    def collect_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        interface: str,
+        *,
+        ssh_type: Literal["libssh", "paramiko"],
+    ) -> InterfaceState:
+        """Return one exact interface through the selected B2 Cisco backend."""
+        states = self.discover_read_only(
+            target,
+            credentials,
+            ssh_type=ssh_type,
+        )
         matches = [state for state in states if state.interface == interface]
         if len(matches) == 1:
             return matches[0]

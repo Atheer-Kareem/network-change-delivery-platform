@@ -115,5 +115,12 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
+    - **Detour B — B1 complete; B2 implemented for review:** B1 accepts the
+      additive multi-device profile, management, authority, and managed-state
+      contracts. B2 adds a parallel profile-aware read-only NetBox provider,
+      LIVE-only target projection, and exact profile-bound Cisco/Junos
+      collection without changing v1 delivery. B3 is next: separately reviewed
+      NetBox metadata migration, four-device identity/realization work, and
+      explicit staging-endpoint authority.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

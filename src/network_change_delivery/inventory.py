@@ -51,41 +51,8 @@ class ManagedInventoryProvider(Protocol):
         """Resolve every active device carrying the ncdp-managed tag."""
 
 
-class LocalYamlInventoryProvider:
-    """Temporary YAML-backed inventory implementation."""
-
-    def __init__(self, path: Path) -> None:
-        self._path = path
-
-    def resolve(self, target: str, interface: str | None = None) -> InventoryDevice:
-        """Resolve exactly one named device or fail closed."""
-        del interface
-        try:
-            payload = yaml.safe_load(self._path.read_text(encoding="utf-8"))
-            document = InventoryDocument.model_validate(payload)
-        except (OSError, yaml.YAMLError, ValueError) as error:
-            raise InventoryError("local inventory is invalid or unreadable") from error
-        matches = [device for device in document.devices if device.name == target]
-        if len(matches) != 1:
-            raise InventoryError(f"target {target!r} does not resolve exactly once")
-        return matches[0].model_copy(
-            update={
-                "inventory_source": "local_yaml",
-                "inventory_object_id": None,
-                "inventory_interface_object_id": None,
-            }
-        )
-
-
-class NetBoxInventoryProvider:
-    """Read-only NetBox REST API inventory adapter."""
-
-    _DEVICE_PATH = "/api/dcim/devices/"
-    _INTERFACE_PATH = "/api/dcim/interfaces/"
-    _PLATFORM_MAPPING: ClassVar[dict[str, tuple[str, int]]] = {
-        "cisco-ios-xe": ("cisco_iosxe", 22),
-        "juniper-junos": ("junos", 830),
-    }
+class NetBoxReadOnlyAPI:
+    """Shared secret-safe GET-only NetBox transport for inventory resolvers."""
 
     def __init__(
         self,
@@ -205,6 +172,57 @@ class NetBoxInventoryProvider:
             raise InventoryError("NetBox returned invalid JSON or schema")
         return results
 
+    @staticmethod
+    def _tag_slugs(value: object) -> set[str]:
+        if not isinstance(value, list) or any(
+            not isinstance(tag, dict) for tag in value
+        ):
+            raise InventoryError("NetBox returned invalid JSON or schema")
+        slugs: set[str] = set()
+        for tag in value:
+            slug = tag.get("slug")
+            if not isinstance(slug, str) or not slug:
+                raise InventoryError("NetBox returned invalid JSON or schema")
+            slugs.add(slug)
+        return slugs
+
+
+class LocalYamlInventoryProvider:
+    """Temporary YAML-backed inventory implementation."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def resolve(self, target: str, interface: str | None = None) -> InventoryDevice:
+        """Resolve exactly one named device or fail closed."""
+        del interface
+        try:
+            payload = yaml.safe_load(self._path.read_text(encoding="utf-8"))
+            document = InventoryDocument.model_validate(payload)
+        except (OSError, yaml.YAMLError, ValueError) as error:
+            raise InventoryError("local inventory is invalid or unreadable") from error
+        matches = [device for device in document.devices if device.name == target]
+        if len(matches) != 1:
+            raise InventoryError(f"target {target!r} does not resolve exactly once")
+        return matches[0].model_copy(
+            update={
+                "inventory_source": "local_yaml",
+                "inventory_object_id": None,
+                "inventory_interface_object_id": None,
+            }
+        )
+
+
+class NetBoxInventoryProvider(NetBoxReadOnlyAPI):
+    """Read-only NetBox REST API inventory adapter."""
+
+    _DEVICE_PATH = "/api/dcim/devices/"
+    _INTERFACE_PATH = "/api/dcim/interfaces/"
+    _PLATFORM_MAPPING: ClassVar[dict[str, tuple[str, int]]] = {
+        "cisco-ios-xe": ("cisco_iosxe", 22),
+        "juniper-junos": ("junos", 830),
+    }
+
     def resolve(self, target: str, interface: str | None = None) -> InventoryDevice:
         """Resolve one exact eligible device and complete protection metadata."""
         payload = self._get(self._DEVICE_PATH, params={"name": target, "limit": 2})
@@ -290,20 +308,6 @@ class NetBoxInventoryProvider:
             inventory_object_id=f"netbox:dcim.device:{object_id}",
             inventory_interface_object_id=interface_object_id,
         )
-
-    @staticmethod
-    def _tag_slugs(value: object) -> set[str]:
-        if not isinstance(value, list) or any(
-            not isinstance(tag, dict) for tag in value
-        ):
-            raise InventoryError("NetBox returned invalid JSON or schema")
-        slugs: set[str] = set()
-        for tag in value:
-            slug = tag.get("slug")
-            if not isinstance(slug, str) or not slug:
-                raise InventoryError("NetBox returned invalid JSON or schema")
-            slugs.add(slug)
-        return slugs
 
     def resolve_fleet(
         self, selector: NetBoxFleetSelector

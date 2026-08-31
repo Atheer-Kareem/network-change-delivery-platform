@@ -3,9 +3,11 @@
 ## Status and compatibility boundary
 
 Detour B1 defines additive architecture contracts for a future multi-device
-reference environment. It does not integrate those contracts into current
-inventory resolution, planning, rendering, adapters, protected delivery,
-Terraform, CML, observability, or promotion.
+reference environment. Detour B2 connects factual NetBox metadata and exact
+automation profiles only through a parallel
+[read-only inventory and adapter path](profile-bound-read-only-inventory.md).
+Neither increment integrates the contracts into current planning, rendering,
+write adapters, protected delivery, Terraform, CML, observability, or promotion.
 
 [ADR 0024](../adr/0024-two-router-live-and-ephemeral-staging.md) remains the
 current truth: the managed live and disposable reference environments contain
@@ -16,10 +18,10 @@ or deployment authority.
 Current `InventoryDevice`, `DeploymentPlan`, fleet-plan/member,
 `ChangeRecord`, `FleetChangeRecord`, `ChangeAuditRecord`,
 `ConfigurationObservationRecord`, and promotion schemas remain v1. Their
-serialized fields and canonical digest inputs are unchanged. The B1 types live
-in a separate module and are not imported by current execution paths. B2 must
-make any integration an explicit versioned migration rather than silently
-expanding a v1 platform field.
+serialized fields and canonical digest inputs are unchanged. The B1 types and
+B2 profiled inventory live outside current execution paths. B2 does not expand
+the v1 platform field or synthesize legacy `InventoryDevice` values for IOSv or
+IOSvL2.
 
 ## Independent identity dimensions
 
@@ -75,11 +77,15 @@ is mandatory for every profile. IOS-XE and Junos profiles do not inherit the
 IOSv possibility. B1 changes no Ansible, Paramiko, libssh, OpenSSH, known-host,
 or Junos transport behavior.
 
-The current Cisco implementation explicitly sets
+The current v1 Cisco implementation explicitly sets
 `ansible_network_cli_ssh_type=paramiko`. Documentation describing that current
 path as libssh was incorrect; B1 corrects the documentation without changing
-the implementation. B2 must validate the exact IOSv image through the real
-adapter before selecting any profile-local compatibility behavior.
+the implementation. B2's separate read-only catalog selects libssh for
+`cat8000v_iosxe`, Paramiko only for `iosv_159_3_m12`, and libssh for
+`iosvl2_2020`. It never selects Ansible's automatic backend fallback. Strict
+host trust and disabled auto-add remain mandatory; no KEX or host-key algorithm
+is relaxed globally. Real-adapter acceptance remains bounded by already
+available credentials and trust.
 
 ## Management binding
 
@@ -130,10 +136,12 @@ never receive the LIVE endpoint merely because NetBox exposes it as
 `primary_ip4`.
 
 NetBox remains authoritative for both IP objects and their interface assignment.
-The LIVE endpoint may remain the device's NetBox primary IPv4. The STAGING
-endpoint is an explicitly admitted alternate/staging address. B1 deliberately
-does not guess whether the later NetBox implementation should use tags, custom
-fields, roles, or another reviewed mechanism.
+The LIVE endpoint remains the device's exact NetBox primary IPv4. The STAGING
+endpoint is an explicitly admitted alternate/staging address. B2 freezes
+IP-address tags `ncdp-management-live` and `ncdp-management-staging`, plus
+physical-interface tag `ncdp-management-attachment`, as the closed semantic
+metadata. The current objects do not carry those tags; B3 owns their creation
+and assignment.
 
 ## CML realization profiles
 
@@ -168,7 +176,7 @@ Every managed property has one authority:
 
 | Authority | Properties |
 |---|---|
-| NetBox | Stable device/interface identity, platform/NOS metadata, role, physical topology/cabling, management/IPAM relationships, VLAN object identity, VID, canonical VLAN name, prefix/IP identity |
+| NetBox | Stable device/interface identity, platform/NOS and device-type metadata, role, physical topology/cabling, management/IPAM relationships, VLAN object identity, VID, canonical VLAN name, prefix/IP identity |
 | Git | Managed device-configuration intent, VLAN deployment and attachment behavior, access/trunk/native/allowed behavior, gateway/subinterface deployment, OSPF desired behavior, ACL/security flow policy, assurance policy, profile behavior catalog |
 | OpenBao | Credentials keyed to stable device identity |
 | Device | Observed reality only |

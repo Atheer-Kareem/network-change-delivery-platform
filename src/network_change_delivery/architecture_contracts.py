@@ -657,6 +657,7 @@ class AuthorityProperty(StrEnum):
     STABLE_DEVICE_IDENTITY = "stable_device_identity"
     STABLE_INTERFACE_IDENTITY = "stable_interface_identity"
     DEVICE_PLATFORM_NOS_METADATA = "device_platform_nos_metadata"
+    DEVICE_TYPE_METADATA = "device_type_metadata"
     DEVICE_ROLE = "device_role"
     PHYSICAL_TOPOLOGY_CABLING = "physical_topology_cabling"
     MANAGEMENT_IPAM_RELATIONSHIPS = "management_ipam_relationships"
@@ -696,6 +697,7 @@ AUTHORITY_ASSIGNMENTS: tuple[AuthorityAssignment, ...] = tuple(
                 AuthorityProperty.STABLE_DEVICE_IDENTITY,
                 AuthorityProperty.STABLE_INTERFACE_IDENTITY,
                 AuthorityProperty.DEVICE_PLATFORM_NOS_METADATA,
+                AuthorityProperty.DEVICE_TYPE_METADATA,
                 AuthorityProperty.DEVICE_ROLE,
                 AuthorityProperty.PHYSICAL_TOPOLOGY_CABLING,
                 AuthorityProperty.MANAGEMENT_IPAM_RELATIONSHIPS,

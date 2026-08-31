@@ -37,6 +37,14 @@ trust keys. Collection uses `cisco.ios.ios_facts`,
 normalizes only identity, IOS XE version, interface existence, description,
 enabled state, and bounded IP-address evidence.
 
+That remains the accepted v1 collection and write behavior. Detour B2 does not
+migrate it. A separate
+[profile-bound read-only adapter](profile-bound-read-only-inventory.md) reuses
+the bounded collection normalization while selecting Paramiko explicitly for
+all three reviewed Cisco profiles. It selects neither Ansible `auto` nor a
+fallback, keeps strict pre-existing host trust, disables auto-add, admits no
+algorithm relaxation, and exposes no write surface.
+
 Planning fails closed unless the target resolves exactly once, platform is
 `cisco_iosxe`, credentials and trusted authenticated access are available,
 observed hostname matches inventory, the interface exists, its description is

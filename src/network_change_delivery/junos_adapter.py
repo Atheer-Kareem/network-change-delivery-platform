@@ -37,6 +37,7 @@ from network_change_delivery.models import (
     InventoryDevice,
     JunosConfigArtifact,
 )
+from network_change_delivery.read_only_target import ReadOnlyConnectionTarget
 from network_change_delivery.secrets import DeviceCredentials
 from network_change_delivery.snmp_provisioning import (
     SecretRenderedArtifact,
@@ -79,7 +80,7 @@ _JUNOS_SNMP_ENGINE_ID_OCTETS = re.compile(r"([0-9A-Fa-f]{2}(?: [0-9A-Fa-f]{2}){4
 
 
 def _project_junos_endpoint_trust(
-    device: InventoryDevice, source: Path, directory: Path
+    device: ReadOnlyConnectionTarget, source: Path, directory: Path
 ) -> Path:
     """Project one already-trusted host key onto a run-scoped NETCONF endpoint."""
     if device.port == 22:
@@ -159,7 +160,7 @@ def _project_junos_endpoint_trust(
 
 
 def _junos_session_known_hosts(
-    device: InventoryDevice, source: Path, directory: Path
+    device: ReadOnlyConnectionTarget, source: Path, directory: Path
 ) -> Path:
     """Prefer exact endpoint trust and otherwise project one private base key."""
     try:
@@ -439,8 +440,17 @@ class JunosPyEZAdapter:
         self._known_hosts = known_hosts
 
     @contextmanager
-    def _session(self, device: InventoryDevice, credentials: DeviceCredentials) -> Any:
-        if device.platform != "junos" or device.port != 830:
+    def _session(
+        self,
+        device: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        *,
+        profile_bound: bool = False,
+    ) -> Any:
+        if (
+            not profile_bound
+            and (not isinstance(device, InventoryDevice) or device.platform != "junos")
+        ) or device.port != 830:
             raise ProviderError("Junos requires the approved NETCONF port 830")
         with tempfile.TemporaryDirectory(prefix="ncdp-junos-ssh-") as directory:
             session_directory = Path(directory)
@@ -512,7 +522,26 @@ class JunosPyEZAdapter:
     def discover(
         self, device: InventoryDevice, credentials: DeviceCredentials
     ) -> tuple[InterfaceState, ...]:
-        with self._session(device, credentials) as connection:
+        return self._discover_read_only(device, credentials, profile_bound=False)
+
+    def discover_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+    ) -> tuple[InterfaceState, ...]:
+        """Collect through the B2 profile-admitted read-only NETCONF boundary."""
+        return self._discover_read_only(target, credentials, profile_bound=True)
+
+    def _discover_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        *,
+        profile_bound: bool,
+    ) -> tuple[InterfaceState, ...]:
+        with self._session(
+            target, credentials, profile_bound=profile_bound
+        ) as connection:
             hostname = str(connection.facts.get("hostname") or "")
             version = str(connection.facts.get("version") or "") or None
             try:
@@ -525,7 +554,7 @@ class JunosPyEZAdapter:
         if not hostname or operational_reply is None or config_reply is None:
             raise ProviderError("Junos read-only provider result was incomplete")
         protected = {
-            "".join(name.split()).casefold() for name in device.protected_interfaces
+            "".join(name.split()).casefold() for name in target.protected_interfaces
         }
         try:
             configured: dict[str, tuple[str | None, bool, tuple[str, ...]]] = {}
@@ -589,6 +618,25 @@ class JunosPyEZAdapter:
         interface: str,
     ) -> InterfaceState:
         states = self.discover(device, credentials)
+        matches = [state for state in states if state.interface == interface]
+        if len(matches) == 1:
+            return matches[0]
+        return InterfaceState(
+            observed_hostname=states[0].observed_hostname if states else "",
+            software_version=states[0].software_version if states else None,
+            interface=interface,
+            exists=False,
+            protected=False,
+        )
+
+    def collect_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        interface: str,
+    ) -> InterfaceState:
+        """Return one exact interface through the B2 read-only NETCONF path."""
+        states = self.discover_read_only(target, credentials)
         matches = [state for state in states if state.interface == interface]
         if len(matches) == 1:
             return matches[0]

@@ -220,6 +220,8 @@ def test_runner_uses_the_shared_effective_collection_path(
     assert captured["envvars"]["NCDP_DEVICE_USERNAME"] == "user"
     assert captured["envvars"]["NCDP_DEVICE_PASSWORD"] == "secret"
     assert captured["envvars"]["ANSIBLE_HOST_KEY_CHECKING"] == "True"
+    assert "ANSIBLE_HOST_KEY_AUTO_ADD" not in captured["envvars"]
+    assert "ANSIBLE_LIBSSH_HOST_KEY_AUTO_ADD" not in captured["envvars"]
     assert captured["envvars"]["ANSIBLE_PERSISTENT_CONTROL_PATH_DIR"].endswith("/pc")
     assert len(captured["envvars"]["ANSIBLE_PERSISTENT_CONTROL_PATH_DIR"]) < 90
     assert os.environ["NCDP_DEVICE_USERNAME"] == "parent-user"

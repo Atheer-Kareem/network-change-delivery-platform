@@ -40,9 +40,9 @@ execution path:
   device has exactly one of each on the same stable management interfaces, with
   distinct NetBox IP identities and addresses. Normal targeting may resolve
   only LIVE; an explicit staging realization/context may resolve only STAGING.
-- Legacy SSH compatibility can only be profile-local, retains strict host-key
-  verification, and is recorded for exact IOSv as requiring B2 real-adapter
-  acceptance. B1 changes no transport.
+- SSH policy requires strict pre-existing host-key verification and contains no
+  authority for algorithm relaxation. B1 changes no transport; B2 transport
+  admission is recorded separately by ADR 0029.
 - NetBox, Git, OpenBao, devices, and Terraform/CML state each receive the single
   authorities recorded in the
   [multi-device architecture contract](../architecture/multi-device-architecture-contract.md).
@@ -84,8 +84,8 @@ rewritten.
 
 Detour B gains a fail-closed architecture vocabulary without changing current
 execution. IOS routing and IOS switching can share one real NOS while retaining
-different reviewed behavior and realization profiles. IOSv legacy compatibility
-cannot leak into IOS-XE or Junos profile policy. IOSvL2 uses routed `Gi0/0` for
+different reviewed behavior and realization profiles. No profile can select an
+SSH algorithm relaxation. IOSvL2 uses routed `Gi0/0` for
 preferred future management while retaining SVI capability for later data-plane
 intent. Its initial role remains access switching; `core-02` owns inter-VLAN
 routing.

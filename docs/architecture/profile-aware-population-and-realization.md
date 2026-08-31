@@ -127,8 +127,11 @@ Trust policy remains:
 - atomic publication of only the exact CML-anchored generation.
 
 The canonical profiled LIVE trust authority covers all four profiled devices.
-Oxidized remains on its independently preserved exact devices-1/2 trust
-material; B3-4 does not widen its runtime population.
+Oxidized remains on its independent exact devices-1/2 trust projection; B3-4
+does not widen its runtime population. When the Junos CML node was replaced,
+that exact-two trust was freshly CML-anchored to the new node UUID as required
+by ADR 0020. The observed key bytes remained the same, but realization-bound
+metadata was republished.
 
 ## Deferred authority migration
 
@@ -232,4 +235,6 @@ Observability admits the exact four-device persistent CML population but still
 projects only the legacy `ncdp-managed` devices 1/2. Oxidized, SNMP, v1 fleet,
 and protected write authority likewise remain exact-two. Automatic disposable
 CML and protected delivery remain paused, and the Terraform staging topology is
-unchanged.
+unchanged. Buildkite observability runtime and synthetic SNMPv3 runtime checks
+are separately paused until explicit operator decisions integrate them with the
+expanded profiled topology; the implementations remain intact.

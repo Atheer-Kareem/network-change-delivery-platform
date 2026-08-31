@@ -56,7 +56,10 @@ record binds the network-visible key to the exact CML lab/node, CML-controlled
 hostname/address evidence, stable NetBox device, management endpoint, automation
 profile, and realization profile. Ambient user trust, network-only discovery,
 auto-add, fallback, disabled host checking, and algorithm relaxation are not
-authority. Existing Oxidized exact-two trust remains byte-for-byte unchanged.
+authority. Oxidized remains an exact devices-1/2 projection. Replacement of the
+Junos CML node requires fresh exact-two CML-anchored enrollment: its unchanged
+key bytes are rebound to the new realization UUID in Oxidized trust metadata,
+without admitting devices 8/9.
 
 The legacy `ncdp-managed` inventory, v1 planning/write schema, Oxidized,
 management-service target population, SNMP authority, and protected deployment

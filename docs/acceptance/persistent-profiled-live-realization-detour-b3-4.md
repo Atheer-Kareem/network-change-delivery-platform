@@ -75,10 +75,25 @@ before observing each network-visible key.
 Known-host generation digest:
 `sha256:06774193fc6f1b05b7cf87b62d11abbc7fbb6741f3cfef0444d0842f5cd5c305`.
 
-No trust re-enrollment of the existing devices, ambient trust, network-only
-decision, auto-add, disabled checking, fallback, or algorithm override was
-used. The existing Oxidized exact-two known-host and metadata bytes remained
-unchanged.
+The separate profiled trust did not re-enroll or mutate the existing device
+keys. Ambient trust, network-only decisions, auto-add, disabled checking,
+fallback, and algorithm overrides were not used. Because the Junos CML
+realization was replaced, the independent Oxidized exact-two CML-anchored trust
+was explicitly re-enrolled against its new node UUID. The key bytes and
+exact-two known-host digest remained unchanged, while realization-bound
+metadata changed from the retired UUID to the current UUID. Devices 8/9 were
+not added to Oxidized.
+
+Oxidized reconciliation evidence:
+
+- Junos node UUID: `3ee87d9c-09b5-4ed2-a655-092bf89b1190`;
+- Junos key: `ssh-ed25519`
+  `SHA256:kxjA32myBRJG1OUkKvnEeQim2wUvpW/zoj5WpOd+MgI`;
+- exact-two known-host digest:
+  `sha256:5b53c22dc446a427adc79c1d64a975a04baa2649eeb7b45ba73deea03edd24c9`;
+- strict authentication and one real collection each for core and Junos:
+  **PASS**;
+- readiness and exact devices-1/2 source population: **PASS**.
 
 ## Inventory and read-only acceptance
 
@@ -103,8 +118,12 @@ credential selection:
 
 ## Unchanged boundaries
 
-Legacy v1 schemas, digests, `ncdp-managed`, Oxidized population and trust,
+Legacy v1 schemas, digests, `ncdp-managed`, Oxidized population,
 Prometheus/Blackbox target population, SNMP authority, protected device-write
 authority, Terraform staging topology, VLAN/OSPF/ACL intent, disposable CML
 staging, and protected delivery are not expanded. Automatic disposable staging
 and protected delivery remain paused pending an explicit operator decision.
+Buildkite observability runtime and synthetic SNMPv3 runtime validation are also
+temporarily paused until the operator explicitly decides to integrate each with
+the expanded profiled topology; their implementations and historical evidence
+remain present.

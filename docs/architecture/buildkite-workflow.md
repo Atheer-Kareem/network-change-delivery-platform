@@ -5,7 +5,10 @@ integration, offline network assurance, immutable promotion, human
 authorization, and protected deployment. During Detour B3, automatic disposable
 CML and the protected-delivery group are temporarily paused together while the
 four-device Terraform realization is incomplete. Quality validation, Terraform
-static validation, and PR Batfish candidate assurance remain active.
+static validation, and PR Batfish candidate assurance remain active. The
+observability runtime and synthetic SNMPv3 runtime checks are separately paused
+until explicit operator decisions integrate them with the expanded profiled
+topology.
 
 ```text
 runtime pull request                 non-PR main during B3 pause
@@ -30,14 +33,16 @@ population.
 
 There is no visible `quality` group. `quality-env` builds the frozen
 `quality-base` environment used only by validations that consume it: Ruff lint,
-Ruff format, ordinary pytest, ansible-lint, package build, applicable
-observability/SNMP runtime validation, and the containerized half of the NCDP
-pipeline contract. Those checks can run independently after the image exists.
+Ruff format, ordinary pytest, ansible-lint, package build, and the containerized
+half of the NCDP pipeline contract. Those checks can run independently after
+the image exists.
 
 Committed-diff integrity, Terraform CML static validation, SNMP module
 reproducibility, and Buildkite-definition validation are independent roots.
-Change-aware observability and SNMP validations may be skipped when their
-reviewed paths do not change.
+The preserved observability-runtime and synthetic-SNMPv3 definitions are
+commented out, not deleted or bypassed. Restore either only by explicit operator
+decision when that runtime is being integrated with the expanded profiled
+topology; neither restoration is tied to a fixed Detour B increment.
 
 Two visible contracts have distinct meanings:
 

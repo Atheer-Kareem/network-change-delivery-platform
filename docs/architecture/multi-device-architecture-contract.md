@@ -6,10 +6,11 @@ Detour B1 defines additive architecture contracts for a multi-device
 reference environment. Detour B2 connects factual NetBox metadata and exact
 automation profiles only through a parallel
 [read-only inventory and adapter path](profile-bound-read-only-inventory.md).
-Detour B3-5 accepts the four-device persistent LIVE realization and its exact
-NetBox data-plane/IPAM authority without
-integrating classic IOS into current planning, rendering, write adapters,
-protected delivery, Terraform, or promotion.
+Detour B3-4 accepts the four-device persistent LIVE realization, and B3-5
+accepts its exact NetBox data-plane/IPAM authority. B4-1 consumes that factual
+authority through an additive routed-underlay desired-state vertical without
+integrating classic IOS into legacy planning, write adapters, protected
+delivery, Terraform, or promotion.
 
 [ADR 0031](../adr/0031-four-device-persistent-live-realization.md) is current
 truth for persistent LIVE. ADR 0024 remains historical truth for the legacy
@@ -379,12 +380,42 @@ NetBox owns the exact allocation hierarchy established by B3-5:
 The routed interface IP assignments are authoritative NetBox/IPAM
 relationships, not claims about current device running configuration.
 
+### Current B4-1 routed-underlay proposal
+
+Git now owns one narrow `routed_underlay` managed ownership envelope over the
+three routed prefixes and six stable data-plane interface identities above. Its
+normalized fields are only routed L3 presence, the interface address/prefix,
+and admin-enabled state. It does not own descriptions, operational status,
+management interfaces, OSPF, VLANs, ACLs, or unrelated configuration.
+
+`RoutedUnderlayIntent.from_reference_allocation()` accepts only the exact
+`ReferenceDataPlaneAllocation`; each link and endpoint in the intent must equal
+the frozen resolved NetBox copy. `RoutedUnderlayDesiredState` then normalizes
+the six interfaces independently of vendor configuration text and binds them to
+a deterministic digest. This proposed state is D1 only. It is not D0 and is not
+an `AcceptedManagedStateRef`.
+
+The read-only observation path resolves the exact profiled LIVE population,
+loads credentials by stable NetBox device identity, projects only each LIVE
+target, and calls `ProfileReadOnlyAdapter.collect()` for the exact six
+interfaces. Cisco IOS XE/IOS and Junos renderers produce deterministic proposed
+fragments, but B4-1 adds no execution method and grants no write authority.
+
+The offline candidate contains all four profiled nodes but only core, Junos,
+and transit participate in the routed underlay. Batfish verifies exact parse
+and node populations, the six interface prefixes, two participants per `/30`,
+three direct-neighbor flows, access-switch exclusion, management-address
+exclusion, and absence of OSPF. The candidate did not require a separate
+layer-1 file for directly connected reachability; its interface/prefix facts
+remain derived from the exact accepted physical and NetBox link relationships.
+See the [B4-1 acceptance record](../acceptance/routed-underlay-detour-b4-1.md).
+
 ### Still future and not configured
 
 The physical realization and NetBox allocations do not configure services.
 These items remain future reviewed increments:
 
-- applying the routed IP assignments to devices;
+- applying the B4-1 routed-underlay proposal to devices;
 - creating VLANs on devices;
 - creating IOS-XE router-on-a-stick subinterfaces on `core-02`;
 - configuring the `core-02` to `access-sw-01` trunk;

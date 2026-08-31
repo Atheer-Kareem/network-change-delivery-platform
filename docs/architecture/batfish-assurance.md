@@ -71,6 +71,32 @@ offline normalized behavior of the derived candidate. CML proves topology,
 Day-0, real IOS XE/Junos readiness, strict trust, and the read-only NCDP vendor
 paths; CML does not apply or validate the proposed candidate configuration.
 
+## B4-1 routed-underlay candidate assurance
+
+B4-1 adds a separate candidate-only assurance contract for the proposed
+four-device routed underlay. It does not alter the legacy v1 plan-bound policy
+or Buildkite pipeline. The candidate is generated from normalized D1, not from
+PR-supplied CLI, and contains exactly:
+
+- `core-02` with `10.60.0.1/30` and `10.60.0.5/30`;
+- `edge-junos-01` with `10.60.0.2/30` and `10.60.0.9/30`;
+- `transit-ios-01` with `10.60.0.6/30` and `10.60.0.10/30`; and
+- `access-sw-01` as a recognized node with no routed-underlay prefix.
+
+The typed evaluator requires all four files to parse, exact-four node
+recognition, zero initialization issues, exact-six interface-prefix facts,
+exactly two participants on each `/30`, and successful direct-neighbor flows
+from core to Junos, core to transit, and Junos to transit. It separately
+requires no management address and no OSPF process. Directly connected
+reachability succeeded without a separate layer-1 snapshot file; Batfish used
+the exact interface/prefix candidate derived from the accepted link authority.
+
+The pinned local run passed on PyBatfish `2025.7.7.2423` and Batfish server
+`2026.07.20.3565`. The
+[B4-1 acceptance record](../acceptance/routed-underlay-detour-b4-1.md) binds the
+candidate snapshot and proposed D1 digests. This is proposal evidence only and
+is not accepted D0 or permission to write devices.
+
 ## Assurance-to-promotion handoff
 
 Immutable promotion waits for both CML staging and Batfish assurance. It

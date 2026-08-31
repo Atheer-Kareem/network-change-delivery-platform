@@ -3,8 +3,10 @@
 ## Compatibility boundary
 
 Detour B3-1 introduced repository-only authority contracts. B3-2 through B3-5
-then applied the reviewed NetBox, OpenBao, persistent CML, and LIVE trust
-boundaries without changing v1 planning or write behavior.
+then applied the reviewed NetBox, OpenBao, persistent CML, LIVE trust, and
+data-plane IPAM boundaries without changing v1 planning or write behavior.
+B4-1 adds an exact read-only routed-underlay intent/observation/assurance path;
+it still does not broaden any write path.
 
 The two inventory populations are intentionally different:
 
@@ -213,6 +215,24 @@ switching, and security verticals. B3-5 allocates no loopback address, VLAN
 gateway, or endpoint address and applies no data-plane configuration to a
 device. Exact IDs and verification evidence are in the
 [B3-5 acceptance record](../acceptance/data-plane-authority-detour-b3-5.md).
+
+## B4-1 routed-underlay read-only path
+
+The first managed service vertical consumes, rather than duplicates,
+`ReferenceDataPlaneAllocation`. `RoutedUnderlayIntent` binds the exact three
+links and six interface/IP identities to admin-up intent. Its
+`ManagedOwnershipEnvelope` owns only routed L3 presence, exact address/prefix,
+and admin-enabled state on stable interfaces belonging to devices 1, 2, and 8.
+`access-sw-01`, all management interfaces, and every VLAN/OSPF/ACL property are
+outside the envelope.
+
+Current O is collected through exact profiled LIVE targets and the existing
+collection-only adapters. The vendor-independent D1 digest excludes rendered
+text. IOS XE, classic IOS, and Junos renderings are pure candidate artifacts;
+neither the vertical nor `ProfileReadOnlyAdapter` exposes execution. Offline
+Batfish assurance uses an exact-four snapshot so that `access-sw-01` exclusion
+is positively checked rather than assumed. D0 persistence and live application
+remain deferred.
 
 ## B3-3 OpenBao and pipeline state
 

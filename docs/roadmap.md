@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — complete through B3-5:** B1 accepts the
+    - **Detour B — complete through B4-1:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -148,5 +148,11 @@ acceptance records.
       network-device data-plane configuration is applied. Four-device
       disposable STAGING realization and STAGING adapter
       acceptance remain deferred until explicit operator restoration is useful.
+      B4-1 turns the three routed-link allocations into the first Git-owned
+      service intent: exact read-only O, normalized proposed D1, deterministic
+      IOS XE/IOS/Junos rendering, and exact-four Batfish candidate assurance.
+      The observed legacy `10.6.12.0/30` on the core/Junos link remains an
+      explicit delta. No routed-underlay configuration was applied, and live
+      application remains deferred while protected delivery is disabled.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

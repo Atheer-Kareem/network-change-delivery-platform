@@ -6,7 +6,8 @@ Detour B1 defines additive architecture contracts for a multi-device
 reference environment. Detour B2 connects factual NetBox metadata and exact
 automation profiles only through a parallel
 [read-only inventory and adapter path](profile-bound-read-only-inventory.md).
-Detour B3-4 accepts the four-device persistent LIVE realization without
+Detour B3-5 accepts the four-device persistent LIVE realization and its exact
+NetBox data-plane/IPAM authority without
 integrating classic IOS into current planning, rendering, write adapters,
 protected delivery, Terraform, or promotion.
 
@@ -186,21 +187,37 @@ identity. Git owns whether and how that object is deployed on stable interfaces
 and the desired gateway, routing, security, and assurance behavior. The same
 desired property must not be independently authored in both systems.
 
-The provisional later-allocation hierarchy is:
+Detour B3-5 establishes this exact NetBox-owned allocation hierarchy:
 
 ```text
 10.60.0.0/16  NCDP data-plane parent
-├── routed transit pool
-├── VLAN 10 USERS prefix
-├── VLAN 20 SERVERS prefix
-└── loopback/router-ID pool
+├── 10.60.0.0/30   core-02 ↔ edge-junos-01
+├── 10.60.0.4/30   core-02 ↔ transit-ios-01
+├── 10.60.0.8/30   edge-junos-01 ↔ transit-ios-01
+├── 10.60.10.0/24  VLAN 10 USERS
+├── 10.60.20.0/24  VLAN 20 SERVERS
+└── 10.60.255.0/24 future loopback/router-ID allocation pool
 ```
 
-This is an allocation model, not an allocation or Git-owned IPAM source. NetBox
-will own the actual parent/sub-prefix objects, individual IP identities, and
-interface assignments. Prefix lengths, point-to-point subnets, and individual
-host/gateway addresses remain deferred to B2/B3 resolution. Git will own only
-how those resolved objects participate in VLAN, OSPF, ACL, and assurance intent.
+The three routed links have exact NetBox-owned interface assignments:
+`10.60.0.1/30` on `core-02/GigabitEthernet4`, `10.60.0.2/30` on
+`edge-junos-01/ge-0/0/0`, `10.60.0.5/30` on
+`core-02/GigabitEthernet2`, `10.60.0.6/30` on
+`transit-ios-01/GigabitEthernet0/1`, `10.60.0.9/30` on
+`edge-junos-01/ge-0/0/1`, and `10.60.0.10/30` on
+`transit-ios-01/GigabitEthernet0/2`.
+
+`NetBoxReferenceDataPlaneProvider.resolve_reference_allocation()` resolves only
+this exact tagged population through GET requests and validates the accepted
+NetBox identities, values, interface ownership, cables, and VLAN-prefix
+relationships against the closed Git-owned topology catalog. Missing, extra,
+duplicated, wrong, or swapped facts fail closed. The copied IDs and values in
+the catalog are admission evidence, not a second source of IPAM authority.
+
+No individual loopback/router-ID, VLAN gateway, or endpoint address is allocated
+yet. No routed address or VLAN has been configured on a device. Git will own
+only how these resolved objects participate in later VLAN, OSPF, ACL, and
+assurance intent.
 
 ## Logical network and realization identity
 

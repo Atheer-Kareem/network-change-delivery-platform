@@ -192,16 +192,24 @@ project dependency set. This is explicit admission, not automatic fallback.
 
 ## Bounded real-adapter result
 
-The B2 acceptance attempt used the already materialized accepted read-only
-Oxidized credential source and its private realization-anchored host trust. It
-made no configuration request.
+Existing-device acceptance used the already materialized accepted read-only
+credential source and its private realization-anchored host trust. Temporary
+IOSv and IOSvL2 acceptance used username `netdevops` and explicit isolated
+pre-existing operator trust. Every B2 operation was read-only and made no
+configuration request.
 
 | Profile | Target | Backend/evidence path | Result |
 |---|---|---|---|
 | `cat8000v_iosxe` | `core-02` | Ansible/Paramiko control; independent Netmiko/Paramiko | **PASS:** accepted key unchanged; strict trust and read-only collection passed; mismatched/empty trust failed closed |
 | `vjunos_router` | `edge-junos-01` | PyEZ/NETCONF | **PASS:** strict trust, hostname `edge-junos-01`, Junos `23.2R1.15`, 42 interfaces |
-| `iosv_159_3_m12` | temporary IOSv | independent Netmiko/Paramiko | **PASS (transport/image feasibility):** strict isolated trust, version and L3 interface commands, no algorithm override |
-| `iosvl2_2020` | temporary IOSvL2 | independent Netmiko/Paramiko | **PASS (transport/image feasibility):** strict isolated trust, version, L3 interface and VLAN commands, no algorithm override |
+| `iosv_159_3_m12` | temporary IOSv (`192.168.4.16`) | B2 Ansible/Paramiko collector; independent Netmiko/Paramiko | **PASS:** actual `ProfileReadOnlyAdapter` discovery/collection with strict isolated trust and no algorithm override |
+| `iosvl2_2020` | temporary IOSvL2 (`192.168.4.17`) | B2 Ansible/Paramiko collector; independent Netmiko/Paramiko | **PASS:** actual `ProfileReadOnlyAdapter` discovery/collection with strict isolated trust and no algorithm override |
+
+For both temporary Cisco images, the accepted B2 chain was
+`ProfileReadOnlyAdapter` to `AnsibleRunnerCiscoAdapter`, the `cisco.ios`
+collection, Ansible `network_cli`, and Paramiko. Host-key checking remained
+strict, auto-add remained disabled, and no configuration operation or
+host-key/KEX relaxation occurred.
 
 The independent feasibility run used Python 3.12.13, Netmiko 4.7.0, and
 Paramiko 4.0.0. Netmiko is deliberately not a project dependency: B2 already
@@ -210,6 +218,10 @@ enlarge the increment without improving its contract. The IOSv and IOSvL2 keys
 were copied from already-existing operator trust into isolated temporary files.
 That proves bounded transport/image compatibility only; it is not authoritative
 B3/NCDP host-trust enrollment and does not make those nodes managed devices.
+The later successful B2 Ansible/Paramiko acceptance proves the actual collector
+path, but does not change that authority boundary: `.16`, `.17`, their
+credentials, and their temporary trust files remain operator-established test
+inputs.
 
 No test required `diffie-hellman-group14-sha1`, an `ssh-rsa` compatibility
 override, trust mutation, auto-add, or weakened checking. B3 retains authority

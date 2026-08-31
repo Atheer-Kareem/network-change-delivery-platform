@@ -88,8 +88,9 @@ staging target.
 The new source is runtime-relevant, so normal PR assurance and current
 two-device disposable staging provide useful non-regression evidence. They do
 not create B2 write authority or claim four-device acceptance. Real IOSv and
-IOSvL2 backend acceptance remains bounded by existing credentials and trusted
-host keys; absence of those inputs is reported rather than bypassed.
+IOSvL2 backend acceptance remains bounded to temporary operator-established
+nodes, credentials, and pre-existing trust; it is not B3 authoritative
+onboarding.
 
 Bounded B2 acceptance passed the existing Junos PyEZ profile and the existing
 Ansible/Paramiko CAT8000V read-only control. CML-anchored verification then
@@ -103,6 +104,14 @@ configuration. B2 therefore standardizes its bounded Cisco Ansible collector
 on Paramiko and removes pylibssh from the project dependency set. This is an
 exact selection, not fallback. No algorithm exception was needed or admitted.
 
+The actual B2 read-only path subsequently passed against the exact temporary
+IOSv 15.9(3)M12 and IOSvL2 2020 images: `ProfileReadOnlyAdapter` dispatched to
+`AnsibleRunnerCiscoAdapter`, the `cisco.ios` collection, Ansible `network_cli`,
+and Paramiko. Both sessions used username `netdevops`, explicit isolated
+pre-existing trust, strict host-key checking, disabled auto-add, and no KEX or
+host-key algorithm relaxation. Collection performed no configuration
+operation.
+
 Independent feasibility testing with Python 3.12.13, Netmiko 4.7.0, and
 Paramiko 4.0.0 passed strict explicit trust and read-only commands for the exact
 CAT8000V, IOSv 15.9(3)M12, and IOSvL2 2020 images. CAT8000V deliberately failed
@@ -112,4 +121,6 @@ Cisco collector, and another collector and dependency would enlarge scope.
 The temporary-node keys came from existing operator trust, so this evidence is
 transport/image feasibility—not B3/NCDP authoritative trust enrollment. B3
 still owns NetBox, device, management, credential, and host-trust onboarding
-for the new managed devices.
+for the new managed devices. The later B2 adapter acceptance likewise does not
+promote the temporary `.16`/`.17` nodes or their trust material into that
+authority.

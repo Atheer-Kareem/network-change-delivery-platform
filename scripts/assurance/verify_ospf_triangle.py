@@ -7,10 +7,11 @@ import json
 import sys
 
 from network_change_delivery.ansible_adapter import ProviderError
-from network_change_delivery.assurance import AssuranceProviderError
+from network_change_delivery.assurance import AssuranceOutcome, AssuranceProviderError
 from network_change_delivery.inventory import InventoryError
 from network_change_delivery.ospf_triangle import (
     OspfTriangleIntent,
+    OspfTriangleProposalEvidence,
     ProfileOspfReadOnlyAdapter,
     assure_ospf_triangle_candidate,
     build_ospf_desired_state,
@@ -37,6 +38,12 @@ from network_change_delivery.routed_underlay import (
 from network_change_delivery.secrets import OpenBaoSecretProvider, SecretError
 
 
+def _require_passed_assurance(proposal: OspfTriangleProposalEvidence) -> None:
+    """Defense in depth: a non-passing candidate cannot verify successfully."""
+    if proposal.combined_assurance.outcome is not AssuranceOutcome.PASSED:
+        raise AssuranceProviderError("OSPF triangle candidate assurance did not pass")
+
+
 def verify():
     """Build fresh secret-free O/D1/render/combined-assurance evidence."""
     validate_profiled_live_host_trust()
@@ -61,6 +68,7 @@ def verify():
         desired,
     )
     proposal = build_ospf_proposal_evidence(intent, observation, desired, assurance)
+    _require_passed_assurance(proposal)
     print(json.dumps(proposal.model_dump(mode="json"), sort_keys=True, indent=2))
     return proposal
 

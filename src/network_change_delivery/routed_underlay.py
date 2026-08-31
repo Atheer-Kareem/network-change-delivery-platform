@@ -58,6 +58,10 @@ from network_change_delivery.reference_data_plane import (
 )
 from network_change_delivery.secrets import DeviceCredentials
 
+ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST = (
+    "sha256:d25f753ef711677ccdde67bfeb7005f19759800099734a79bca1616bb77baf6b"
+)
+
 EXPECTED_PROFILED_NAMES = (
     "core-02",
     "edge-junos-01",

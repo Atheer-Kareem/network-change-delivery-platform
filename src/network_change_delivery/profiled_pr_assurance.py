@@ -30,6 +30,7 @@ from network_change_delivery.reference_routing_identity import (
     routing_identity_allocation_digest,
 )
 from network_change_delivery.routed_underlay import (
+    ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST,
     RoutedUnderlayIntent,
     build_routed_underlay_desired_state,
 )
@@ -41,9 +42,7 @@ PROFILED_CANDIDATE_NODES = (
     "edge-junos-01",
     "transit-ios-01",
 )
-ROUTED_UNDERLAY_D1_DIGEST = (
-    "sha256:d25f753ef711677ccdde67bfeb7005f19759800099734a79bca1616bb77baf6b"
-)
+ROUTED_UNDERLAY_D1_DIGEST = ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST
 OSPF_D1_DIGEST = (
     "sha256:55f5718089228eb4e9f3badebca036135461c10b3c4312184462b5468d463182"
 )

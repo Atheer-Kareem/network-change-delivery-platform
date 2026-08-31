@@ -49,11 +49,18 @@ from network_change_delivery.profile_inventory import (
     ProfiledInventoryPopulation,
     ProfileReadOnlyTarget,
 )
-from network_change_delivery.reference_data_plane import ReferenceDataPlaneAllocation
+from network_change_delivery.reference_data_plane import (
+    ACCEPTED_REFERENCE_ALLOCATION_DIGEST,
+    ReferenceDataPlaneAllocation,
+    reference_allocation_digest,
+)
 from network_change_delivery.reference_routing_identity import (
+    ACCEPTED_ROUTING_IDENTITY_ALLOCATION_DIGEST,
     ReferenceRoutingIdentityAllocation,
+    routing_identity_allocation_digest,
 )
 from network_change_delivery.routed_underlay import (
+    ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST,
     EXPECTED_PROFILED_NAMES,
     MANAGEMENT_INTERFACE_IDENTITIES,
     BatfishInterfacePrefix,
@@ -357,7 +364,6 @@ class ObservedOspfRouterState(BaseModel):
     def process_consistency(self) -> ObservedOspfRouterState:
         if not self.process_present and (
             self.process_identity is not None
-            or self.router_id is not None
             or any(item.participating for item in self.interfaces)
         ):
             raise ValueError("absent OSPF process has observed managed facts")
@@ -1348,9 +1354,10 @@ class OspfTriangleProposalEvidence(BaseModel):
     """Proposed O-to-D1 evidence; it carries no execution authority."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     source_underlay_allocation_digest: Sha256Digest
     source_routing_identity_digest: Sha256Digest
+    intent: OspfTriangleIntent
     ownership_envelope: ManagedOwnershipEnvelope
     current_observation: OspfObservation
     current_managed_digest: Sha256Digest
@@ -1361,14 +1368,30 @@ class OspfTriangleProposalEvidence(BaseModel):
 
     @model_validator(mode="after")
     def evidence_is_internally_bound(self) -> OspfTriangleProposalEvidence:
+        exact_nodes = tuple(sorted(EXPECTED_PROFILED_NAMES))
         if (
-            self.current_managed_digest
+            self.source_underlay_allocation_digest
+            != ACCEPTED_REFERENCE_ALLOCATION_DIGEST
+            or self.source_routing_identity_digest
+            != ACCEPTED_ROUTING_IDENTITY_ALLOCATION_DIGEST
+            or self.source_underlay_allocation_digest
+            != reference_allocation_digest(self.intent.source_underlay)
+            or self.source_routing_identity_digest
+            != routing_identity_allocation_digest(self.intent.source_routing_identities)
+            or self.ownership_envelope != build_ospf_ownership_envelope(self.intent)
+            or self.proposed_desired_state != build_ospf_desired_state(self.intent)
+            or self.current_managed_digest
             != self.current_observation.managed_state_digest()
             or not self.proposed_desired_state.verify_digest()
             or self.rendered_targets
             != _render_ospf_exact(self.current_observation, self.proposed_desired_state)
             or self.combined_assurance.ospf_digest != self.proposed_desired_state.digest
-            or self.ownership_envelope.vertical is not ManagedVertical.OSPF
+            or self.combined_assurance.routed_underlay_digest
+            != ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST
+            or self.combined_assurance.candidate_nodes != exact_nodes
+            or self.combined_assurance.ospf_router_count != 3
+            or self.combined_assurance.ospf_adjacency_count != 3
+            or self.combined_assurance.outcome is not AssuranceOutcome.PASSED
         ):
             raise ValueError("OSPF proposal evidence is inconsistent")
         return self
@@ -1382,14 +1405,13 @@ def build_ospf_proposal_evidence(
 ) -> OspfTriangleProposalEvidence:
     """Bind exact source authority, O, D1, transition render, and assurance."""
     return OspfTriangleProposalEvidence(
-        source_underlay_allocation_digest=sha256_identity(
-            canonical_json_bytes(intent.source_underlay.model_dump(mode="json"))
+        source_underlay_allocation_digest=reference_allocation_digest(
+            intent.source_underlay
         ),
-        source_routing_identity_digest=sha256_identity(
-            canonical_json_bytes(
-                intent.source_routing_identities.model_dump(mode="json")
-            )
+        source_routing_identity_digest=routing_identity_allocation_digest(
+            intent.source_routing_identities
         ),
+        intent=intent,
         ownership_envelope=build_ospf_ownership_envelope(intent),
         current_observation=observation,
         current_managed_digest=observation.managed_state_digest(),

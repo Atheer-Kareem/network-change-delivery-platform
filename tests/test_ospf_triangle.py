@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -13,16 +15,21 @@ from network_change_delivery.architecture_contracts import (
     ManagedField,
     ManagedScopeKind,
 )
+from network_change_delivery.assurance import AssuranceOutcome, InvariantResult
 from network_change_delivery.ospf_triangle import (
+    OSPF_AREA,
     ObservedOspfInterfaceState,
     ObservedOspfRouterState,
     OspfObservation,
+    OspfTriangleAssuranceEvidence,
     OspfTriangleIntent,
+    OspfTriangleProposalEvidence,
     ProfileOspfReadOnlyAdapter,
     _parse_cisco_ospf,
     _parse_junos_ospf,
     build_ospf_desired_state,
     build_ospf_ownership_envelope,
+    build_ospf_proposal_evidence,
     build_ospf_triangle_candidate_snapshot,
     render_ospf_changes,
 )
@@ -37,9 +44,19 @@ from network_change_delivery.reference_routing_identity import (
     routing_identity_allocation_digest,
 )
 from network_change_delivery.routed_underlay import (
+    ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST,
     RoutedUnderlayIntent,
     build_routed_underlay_desired_state,
 )
+
+ROOT = Path(__file__).parents[1]
+_VERIFY_SPEC = importlib.util.spec_from_file_location(
+    "verify_ospf_triangle",
+    ROOT / "scripts/assurance/verify_ospf_triangle.py",
+)
+assert _VERIFY_SPEC and _VERIFY_SPEC.loader
+_VERIFY = importlib.util.module_from_spec(_VERIFY_SPEC)
+_VERIFY_SPEC.loader.exec_module(_VERIFY)
 
 
 def service():
@@ -76,6 +93,44 @@ def device(router) -> ProfiledInventoryDevice:
         device_identity=router.device_identity,
         logical_name=router.logical_name,
         automation_profile_id=router.automation_profile_id,
+    )
+
+
+def assurance(desired, *, outcome: AssuranceOutcome = AssuranceOutcome.PASSED):
+    passed = outcome is AssuranceOutcome.PASSED
+    return OspfTriangleAssuranceEvidence(
+        generated_at=datetime(2026, 8, 31, tzinfo=UTC),
+        routed_underlay_digest=ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST,
+        ospf_digest=desired.digest,
+        candidate_snapshot_digest=("sha256:" + "1" * 64),
+        pybatfish_version="test",
+        batfish_version="test",
+        candidate_nodes=(
+            "access-sw-01",
+            "core-02",
+            "edge-junos-01",
+            "transit-ios-01",
+        ),
+        ospf_router_count=3,
+        ospf_adjacency_count=3,
+        invariants=(
+            InvariantResult(
+                name="test_combined_assurance",
+                passed=passed,
+                detail="bounded proposal test",
+            ),
+        ),
+        outcome=outcome,
+    )
+
+
+def proposal() -> OspfTriangleProposalEvidence:
+    _underlay, _routing, intent, desired = service()
+    return build_ospf_proposal_evidence(
+        intent,
+        absent_observation(intent),
+        desired,
+        assurance(desired),
     )
 
 
@@ -121,6 +176,111 @@ def test_source_authority_tamper_fails_closed() -> None:
     bad["routers"][0]["router_id"] = "10.60.255.99"
     with pytest.raises(ValidationError, match="detached from source authority"):
         OspfTriangleIntent.model_validate(bad)
+
+
+def test_proposal_accepts_only_passed_exact_assurance_and_source_authority() -> None:
+    accepted = proposal()
+    assert accepted.combined_assurance.outcome is AssuranceOutcome.PASSED
+
+    for field in (
+        "source_underlay_allocation_digest",
+        "source_routing_identity_digest",
+    ):
+        with pytest.raises(ValidationError, match="proposal evidence"):
+            OspfTriangleProposalEvidence.model_validate(
+                accepted.model_dump(mode="python") | {field: "sha256:" + "0" * 64}
+            )
+
+    failed = assurance(
+        accepted.proposed_desired_state,
+        outcome=AssuranceOutcome.FAILED,
+    )
+    with pytest.raises(ValidationError, match="proposal evidence"):
+        OspfTriangleProposalEvidence.model_validate(
+            accepted.model_dump(mode="python") | {"combined_assurance": failed}
+        )
+
+    blocked = failed.model_copy(update={"outcome": AssuranceOutcome.BLOCKED})
+    with pytest.raises(ValidationError, match=r"assurance outcome|proposal evidence"):
+        OspfTriangleProposalEvidence.model_validate(
+            accepted.model_dump(mode="python") | {"combined_assurance": blocked}
+        )
+
+
+def test_proposal_rejects_altered_ownership_population_and_counts() -> None:
+    accepted = proposal()
+    envelope = accepted.ownership_envelope
+    altered_scope = envelope.model_copy(update={"scope": envelope.scope[:-1]})
+    with pytest.raises(ValidationError, match="proposal evidence"):
+        OspfTriangleProposalEvidence.model_validate(
+            accepted.model_dump(mode="python") | {"ownership_envelope": altered_scope}
+        )
+
+    for extra_field in (
+        ManagedField.OSPF_COST,
+        ManagedField.OSPF_AUTHENTICATION,
+        ManagedField.OSPF_TIMERS,
+    ):
+        broadened = envelope.model_copy(
+            update={"normalized_fields": (*envelope.normalized_fields, extra_field)}
+        )
+        with pytest.raises(ValidationError, match="proposal evidence"):
+            OspfTriangleProposalEvidence.model_validate(
+                accepted.model_dump(mode="python") | {"ownership_envelope": broadened}
+            )
+
+    for count_field, count in (
+        ("ospf_router_count", 2),
+        ("ospf_router_count", 4),
+        ("ospf_adjacency_count", 2),
+        ("ospf_adjacency_count", 4),
+    ):
+        altered_assurance = accepted.combined_assurance.model_copy(
+            update={count_field: count}
+        )
+        with pytest.raises(ValidationError, match="proposal evidence"):
+            OspfTriangleProposalEvidence.model_validate(
+                accepted.model_dump(mode="python")
+                | {"combined_assurance": altered_assurance}
+            )
+
+    wrong_nodes = accepted.combined_assurance.model_copy(
+        update={
+            "candidate_nodes": (
+                "core-02",
+                "edge-junos-01",
+                "transit-ios-01",
+            )
+        }
+    )
+    with pytest.raises(ValidationError, match="proposal evidence"):
+        OspfTriangleProposalEvidence.model_validate(
+            accepted.model_dump(mode="python") | {"combined_assurance": wrong_nodes}
+        )
+
+    for digest_field in ("routed_underlay_digest", "ospf_digest"):
+        wrong_subject = accepted.combined_assurance.model_copy(
+            update={digest_field: "sha256:" + "0" * 64}
+        )
+        with pytest.raises(ValidationError, match="proposal evidence"):
+            OspfTriangleProposalEvidence.model_validate(
+                accepted.model_dump(mode="python")
+                | {"combined_assurance": wrong_subject}
+            )
+
+
+def test_verifier_exits_nonzero_for_failed_assurance(monkeypatch) -> None:
+    accepted = proposal()
+    failed = accepted.combined_assurance.model_copy(
+        update={"outcome": AssuranceOutcome.FAILED}
+    )
+    invalid = accepted.model_copy(update={"combined_assurance": failed})
+    monkeypatch.setattr(
+        _VERIFY,
+        "verify",
+        lambda: _VERIFY._require_passed_assurance(invalid),
+    )
+    assert _VERIFY.main() == 2
 
 
 def test_absent_state_renders_exact_iosxe_ios_and_junos_changes() -> None:
@@ -170,6 +330,67 @@ def test_observed_state_changes_render_and_junos_deletes_exact_leaves() -> None:
     assert '<interface operation="delete"><name>ge-0/0/0.0</name>' in payload
     assert '<passive operation="delete"' in payload
     assert "<name>0.0.0.1</name>" in payload
+
+
+def test_junos_router_id_may_exist_without_ospf_process() -> None:
+    _underlay, _routing, intent, desired = service()
+    absent = absent_observation(intent)
+    junos = absent.routers[1]
+    router_id_only = ObservedOspfRouterState(
+        device_identity=junos.device_identity,
+        logical_name=junos.logical_name,
+        automation_profile_id=junos.automation_profile_id,
+        process_present=False,
+        router_id="192.0.2.2",
+        interfaces=junos.interfaces,
+    )
+    assert router_id_only.router_id.exploded == "192.0.2.2"
+    parsed = _parse_junos_ospf(
+        device(intent.routers[1]),
+        tuple(item.interface for item in intent.routers[1].interfaces),
+        """<configuration><routing-options>
+          <router-id>192.0.2.2</router-id>
+        </routing-options><protocols/></configuration>""",
+    )
+    assert parsed.process_present is False
+    assert parsed.router_id.exploded == "192.0.2.2"
+
+    observation = OspfObservation(
+        observed_at=absent.observed_at,
+        routers=(absent.routers[0], router_id_only, absent.routers[2]),
+    )
+    payload = render_ospf_changes(intent, observation, desired)[1].payload
+    assert "<router-id>10.60.255.2</router-id>" in payload
+    assert "<protocols><ospf>" in payload
+    assert 'operation="delete"' not in payload
+
+    with pytest.raises(ValidationError, match="absent OSPF process"):
+        ObservedOspfRouterState(
+            device_identity=junos.device_identity,
+            logical_name=junos.logical_name,
+            automation_profile_id=junos.automation_profile_id,
+            process_present=False,
+            process_identity="ospf",
+            router_id="192.0.2.2",
+            interfaces=junos.interfaces,
+        )
+    participating = junos.interfaces[0].model_copy(
+        update={
+            "participating": True,
+            "area": OSPF_AREA,
+            "network_type": "point-to-point",
+            "passive": False,
+        }
+    )
+    with pytest.raises(ValidationError, match="absent OSPF process"):
+        ObservedOspfRouterState(
+            device_identity=junos.device_identity,
+            logical_name=junos.logical_name,
+            automation_profile_id=junos.automation_profile_id,
+            process_present=False,
+            router_id="192.0.2.2",
+            interfaces=(participating, junos.interfaces[1]),
+        )
 
 
 def test_cisco_and_junos_ambiguous_observation_fails_closed() -> None:

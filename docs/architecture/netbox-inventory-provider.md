@@ -15,7 +15,7 @@ authoritative for change intent, policy, and the desired interface description;
 the live device remains observed reality. In particular, the provider does not
 read `dcim.interface.description`, and that field is not desired-state authority.
 
-ADR 0024 retains exactly two logical devices. Device 1 (`core-02`) has primary
+The v1 population retains exactly two logical devices. Device 1 (`core-02`) has primary
 `.14` and secondary staging `.30` on `GigabitEthernet1`; device 2
 (`edge-junos-01`) has primary `.20` and secondary staging `.40` on `fxp0`.
 Normal inventory resolution continues to use the primary address. The staging
@@ -111,5 +111,6 @@ The parallel B2 provider additionally resolves factual platform/device-type
 admission, independent operational role, explicit physical management
 attachment, and purpose-tagged LIVE/STAGING IP objects. It preserves the full
 endpoint set but exposes only a LIVE read-only target. It is not imported by v1
-planning or delivery, and current NetBox metadata intentionally fails its new
-role/tag admission until the separately reviewed B3 migration.
+planning or delivery. B3 has now established exact profile metadata for devices
+1, 2, 8, and 9; only the parallel profiled provider can represent the classic
+IOS members.

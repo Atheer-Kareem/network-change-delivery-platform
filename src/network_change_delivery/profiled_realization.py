@@ -88,7 +88,7 @@ class RealizationLifecycleState(StrEnum):
 
 
 class SSHHostKeyType(StrEnum):
-    """Closed server public-key types accepted by future trust admission."""
+    """Closed server public-key types accepted by trust admission."""
 
     SSH_RSA = "ssh-rsa"
     SSH_ED25519 = "ssh-ed25519"
@@ -206,7 +206,7 @@ class ProfiledRealizedDevice(BaseModel):
 
 
 class PersistentProfiledRealization(BaseModel):
-    """Future exact four-device persistent LIVE realization admission."""
+    """Exact four-device persistent LIVE realization admission."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["1"] = "1"

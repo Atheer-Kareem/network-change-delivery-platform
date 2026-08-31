@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — complete through B3-2; B3-3 implemented for review:** B1 accepts the
+    - **Detour B — complete through B3-4:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -127,7 +127,7 @@ acceptance records.
       population from exact `ncdp-profiled-inventory` membership and defines
       additive four-device realization, CML-anchored trust metadata, and
       run-scoped STAGING-only projection. B3-2 migrates local NetBox authority:
-      new stable devices 8/9 remain planned, management purpose is explicit,
+      new stable devices 8/9 were created planned, management purpose is explicit,
       and the four approved physical cables are recorded while legacy devices
       1/2 and their runtime consumers remain exact-two. B3-3 stores distinct SSH
       credentials for devices 8/9, extends local and staging read authority to
@@ -136,7 +136,12 @@ acceptance records.
       Batfish. The paused pipeline blocks remain disabled until the operator
       explicitly decides disposable CML staging is useful again and its
       Terraform topology is ready for the intended profiled population; both
-      blocks must then be restored together. Later B3 work owns CML realization,
-      trust enrollment, activation, and live/staging read-only acceptance.
+      blocks must then be restored together. B3-4 accepts the operator-owned
+      four-device `NCDP Live` realization, a separate CML-anchored exact-four
+      trust generation, activation of devices 8/9, and real profile-aware LIVE
+      read-only collection for all four. Legacy inventory, Oxidized,
+      observability targets, SNMP, and protected authority remain exact devices
+      1/2. Four-device disposable STAGING realization and STAGING adapter
+      acceptance remain deferred until explicit operator restoration is useful.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

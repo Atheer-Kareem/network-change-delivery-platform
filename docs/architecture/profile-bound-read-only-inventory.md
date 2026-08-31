@@ -9,9 +9,9 @@ deployment, promotion, Buildkite, Terraform, or staging code. The v1
 `InventoryDevice`, its two-value platform field, serialized plans/evidence, and
 canonical digests remain unchanged.
 
-[ADR 0024](../adr/0024-two-router-live-and-ephemeral-staging.md) remains current
-reference-environment truth. This document does not claim that
-`transit-ios-01` or `access-sw-01` exists.
+[ADR 0031](../adr/0031-four-device-persistent-live-realization.md) now records
+current persistent LIVE truth. This document retains the historical B2 audit
+and transport admission that preceded external B3 migration.
 
 Detour B3-1 subsequently separates population semantics: the profiled provider
 uses only `ncdp-profiled-inventory`, while `ncdp-managed` retains its accepted
@@ -44,8 +44,8 @@ The closed admission catalog is:
 | Platform slug | Device-type slug | Automation profile | CML realization profile | Inventory status |
 |---|---|---|---|---|
 | `cisco-ios-xe` | `c8000v` | `cat8000v_iosxe` | `cml_cat8000v_17_18_02` | Current fact |
-| `cisco-ios` | `iosv-159-3-m12` | `iosv_159_3_m12` | `cml_iosv_159_3_m12` | Required by B3; not claimed present |
-| `cisco-ios` | `iosvl2-2020` | `iosvl2_2020` | `cml_iosvl2_2020` | Required by B3; not claimed present |
+| `cisco-ios` | `iosv-159-3-m12` | `iosv_159_3_m12` | `cml_iosv_159_3_m12` | Current fact |
+| `cisco-ios` | `iosvl2-2020` | `iosvl2_2020` | `cml_iosvl2_2020` | Current fact |
 | `juniper-junos` | `vjunos-router-lab` | `vjunos_router` | `cml_vjunos_router_23_2r1_15` | Current fact |
 
 Device type is part of NetBox-owned factual identity and distinguishes IOSv

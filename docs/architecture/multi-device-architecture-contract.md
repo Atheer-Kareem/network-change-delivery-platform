@@ -2,18 +2,18 @@
 
 ## Status and compatibility boundary
 
-Detour B1 defines additive architecture contracts for a future multi-device
+Detour B1 defines additive architecture contracts for a multi-device
 reference environment. Detour B2 connects factual NetBox metadata and exact
 automation profiles only through a parallel
 [read-only inventory and adapter path](profile-bound-read-only-inventory.md).
-Neither increment integrates the contracts into current planning, rendering,
-write adapters, protected delivery, Terraform, CML, observability, or promotion.
+Detour B3-4 accepts the four-device persistent LIVE realization without
+integrating classic IOS into current planning, rendering, write adapters,
+protected delivery, Terraform, or promotion.
 
-[ADR 0024](../adr/0024-two-router-live-and-ephemeral-staging.md) remains the
-current truth: the managed live and disposable reference environments contain
-only `core-02` and `edge-junos-01`. The future device and address material below
-is provisional and creates no inventory, allocation, credential, realization,
-or deployment authority.
+[ADR 0031](../adr/0031-four-device-persistent-live-realization.md) is current
+truth for persistent LIVE. ADR 0024 remains historical truth for the legacy
+exact-two runtime and the currently disabled two-router Terraform staging
+implementation. No four-device STAGING or new deployment authority is claimed.
 
 Current `InventoryDevice`, `DeploymentPlan`, fleet-plan/member,
 `ChangeRecord`, `FleetChangeRecord`, `ChangeAuditRecord`,
@@ -103,10 +103,10 @@ identities may be equal, but need not be. A platform may therefore use one
 physical interface as both attachment and routed L3 owner, or terminate a
 physical management attachment on a distinct logical interface.
 
-Manual feasibility evidence for the exact IOSvL2 2020 image proves that
+Accepted evidence for the exact IOSvL2 2020 image proves that
 `Gi0/0` supports `no switchport`, a routed management address, up/up state,
-management reachability, and SSH. The preferred future `access-sw-01` binding
-therefore uses `Gi0/0` for both physical attachment and L3 management ownership.
+management reachability, and SSH. The `access-sw-01` binding uses `Gi0/0` for
+both physical attachment and L3 management ownership.
 `Vlan1` is not part of that preferred realization.
 
 A generic management binding contains no CML slot. Slot mapping is realization
@@ -135,8 +135,8 @@ The LIVE endpoint remains the device's exact NetBox primary IPv4. The STAGING
 endpoint is an explicitly admitted alternate/staging address. B2 freezes
 IP-address tags `ncdp-management-live` and `ncdp-management-staging`, plus
 physical-interface tag `ncdp-management-attachment`, as the closed semantic
-metadata. The current objects do not carry those tags; B3 owns their creation
-and assignment.
+metadata. B3-2 created and assigned those exact tags; B3-4 accepted their LIVE
+resolution.
 
 ## CML realization profiles
 
@@ -223,7 +223,9 @@ Managed logical device names remain `core-02`, `edge-junos-01`,
 rename them with suffixes such as `core-02-staging`. The containing realization
 distinguishes `NCDP Live / core-02` from
 `NCDP Staging <run-id> / core-02`: logical identity is shared while run/lab/node
-realization identity differs. B1 creates none of these future device identities.
+realization identity differs. B3-2 and B3-4 now establish these stable LIVE
+device identities. A future STAGING realization must retain the same logical
+names.
 
 ## Managed ownership envelopes
 

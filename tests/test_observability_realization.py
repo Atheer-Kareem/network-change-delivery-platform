@@ -9,6 +9,7 @@ import pytest
 
 from network_change_delivery.observability_realization import (
     ADMISSION_TTL,
+    EXPECTED_PROFILED_NON_TARGET_NODES,
     CmlRealizationAuthority,
     ObservabilityRealizationError,
     publish_admission,
@@ -21,6 +22,7 @@ CORE = "22222222-2222-2222-2222-222222222222"
 JUNOS = "33333333-3333-3333-3333-333333333333"
 BRIDGE = "66666666-6666-6666-6666-666666666666"
 SWITCH = "77777777-7777-7777-7777-777777777777"
+TRANSIT, ACCESS = tuple(EXPECTED_PROFILED_NON_TARGET_NODES)
 
 
 def transport(
@@ -89,7 +91,7 @@ def transport(
         ):
             return httpx.Response(200, json="foreign 192.168.4.14")
         if path == f"/api/v0/labs/{LAB}/nodes":
-            nodes = [BRIDGE, SWITCH, CORE, JUNOS]
+            nodes = [BRIDGE, SWITCH, CORE, JUNOS, TRANSIT, ACCESS]
             if extra_managed:
                 nodes.append("extra-router")
             return httpx.Response(200, json=nodes)
@@ -104,6 +106,21 @@ def transport(
         if path == f"/api/v0/labs/{LAB}/nodes/{SWITCH}":
             return httpx.Response(
                 200, json={"state": "BOOTED", "node_definition": "unmanaged_switch"}
+            )
+        if path in {
+            f"/api/v0/labs/{LAB}/nodes/{TRANSIT}",
+            f"/api/v0/labs/{LAB}/nodes/{ACCESS}",
+        }:
+            node_id = path.rsplit("/", maxsplit=1)[-1]
+            expected = EXPECTED_PROFILED_NON_TARGET_NODES[node_id]
+            return httpx.Response(
+                200,
+                json={
+                    "label": expected["cml_label"],
+                    "node_definition": expected["definition"],
+                    "image_definition": expected["image"],
+                    "state": "BOOTED",
+                },
             )
         if path == f"/api/v0/labs/{LAB}/nodes/{CORE}":
             payload = {
@@ -175,6 +192,17 @@ def transport(
                     },
                 )
             return httpx.Response(200, json="host-name edge-junos-01 192.168.4.20")
+        if path in {
+            f"/api/v0/labs/{LAB}/nodes/{TRANSIT}/configuration",
+            f"/api/v0/labs/{LAB}/nodes/{ACCESS}/configuration",
+        }:
+            node_id = path.split("/")[-2]
+            expected = EXPECTED_PROFILED_NON_TARGET_NODES[node_id]
+            markers = " ".join(expected["required_configuration"])
+            return httpx.Response(
+                200,
+                json=f"hostname {expected['name']} {expected['address']} {markers}",
+            )
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
@@ -222,6 +250,7 @@ def test_exact_realization_admission_is_digest_bound_and_private(
     assert record.lab_title == "NCDP Live"
     assert record.lab_state == "STARTED"
     assert [item.cml_node_id for item in record.nodes] == [CORE, JUNOS]
+    assert len(EXPECTED_PROFILED_NON_TARGET_NODES) == 2
     root = tmp_path / "external" / "observability"
     path = publish_admission(root, record)
     assert read_admission(root, now=now) == record
@@ -360,6 +389,35 @@ def test_stopped_live_unbooted_node_and_foreign_collision_fail_closed(
 ) -> None:
     client = authority(**kwargs)
     with pytest.raises(ObservabilityRealizationError, match=match):
+        admit(client)
+    client.close()
+
+
+def test_profiled_non_target_node_mismatch_fails_without_widening_targets() -> None:
+    fallback = transport()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == f"/api/v0/labs/{LAB}/nodes/{ACCESS}":
+            expected = EXPECTED_PROFILED_NON_TARGET_NODES[ACCESS]
+            return httpx.Response(
+                200,
+                json={
+                    "label": expected["cml_label"],
+                    "node_definition": expected["definition"],
+                    "image_definition": "wrong-image",
+                    "state": "BOOTED",
+                },
+            )
+        return fallback.handle_request(request)
+
+    client = CmlRealizationAuthority(
+        "https://cml.example",
+        "-----BEGIN CERTIFICATE-----\ninvalid-for-mock\n-----END CERTIFICATE-----",
+        "private-user",
+        "private-password",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ObservabilityRealizationError, match="non-target"):
         admit(client)
     client.close()
 

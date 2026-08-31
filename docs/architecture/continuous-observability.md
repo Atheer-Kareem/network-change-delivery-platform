@@ -23,10 +23,15 @@ connection acceptance.
 
 CML admission independently proves that those addresses belong to exact lab
 UUID `09605569-0468-4fc4-8684-beb5a1342b9c`, titled `NCDP Live`, in running
-state. Admission uses private CML API authority, exact node UUIDs, definitions,
-images, BOOTED state, and stored Day-0 identity markers. A valid ephemeral
+state. Since B3-4, realization admission requires the exact two infrastructure
+nodes plus the four approved profiled network nodes, but target generation
+continues to project only legacy `ncdp-managed` devices 1 and 2. The two IOS
+nodes therefore grant no observability eligibility merely by existing in CML.
+Admission uses private CML API authority, exact node UUIDs, definitions, images,
+BOOTED state, and stored Day-0 identity markers. A valid ephemeral
 `NCDP Staging ...` lab at `.30/.40` may coexist; every other active router
-realization is still inspected and rejected if it claims live `.14/.20`.
+realization is still inspected and rejected if it claims any profiled LIVE
+management address.
 These values do not become metric labels. No device credential, OpenBao device
 secret, SSH key, NETCONF session, CLI command, or Oxidized trust is involved.
 

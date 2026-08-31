@@ -33,6 +33,13 @@ execution path:
   behavior.
 - Management binding separates physical attachment from the logical L3/IP-owning
   interface. A generic management binding contains no CML slot.
+- The preferred future IOSvL2 management realization uses routed `Gi0/0` as
+  both physical attachment and L3 owner. The generic binding still permits
+  distinct physical and logical interfaces for other platforms.
+- Management endpoint purpose is explicitly `LIVE` or `STAGING`. One logical
+  device has exactly one of each on the same stable management interfaces, with
+  distinct NetBox IP identities and addresses. Normal targeting may resolve
+  only LIVE; an explicit staging realization/context may resolve only STAGING.
 - Legacy SSH compatibility can only be profile-local, retains strict host-key
   verification, and is recorded for exact IOSv as requiring B2 real-adapter
   acceptance. B1 changes no transport.
@@ -44,6 +51,14 @@ execution path:
 - `AcceptedManagedStateRef` binds one versioned envelope, target/scope,
   normalized accepted desired-state digest, source commit, and durable
   acceptance evidence. Different verticals may have different D0 references.
+- Managed scope identities use closed kind-specific NetBox namespaces or the
+  Git-owned `git:policy:<safe-stable-token>` namespace.
+- LIVE and STAGING are realizations of one logical network. Data-plane prefixes,
+  addresses, VLANs, router IDs, endpoint addressing, OSPF intent, and security
+  intent are identical; only externally reachable management endpoints differ.
+- Stable logical device names are shared across realizations. Future lightweight
+  `users-host-01` and `servers-host-01` traffic fixtures are not managed network
+  devices or fleet members.
 - A future coordinated service plan may use a small ordered phase vocabulary
   where ordinary fleet-prefix safety is insufficient. No arbitrary DAG or
   executor is introduced here.
@@ -70,8 +85,10 @@ rewritten.
 Detour B gains a fail-closed architecture vocabulary without changing current
 execution. IOS routing and IOS switching can share one real NOS while retaining
 different reviewed behavior and realization profiles. IOSv legacy compatibility
-cannot leak into IOS-XE or Junos profile policy. IOSvL2 physical management and
-SVI identity can be represented honestly.
+cannot leak into IOS-XE or Junos profile policy. IOSvL2 uses routed `Gi0/0` for
+preferred future management while retaining SVI capability for later data-plane
+intent. Its initial role remains access switching; `core-02` owns inter-VLAN
+routing.
 
 The additive boundary deliberately defers NetBox integration, profile-based
 adapter dispatch, collectors, durable baseline persistence, drift comparison,

@@ -8,6 +8,7 @@ change existing serialized models, digests, or provider behavior.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from enum import StrEnum
 from types import MappingProxyType
@@ -25,15 +26,42 @@ from pydantic import (
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Sha256Digest = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 GitCommit = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
+_NETBOX_DEVICE_IDENTITY_PATTERN = r"^netbox:dcim\.device:[1-9][0-9]*$"
+_NETBOX_INTERFACE_IDENTITY_PATTERN = r"^netbox:dcim\.interface:[1-9][0-9]*$"
+_NETBOX_IP_ADDRESS_IDENTITY_PATTERN = r"^netbox:ipam\.ipaddress:[1-9][0-9]*$"
+_NETBOX_VLAN_IDENTITY_PATTERN = r"^netbox:ipam\.vlan:[1-9][0-9]*$"
+_NETBOX_PREFIX_IDENTITY_PATTERN = r"^netbox:ipam\.prefix:[1-9][0-9]*$"
+_GIT_POLICY_IDENTITY_PATTERN = r"^git:policy:[a-z0-9]+(?:[._-][a-z0-9]+)*$"
 NetBoxDeviceIdentity = Annotated[
-    str, StringConstraints(pattern=r"^netbox:dcim\.device:[1-9][0-9]*$")
+    str, StringConstraints(pattern=_NETBOX_DEVICE_IDENTITY_PATTERN)
 ]
 NetBoxInterfaceIdentity = Annotated[
-    str, StringConstraints(pattern=r"^netbox:dcim\.interface:[1-9][0-9]*$")
+    str, StringConstraints(pattern=_NETBOX_INTERFACE_IDENTITY_PATTERN)
 ]
 NetBoxIPAddressIdentity = Annotated[
-    str, StringConstraints(pattern=r"^netbox:ipam\.ipaddress:[1-9][0-9]*$")
+    str, StringConstraints(pattern=_NETBOX_IP_ADDRESS_IDENTITY_PATTERN)
 ]
+NetBoxVLANIdentity = Annotated[
+    str, StringConstraints(pattern=_NETBOX_VLAN_IDENTITY_PATTERN)
+]
+NetBoxPrefixIdentity = Annotated[
+    str, StringConstraints(pattern=_NETBOX_PREFIX_IDENTITY_PATTERN)
+]
+GitPolicyIdentity = Annotated[
+    str,
+    StringConstraints(
+        min_length=12,
+        max_length=128,
+        pattern=_GIT_POLICY_IDENTITY_PATTERN,
+    ),
+]
+ManagedScopeStableIdentity = (
+    NetBoxDeviceIdentity
+    | NetBoxInterfaceIdentity
+    | NetBoxVLANIdentity
+    | NetBoxPrefixIdentity
+    | GitPolicyIdentity
+)
 
 
 class NetworkOS(StrEnum):
@@ -248,6 +276,21 @@ class ManagementBinding(BaseModel):
         return self
 
 
+class ManagementEndpointPurpose(StrEnum):
+    """Semantic management endpoint purpose, never inferred from an address."""
+
+    LIVE = "LIVE"
+    STAGING = "STAGING"
+
+
+class ManagementEndpoint(BaseModel):
+    """One purpose-bound management endpoint for a logical device."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    purpose: ManagementEndpointPurpose
+    binding: ManagementBinding
+
+
 class CmlRealizationProfileID(StrEnum):
     """Closed CML realization identities, distinct from automation profiles."""
 
@@ -296,7 +339,7 @@ class CmlBootstrapProfileID(StrEnum):
 
     CAT8000V_MINIMAL = "cat8000v_minimal"
     IOSV_MINIMAL = "iosv_minimal"
-    IOSVL2_VLAN1_MANAGEMENT = "iosvl2_vlan1_management"
+    IOSVL2_ROUTED_MANAGEMENT = "iosvl2_routed_management"
     VJUNOS_ROUTER_MINIMAL = "vjunos_router_minimal"
 
 
@@ -305,7 +348,7 @@ class CmlReadinessProfileID(StrEnum):
 
     IOSXE_SSH = "iosxe_ssh"
     IOSV_SSH = "iosv_ssh"
-    IOSVL2_SVI_SSH = "iosvl2_svi_ssh"
+    IOSVL2_ROUTED_SSH = "iosvl2_routed_ssh"
     JUNOS_NETCONF = "junos_netconf"
 
 
@@ -464,8 +507,8 @@ CML_REALIZATION_PROFILE_CATALOG: Mapping[
                 allocation_mode=CmlResourceAllocationMode.NODE_DEFINITION_DEFAULT
             ),
             physical_interface_slots=_slots("Gi0/0", "Gi0/1", "Gi0/2", "Gi0/3"),
-            bootstrap_profile=CmlBootstrapProfileID.IOSVL2_VLAN1_MANAGEMENT,
-            readiness_profile=CmlReadinessProfileID.IOSVL2_SVI_SSH,
+            bootstrap_profile=CmlBootstrapProfileID.IOSVL2_ROUTED_MANAGEMENT,
+            readiness_profile=CmlReadinessProfileID.IOSVL2_ROUTED_SSH,
         ),
         CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15: CmlRealizationProfile(
             profile_id=CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15,
@@ -502,6 +545,100 @@ def get_cml_realization_profile(
     except ValueError:
         raise ValueError("unknown CML realization profile") from None
     return CML_REALIZATION_PROFILE_CATALOG[recognized]
+
+
+class ManagementEndpointSet(BaseModel):
+    """Exact LIVE/STAGING bindings for one stable logical managed device."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: Literal["1"] = "1"
+    logical_device: NetBoxDeviceIdentity
+    automation_profile_id: AutomationProfileID
+    live: ManagementEndpoint
+    staging: ManagementEndpoint
+
+    @model_validator(mode="after")
+    def exact_purpose_and_stable_interfaces(self) -> ManagementEndpointSet:
+        if self.live.purpose is not ManagementEndpointPurpose.LIVE:
+            raise ValueError("live management endpoint requires LIVE purpose")
+        if self.staging.purpose is not ManagementEndpointPurpose.STAGING:
+            raise ValueError("staging management endpoint requires STAGING purpose")
+        live_binding = self.live.binding
+        staging_binding = self.staging.binding
+        endpoints = (live_binding, staging_binding)
+        if any(
+            binding.physical_attachment.interface.device != self.logical_device
+            or binding.l3_endpoint.interface.device != self.logical_device
+            for binding in endpoints
+        ):
+            raise ValueError("management endpoints must belong to the logical device")
+        if (
+            live_binding.physical_attachment.interface
+            != staging_binding.physical_attachment.interface
+        ):
+            raise ValueError("LIVE/STAGING physical management interface must match")
+        if live_binding.l3_endpoint.interface != staging_binding.l3_endpoint.interface:
+            raise ValueError("LIVE/STAGING L3 management interface must match")
+        if (
+            live_binding.l3_endpoint.ip_address_identity
+            == staging_binding.l3_endpoint.ip_address_identity
+        ):
+            raise ValueError("LIVE/STAGING management IP identities must differ")
+        if (
+            live_binding.l3_endpoint.address.ip
+            == staging_binding.l3_endpoint.address.ip
+        ):
+            raise ValueError("LIVE/STAGING management addresses must differ")
+        admitted_services = {
+            (expectation.service, expectation.port)
+            for expectation in get_automation_profile(
+                self.automation_profile_id
+            ).readiness_services
+        }
+        if any(
+            (binding.l3_endpoint.service, binding.l3_endpoint.port)
+            not in admitted_services
+            for binding in endpoints
+        ):
+            raise ValueError(
+                "management service/port is incompatible with automation profile"
+            )
+        return self
+
+
+class ProvisionalManagedDeviceName(StrEnum):
+    """Future stable logical names shared by live and staging realizations."""
+
+    CORE_02 = "core-02"
+    EDGE_JUNOS_01 = "edge-junos-01"
+    TRANSIT_IOS_01 = "transit-ios-01"
+    ACCESS_SW_01 = "access-sw-01"
+
+
+class ProvisionalEndpointFixtureName(StrEnum):
+    """Future traffic fixtures that are not NCDP-managed network devices."""
+
+    USERS_HOST_01 = "users-host-01"
+    SERVERS_HOST_01 = "servers-host-01"
+
+
+class TwinSharedDataPlaneProperty(StrEnum):
+    """Logical data-plane properties identical in LIVE and STAGING twins."""
+
+    ROUTED_LINK_PREFIXES = "routed_link_prefixes"
+    DATA_PLANE_INTERFACE_ADDRESSES = "data_plane_interface_addresses"
+    LOOPBACK_ROUTER_ID_ADDRESSES = "loopback_router_id_addresses"
+    VLAN_IDS = "vlan_ids"
+    VLAN_PREFIXES = "vlan_prefixes"
+    GATEWAY_ADDRESSES = "gateway_addresses"
+    ENDPOINT_ADDRESSES = "endpoint_addresses"
+    OSPF_INTENT = "ospf_intent"
+    ACL_SECURITY_INTENT = "acl_security_intent"
+
+
+TWIN_SHARED_DATA_PLANE_PROPERTIES: frozenset[TwinSharedDataPlaneProperty] = frozenset(
+    TwinSharedDataPlaneProperty
+)
 
 
 class AuthorityOwner(StrEnum):
@@ -640,7 +777,20 @@ class ManagedScopeIdentity(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     kind: ManagedScopeKind
-    identity: NonEmptyString
+    identity: ManagedScopeStableIdentity
+
+    @model_validator(mode="after")
+    def identity_namespace_matches_kind(self) -> ManagedScopeIdentity:
+        patterns = {
+            ManagedScopeKind.DEVICE: _NETBOX_DEVICE_IDENTITY_PATTERN,
+            ManagedScopeKind.INTERFACE: _NETBOX_INTERFACE_IDENTITY_PATTERN,
+            ManagedScopeKind.VLAN: _NETBOX_VLAN_IDENTITY_PATTERN,
+            ManagedScopeKind.PREFIX: _NETBOX_PREFIX_IDENTITY_PATTERN,
+            ManagedScopeKind.POLICY: _GIT_POLICY_IDENTITY_PATTERN,
+        }
+        if re.fullmatch(patterns[self.kind], self.identity) is None:
+            raise ValueError("managed scope identity namespace does not match kind")
+        return self
 
 
 _FIELDS_BY_VERTICAL: Mapping[ManagedVertical, frozenset[ManagedField]] = (

@@ -98,11 +98,42 @@ ManagementBinding
 ```
 
 Both interfaces must belong to the same stable device. Their interface
-identities may be equal, but need not be. The IOSvL2 example is a physical CML
-cable attached to `Gi0/0` while the management IPv4 address belongs to `Vlan1`.
+identities may be equal, but need not be. A platform may therefore use one
+physical interface as both attachment and routed L3 owner, or terminate a
+physical management attachment on a distinct logical interface.
+
+Manual feasibility evidence for the exact IOSvL2 2020 image proves that
+`Gi0/0` supports `no switchport`, a routed management address, up/up state,
+management reachability, and SSH. The preferred future `access-sw-01` binding
+therefore uses `Gi0/0` for both physical attachment and L3 management ownership.
+`Vlan1` is not part of that preferred realization.
 
 A generic management binding contains no CML slot. Slot mapping is realization
 data, not stable inventory or IPAM identity.
+
+## Management endpoint purpose and resolution
+
+`ManagementEndpointPurpose` is closed to `LIVE` and `STAGING`. Purpose is
+semantic identity; it is never inferred from an address, subnet, numeric range,
+or primary/secondary label.
+
+A `ManagementEndpointSet` binds one stable logical device and automation profile
+to exactly one endpoint of each purpose. Both bindings must use the same stable
+physical and L3 interface identities. Their NetBox IP-address object identities
+and numeric addresses must differ, and each service/port must be admitted by the
+automation profile. This generic structure contains no CML slot.
+
+Future normal NCDP inventory and deployment resolution may select only the LIVE
+endpoint. Disposable staging may select only the STAGING endpoint, and only
+through an explicit admitted staging realization/context. A staging path must
+never receive the LIVE endpoint merely because NetBox exposes it as
+`primary_ip4`.
+
+NetBox remains authoritative for both IP objects and their interface assignment.
+The LIVE endpoint may remain the device's NetBox primary IPv4. The STAGING
+endpoint is an explicitly admitted alternate/staging address. B1 deliberately
+does not guess whether the later NetBox implementation should use tags, custom
+fields, roles, or another reviewed mechanism.
 
 ## CML realization profiles
 
@@ -116,6 +147,12 @@ bootstrap profile, and readiness profile.
 | `cml_iosv_159_3_m12` | `iosv` | `iosv-159-3-m12` | 0 `Gi0/0`, 1 `Gi0/1`, 2 `Gi0/2`, 3 `Gi0/3` |
 | `cml_iosvl2_2020` | `iosvl2` | `iosvl2-2020` | 0 `Gi0/0`, 1 `Gi0/1`, 2 `Gi0/2`, 3 `Gi0/3` |
 | `cml_vjunos_router_23_2r1_15` | `vjunos-router` | `vjunos-router-23-2r1-15` | 0 `fxp0`, 1 `ge-0/0/0`, 2 `ge-0/0/1`, 3 `ge-0/0/2` |
+
+The IOSvL2 realization uses bootstrap profile
+`iosvl2_routed_management`: slot 0 maps to routed `Gi0/0` for management.
+Readiness profile `iosvl2_routed_ssh` requires SSH on that routed interface.
+Neither profile uses a management SVI. The IOSvL2 automation profile retains
+the separate `svi` capability for future managed data-plane use.
 
 The catalog preserves the current explicit CAT8000V and vJunos CPU/RAM values.
 IOSv and IOSvL2 retain node-definition defaults because B1 does not invent or
@@ -146,6 +183,45 @@ identity. Git owns whether and how that object is deployed on stable interfaces
 and the desired gateway, routing, security, and assurance behavior. The same
 desired property must not be independently authored in both systems.
 
+The provisional later-allocation hierarchy is:
+
+```text
+10.60.0.0/16  NCDP data-plane parent
+├── routed transit pool
+├── VLAN 10 USERS prefix
+├── VLAN 20 SERVERS prefix
+└── loopback/router-ID pool
+```
+
+This is an allocation model, not an allocation or Git-owned IPAM source. NetBox
+will own the actual parent/sub-prefix objects, individual IP identities, and
+interface assignments. Prefix lengths, point-to-point subnets, and individual
+host/gateway addresses remain deferred to B2/B3 resolution. Git will own only
+how those resolved objects participate in VLAN, OSPF, ACL, and assurance intent.
+
+## Logical network and realization identity
+
+LIVE and STAGING are two realizations of the same logical network. They use
+identical logical data-plane intent and resolved values for:
+
+- routed link prefixes and data-plane interface addresses;
+- loopback/router-ID addresses;
+- VLAN IDs and prefixes;
+- gateway and endpoint addresses;
+- OSPF intent; and
+- ACL/security intent.
+
+Only externally reachable management endpoints differ. This invariant makes
+disposable staging a digital twin rather than a separately addressed logical
+network.
+
+Managed logical device names remain `core-02`, `edge-junos-01`,
+`transit-ios-01`, and `access-sw-01` in both realizations. Staging must not
+rename them with suffixes such as `core-02-staging`. The containing realization
+distinguishes `NCDP Live / core-02` from
+`NCDP Staging <run-id> / core-02`: logical identity is shared while run/lab/node
+realization identity differs. B1 creates none of these future device identities.
+
 ## Managed ownership envelopes
 
 A `ManagedOwnershipEnvelope` defines one vertical, version, exact stable target
@@ -163,6 +239,17 @@ Initial examples are:
 
 Unrelated configuration remains outside the envelope. Whole-running-config byte
 equality is explicitly prohibited as the managed-drift model.
+
+Scope identity namespaces are closed and kind-specific:
+
+- device: `netbox:dcim.device:<positive-id>`;
+- interface: `netbox:dcim.interface:<positive-id>`;
+- VLAN: `netbox:ipam.vlan:<positive-id>`;
+- prefix: `netbox:ipam.prefix:<positive-id>`; and
+- Git-owned policy: `git:policy:<safe-stable-token>`.
+
+The policy token uses lowercase alphanumeric segments separated only by `.`,
+`_`, or `-`. A kind cannot carry another kind's namespace or arbitrary text.
 
 ## Accepted desired-state references
 
@@ -249,8 +336,7 @@ The accepted current core-to-Junos link is preserved as
 - `access-sw-01 Gi0/2` as the USERS access attachment;
 - `access-sw-01 Gi0/3` as the SERVERS access attachment;
 - `transit-ios-01 Gi0/0` as physical and logical management; and
-- `access-sw-01 Gi0/0` as physical management attachment with `Vlan1` as the
-  logical L3 management owner.
+- `access-sw-01 Gi0/0` as dedicated routed physical and logical management.
 
 `transit-ios-01 Gi0/3` and `edge-junos-01 ge-0/0/2` remain spare. Endpoint-side
 interfaces depend on a future endpoint node selection.
@@ -260,3 +346,31 @@ Proposed live management addresses `192.168.4.24/24` and
 `192.168.4.60/24`, are synthetic planning values. They are not claimed to be
 available, allocated, or present in NetBox. B1 creates none of the proposed
 device identities or relationships.
+
+The initial IOSvL2 role is intentionally the managed ACCESS SWITCHING boundary,
+despite proven routed operation on its dedicated management port:
+
+- `Gi0/0`: dedicated routed management;
+- `Gi0/1`: 802.1Q trunk to `core-02`;
+- `Gi0/2`: VLAN 10 USERS access;
+- `Gi0/3`: VLAN 20 SERVERS access; and
+- `core-02`: inter-VLAN routing through IOS-XE 802.1Q subinterfaces.
+
+The initial topology does not make `access-sw-01` a VLAN gateway. This keeps L2
+switching and L3 routing verticals separate, makes management independent of
+VLAN changes under test, and leaves actual IOSvL2 forwarding proof with CML. A
+later gateway migration to switch SVIs can be a distinct coordinated service
+change. No broader IOSvL2 routing capability is claimed.
+
+Two lightweight future traffic fixtures are reserved:
+
+- `users-host-01` behind the USERS access port; and
+- `servers-host-01` behind the SERVERS access port.
+
+They will likely use Alpine CML nodes. They are traffic/service fixtures, not
+NCDP-managed network devices, fleet members, canaries/waves, network-device
+`DeploymentPlan` recipients, or owners of network-device OpenBao credentials.
+They are not counted in the four managed-device population. Their data-plane
+addresses are identical in LIVE and STAGING. Exact image identity, NetBox
+representation, address allocation, interface names, and service bootstrap are
+deferred to the VLAN/ACL increments; B1 creates no endpoint node.

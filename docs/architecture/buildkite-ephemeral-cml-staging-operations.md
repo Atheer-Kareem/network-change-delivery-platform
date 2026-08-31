@@ -1,5 +1,12 @@
 # Buildkite ephemeral CML staging operations
 
+> **Temporary Detour B pause:** the `cml-staging` pipeline step and the complete
+> protected-delivery group are commented out together. Quality validation,
+> Terraform static validation, and PR Batfish candidate assurance remain active.
+> B3-5 will re-enable staging and protected delivery together after Terraform
+> realizes all four profiled devices. The implementation and historical
+> acceptance below remain intact; staging has not been removed.
+
 ## Trusted agent boundary
 
 The `cml-staging` step runs on a dedicated self-hosted `ncdp-staging` queue with
@@ -45,12 +52,17 @@ receive staging credentials before admission.
 The job requests one five-minute Buildkite JWT with audience
 `urn:ncdp:openbao:staging`, immutable pipeline UUID in `sub`, and explicit
 `build_id`. The application validates pipeline, build, commit, branch, step,
-job, queue, and retry context. It uses the JWT only in memory for two logins:
+job, queue, and retry context. It uses the JWT only in memory for one exact
+login per admitted device:
 
 - `ncdp-buildkite-staging-device-1` receives only
   `ncdp-buildkite-staging-device-1-read`;
 - `ncdp-buildkite-staging-device-2` receives only
-  `ncdp-buildkite-staging-device-2-read`.
+  `ncdp-buildkite-staging-device-2-read`;
+- `ncdp-buildkite-staging-device-8` receives only
+  `ncdp-buildkite-staging-device-8-read`; and
+- `ncdp-buildkite-staging-device-9` receives only
+  `ncdp-buildkite-staging-device-9-read`.
 
 Each policy reads only `ncdp/data/devices/<id>/ssh`. Tokens are one-use, have no
 default policy, and expire within 300 seconds. Configure and read back this
@@ -72,14 +84,16 @@ remain outside staging.
 
 ## Execution and evidence
 
-Pipeline YAML exposes one `Ephemeral CML staging · create → validate → destroy`
-job and calls only `scripts/buildkite/ephemeral_staging.sh`. The wrapper verifies
+The preserved pipeline block defines one `Ephemeral CML staging · create →
+validate → destroy` job and calls only
+`scripts/buildkite/ephemeral_staging.sh`. During B3-3 that block is commented
+out and creates no job. When B3-5 restores it, the wrapper verifies
 job/checkout identity, pipes the JWT to the existing Python driver, and uploads
 only `staging-evidence/staging-run.json`. The authoritative state machine remains
 `network_change_delivery.ephemeral_staging.run_staging_lifecycle`; Buildkite log
 presentation does not split lifecycle or cleanup ownership across jobs.
 
-For runtime-relevant pull requests, `cml-staging` explicitly waits for both
+When enabled, runtime-relevant pull requests make `cml-staging` wait for both
 `validation-complete` and successful `pr-batfish-assurance`. This orders the
 cheaper offline candidate-model check before CML resource creation. On main the
 PR-only Batfish dependency is skipped and satisfied, so CML still fans out in

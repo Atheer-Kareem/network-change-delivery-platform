@@ -19,7 +19,14 @@ ENVIRONMENT_REFERENCE = "environment:NCDP_DEVICE_USERNAME+NCDP_DEVICE_PASSWORD"
 _NETBOX_DEVICE_IDENTITY = re.compile(r"netbox:dcim\.device:([1-9][0-9]*)")
 
 
-def netbox_device_id(device: InventoryDevice) -> int:
+class NetBoxCredentialTarget(Protocol):
+    """Structural stable identity required for exact-path credential selection."""
+
+    inventory_source: str
+    inventory_object_id: str | None
+
+
+def netbox_device_id(device: NetBoxCredentialTarget) -> int:
     """Derive one positive device ID from stable NetBox inventory identity."""
     if device.inventory_source != "netbox" or device.inventory_object_id is None:
         raise SecretError("OpenBao requires NetBox-backed inventory identity")
@@ -160,10 +167,10 @@ class OpenBaoSecretProvider:
         self._client = create_openbao_client(self._base_url, transport=transport)
 
     @staticmethod
-    def _device_id(device: InventoryDevice) -> int:
+    def _device_id(device: NetBoxCredentialTarget) -> int:
         return netbox_device_id(device)
 
-    def reference(self, device: InventoryDevice) -> CredentialReference:
+    def reference(self, device: NetBoxCredentialTarget) -> CredentialReference:
         """Derive fixed non-secret provenance from stable NetBox identity."""
         device_id = self._device_id(device)
         return CredentialReference(
@@ -211,7 +218,7 @@ class OpenBaoSecretProvider:
             raise SecretError("OpenBao issued unacceptable token")
         return token
 
-    def load(self, device: InventoryDevice) -> DeviceCredentials:
+    def load(self, device: NetBoxCredentialTarget) -> DeviceCredentials:
         """Authenticate once and consume the single-use token on one exact GET."""
         device_id = self._device_id(device)
         token = self._login()

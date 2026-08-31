@@ -163,85 +163,89 @@ steps:
         - "tests/**"
         - ".gitignore"
 
-  - label: ":cloud: Ephemeral CML staging · create → validate → destroy"
-    key: cml-staging
-    depends_on:
-      - validation-complete
-      - pr-batfish-assurance
-    command: scripts/buildkite/ephemeral_staging.sh
-    agents:
-      queue: ncdp-staging
-    concurrency: 1
-    concurrency_group: ncdp/cml-ephemeral-staging
-    retry:
-      automatic: false
-      manual:
-        allowed: false
-        reason: "Retained staging state requires explicit operator recovery."
-    if_changed:
-      include: "**"
-      exclude:
-        - "docs/**"
-        - "README.md"
-        - "AGENTS.md"
-        - ".github/CODEOWNERS"
-        - ".github/pull_request_template.md"
-        - "tests/**"
-        - ".gitignore"
+  # TEMPORARILY DISABLED DURING DETOUR B3.
+  # Re-enable in B3-5 when Terraform staging contains all four profiled devices.
+  # - label: ":cloud: Ephemeral CML staging · create → validate → destroy"
+  #   key: cml-staging
+  #   depends_on:
+  #     - validation-complete
+  #     - pr-batfish-assurance
+  #   command: scripts/buildkite/ephemeral_staging.sh
+  #   agents:
+  #     queue: ncdp-staging
+  #   concurrency: 1
+  #   concurrency_group: ncdp/cml-ephemeral-staging
+  #   retry:
+  #     automatic: false
+  #     manual:
+  #       allowed: false
+  #       reason: "Retained staging state requires explicit operator recovery."
+  #   if_changed:
+  #     include: "**"
+  #     exclude:
+  #       - "docs/**"
+  #       - "README.md"
+  #       - "AGENTS.md"
+  #       - ".github/CODEOWNERS"
+  #       - ".github/pull_request_template.md"
+  #       - "tests/**"
+  #       - ".gitignore"
 
-  - group: ":lock: protected delivery"
-    key: protected-delivery
-    depends_on: validation-complete
-    if: build.branch == "main" && build.pull_request.id == null
-    if_changed:
-      include: "**"
-      exclude:
-        - "docs/**"
-        - "README.md"
-        - "AGENTS.md"
-        - ".github/CODEOWNERS"
-        - ".github/pull_request_template.md"
-        - "tests/**"
-        - ".gitignore"
-    steps:
-      - label: ":fish: Batfish plan assurance"
-        key: batfish-assurance
-        command: .buildkite/scripts/batfish_assurance.sh
-        agents:
-          queue: ncdp-validation
-        concurrency: 1
-        concurrency_group: ncdp/batfish-assurance
-        retry:
-          automatic: false
-          manual:
-            allowed: false
-            reason: "A fresh build is required for another assurance attempt."
+  # Protected delivery temporarily paused with disposable CML staging.
+  # Re-enable both together in B3-5.
+  # - group: ":lock: protected delivery"
+  #   key: protected-delivery
+  #   depends_on: validation-complete
+  #   if: build.branch == "main" && build.pull_request.id == null
+  #   if_changed:
+  #     include: "**"
+  #     exclude:
+  #       - "docs/**"
+  #       - "README.md"
+  #       - "AGENTS.md"
+  #       - ".github/CODEOWNERS"
+  #       - ".github/pull_request_template.md"
+  #       - "tests/**"
+  #       - ".gitignore"
+  #   steps:
+  #     - label: ":fish: Batfish plan assurance"
+  #       key: batfish-assurance
+  #       command: .buildkite/scripts/batfish_assurance.sh
+  #       agents:
+  #         queue: ncdp-validation
+  #       concurrency: 1
+  #       concurrency_group: ncdp/batfish-assurance
+  #       retry:
+  #         automatic: false
+  #         manual:
+  #           allowed: false
+  #           reason: "A fresh build is required for another assurance attempt."
 
-      - label: ":package: Immutable promotion"
-        key: promotion
-        depends_on:
-          - cml-staging
-          - batfish-assurance
-        command: .buildkite/scripts/promotion.sh
-        agents:
-          queue: ncdp-validation
+  #     - label: ":package: Immutable promotion"
+  #       key: promotion
+  #       depends_on:
+  #         - cml-staging
+  #         - batfish-assurance
+  #       command: .buildkite/scripts/promotion.sh
+  #       agents:
+  #         queue: ncdp-validation
 
-      - block: ":lock: Authorize exact promotion"
-        key: deployment-approval
-        depends_on: promotion
-        prompt: "Authorize the exact immutable promotion verified and recorded by the promotion step."
-        submit: "Authorize exact promotion"
+  #     - block: ":lock: Authorize exact promotion"
+  #       key: deployment-approval
+  #       depends_on: promotion
+  #       prompt: "Authorize the exact immutable promotion verified and recorded by the promotion step."
+  #       submit: "Authorize exact promotion"
 
-      - label: ":lock: deployment gate"
-        key: deploy-gate
-        depends_on: deployment-approval
-        command: scripts/buildkite/deployment_gate.sh
-        agents:
-          queue: ncdp-deploy
-        concurrency: 1
-        concurrency_group: ncdp/network-change-deployment
-        retry:
-          automatic: false
-          manual:
-            allowed: false
-            reason: "A fresh deployment authorization is required for another attempt."
+  #     - label: ":lock: deployment gate"
+  #       key: deploy-gate
+  #       depends_on: deployment-approval
+  #       command: scripts/buildkite/deployment_gate.sh
+  #       agents:
+  #         queue: ncdp-deploy
+  #       concurrency: 1
+  #       concurrency_group: ncdp/network-change-deployment
+  #       retry:
+  #         automatic: false
+  #         manual:
+  #           allowed: false
+  #           reason: "A fresh deployment authorization is required for another attempt."

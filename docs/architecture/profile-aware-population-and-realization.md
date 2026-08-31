@@ -180,3 +180,22 @@ created by B3-2. ADR 0024 therefore remains current live-environment truth.
 
 The exact mutation and independent verification evidence is recorded in the
 [B3-2 acceptance record](../acceptance/profiled-netbox-inventory-detour-b3-2.md).
+
+## B3-3 OpenBao and pipeline state
+
+OpenBao now holds exact stable-ID SSH paths for NetBox devices 1, 2, 8, and 9.
+The existing five-minute, single-use `ncdp-personal-lab` AppRole reads those
+four paths through one exact policy with no wildcard. The provider derives the
+path from stable NetBox identity for either legacy or profiled inventory; name,
+hostname, role, profile, and management address cannot select a credential.
+
+Buildkite staging identity is prepared with four separate exact-path policies
+and JWT roles. Protected live deployment and SNMP authority remain their prior
+devices 1/2 only. Because the current Terraform staging realization is still
+two-device, B3-3 comments out automatic `cml-staging` and the complete protected
+delivery group together. Quality, Terraform static validation, and PR Batfish
+remain active. B3-5 owns four-device Terraform staging and must restore both
+paused blocks together; no CML feature or historical evidence is removed.
+
+The [B3-3 acceptance record](../acceptance/profiled-openbao-onboarding-detour-b3-3.md)
+contains the secret-free applied-state evidence.

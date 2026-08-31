@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from network_change_delivery.buildkite_staging import (
+    STAGING_DEVICE_IDS,
     staging_policy_name,
     staging_role_name,
 )
@@ -42,7 +43,7 @@ def handler(requests: list[httpx.Request], *, broaden: str | None = None):
             )
         if path == "/v1/auth/jwt/config":
             return httpx.Response(200, json={"data": JWT_CONFIG_READ})
-        for device_id in (1, 2):
+        for device_id in sorted(STAGING_DEVICE_IDS):
             if path == f"/v1/sys/policies/acl/{staging_policy_name(device_id)}":
                 if request.method == "PUT":
                     return httpx.Response(204)
@@ -62,7 +63,7 @@ def handler(requests: list[httpx.Request], *, broaden: str | None = None):
     return respond
 
 
-def test_configures_and_verifies_exact_two_staging_roles() -> None:
+def test_configures_and_verifies_exact_four_staging_roles() -> None:
     requests: list[httpx.Request] = []
     configured = OpenBaoBuildkiteStagingConfigurator(
         "https://openbao.example",
@@ -73,9 +74,11 @@ def test_configures_and_verifies_exact_two_staging_roles() -> None:
     assert configured == (
         (staging_policy_name(1), staging_role_name(1)),
         (staging_policy_name(2), staging_role_name(2)),
+        (staging_policy_name(8), staging_role_name(8)),
+        (staging_policy_name(9), staging_role_name(9)),
     )
     assert all(request.headers["X-Vault-Token"] == ADMIN_TOKEN for request in requests)
-    for device_id in (1, 2):
+    for device_id in sorted(STAGING_DEVICE_IDS):
         role = staging_role_config(PIPELINE_ID, device_id)
         assert role["bound_audiences"] == ["urn:ncdp:openbao:staging"]
         assert role["bound_claims"] == {"step_key": "cml-staging"}

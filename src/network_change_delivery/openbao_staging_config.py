@@ -10,6 +10,7 @@ import httpx
 from network_change_delivery.buildkite_staging import (
     OPENBAO_STAGING_AUDIENCE,
     OPENBAO_STAGING_MAX_LEASE_SECONDS,
+    STAGING_DEVICE_IDS,
     staging_policy_name,
     staging_role_name,
 )
@@ -36,7 +37,7 @@ STAGING_CLAIM_MAPPINGS = {
 
 
 def staging_policy(device_id: int) -> str:
-    if device_id not in {1, 2}:
+    if device_id not in STAGING_DEVICE_IDS:
         raise SecretError("Buildkite staging device ID rejected")
     return (
         f'path "ncdp/data/devices/{device_id}/ssh" {{\n  capabilities = ["read"]\n}}\n'
@@ -153,7 +154,7 @@ class OpenBaoBuildkiteStagingConfigurator:
         if backend.get("jwt_validation_pubkeys") not in (None, "", []):
             raise SecretError("OpenBao staging JWT backend verification failed")
         configured: list[tuple[str, str]] = []
-        for device_id in (1, 2):
+        for device_id in sorted(STAGING_DEVICE_IDS):
             policy_name = staging_policy_name(device_id)
             policy = staging_policy(device_id)
             policy_path = f"/v1/sys/policies/acl/{policy_name}"

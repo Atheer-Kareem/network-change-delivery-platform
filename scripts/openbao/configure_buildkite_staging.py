@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Configure the two exact Buildkite staging secret capabilities."""
+"""Configure the four exact Buildkite staging secret capabilities."""
 
 import sys
 

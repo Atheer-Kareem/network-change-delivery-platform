@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — B1/B2/B3-1 complete; B3-2 implemented for review:** B1 accepts the
+    - **Detour B — complete through B3-2; B3-3 implemented for review:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -129,8 +129,12 @@ acceptance records.
       run-scoped STAGING-only projection. B3-2 migrates local NetBox authority:
       new stable devices 8/9 remain planned, management purpose is explicit,
       and the four approved physical cables are recorded while legacy devices
-      1/2 and their runtime consumers remain exact-two. Subsequent B3 increments
-      own four-device CML realization, credentials, trust enrollment,
+      1/2 and their runtime consumers remain exact-two. B3-3 stores distinct SSH
+      credentials for devices 8/9, extends local and staging read authority to
+      exact IDs 1/2/8/9, and temporarily pauses both automatic CML staging and
+      protected delivery while preserving quality, Terraform validation, and PR
+      Batfish. B3-5 owns four-device Terraform staging and restores both paused
+      pipeline blocks; later B3 work owns CML realization, trust enrollment,
       activation, and live/staging read-only acceptance.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

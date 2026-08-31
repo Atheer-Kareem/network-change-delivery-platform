@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — B1 complete; B2 implemented for review:** B1 accepts the
+    - **Detour B — B1/B2 complete; B3-1 implemented for review:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -123,8 +123,11 @@ acceptance records.
       accepted CAT8000V key remains valid and that pinned libssh trust-source
       handling—not stale trust—was the blocker. ADR 0029 accepts explicit
       Paramiko admission for all three Cisco profiles without fallback or
-      algorithm relaxation. B3 next owns separately reviewed NetBox metadata,
-      four-device identity/realization and authoritative trust onboarding, and
-      explicit staging-endpoint authority.
+      algorithm relaxation. B3-1 separates the legacy `ncdp-managed`
+      population from exact `ncdp-profiled-inventory` membership and defines
+      additive four-device realization, CML-anchored trust metadata, and
+      run-scoped STAGING-only projection. No external authority is migrated;
+      subsequent B3 increments own NetBox metadata, four-device realization,
+      credentials, trust enrollment, and live/staging read-only acceptance.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

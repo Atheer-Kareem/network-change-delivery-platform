@@ -13,6 +13,12 @@ canonical digests remain unchanged.
 reference-environment truth. This document does not claim that
 `transit-ios-01` or `access-sw-01` exists.
 
+Detour B3-1 subsequently separates population semantics: the profiled provider
+uses only `ncdp-profiled-inventory`, while `ncdp-managed` retains its accepted
+legacy exact-two meaning. The exact four-member resolver and realization
+contracts are documented in
+[profile-aware population and realization](profile-aware-population-and-realization.md).
+
 ## Factual profile admission
 
 Profile selection has two explicit stages:
@@ -73,13 +79,13 @@ B2 admits these exact tag slugs:
 
 | Object | Tag | Meaning |
 |---|---|---|
-| Device | `ncdp-managed` | Device is in the managed population |
+| Profiled device | `ncdp-profiled-inventory` | Device is eligible for profiled inventory/realization; grants no write or credential authority |
 | Interface | `ncdp-management-attachment` | The one physical management attachment |
 | Interface | `ncdp-protected` | Interface cannot be a managed write target |
 | IP address | `ncdp-management-live` | LIVE management endpoint purpose |
 | IP address | `ncdp-management-staging` | STAGING management endpoint purpose |
 
-Resolution requires one active managed device, one attachment, one LIVE IP,
+Resolution requires one active profiled device, one attachment, one LIVE IP,
 and one STAGING IP. Both IP objects must be active and assigned to interfaces on
 that stable device. Every physical or L3 management interface must be protected.
 LIVE exactly equals the device's `primary_ip4` object identity and address;
@@ -121,16 +127,18 @@ requests only. Tokens and response headers were not recorded.
 | IP purpose tags | None on either IP | None on either IP |
 
 Both current platform/device-type pairs are usable factual profile inputs. Both
-devices are active, managed, have exact LIVE primary and existing STAGING
-secondary relationships, and use protected management interfaces. They are not
-B2-profile-ready because role `lab-router` is outside the exact role vocabulary
-and the attachment/LIVE/STAGING tags are absent.
+devices are active in the legacy managed population, have exact LIVE primary
+and existing STAGING secondary relationships, and use protected management
+interfaces. They are not profile-ready because role `lab-router` is outside the
+exact role vocabulary, `ncdp-profiled-inventory` is absent, and the
+attachment/LIVE/STAGING tags are absent.
 
 | Readiness property | `core-02` current fact | `edge-junos-01` current fact | Required B3 change |
 |---|---|---|---|
 | Usable factual platform | Yes: `cisco-ios-xe` | Yes: `juniper-junos` | None |
 | Usable factual device type | Yes: `c8000v` | Yes: `vjunos-router-lab` | None |
 | Usable operational role | No: `lab-router` | No: `lab-router` | Assign exact `core` / `edge` role identity |
+| Profiled population tag | Missing | Missing | Assign `ncdp-profiled-inventory` while preserving `ncdp-managed` |
 | Management attachment tag | Missing | Missing | Tag interface ID 1 / 3 |
 | LIVE purpose tag | Missing | Missing | Tag IP ID 1 / 2 |
 | STAGING purpose tag | Missing | Missing | Tag IP ID 11 / 12 |
@@ -141,6 +149,8 @@ and the attachment/LIVE/STAGING tags are absent.
 
 B3 must separately review and mutate NetBox authority to:
 
+- create `ncdp-profiled-inventory` if absent and assign it only to the reviewed
+  four-member population; preserve `ncdp-managed` on the legacy exact two;
 - create the three closed management metadata tags if absent;
 - assign `ncdp-management-attachment` to `core-02` interface ID 1 and
   `edge-junos-01` interface ID 3;

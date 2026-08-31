@@ -22,10 +22,10 @@ from network_change_delivery.profile_inventory import (
     MANAGEMENT_ATTACHMENT_TAG,
     MANAGEMENT_LIVE_TAG,
     MANAGEMENT_STAGING_TAG,
-    NCDP_MANAGED_TAG,
     OPERATIONAL_ROLE_BY_SLUG,
     PLATFORM_NETWORK_OS,
     PROFILE_ADMISSION_CATALOG,
+    PROFILED_INVENTORY_TAG,
     PROTECTED_INTERFACE_TAG,
     NetBoxProfileInventoryProvider,
     ProfiledInventoryDevice,
@@ -109,7 +109,7 @@ def device_payload(
         "id": device_id,
         "name": name,
         "status": {"value": "active"},
-        "tags": [tag(NCDP_MANAGED_TAG)],
+        "tags": [tag(PROFILED_INVENTORY_TAG)],
         "platform": {"id": 10, "slug": platform_slug, "name": platform_name},
         "device_type": {
             "id": 20,
@@ -302,7 +302,7 @@ def test_profile_admission_is_closed_unique_and_has_no_fallback() -> None:
     ("device_changes", "message"),
     [
         ({"status": {"value": "offline"}}, "inactive"),
-        ({"tags": []}, "missing ncdp-managed"),
+        ({"tags": []}, "missing ncdp-profiled-inventory"),
         ({"role": None}, "role is missing"),
         (
             {"role": {"id": 30, "slug": "lab-router", "name": "Lab Router"}},
@@ -564,6 +564,7 @@ def test_provider_issues_get_only_with_exact_device_filters_and_no_redirects(
     provider(fixture_payloads(), requests=requests).resolve("core-02")
     assert [request.method for request in requests] == ["GET", "GET", "GET"]
     assert requests[0].url.params["name"] == "core-02"
+    assert requests[0].url.params["tag"] == PROFILED_INVENTORY_TAG
     assert requests[1].url.params["device_id"] == "4"
     assert requests[2].url.params["device_id"] == "4"
     assert options["follow_redirects"] is False

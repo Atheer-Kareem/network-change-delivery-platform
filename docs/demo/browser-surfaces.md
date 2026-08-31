@@ -49,7 +49,7 @@ identity or reachability.
 
 | Surface | Decision | Reason |
 | --- | --- | --- |
-| OpenBao UI/API | Avoid in the primary walkthrough | The UI is currently disabled and is unnecessary for the 10–15 minute demonstration. Machine authentication remains AppRole/OIDC regardless of UI state. A future loopback-only operator UI could support administration or inspection without joining the normal NCDP machine path; never display secret values or tokens. |
+| OpenBao UI/API | Avoid in the primary walkthrough | The loopback-only native UI is an authenticated operator convenience, not part of the normal NCDP machine path. It is unnecessary for the 10–15 minute demonstration; never display secret values, tokens, auth configuration, or administrative internals. |
 | Oxidized web | Avoid | Native revision/configuration navigation can expose raw device configuration. The evidence viewer presents only validated chronology metadata and explicit `NOT_PROVEN` causality. |
 | Alertmanager and demo receiver | Avoid as separate stops | They add little beyond Grafana and Prometheus in a short walkthrough. |
 | Raw Buildkite artifacts/log wandering | Avoid | Sanitized annotations and selected bounded logs tell the intended story without accidental disclosure or implementation noise. |

@@ -1,6 +1,6 @@
 # ADR 0029: Profile-bound read-only inventory and transport admission
 
-- Status: Accepted
+- Status: Proposed
 - Date: 2026-08-31
 
 ## Context
@@ -90,9 +90,15 @@ not create B2 write authority or claim four-device acceptance. Real IOSv and
 IOSvL2 backend acceptance remains bounded by existing credentials and trusted
 host keys; absence of those inputs is reported rather than bypassed.
 
-Bounded B2 acceptance passed the existing Junos PyEZ profile. CAT8000V libssh
-stopped at strict host trust even though the accepted trust source contains its
-`ssh-rsa` key. The bounded result does not prove the exact negotiation cause,
-so this ADR authorizes no fallback, algorithm override, or weakened checking;
-CAT8000V strict-profile acceptance remains unresolved. Temporary IOSv and
-IOSvL2 acceptance remains pending explicit credentials.
+Bounded B2 acceptance passed the existing Junos PyEZ profile. A follow-up
+CAT8000V investigation proved the existing v1 Paramiko read-only control and
+the exact run-scoped trust projection, then classified the libssh failure as a
+server-key mismatch against the accepted trust entry. An `ssh-rsa` entry does
+not by itself prove a legacy SHA-1 negotiation requirement, and this result is
+not an algorithm-negotiation finding.
+
+**HOST TRUST RE-ENROLLMENT REQUIRED.** This ADR remains Proposed until that
+separate trusted procedure is authorized and CAT8000V libssh is reaccepted. It
+authorizes no key discovery or replacement, fallback, algorithm override, or
+weakened checking. Temporary IOSv and IOSvL2 acceptance remains pending
+explicit credentials.

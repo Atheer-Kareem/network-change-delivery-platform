@@ -119,7 +119,10 @@ acceptance records.
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
-      collection without changing v1 delivery. B3 is next: separately reviewed
+      collection without changing v1 delivery. CAT8000V libssh acceptance is
+      blocked on a separately authorized host-trust re-enrollment after a
+      bounded key-mismatch finding, so ADR 0029 remains Proposed. B3 follows
+      only after that B2 acceptance gap closes; it will own separately reviewed
       NetBox metadata migration, four-device identity/realization work, and
       explicit staging-endpoint authority.
     - **12F — on hold:** demonstration runbook and rehearsal.

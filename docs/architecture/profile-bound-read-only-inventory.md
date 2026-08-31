@@ -199,15 +199,25 @@ made no configuration request.
 
 | Profile | Target | Backend | Result |
 |---|---|---|---|
-| `cat8000v_iosxe` | `core-02` | libssh | **STOPPED:** `Cisco host trust was rejected` |
+| `cat8000v_iosxe` | `core-02` | libssh | **STOPPED:** accepted host key does not match the server key presented to libssh |
 | `vjunos_router` | `edge-junos-01` | PyEZ/NETCONF | **PASS:** strict trust, hostname `edge-junos-01`, Junos `23.2R1.15`, 42 interfaces |
 | `iosv_159_3_m12` | temporary IOSv | Paramiko | **PENDING:** explicit temporary-node credential input is unavailable |
 | `iosvl2_2020` | temporary IOSvL2 | libssh | **PENDING:** explicit temporary-node credential input is unavailable |
 
-The trusted CAT8000V entry is an `ssh-rsa` host key. The bounded provider result
-does not prove whether key type, signature negotiation, or another libssh trust
-detail caused rejection. B2 therefore does not add a host-key override, weaken
-checking, or fall back to Paramiko. The CAT8000V strict-profile acceptance item
-remains unresolved. IOSv compatibility is likewise not yet accepted: no claim
-is made that Paramiko succeeds against exact IOSv M12 until its own credentials
-are explicitly supplied.
+The follow-up investigation first proved the existing v1 Paramiko control
+against the same target, credential, and accepted trust source. It also proved
+that the libssh run-scoped `known_hosts` projection was a regular mode-`0600`
+file, contained the expected entry, and was byte-for-byte and fingerprint
+identical to that accepted source. Private libssh diagnostics then classified
+the failure as a server-key mismatch, not a missing trust path and not host-key
+or KEX algorithm negotiation. The fact that the accepted entry has key type
+`ssh-rsa` does not imply that the server requires legacy SHA-1 signature
+negotiation.
+
+**HOST TRUST RE-ENROLLMENT REQUIRED.** B2 does not discover, replace, or delete
+the key automatically, add an algorithm override, weaken checking, or fall back
+to Paramiko. CAT8000V strict-profile acceptance remains unresolved and
+[ADR 0029](../adr/0029-profile-bound-read-only-inventory-and-transport-admission.md)
+remains Proposed. IOSv compatibility is likewise not yet accepted: no claim is
+made that Paramiko succeeds against exact IOSv M12 until its own credentials are
+explicitly supplied.

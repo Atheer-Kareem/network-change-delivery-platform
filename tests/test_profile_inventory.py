@@ -22,10 +22,10 @@ from network_change_delivery.profile_inventory import (
     MANAGEMENT_ATTACHMENT_TAG,
     MANAGEMENT_LIVE_TAG,
     MANAGEMENT_STAGING_TAG,
-    NCDP_MANAGED_TAG,
     OPERATIONAL_ROLE_BY_SLUG,
     PLATFORM_NETWORK_OS,
     PROFILE_ADMISSION_CATALOG,
+    PROFILED_INVENTORY_TAG,
     PROTECTED_INTERFACE_TAG,
     NetBoxProfileInventoryProvider,
     ProfiledInventoryDevice,
@@ -36,6 +36,7 @@ TOKEN = "opaque-profile-inventory-token"
 
 PROFILE_CASES = (
     (
+        "core-02",
         "cisco-ios-xe",
         "Cisco IOS XE",
         "c8000v",
@@ -47,6 +48,7 @@ PROFILE_CASES = (
         22,
     ),
     (
+        "transit-ios-01",
         "cisco-ios",
         "Cisco IOS",
         "iosv-159-3-m12",
@@ -58,6 +60,7 @@ PROFILE_CASES = (
         22,
     ),
     (
+        "access-sw-01",
         "cisco-ios",
         "Cisco IOS",
         "iosvl2-2020",
@@ -69,6 +72,7 @@ PROFILE_CASES = (
         22,
     ),
     (
+        "edge-junos-01",
         "juniper-junos",
         "Juniper Junos",
         "vjunos-router-lab",
@@ -109,7 +113,7 @@ def device_payload(
         "id": device_id,
         "name": name,
         "status": {"value": "active"},
-        "tags": [tag(NCDP_MANAGED_TAG)],
+        "tags": [tag(PROFILED_INVENTORY_TAG)],
         "platform": {"id": 10, "slug": platform_slug, "name": platform_name},
         "device_type": {
             "id": 20,
@@ -167,6 +171,7 @@ def ip_payload(
 
 def fixture_payloads(
     *,
+    name: str = "core-02",
     platform_slug: str = "cisco-ios-xe",
     platform_name: str = "Cisco IOS XE",
     device_type_slug: str = "c8000v",
@@ -182,19 +187,36 @@ def fixture_payloads(
         device_type_slug=device_type_slug,
         device_type_model=device_type_model,
         role_slug=role_slug,
+        name=name,
         **(device_changes or {}),
     )
     resolved_interfaces = interfaces or [
         interface_payload(
             50,
             "Gi0/0",
+            device_name=name,
             tags=[tag(MANAGEMENT_ATTACHMENT_TAG), tag(PROTECTED_INTERFACE_TAG)],
         ),
-        interface_payload(51, "Gi0/1", tags=[tag(PROTECTED_INTERFACE_TAG)]),
+        interface_payload(
+            51,
+            "Gi0/1",
+            device_name=name,
+            tags=[tag(PROTECTED_INTERFACE_TAG)],
+        ),
     ]
     resolved_ips = ips or [
-        ip_payload(40, "192.0.2.14/24", MANAGEMENT_LIVE_TAG),
-        ip_payload(41, "192.0.2.114/24", MANAGEMENT_STAGING_TAG),
+        ip_payload(
+            40,
+            "192.0.2.14/24",
+            MANAGEMENT_LIVE_TAG,
+            device_name=name,
+        ),
+        ip_payload(
+            41,
+            "192.0.2.114/24",
+            MANAGEMENT_STAGING_TAG,
+            device_name=name,
+        ),
     ]
     return device, resolved_interfaces, resolved_ips
 
@@ -231,6 +253,7 @@ def provider(
 
 @pytest.mark.parametrize(
     (
+        "logical_name",
         "platform_slug",
         "platform_name",
         "device_type_slug",
@@ -244,6 +267,7 @@ def provider(
     PROFILE_CASES,
 )
 def test_exact_factual_metadata_resolves_all_four_profiles(
+    logical_name: str,
     platform_slug: str,
     platform_name: str,
     device_type_slug: str,
@@ -255,13 +279,14 @@ def test_exact_factual_metadata_resolves_all_four_profiles(
     port: int,
 ) -> None:
     payloads = fixture_payloads(
+        name=logical_name,
         platform_slug=platform_slug,
         platform_name=platform_name,
         device_type_slug=device_type_slug,
         device_type_model=device_type_model,
         role_slug=role.value,
     )
-    resolved = provider(payloads).resolve("core-02")
+    resolved = provider(payloads).resolve(logical_name)
     assert resolved.automation_profile_id is profile_id
     assert resolved.cml_realization_profile_id is realization_id
     assert resolved.network_os is network_os
@@ -279,12 +304,47 @@ def test_iosv_and_iosvl2_share_ios_without_sharing_profile() -> None:
 
 
 def test_role_is_independent_and_never_selects_behavior() -> None:
-    first = provider(fixture_payloads(role_slug="core")).resolve("core-02")
-    second = provider(fixture_payloads(role_slug="access")).resolve("core-02")
-    assert first.automation_profile_id is second.automation_profile_id
-    assert first.operational_role is OperationalRole.CORE
-    assert second.operational_role is OperationalRole.ACCESS
+    admission = admit_profile("cisco-ios-xe", "c8000v")
+    assert admission.automation_profile_id is AutomationProfileID.CAT8000V_IOSXE
+    assert "role" not in inspect.signature(admit_profile).parameters
     assert set(OPERATIONAL_ROLE_BY_SLUG) == {role.value for role in OperationalRole}
+
+
+def test_per_device_resolution_rejects_name_outside_git_catalog() -> None:
+    payloads = fixture_payloads(
+        name="rogue-ios-01",
+        platform_slug="cisco-ios",
+        platform_name="Cisco IOS",
+        device_type_slug="iosv-159-3-m12",
+        device_type_model="IOSv 15.9(3)M12",
+        role_slug="transit",
+    )
+    with pytest.raises(InventoryError, match="name is not in the Git-owned"):
+        provider(payloads).resolve("rogue-ios-01")
+
+
+def test_per_device_resolution_rejects_wrong_role_for_admitted_name() -> None:
+    with pytest.raises(InventoryError, match="Git-owned population member"):
+        provider(fixture_payloads(role_slug="edge")).resolve("core-02")
+
+
+def test_per_device_resolution_rejects_wrong_profile_for_admitted_name() -> None:
+    payloads = fixture_payloads(
+        platform_slug="cisco-ios",
+        platform_name="Cisco IOS",
+        device_type_slug="iosv-159-3-m12",
+        device_type_model="IOSv 15.9(3)M12",
+        role_slug="core",
+    )
+    with pytest.raises(InventoryError, match="Git-owned population member"):
+        provider(payloads).resolve("core-02")
+
+
+def test_per_device_resolution_accepts_exact_core_catalog_member() -> None:
+    resolved = provider(fixture_payloads()).resolve("core-02")
+    assert resolved.logical_name == "core-02"
+    assert resolved.operational_role is OperationalRole.CORE
+    assert resolved.automation_profile_id is AutomationProfileID.CAT8000V_IOSXE
 
 
 def test_profile_admission_is_closed_unique_and_has_no_fallback() -> None:
@@ -302,7 +362,7 @@ def test_profile_admission_is_closed_unique_and_has_no_fallback() -> None:
     ("device_changes", "message"),
     [
         ({"status": {"value": "offline"}}, "inactive"),
-        ({"tags": []}, "missing ncdp-managed"),
+        ({"tags": []}, "missing ncdp-profiled-inventory"),
         ({"role": None}, "role is missing"),
         (
             {"role": {"id": 30, "slug": "lab-router", "name": "Lab Router"}},
@@ -564,6 +624,7 @@ def test_provider_issues_get_only_with_exact_device_filters_and_no_redirects(
     provider(fixture_payloads(), requests=requests).resolve("core-02")
     assert [request.method for request in requests] == ["GET", "GET", "GET"]
     assert requests[0].url.params["name"] == "core-02"
+    assert requests[0].url.params["tag"] == PROFILED_INVENTORY_TAG
     assert requests[1].url.params["device_id"] == "4"
     assert requests[2].url.params["device_id"] == "4"
     assert options["follow_redirects"] is False

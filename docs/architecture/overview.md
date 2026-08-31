@@ -84,7 +84,9 @@ Detour B1 adds an architecture-only
 NOS, role, capability, automation behavior, CML realization, management identity,
 and accepted managed-state references. Detour B2 adds a parallel
 [profile-bound read-only inventory and adapter](profile-bound-read-only-inventory.md)
-without changing the v1 planning or write path. ADR 0024 remains authoritative
+without changing the v1 planning or write path. Detour B3-1 adds separate
+[profile-aware population, realization, trust, and staging contracts](profile-aware-population-and-realization.md)
+without importing them into current runtimes. ADR 0024 remains authoritative
 for the current two-router live and disposable reference environment.
 
 ## Implemented now

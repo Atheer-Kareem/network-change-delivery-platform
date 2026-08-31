@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 from collections.abc import Mapping
+from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Literal
 
@@ -53,7 +54,7 @@ Slug = Annotated[
 ]
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
-NCDP_MANAGED_TAG = "ncdp-managed"
+PROFILED_INVENTORY_TAG = "ncdp-profiled-inventory"
 MANAGEMENT_ATTACHMENT_TAG = "ncdp-management-attachment"
 MANAGEMENT_LIVE_TAG = "ncdp-management-live"
 MANAGEMENT_STAGING_TAG = "ncdp-management-staging"
@@ -173,6 +174,99 @@ def admit_profile(platform_slug: str, device_type_slug: str) -> ProfileAdmission
     return admission
 
 
+class ProfiledDeviceName(StrEnum):
+    """Exact stable logical names in the Git-approved profiled population."""
+
+    CORE_02 = "core-02"
+    EDGE_JUNOS_01 = "edge-junos-01"
+    TRANSIT_IOS_01 = "transit-ios-01"
+    ACCESS_SW_01 = "access-sw-01"
+
+
+class _ProfiledPopulationMember(BaseModel):
+    """One catalog-internal expected member without a future NetBox object ID."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    logical_name: ProfiledDeviceName
+    operational_role: OperationalRole
+    platform_slug: Slug
+    device_type_slug: Slug
+    network_os: NetworkOS
+    automation_profile_id: AutomationProfileID
+    cml_realization_profile_id: CmlRealizationProfileID
+
+    @model_validator(mode="after")
+    def exact_profile_admission(self) -> _ProfiledPopulationMember:
+        admission = admit_profile(self.platform_slug, self.device_type_slug)
+        if (
+            PLATFORM_NETWORK_OS[self.platform_slug] is not self.network_os
+            or admission.automation_profile_id is not self.automation_profile_id
+            or admission.cml_realization_profile_id
+            is not self.cml_realization_profile_id
+        ):
+            raise ValueError("profiled population member admission is inconsistent")
+        return self
+
+
+PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
+    _ProfiledPopulationMember(
+        logical_name=ProfiledDeviceName.CORE_02,
+        operational_role=OperationalRole.CORE,
+        platform_slug="cisco-ios-xe",
+        device_type_slug="c8000v",
+        network_os=NetworkOS.IOSXE,
+        automation_profile_id=AutomationProfileID.CAT8000V_IOSXE,
+        cml_realization_profile_id=CmlRealizationProfileID.CAT8000V_17_18_02,
+    ),
+    _ProfiledPopulationMember(
+        logical_name=ProfiledDeviceName.EDGE_JUNOS_01,
+        operational_role=OperationalRole.EDGE,
+        platform_slug="juniper-junos",
+        device_type_slug="vjunos-router-lab",
+        network_os=NetworkOS.JUNOS,
+        automation_profile_id=AutomationProfileID.VJUNOS_ROUTER,
+        cml_realization_profile_id=(CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15),
+    ),
+    _ProfiledPopulationMember(
+        logical_name=ProfiledDeviceName.TRANSIT_IOS_01,
+        operational_role=OperationalRole.TRANSIT,
+        platform_slug="cisco-ios",
+        device_type_slug="iosv-159-3-m12",
+        network_os=NetworkOS.IOS,
+        automation_profile_id=AutomationProfileID.IOSV_159_3_M12,
+        cml_realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
+    ),
+    _ProfiledPopulationMember(
+        logical_name=ProfiledDeviceName.ACCESS_SW_01,
+        operational_role=OperationalRole.ACCESS,
+        platform_slug="cisco-ios",
+        device_type_slug="iosvl2-2020",
+        network_os=NetworkOS.IOS,
+        automation_profile_id=AutomationProfileID.IOSVL2_2020,
+        cml_realization_profile_id=CmlRealizationProfileID.IOSVL2_2020,
+    ),
+)
+
+PROFILED_POPULATION_BY_NAME: Mapping[ProfiledDeviceName, _ProfiledPopulationMember] = (
+    MappingProxyType(
+        {member.logical_name: member for member in PROFILED_POPULATION_CATALOG}
+    )
+)
+
+if len(PROFILED_POPULATION_BY_NAME) != 4:
+    raise RuntimeError("profiled population catalog must contain exactly four names")
+
+
+def _expected_profiled_member(logical_name: str) -> _ProfiledPopulationMember:
+    try:
+        admitted_name = ProfiledDeviceName(logical_name)
+    except ValueError:
+        raise InventoryError(
+            "NetBox profile target name is not in the Git-owned population"
+        ) from None
+    return PROFILED_POPULATION_BY_NAME[admitted_name]
+
+
 class ProfileReadOnlyTarget(BaseModel):
     """Narrow non-secret LIVE target accepted by B2 read-only adapters."""
 
@@ -284,6 +378,49 @@ class ProfiledInventoryDevice(BaseModel):
         )
 
 
+def _admit_profiled_device(
+    device: ProfiledInventoryDevice,
+) -> _ProfiledPopulationMember:
+    """Compare resolved NetBox facts with the one Git-owned name binding."""
+    member = _expected_profiled_member(device.logical_name)
+    if (
+        device.operational_role is not member.operational_role
+        or device.platform.slug != member.platform_slug
+        or device.device_type.slug != member.device_type_slug
+        or device.network_os is not member.network_os
+        or device.automation_profile_id is not member.automation_profile_id
+        or device.cml_realization_profile_id is not member.cml_realization_profile_id
+    ):
+        raise InventoryError(
+            "NetBox profile target does not match its Git-owned population member"
+        )
+    return member
+
+
+class ProfiledInventoryPopulation(BaseModel):
+    """Immutable deterministic resolution of the exact four-member population."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: Literal["1"] = "1"
+    population_tag: Literal["ncdp-profiled-inventory"] = PROFILED_INVENTORY_TAG
+    devices: tuple[ProfiledInventoryDevice, ...]
+
+    @model_validator(mode="after")
+    def exact_git_approved_population(self) -> ProfiledInventoryPopulation:
+        expected_names = tuple(
+            member.logical_name for member in PROFILED_POPULATION_CATALOG
+        )
+        names = tuple(device.logical_name for device in self.devices)
+        identities = tuple(device.device_identity for device in self.devices)
+        if names != expected_names:
+            raise ValueError("profiled inventory population names are not exact")
+        if len(identities) != len(set(identities)):
+            raise ValueError("profiled inventory population identities are duplicated")
+        for device in self.devices:
+            _admit_profiled_device(device)
+        return self
+
+
 def _positive_id(value: object, noun: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise InventoryError(f"NetBox {noun} identity is invalid")
@@ -356,19 +493,80 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
         super().__init__(url, token, transport=transport)
 
     def resolve(self, target: str) -> ProfiledInventoryDevice:
-        """Resolve one exact device; role never participates in profile selection."""
-        payload = self._get(self._DEVICE_PATH, params={"name": target, "limit": 2})
+        """Resolve one exact Git-owned member from independently factual metadata."""
+        _expected_profiled_member(target)
+        payload = self._get(
+            self._DEVICE_PATH,
+            params={
+                "name": target,
+                "tag": PROFILED_INVENTORY_TAG,
+                "limit": 2,
+            },
+        )
         candidates = self._results(payload)
         exact = [item for item in candidates if item.get("name") == target]
         if not exact:
             raise InventoryError("NetBox profile target not found")
         if len(exact) != 1 or payload.get("count") != 1:
             raise InventoryError("NetBox profile target is ambiguous")
-        device = exact[0]
+        resolved = self._resolve_device_payload(exact[0])
+        _admit_profiled_device(resolved)
+        return resolved
+
+    def resolve_profiled_population(self) -> ProfiledInventoryPopulation:
+        """Resolve only the exact four Git-approved profiled inventory members."""
+        payloads = self._get_all(
+            self._DEVICE_PATH,
+            params={
+                "tag": PROFILED_INVENTORY_TAG,
+                "status": "active",
+                "ordering": "id",
+            },
+        )
+        if len(payloads) != len(PROFILED_POPULATION_CATALOG):
+            raise InventoryError(
+                "NetBox profiled population must contain exactly four devices"
+            )
+        by_name: dict[str, dict[str, object]] = {}
+        identities: set[int] = set()
+        for device in payloads:
+            device_id = _positive_id(device.get("id"), "device")
+            name = _required_string(device.get("name"), "device name")
+            if device_id in identities:
+                raise InventoryError(
+                    "NetBox profiled population contains duplicate stable identity"
+                )
+            if name in by_name:
+                raise InventoryError(
+                    "NetBox profiled population contains duplicate logical name"
+                )
+            identities.add(device_id)
+            by_name[name] = device
+        expected_names = {member.logical_name for member in PROFILED_POPULATION_CATALOG}
+        if set(by_name) != expected_names:
+            raise InventoryError("NetBox profiled population names are not exact")
+        try:
+            return ProfiledInventoryPopulation(
+                devices=tuple(
+                    self._resolve_device_payload(by_name[member.logical_name])
+                    for member in PROFILED_POPULATION_CATALOG
+                )
+            )
+        except ValidationError:
+            raise InventoryError(
+                "NetBox profiled population does not match the Git catalog"
+            ) from None
+
+    def _resolve_device_payload(
+        self, device: dict[str, object]
+    ) -> ProfiledInventoryDevice:
+        """Resolve one already-selected factual device payload through GET only."""
         if not _active(device.get("status")):
             raise InventoryError("NetBox profile target is inactive")
-        if NCDP_MANAGED_TAG not in self._tag_slugs(device.get("tags")):
-            raise InventoryError("NetBox profile target is missing ncdp-managed tag")
+        if PROFILED_INVENTORY_TAG not in self._tag_slugs(device.get("tags")):
+            raise InventoryError(
+                "NetBox profile target is missing ncdp-profiled-inventory tag"
+            )
 
         device_id = _positive_id(device.get("id"), "device")
         logical_name = _required_string(device.get("name"), "device name")

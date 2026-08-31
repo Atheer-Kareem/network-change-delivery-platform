@@ -3,6 +3,13 @@
 The current protected Buildkite lifecycle binds review, execution, and evidence
 to the same immutable single-device plan.
 
+During Detour B3, the disposable CML step and complete protected-delivery group
+are temporarily commented out together. The lifecycle below remains the
+accepted design if the operator explicitly decides disposable CML staging is
+useful again after its Terraform topology is ready for the intended profiled
+population. Both blocks must be restored together; no protected live path is
+active during the pause.
+
 ```mermaid
 flowchart TD
   PR[Reviewed change] --> V[Visible validation gates]

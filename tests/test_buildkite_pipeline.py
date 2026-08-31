@@ -22,10 +22,7 @@ RUNTIME_CHANGE_CONDITION = {
 
 
 def _steps_by_key(pipeline: dict[str, object]) -> dict[str, dict[str, object]]:
-    steps = {step["key"]: step for step in pipeline["steps"]}
-    protected = steps["protected-delivery"]
-    steps.update({step["key"]: step for step in protected["steps"]})
-    return steps
+    return {step["key"]: step for step in pipeline["steps"]}
 
 
 def test_pipeline_contract() -> None:
@@ -47,11 +44,9 @@ def test_pipeline_contract() -> None:
         "ncdp-pipeline-contract",
         "validation-complete",
         "pr-batfish-assurance",
-        "cml-staging",
-        "protected-delivery",
     }
     assert "quality" not in top_level_steps
-    assert all("group" not in step for step in pipeline["steps"][:-1])
+    assert all("group" not in step for step in pipeline["steps"])
     steps = _steps_by_key(pipeline)
     validation_keys = {
         "quality-env",
@@ -193,10 +188,8 @@ def test_pipeline_contract() -> None:
     ordered_keys = [step["key"] for step in pipeline["steps"]]
     barrier = steps["validation-complete"]
     assert barrier == {"wait": None, "key": "validation-complete"}
-    assert (
-        ordered_keys.index("validation-complete")
-        < ordered_keys.index("pr-batfish-assurance")
-        < ordered_keys.index("cml-staging")
+    assert ordered_keys.index("validation-complete") < ordered_keys.index(
+        "pr-batfish-assurance"
     )
 
     pr_batfish = steps["pr-batfish-assurance"]
@@ -218,78 +211,29 @@ def test_pipeline_contract() -> None:
     }
     assert pr_batfish["if_changed"] == RUNTIME_CHANGE_CONDITION
 
-    staging = steps["cml-staging"]
-    assert staging["label"] == (
-        ":cloud: Ephemeral CML staging · create → validate → destroy"
+    source = (ROOT / ".buildkite/pipeline.yml").read_text()
+    assert "# TEMPORARILY DISABLED DURING DETOUR B." in source
+    assert (
+        "# Restore only when the operator explicitly decides disposable CML staging"
+        in source
     )
-    assert staging["agents"]["queue"] == "ncdp-staging"
-    assert staging["depends_on"] == [
-        "validation-complete",
-        "pr-batfish-assurance",
-    ]
-    assert staging["command"] == "scripts/buildkite/ephemeral_staging.sh"
-    assert staging["concurrency"] == 1
-    assert staging["concurrency_group"] == "ncdp/cml-ephemeral-staging"
-    assert staging["retry"] == {
-        "automatic": False,
-        "manual": {
-            "allowed": False,
-            "reason": "Retained staging state requires explicit operator recovery.",
-        },
-    }
-    assert staging["if_changed"] == RUNTIME_CHANGE_CONDITION
-    protected = steps["protected-delivery"]
-    assert protected["depends_on"] == "validation-complete"
-    assert protected["if_changed"] == RUNTIME_CHANGE_CONDITION
-    assert [step["key"] for step in protected["steps"]] == [
-        "batfish-assurance",
-        "promotion",
-        "deployment-approval",
-        "deploy-gate",
-    ]
-    batfish = steps["batfish-assurance"]
-    assert batfish["agents"]["queue"] == "ncdp-validation"
-    assert batfish["command"] == ".buildkite/scripts/batfish_assurance.sh"
-    assert batfish["concurrency"] == 1
-    assert batfish["concurrency_group"] == "ncdp/batfish-assurance"
-    assert batfish["retry"] == {
-        "automatic": False,
-        "manual": {
-            "allowed": False,
-            "reason": "A fresh build is required for another assurance attempt.",
-        },
-    }
-    assert "depends_on" not in batfish
-    assert "pr-batfish-assurance" not in {step["key"] for step in protected["steps"]}
-    assert steps["promotion"]["agents"]["queue"] == "ncdp-validation"
-    assert "concurrency" not in steps["promotion"]
-    assert "concurrency_group" not in steps["promotion"]
-    assert steps["deploy-gate"]["agents"]["queue"] == "ncdp-deploy"
-    assert steps["deploy-gate"]["concurrency"] == 1
-    assert steps["deploy-gate"]["concurrency_group"] == "ncdp/network-change-deployment"
-    assert steps["deploy-gate"]["retry"] == {
-        "automatic": False,
-        "manual": {
-            "allowed": False,
-            "reason": (
-                "A fresh deployment authorization is required for another attempt."
-            ),
-        },
-    }
-    approval = steps["deployment-approval"]
-    assert approval["block"] == ":lock: Authorize exact promotion"
-    assert approval["prompt"] == (
-        "Authorize the exact immutable promotion verified and recorded by the "
-        "promotion step."
+    assert "#   key: cml-staging" in source
+    assert (
+        "# Protected delivery remains paused while disposable CML staging is disabled."
+        in source
     )
-    assert approval["submit"] == "Authorize exact promotion"
-    assert "fields" not in approval
-    assert steps["promotion"]["depends_on"] == [
-        "cml-staging",
-        "batfish-assurance",
-    ]
-    assert steps["deployment-approval"]["depends_on"] == "promotion"
-    assert steps["deploy-gate"]["depends_on"] == "deployment-approval"
+    assert "# Restore both together only by explicit operator decision." in source
+    assert "#   key: protected-delivery" in source
+    assert "#       key: promotion" in source
+    assert "#         - cml-staging" in source
+    assert "#       key: deploy-gate" in source
+    assert "#     - validation-complete" in source
+    assert "#     - pr-batfish-assurance" in source
+    assert "#     queue: ncdp-staging" in source
+    assert '#   if: build.branch == "main"' in source
+    assert "#         queue: ncdp-deploy" in source
+    assert "cml-staging" not in top_level_steps
+    assert "protected-delivery" not in top_level_steps
 
 
 def test_quality_image_normalizes_helper_access_after_final_copy() -> None:
@@ -306,21 +250,12 @@ def test_quality_image_normalizes_helper_access_after_final_copy() -> None:
     assert "/app/infrastructure/observability" in normalized
 
 
-def test_pr_and_main_conditions() -> None:
+def test_pr_assurance_remains_active_while_staging_and_delivery_are_paused() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
     steps = _steps_by_key(pipeline)
-    protected = steps["protected-delivery"]
-    assert 'build.branch == "main"' in protected["if"]
-    assert "build.pull_request.id == null" in protected["if"]
-    assert "if" not in steps["cml-staging"]
     assert steps["pr-batfish-assurance"]["if"] == ("build.pull_request.id != null")
-    for key in (
-        "batfish-assurance",
-        "promotion",
-        "deployment-approval",
-        "deploy-gate",
-    ):
-        assert "if" not in steps[key]
+    assert "cml-staging" not in steps
+    assert "protected-delivery" not in steps
 
 
 def test_commit_verifier_accepts_only_an_exact_clean_pr_assurance_checkout(
@@ -437,9 +372,7 @@ def test_batfish_wrapper_rejects_unapproved_execution_context_before_runtime(
 def test_live_paths_use_fail_closed_allowlist() -> None:
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
     steps = _steps_by_key(pipeline)
-    assert steps["cml-staging"]["if_changed"] == RUNTIME_CHANGE_CONDITION
     assert steps["pr-batfish-assurance"]["if_changed"] == RUNTIME_CHANGE_CONDITION
-    assert steps["protected-delivery"]["if_changed"] == RUNTIME_CHANGE_CONDITION
 
     assert RUNTIME_CHANGE_CONDITION["include"] == "**"
     assert set(RUNTIME_CHANGE_CONDITION["exclude"]) == {
@@ -522,8 +455,9 @@ def test_installed_buildkite_change_evaluation(
     ):
         assert "skip" in rendered_steps[key]
     assert "skip" not in rendered_steps["validation-complete"]
-    for key in ("pr-batfish-assurance", "cml-staging", "protected-delivery"):
-        assert ("skip" not in rendered_steps[key]) is live_path_expected
+    assert ("skip" not in rendered_steps["pr-batfish-assurance"]) is live_path_expected
+    assert "cml-staging" not in rendered_steps
+    assert "protected-delivery" not in rendered_steps
 
 
 def test_installed_buildkite_change_evaluation_runs_applicable_checks_before_barrier(
@@ -562,10 +496,10 @@ def test_installed_buildkite_change_evaluation_runs_applicable_checks_before_bar
         "quality-observability-11c2",
         "validation-complete",
         "pr-batfish-assurance",
-        "cml-staging",
-        "protected-delivery",
     ):
         assert "skip" not in rendered_steps[key]
+    assert "cml-staging" not in rendered_steps
+    assert "protected-delivery" not in rendered_steps
 
 
 def test_external_bootstrap_fetches_diff_base() -> None:

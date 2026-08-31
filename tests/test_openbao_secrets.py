@@ -8,7 +8,26 @@ import httpx
 import pytest
 
 import network_change_delivery.secrets as secrets_module
+from network_change_delivery.architecture_contracts import (
+    AutomationProfileID,
+    CmlRealizationProfileID,
+    ManagementBinding,
+    ManagementEndpoint,
+    ManagementEndpointPurpose,
+    ManagementEndpointSet,
+    ManagementL3Endpoint,
+    ManagementPhysicalAttachment,
+    NetworkOS,
+    OperationalRole,
+    StableInterfaceIdentity,
+)
 from network_change_delivery.models import InventoryDevice
+from network_change_delivery.profile_inventory import (
+    NetBoxDeviceTypeFact,
+    NetBoxPlatformFact,
+    NetBoxRoleFact,
+    ProfiledInventoryDevice,
+)
 from network_change_delivery.secrets import (
     ENVIRONMENT_REFERENCE,
     EnvironmentSecretProvider,
@@ -49,6 +68,57 @@ def netbox_device(**changes: object) -> InventoryDevice:
     }
     values.update(changes)
     return InventoryDevice.model_validate(values)
+
+
+def profiled_device(device_id: int = 8) -> ProfiledInventoryDevice:
+    identity = f"netbox:dcim.device:{device_id}"
+    interface = StableInterfaceIdentity(
+        device=identity,
+        interface="netbox:dcim.interface:13",
+        name="GigabitEthernet0/0",
+    )
+
+    def binding(ip_id: int, address: str) -> ManagementBinding:
+        return ManagementBinding(
+            physical_attachment=ManagementPhysicalAttachment(interface=interface),
+            l3_endpoint=ManagementL3Endpoint(
+                interface=interface,
+                ip_address_identity=f"netbox:ipam.ipaddress:{ip_id}",
+                address=address,
+                service="ssh",
+                port=22,
+            ),
+        )
+
+    return ProfiledInventoryDevice(
+        device_identity=identity,
+        logical_name="transit-ios-01",
+        expected_hostname="transit-ios-01",
+        platform=NetBoxPlatformFact(object_id=3, slug="cisco-ios", name="Cisco IOS"),
+        device_type=NetBoxDeviceTypeFact(
+            object_id=3,
+            slug="iosv-159-3-m12",
+            model="IOSv 15.9(3)M12",
+        ),
+        role=NetBoxRoleFact(object_id=5, slug="transit", name="Transit"),
+        operational_role=OperationalRole.TRANSIT,
+        network_os=NetworkOS.IOS,
+        automation_profile_id=AutomationProfileID.IOSV_159_3_M12,
+        cml_realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
+        management_endpoints=ManagementEndpointSet(
+            logical_device=identity,
+            automation_profile_id=AutomationProfileID.IOSV_159_3_M12,
+            live=ManagementEndpoint(
+                purpose=ManagementEndpointPurpose.LIVE,
+                binding=binding(13, "192.168.4.16/24"),
+            ),
+            staging=ManagementEndpoint(
+                purpose=ManagementEndpointPurpose.STAGING,
+                binding=binding(14, "192.168.4.31/24"),
+            ),
+        ),
+        protected_interfaces=(interface,),
+    )
 
 
 def login_payload(**auth_changes: object) -> dict[str, object]:
@@ -135,6 +205,30 @@ def test_reference_uses_only_stable_netbox_device_id() -> None:
     assert first.source == "openbao"
     assert first.reference == "openbao:kv-v2:ncdp/devices/1/ssh"
     assert changed_endpoint == first
+
+
+def test_profiled_inventory_device_uses_same_exact_local_openbao_path() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v1/auth/approle/login":
+            return httpx.Response(200, json=login_payload())
+        return httpx.Response(200, json=secret_payload(username="netdevops"))
+
+    target = profiled_device()
+    openbao = provider(handler)
+    assert target.inventory_object_id == "netbox:dcim.device:8"
+    assert openbao.reference(target).reference == ("openbao:kv-v2:ncdp/devices/8/ssh")
+    assert openbao.load(target).username == "netdevops"
+    assert requests[-1].url.path == "/v1/ncdp/data/devices/8/ssh"
+    assert "192.168.4.16" not in openbao.reference(target).reference
+    assert "transit-ios-01" not in openbao.reference(target).reference
+
+
+def test_profiled_stable_ids_map_to_exact_openbao_references() -> None:
+    assert provider().reference(profiled_device(8)).reference.endswith("/8/ssh")
+    assert provider().reference(profiled_device(9)).reference.endswith("/9/ssh")
 
 
 @pytest.mark.parametrize(

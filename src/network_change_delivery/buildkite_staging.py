@@ -24,6 +24,7 @@ from network_change_delivery.secrets import (
 
 OPENBAO_STAGING_AUDIENCE = "urn:ncdp:openbao:staging"
 OPENBAO_STAGING_MAX_LEASE_SECONDS = 300
+STAGING_DEVICE_IDS = frozenset({1, 2, 8, 9})
 
 
 def staging_policy_name(device_id: int) -> str:
@@ -123,7 +124,7 @@ def validate_staging_state_root(
 
 
 class BuildkiteStagingSecretProvider:
-    """Reuse one JWT for two exact one-use, device-scoped OpenBao logins."""
+    """Reuse one JWT for exact one-use, device-scoped OpenBao logins."""
 
     _LOGIN_PATH = "/v1/auth/jwt/login"
 
@@ -148,7 +149,7 @@ class BuildkiteStagingSecretProvider:
     @staticmethod
     def reference(device) -> CredentialReference:
         device_id = netbox_device_id(device)
-        if device_id not in {1, 2}:
+        if device_id not in STAGING_DEVICE_IDS:
             raise SecretError("Buildkite staging device identity rejected")
         return CredentialReference(
             "openbao", f"openbao:kv-v2:ncdp/devices/{device_id}/ssh"

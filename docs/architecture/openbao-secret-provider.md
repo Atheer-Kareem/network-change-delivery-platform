@@ -15,6 +15,15 @@ authenticated operation. The personal-lab role issues five-minute, single-use
 tokens. NCDP does not cache, renew, inspect, or retry tokens and does not place
 them in persistent HTTP headers.
 
+Detour B3-3 retains the existing `ncdp-personal-lab` AppRole and policy name
+while extending that policy to exactly four read paths: stable NetBox device
+IDs 1, 2, 8, and 9. There is no wildcard or list capability. The same provider
+accepts either the legacy `InventoryDevice` or the parallel
+`ProfiledInventoryDevice` through their structural stable NetBox identity; no
+hostname, management address, or profile selects a credential. Devices 8/9
+store distinct operator-generated credentials at their stable-ID paths and the
+values remain only in OpenBao.
+
 The mature Buildkite path uses a Buildkite-issued OIDC JWT with issuer
 `https://agent.buildkite.com`, audience `urn:ncdp:openbao:deploy`, and the fixed
 OpenBao JWT role `ncdp-buildkite-deploy`. The job requests a 300-second JWT with
@@ -64,16 +73,21 @@ backend, role, and no-device-capability contracts were verified. This is an
 operator action, never a Buildkite job action.
 
 Buildkite ephemeral staging uses audience `urn:ncdp:openbao:staging` and
-separate roles `ncdp-buildkite-staging-device-1` and `-2`. Each binds the
-immutable pipeline subject and exact `cml-staging` step and issues one
+separate roles `ncdp-buildkite-staging-device-1`, `-2`, `-8`, and `-9`. Each
+binds the immutable pipeline subject and exact `cml-staging` step and issues one
 five-minute, one-use token with no default policy and only its matching exact
 device-read policy. The application verifies mapped pipeline, build, commit,
 branch, step, and job identity before the single KV-v2 read. One in-memory JWT
-is used for the two independent role logins and discarded. Staging rejects
-AppRole; deployment roles, audiences, policies, and approval remain unchanged.
-Under ADR 0024 these roles read the same device 1/2 secrets used for live
-management. A credential belongs to the logical NetBox device, not its live or
-staging management IP; no `.30/.40`-specific secrets exist.
+may be used for four independent role logins and is then discarded. Staging
+rejects AppRole; deployment roles, audiences, policies, and approval remain
+unchanged. A credential belongs to the logical NetBox device, not its LIVE or
+STAGING management IP; no address-specific secrets exist.
+
+The four staging capabilities are prepared but are not currently exercised by
+Buildkite. Automatic disposable CML and protected delivery are temporarily
+paused together during Detour B. Restore both together only when the operator
+explicitly decides disposable CML staging is useful again and its Terraform
+topology is ready for the intended profiled population.
 
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role

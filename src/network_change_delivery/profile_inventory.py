@@ -377,6 +377,11 @@ class ProfiledInventoryDevice(BaseModel):
             network_os=self.network_os,
         )
 
+    @property
+    def inventory_object_id(self) -> str:
+        """Expose stable NetBox identity to structural credential providers."""
+        return self.device_identity
+
 
 def _admit_profiled_device(
     device: ProfiledInventoryDevice,

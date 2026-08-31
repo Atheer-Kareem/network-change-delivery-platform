@@ -154,35 +154,11 @@ class ReadinessServiceExpectation(BaseModel):
     port: int = Field(ge=1, le=65535)
 
 
-class LegacySSHCompatibility(BaseModel):
-    """Unaccepted IOSv-only compatibility possibility for B2 validation."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    scope: Literal["profile_local"] = "profile_local"
-    profile_id: Literal["iosv_159_3_m12"] = "iosv_159_3_m12"
-    key_exchange_algorithms: tuple[Literal["diffie-hellman-group14-sha1"], ...] = (
-        "diffie-hellman-group14-sha1",
-    )
-    host_key_algorithms: tuple[Literal["ssh-rsa"], ...] = ("ssh-rsa",)
-    acceptance: Literal["requires_b2_real_adapter_acceptance"] = (
-        "requires_b2_real_adapter_acceptance"
-    )
-
-    @model_validator(mode="after")
-    def exact_unaccepted_algorithms(self) -> LegacySSHCompatibility:
-        if self.key_exchange_algorithms != ("diffie-hellman-group14-sha1",):
-            raise ValueError("IOSv legacy KEX possibility must be exact")
-        if self.host_key_algorithms != ("ssh-rsa",):
-            raise ValueError("IOSv legacy host-key possibility must be exact")
-        return self
-
-
 class SSHCompatibilityPolicy(BaseModel):
-    """Profile-local SSH policy; global relaxation is not representable."""
+    """Strict SSH policy with no algorithm-relaxation authority."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     strict_host_key_verification: Literal[True] = True
-    legacy_compatibility: LegacySSHCompatibility | None = None
 
 
 class AutomationProfile(BaseModel):
@@ -203,7 +179,7 @@ class AutomationProfile(BaseModel):
 
     @model_validator(mode="after")
     def validate_closed_behavior(self) -> AutomationProfile:
-        """Reject duplicate capabilities/services and non-IOSv legacy policy."""
+        """Reject duplicate capabilities and readiness services."""
         if not self.admitted_capabilities or len(self.admitted_capabilities) != len(
             set(self.admitted_capabilities)
         ):
@@ -218,16 +194,6 @@ class AutomationProfile(BaseModel):
             raise ValueError(
                 "readiness service expectations must be unique and nonempty"
             )
-        compatibility = self.ssh_policy.legacy_compatibility
-        if compatibility is not None and (
-            self.profile_id is not AutomationProfileID.IOSV_159_3_M12
-            or compatibility.profile_id != self.profile_id.value
-        ):
-            raise ValueError(
-                "legacy SSH compatibility is admitted only for exact IOSv profile"
-            )
-        if self.network_os is NetworkOS.JUNOS and compatibility is not None:
-            raise ValueError("Junos transport cannot inherit IOSv SSH compatibility")
         return self
 
 
@@ -416,9 +382,7 @@ AUTOMATION_PROFILE_CATALOG: Mapping[AutomationProfileID, AutomationProfile] = (
                 collector_family=CollectorFamily.CISCO_IOS_FACTS,
                 readiness_services=(_service(ManagementService.SSH, 22),),
                 recovery_family=RecoveryFamily.CISCO_TARGETED_INVERSE,
-                ssh_policy=SSHCompatibilityPolicy(
-                    legacy_compatibility=LegacySSHCompatibility()
-                ),
+                ssh_policy=SSHCompatibilityPolicy(),
             ),
             AutomationProfileID.IOSVL2_2020: AutomationProfile(
                 profile_id=AutomationProfileID.IOSVL2_2020,

@@ -170,26 +170,25 @@ exact-interface collection.
 
 | Automation profile | Provider | Backend |
 |---|---|---|
-| `cat8000v_iosxe` | Ansible `network_cli` + `cisco.ios` collection | libssh |
+| `cat8000v_iosxe` | Ansible `network_cli` + `cisco.ios` collection | Paramiko |
 | `iosv_159_3_m12` | Ansible `network_cli` + `cisco.ios` collection | Paramiko |
-| `iosvl2_2020` | Ansible `network_cli` + `cisco.ios` collection | libssh |
+| `iosvl2_2020` | Ansible `network_cli` + `cisco.ios` collection | Paramiko |
 | `vjunos_router` | PyEZ/NETCONF | existing hardened Junos transport |
 
-Inspection used installed ansible-core 2.21.3, ansible.netcommon 8.6.0,
-ansible-pylibssh 1.4.0, Paramiko 4.0.0, and cisco.ios 11.4.2. The
-`network_cli` plugin accepts exact inventory variable
-`ansible_network_cli_ssh_type` values `libssh` or `paramiko`; its `auto` mode can
-fall back, so B2 never selects `auto`. Run-scoped environment disables both
-Paramiko and libssh host-key auto-add, while existing trust is verified before
-Runner starts. No libssh host-key/KEX override is set.
+The pinned B2 runtime explicitly sets
+`ansible_network_cli_ssh_type=paramiko`; it never selects Ansible's `auto` mode
+or a fallback. Existing trust is verified before Runner starts, host-key
+checking remains enabled, and Paramiko host-key auto-add is disabled. The
+catalog and SSH policy contain no KEX or host-key algorithm override. The
+current v1 Cisco path continues to force Paramiko and is not migrated in B2.
 
-The exact IOSv profile selects Paramiko because its library negotiation may
-support the proven legacy image without changing system OpenSSH. IOS-XE and
-IOSvL2 do not inherit that backend for convenience. The current v1 Cisco path
-continues to force Paramiko and is not migrated in B2. Strict-profile and IOSv
-real-adapter results are recorded only after bounded read-only acceptance;
-missing temporary-node credentials leave that evidence pending rather than
-authorizing fallback or global SSH changes.
+An earlier B2 design selected libssh for CAT8000V and IOSvL2. CML-anchored
+verification proved that `core-02` owns and presents the same accepted RSA key;
+no stale key, replacement, or re-enrollment existed. The actual blocker was
+that the pinned pylibssh stack did not deterministically consume the required
+run-scoped custom trust configuration. B2 therefore standardizes its existing
+bounded Ansible Cisco collector on Paramiko and removes pylibssh from the
+project dependency set. This is explicit admission, not automatic fallback.
 
 ## Bounded real-adapter result
 
@@ -197,27 +196,22 @@ The B2 acceptance attempt used the already materialized accepted read-only
 Oxidized credential source and its private realization-anchored host trust. It
 made no configuration request.
 
-| Profile | Target | Backend | Result |
+| Profile | Target | Backend/evidence path | Result |
 |---|---|---|---|
-| `cat8000v_iosxe` | `core-02` | libssh | **STOPPED:** accepted host key does not match the server key presented to libssh |
+| `cat8000v_iosxe` | `core-02` | Ansible/Paramiko control; independent Netmiko/Paramiko | **PASS:** accepted key unchanged; strict trust and read-only collection passed; mismatched/empty trust failed closed |
 | `vjunos_router` | `edge-junos-01` | PyEZ/NETCONF | **PASS:** strict trust, hostname `edge-junos-01`, Junos `23.2R1.15`, 42 interfaces |
-| `iosv_159_3_m12` | temporary IOSv | Paramiko | **PENDING:** explicit temporary-node credential input is unavailable |
-| `iosvl2_2020` | temporary IOSvL2 | libssh | **PENDING:** explicit temporary-node credential input is unavailable |
+| `iosv_159_3_m12` | temporary IOSv | independent Netmiko/Paramiko | **PASS (transport/image feasibility):** strict isolated trust, version and L3 interface commands, no algorithm override |
+| `iosvl2_2020` | temporary IOSvL2 | independent Netmiko/Paramiko | **PASS (transport/image feasibility):** strict isolated trust, version, L3 interface and VLAN commands, no algorithm override |
 
-The follow-up investigation first proved the existing v1 Paramiko control
-against the same target, credential, and accepted trust source. It also proved
-that the libssh run-scoped `known_hosts` projection was a regular mode-`0600`
-file, contained the expected entry, and was byte-for-byte and fingerprint
-identical to that accepted source. Private libssh diagnostics then classified
-the failure as a server-key mismatch, not a missing trust path and not host-key
-or KEX algorithm negotiation. The fact that the accepted entry has key type
-`ssh-rsa` does not imply that the server requires legacy SHA-1 signature
-negotiation.
+The independent feasibility run used Python 3.12.13, Netmiko 4.7.0, and
+Paramiko 4.0.0. Netmiko is deliberately not a project dependency: B2 already
+has an adequate bounded Cisco collector, and adding another collector would
+enlarge the increment without improving its contract. The IOSv and IOSvL2 keys
+were copied from already-existing operator trust into isolated temporary files.
+That proves bounded transport/image compatibility only; it is not authoritative
+B3/NCDP host-trust enrollment and does not make those nodes managed devices.
 
-**HOST TRUST RE-ENROLLMENT REQUIRED.** B2 does not discover, replace, or delete
-the key automatically, add an algorithm override, weaken checking, or fall back
-to Paramiko. CAT8000V strict-profile acceptance remains unresolved and
-[ADR 0029](../adr/0029-profile-bound-read-only-inventory-and-transport-admission.md)
-remains Proposed. IOSv compatibility is likewise not yet accepted: no claim is
-made that Paramiko succeeds against exact IOSv M12 until its own credentials are
-explicitly supplied.
+No test required `diffie-hellman-group14-sha1`, an `ssh-rsa` compatibility
+override, trust mutation, auto-add, or weakened checking. B3 retains authority
+for the new devices' NetBox identity, management endpoints, credentials, and
+host-trust onboarding.

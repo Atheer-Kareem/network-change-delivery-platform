@@ -109,9 +109,9 @@ class FakeJunosCollector:
 @pytest.mark.parametrize(
     ("profile_id", "backend"),
     [
-        (AutomationProfileID.CAT8000V_IOSXE, CiscoSSHBackend.LIBSSH),
+        (AutomationProfileID.CAT8000V_IOSXE, CiscoSSHBackend.PARAMIKO),
         (AutomationProfileID.IOSV_159_3_M12, CiscoSSHBackend.PARAMIKO),
-        (AutomationProfileID.IOSVL2_2020, CiscoSSHBackend.LIBSSH),
+        (AutomationProfileID.IOSVL2_2020, CiscoSSHBackend.PARAMIKO),
     ],
 )
 def test_all_three_cisco_profiles_dispatch_exact_backend(
@@ -186,23 +186,19 @@ def test_profile_adapter_exposes_no_write_transaction_or_recovery_surface() -> N
 
 def test_transport_catalog_is_closed_strict_and_profile_local() -> None:
     assert set(PROFILE_READ_ONLY_TRANSPORTS) == set(AutomationProfileID)
+    assert set(CiscoSSHBackend) == {CiscoSSHBackend.PARAMIKO}
     assert all(
         item.strict_host_key_verification and not item.host_key_auto_add
         for item in PROFILE_READ_ONLY_TRANSPORTS.values()
     )
-    assert (
-        PROFILE_READ_ONLY_TRANSPORTS[
-            AutomationProfileID.IOSV_159_3_M12
-        ].cisco_ssh_backend
-        is CiscoSSHBackend.PARAMIKO
-    )
-    for strict_profile in (
+    for cisco_profile in (
         AutomationProfileID.CAT8000V_IOSXE,
+        AutomationProfileID.IOSV_159_3_M12,
         AutomationProfileID.IOSVL2_2020,
     ):
-        transport = PROFILE_READ_ONLY_TRANSPORTS[strict_profile]
+        transport = PROFILE_READ_ONLY_TRANSPORTS[cisco_profile]
         assert transport.adapter_family is AdapterFamily.CISCO_IOS
-        assert transport.cisco_ssh_backend is CiscoSSHBackend.LIBSSH
+        assert transport.cisco_ssh_backend is CiscoSSHBackend.PARAMIKO
     junos = PROFILE_READ_ONLY_TRANSPORTS[AutomationProfileID.VJUNOS_ROUTER]
     assert junos.adapter_family is AdapterFamily.JUNOS_PYEZ
     assert junos.cisco_ssh_backend is None
@@ -232,16 +228,25 @@ def test_profiled_cisco_runner_uses_run_scoped_strict_backend_policy(
         target(AutomationProfileID.CAT8000V_IOSXE),
         CREDENTIALS,
         "collect_interface_state.yml",
-        ssh_type="libssh",
+        ssh_type="paramiko",
         profile_bound=True,
     )
     inventory = captured["inventory"]  # type: ignore[assignment]
     host = inventory["all"]["hosts"]["ncdp_target"]  # type: ignore[index]
     envvars = captured["envvars"]  # type: ignore[assignment]
-    assert host["ansible_network_cli_ssh_type"] == "libssh"  # type: ignore[index]
+    assert host["ansible_network_cli_ssh_type"] == "paramiko"  # type: ignore[index]
     assert envvars["ANSIBLE_HOST_KEY_CHECKING"] == "True"  # type: ignore[index]
     assert envvars["ANSIBLE_HOST_KEY_AUTO_ADD"] == "False"  # type: ignore[index]
-    assert envvars["ANSIBLE_LIBSSH_HOST_KEY_AUTO_ADD"] == "False"  # type: ignore[index]
+    assert "ANSIBLE_LIBSSH_HOST_KEY_AUTO_ADD" not in envvars  # type: ignore[operator]
+
+
+def test_b2_has_no_libssh_or_automatic_backend_selection() -> None:
+    source = (
+        ROOT / "src/network_change_delivery/profile_read_only_adapter.py"
+    ).read_text(encoding="utf-8")
+    lowered = source.casefold()
+    assert "libssh" not in lowered
+    assert '"auto"' not in lowered
 
 
 def test_current_v1_cisco_inventory_still_forces_paramiko_without_b2_policy() -> None:

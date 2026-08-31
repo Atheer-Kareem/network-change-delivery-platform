@@ -331,7 +331,7 @@ class AnsibleRunnerCiscoAdapter:
     def _inventory(
         device: ReadOnlyConnectionTarget,
         *,
-        ssh_type: Literal["libssh", "paramiko"] = "paramiko",
+        ssh_type: Literal["paramiko"] = "paramiko",
     ) -> dict[str, Any]:
         return {
             "all": {
@@ -354,7 +354,7 @@ class AnsibleRunnerCiscoAdapter:
         playbook: str,
         *,
         extravars: dict[str, Any] | None = None,
-        ssh_type: Literal["libssh", "paramiko"] = "paramiko",
+        ssh_type: Literal["paramiko"] = "paramiko",
         profile_bound: bool = False,
     ) -> tuple[object, dict[str, dict[str, Any]]]:
         if self._known_hosts is None:
@@ -420,7 +420,6 @@ class AnsibleRunnerCiscoAdapter:
                     **(
                         {
                             "ANSIBLE_HOST_KEY_AUTO_ADD": "False",
-                            "ANSIBLE_LIBSSH_HOST_KEY_AUTO_ADD": "False",
                         }
                         if profile_bound
                         else {}
@@ -451,7 +450,7 @@ class AnsibleRunnerCiscoAdapter:
         target: ReadOnlyConnectionTarget,
         credentials: DeviceCredentials,
         *,
-        ssh_type: Literal["libssh", "paramiko"],
+        ssh_type: Literal["paramiko"],
     ) -> tuple[InterfaceState, ...]:
         """Collect through one explicit B2 profile-bound Cisco SSH backend."""
         return self._discover_read_only(
@@ -466,7 +465,7 @@ class AnsibleRunnerCiscoAdapter:
         target: ReadOnlyConnectionTarget,
         credentials: DeviceCredentials,
         *,
-        ssh_type: Literal["libssh", "paramiko"],
+        ssh_type: Literal["paramiko"],
         profile_bound: bool,
     ) -> tuple[InterfaceState, ...]:
         runner, selected = self._run(
@@ -559,7 +558,7 @@ class AnsibleRunnerCiscoAdapter:
         credentials: DeviceCredentials,
         interface: str,
         *,
-        ssh_type: Literal["libssh", "paramiko"],
+        ssh_type: Literal["paramiko"],
     ) -> InterfaceState:
         """Return one exact interface through the selected B2 Cisco backend."""
         states = self.discover_read_only(

@@ -1,6 +1,6 @@
 # ADR 0029: Profile-bound read-only inventory and transport admission
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-31
 
 ## Context
@@ -14,9 +14,9 @@ evidence schemas before the four-device authority exists.
 
 The local NetBox authority already contains useful factual identity for the two
 accepted devices, but it does not yet contain the B2 management-purpose or
-operational-role metadata. The Cisco v1 adapter also deliberately forces
-Paramiko, whereas B2 needs exact profile-local backend admission without
-changing that accepted write-capable path.
+operational-role metadata. The Cisco v1 adapter deliberately forces Paramiko;
+B2 needs equally explicit profile-bound admission without changing that
+accepted write-capable path.
 
 ## Decision
 
@@ -51,11 +51,12 @@ B2 introduces a parallel, versioned, read-only path:
 - Exact dispatch is `cat8000v_iosxe`, `iosv_159_3_m12`, and `iosvl2_2020` to
   Cisco Ansible read-only collection, and `vjunos_router` to PyEZ/NETCONF
   read-only collection. Unknown or mismatched profiles fail closed.
-- Cisco SSH backend admission is profile-local: CAT8000V uses libssh, exact IOSv
-  M12 uses Paramiko, and IOSvL2 uses libssh. Every path requires pre-existing
-  host trust, host-key checking, and disabled auto-add. No backend fallback or
-  global SSH algorithm relaxation is admitted. Junos retains its existing
-  hardened PyEZ/NETCONF path.
+- Every Cisco profile (`cat8000v_iosxe`, `iosv_159_3_m12`, and `iosvl2_2020`)
+  explicitly admits Ansible `network_cli` with Paramiko. No automatic backend
+  selection or fallback exists. Every path requires pre-existing host trust,
+  host-key checking, and disabled auto-add. No KEX or host-key algorithm
+  relaxation is represented. Junos retains its existing hardened PyEZ/NETCONF
+  path.
 
 The existing v1 provider, models, plans, adapters, Buildkite deployment,
 staging driver, promotion artifacts, and digests remain unchanged. Existing
@@ -90,15 +91,25 @@ not create B2 write authority or claim four-device acceptance. Real IOSv and
 IOSvL2 backend acceptance remains bounded by existing credentials and trusted
 host keys; absence of those inputs is reported rather than bypassed.
 
-Bounded B2 acceptance passed the existing Junos PyEZ profile. A follow-up
-CAT8000V investigation proved the existing v1 Paramiko read-only control and
-the exact run-scoped trust projection, then classified the libssh failure as a
-server-key mismatch against the accepted trust entry. An `ssh-rsa` entry does
-not by itself prove a legacy SHA-1 negotiation requirement, and this result is
-not an algorithm-negotiation finding.
+Bounded B2 acceptance passed the existing Junos PyEZ profile and the existing
+Ansible/Paramiko CAT8000V read-only control. CML-anchored verification then
+proved that `core-02` still owns and presents the already accepted RSA host key;
+the key was neither stale nor replaced. No trust mutation or re-enrollment is
+required.
 
-**HOST TRUST RE-ENROLLMENT REQUIRED.** This ADR remains Proposed until that
-separate trusted procedure is authorized and CAT8000V libssh is reaccepted. It
-authorizes no key discovery or replacement, fallback, algorithm override, or
-weakened checking. Temporary IOSv and IOSvL2 acceptance remains pending
-explicit credentials.
+The superseded libssh result was caused by the pinned pylibssh stack not
+deterministically consuming the required run-scoped custom trust
+configuration. B2 therefore standardizes its bounded Cisco Ansible collector
+on Paramiko and removes pylibssh from the project dependency set. This is an
+exact selection, not fallback. No algorithm exception was needed or admitted.
+
+Independent feasibility testing with Python 3.12.13, Netmiko 4.7.0, and
+Paramiko 4.0.0 passed strict explicit trust and read-only commands for the exact
+CAT8000V, IOSv 15.9(3)M12, and IOSvL2 2020 images. CAT8000V deliberately failed
+closed with mismatched and empty trust. IOSv and IOSvL2 passed without legacy
+algorithm overrides. Netmiko is not added: B2 already has an adequate bounded
+Cisco collector, and another collector and dependency would enlarge scope.
+The temporary-node keys came from existing operator trust, so this evidence is
+transport/image feasibility—not B3/NCDP authoritative trust enrollment. B3
+still owns NetBox, device, management, credential, and host-trust onboarding
+for the new managed devices.

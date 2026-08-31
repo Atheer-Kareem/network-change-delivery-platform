@@ -29,7 +29,6 @@ from network_change_delivery.secrets import DeviceCredentials
 class CiscoSSHBackend(StrEnum):
     """Closed network_cli backends admitted by exact Cisco profile."""
 
-    LIBSSH = "libssh"
     PARAMIKO = "paramiko"
 
 
@@ -52,7 +51,7 @@ PROFILE_READ_ONLY_TRANSPORTS: Mapping[AutomationProfileID, ProfileReadOnlyTransp
                 profile_id=AutomationProfileID.CAT8000V_IOSXE,
                 adapter_family=AdapterFamily.CISCO_IOS,
                 network_os=NetworkOS.IOSXE,
-                cisco_ssh_backend=CiscoSSHBackend.LIBSSH,
+                cisco_ssh_backend=CiscoSSHBackend.PARAMIKO,
                 strict_host_key_verification=True,
                 host_key_auto_add=False,
             ),
@@ -68,7 +67,7 @@ PROFILE_READ_ONLY_TRANSPORTS: Mapping[AutomationProfileID, ProfileReadOnlyTransp
                 profile_id=AutomationProfileID.IOSVL2_2020,
                 adapter_family=AdapterFamily.CISCO_IOS,
                 network_os=NetworkOS.IOS,
-                cisco_ssh_backend=CiscoSSHBackend.LIBSSH,
+                cisco_ssh_backend=CiscoSSHBackend.PARAMIKO,
                 strict_host_key_verification=True,
                 host_key_auto_add=False,
             ),
@@ -102,22 +101,16 @@ def _validate_transport_catalog() -> None:
                 raise RuntimeError("Cisco profile lacks an exact SSH backend")
         elif transport.cisco_ssh_backend is not None:
             raise RuntimeError("non-Cisco profile cannot select a Cisco SSH backend")
-    if (
-        PROFILE_READ_ONLY_TRANSPORTS[
-            AutomationProfileID.IOSV_159_3_M12
-        ].cisco_ssh_backend
-        is not CiscoSSHBackend.PARAMIKO
-    ):
-        raise RuntimeError("exact IOSv profile must retain its compatibility backend")
-    for strict_profile in (
+    for cisco_profile in (
         AutomationProfileID.CAT8000V_IOSXE,
+        AutomationProfileID.IOSV_159_3_M12,
         AutomationProfileID.IOSVL2_2020,
     ):
         if (
-            PROFILE_READ_ONLY_TRANSPORTS[strict_profile].cisco_ssh_backend
-            is not CiscoSSHBackend.LIBSSH
+            PROFILE_READ_ONLY_TRANSPORTS[cisco_profile].cisco_ssh_backend
+            is not CiscoSSHBackend.PARAMIKO
         ):
-            raise RuntimeError("strict Cisco profile inherited IOSv compatibility")
+            raise RuntimeError("Cisco read-only profile must select Paramiko")
 
 
 _validate_transport_catalog()
@@ -131,7 +124,7 @@ class CiscoReadOnlyCollector(Protocol):
         target: ProfileReadOnlyTarget,
         credentials: DeviceCredentials,
         *,
-        ssh_type: str,
+        ssh_type: Literal["paramiko"],
     ) -> tuple[InterfaceState, ...]: ...
 
     def collect_read_only(
@@ -140,7 +133,7 @@ class CiscoReadOnlyCollector(Protocol):
         credentials: DeviceCredentials,
         interface: str,
         *,
-        ssh_type: str,
+        ssh_type: Literal["paramiko"],
     ) -> InterfaceState: ...
 
 

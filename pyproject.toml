@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "ansible-core>=2.21.2,<2.22",
-    "ansible-pylibssh>=1.4.0,<2",
     "ansible-runner>=2.4.3,<2.5",
     "httpx>=0.28.1,<0.29",
     "junos-eznc>=2.8.2,<2.9",

@@ -20,7 +20,6 @@ from network_change_delivery.architecture_contracts import (
     CmlBootstrapProfileID,
     CmlReadinessProfileID,
     CmlRealizationProfileID,
-    LegacySSHCompatibility,
     ManagedField,
     ManagedOwnershipEnvelope,
     ManagedScopeIdentity,
@@ -322,42 +321,25 @@ def test_management_endpoint_set_fails_closed(mutation: str, message: str) -> No
         )
 
 
-def test_legacy_ssh_is_exact_profile_local_and_pending_b2_acceptance() -> None:
-    iosv = get_automation_profile(AutomationProfileID.IOSV_159_3_M12)
-    compatibility = iosv.ssh_policy.legacy_compatibility
-    assert compatibility is not None
-    assert compatibility.scope == "profile_local"
-    assert compatibility.profile_id == "iosv_159_3_m12"
-    assert compatibility.key_exchange_algorithms == ("diffie-hellman-group14-sha1",)
-    assert compatibility.host_key_algorithms == ("ssh-rsa",)
-    assert compatibility.acceptance == "requires_b2_real_adapter_acceptance"
-    assert iosv.ssh_policy.strict_host_key_verification is True
-    with pytest.raises(ValidationError):
-        LegacySSHCompatibility.model_validate({"scope": "global"})
-    with pytest.raises(ValidationError, match="KEX possibility must be exact"):
-        LegacySSHCompatibility(key_exchange_algorithms=())
+def test_all_profiles_require_strict_ssh_without_algorithm_relaxation() -> None:
+    for profile_id in AutomationProfileID:
+        policy = get_automation_profile(profile_id).ssh_policy
+        assert policy.strict_host_key_verification is True
+        assert policy.model_dump(mode="json") == {"strict_host_key_verification": True}
     with pytest.raises(ValidationError):
         SSHCompatibilityPolicy.model_validate({"strict_host_key_verification": False})
-
-
-def test_strict_profiles_cannot_inherit_iosv_legacy_compatibility() -> None:
-    strict_ids = (
-        AutomationProfileID.CAT8000V_IOSXE,
-        AutomationProfileID.IOSVL2_2020,
-        AutomationProfileID.VJUNOS_ROUTER,
-    )
-    assert all(
-        get_automation_profile(profile_id).ssh_policy.legacy_compatibility is None
-        for profile_id in strict_ids
-    )
-    payload = get_automation_profile(AutomationProfileID.CAT8000V_IOSXE).model_dump(
-        mode="json"
-    )
-    payload["ssh_policy"]["legacy_compatibility"] = LegacySSHCompatibility().model_dump(
-        mode="json"
-    )
-    with pytest.raises(ValidationError, match="only for exact IOSv profile"):
-        AutomationProfile.model_validate(payload)
+    for unsupported_field in (
+        "legacy_compatibility",
+        "key_exchange_algorithms",
+        "host_key_algorithms",
+    ):
+        with pytest.raises(ValidationError):
+            SSHCompatibilityPolicy.model_validate(
+                {
+                    "strict_host_key_verification": True,
+                    unsupported_field: ["unsupported-relaxation"],
+                }
+            )
 
 
 def test_authority_catalog_assigns_every_property_exactly_once() -> None:

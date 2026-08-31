@@ -67,25 +67,20 @@ provider dispatch.
 
 ## SSH compatibility policy
 
-Legacy SSH compatibility is representable only inside the exact
-`iosv_159_3_m12` profile. The catalog records that B2 real-adapter acceptance
-may require `diffie-hellman-group14-sha1` key exchange and an `ssh-rsa` host key.
-That possibility is not an accepted transport relaxation.
-
-The policy cannot express a global legacy setting. Strict host-key verification
-is mandatory for every profile. IOS-XE and Junos profiles do not inherit the
-IOSv possibility. B1 changes no Ansible, Paramiko, libssh, OpenSSH, known-host,
-or Junos transport behavior.
+Strict pre-existing host-key verification is mandatory for every profile. The
+policy cannot express global or profile-local host-key/KEX algorithm
+relaxation. B1 changed no Ansible, Paramiko, OpenSSH, known-host, or Junos
+transport behavior.
 
 The current v1 Cisco implementation explicitly sets
 `ansible_network_cli_ssh_type=paramiko`. Documentation describing that current
 path as libssh was incorrect; B1 corrects the documentation without changing
-the implementation. B2's separate read-only catalog selects libssh for
-`cat8000v_iosxe`, Paramiko only for `iosv_159_3_m12`, and libssh for
-`iosvl2_2020`. It never selects Ansible's automatic backend fallback. Strict
-host trust and disabled auto-add remain mandatory; no KEX or host-key algorithm
-is relaxed globally. Real-adapter acceptance remains bounded by already
-available credentials and trust.
+the implementation. B2's separate read-only catalog explicitly selects
+Paramiko for all three Cisco profiles. It never selects Ansible's automatic
+backend fallback. Strict host trust and disabled auto-add remain mandatory; no
+KEX or host-key algorithm is relaxed. Bounded feasibility against the exact
+IOSv and IOSvL2 images passed without overrides. The earlier OpenSSH-based IOSv
+compatibility hypothesis is therefore not retained as transport authority.
 
 ## Management binding
 

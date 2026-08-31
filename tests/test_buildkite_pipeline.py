@@ -38,8 +38,6 @@ def test_pipeline_contract() -> None:
         "quality-package-build",
         "quality-terraform-cml",
         "quality-snmp-generator",
-        "quality-observability-11b",
-        "quality-observability-11c2",
         "buildkite-definition",
         "ncdp-pipeline-contract",
         "validation-complete",
@@ -58,8 +56,6 @@ def test_pipeline_contract() -> None:
         "quality-package-build",
         "quality-terraform-cml",
         "quality-snmp-generator",
-        "quality-observability-11b",
-        "quality-observability-11c2",
         "buildkite-definition",
         "ncdp-pipeline-contract",
     }
@@ -97,36 +93,6 @@ def test_pipeline_contract() -> None:
         "buildkite-definition",
     }
     assert all("depends_on" not in steps[key] for key in independent_roots)
-
-    observability = steps["quality-observability-11b"]
-    assert observability["depends_on"] == "quality-env"
-    assert observability["agents"]["queue"] == "ncdp-validation"
-    assert observability["command"] == (
-        "NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
-        "scripts/observability/verify_runtime.sh"
-    )
-    assert observability["if_changed"]["include"] == [
-        "infrastructure/observability/**",
-        "scripts/observability/**",
-        "src/network_change_delivery/observability_*.py",
-        "tests/test_observability_*.py",
-    ]
-
-    snmp_observability = steps["quality-observability-11c2"]
-    assert snmp_observability["depends_on"] == "quality-env"
-    assert snmp_observability["agents"]["queue"] == "ncdp-validation"
-    assert snmp_observability["command"] == (
-        "NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
-        "scripts/observability/verify_snmp_runtime.sh"
-    )
-    assert snmp_observability["if_changed"]["include"] == [
-        "infrastructure/observability/**",
-        "scripts/observability/**",
-        "src/network_change_delivery/observability_*.py",
-        "src/network_change_delivery/snmp_*.py",
-        "tests/test_observability_*.py",
-        "tests/test_snmp_*.py",
-    ]
 
     snmp_generator = steps["quality-snmp-generator"]
     assert snmp_generator["command"] == (
@@ -212,6 +178,19 @@ def test_pipeline_contract() -> None:
     assert pr_batfish["if_changed"] == RUNTIME_CHANGE_CONDITION
 
     source = (ROOT / ".buildkite/pipeline.yml").read_text()
+    assert "quality-observability-11b" not in top_level_steps
+    assert "quality-observability-11c2" not in top_level_steps
+    assert (
+        "# Restore only by explicit operator decision when observability is being"
+        in source
+    )
+    assert "#   key: quality-observability-11b" in source
+    assert (
+        "# Restore only by explicit operator decision when SNMPv3 observability is"
+        in source
+    )
+    assert "#   key: quality-observability-11c2" in source
+    assert "#   command: NCDP_QUALITY_IMAGE=" in source
     assert "# TEMPORARILY DISABLED DURING DETOUR B." in source
     assert (
         "# Restore only when the operator explicitly decides disposable CML staging"
@@ -448,12 +427,9 @@ def test_installed_buildkite_change_evaluation(
     )
     rendered = yaml.safe_load(result.stdout)
     rendered_steps = {step["key"]: step for step in rendered["steps"]}
-    for key in (
-        "quality-snmp-generator",
-        "quality-observability-11b",
-        "quality-observability-11c2",
-    ):
-        assert "skip" in rendered_steps[key]
+    assert "skip" in rendered_steps["quality-snmp-generator"]
+    assert "quality-observability-11b" not in rendered_steps
+    assert "quality-observability-11c2" not in rendered_steps
     assert "skip" not in rendered_steps["validation-complete"]
     assert ("skip" not in rendered_steps["pr-batfish-assurance"]) is live_path_expected
     assert "cml-staging" not in rendered_steps
@@ -492,12 +468,12 @@ def test_installed_buildkite_change_evaluation_runs_applicable_checks_before_bar
     rendered_steps = {step["key"]: step for step in rendered["steps"]}
     for key in (
         "quality-snmp-generator",
-        "quality-observability-11b",
-        "quality-observability-11c2",
         "validation-complete",
         "pr-batfish-assurance",
     ):
         assert "skip" not in rendered_steps[key]
+    assert "quality-observability-11b" not in rendered_steps
+    assert "quality-observability-11c2" not in rendered_steps
     assert "cml-staging" not in rendered_steps
     assert "protected-delivery" not in rendered_steps
 

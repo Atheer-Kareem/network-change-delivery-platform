@@ -2,25 +2,27 @@
 
 ## Compatibility boundary
 
-Detour B3-1 is repository-only. It defines additive authority contracts and
-does not change any external environment or current runtime consumer.
+Detour B3-1 introduced repository-only authority contracts. B3-2 through B3-4
+then applied the reviewed NetBox, OpenBao, persistent CML, and LIVE trust
+boundaries without changing v1 planning or write behavior.
 
 The two inventory populations are intentionally different:
 
 | NetBox tag | Meaning | Intended membership | Authority granted |
 |---|---|---|---|
 | `ncdp-managed` | Accepted legacy/v1 population | `core-02`, `edge-junos-01` | Existing v1 behavior only |
-| `ncdp-profiled-inventory` | Eligibility for profiled inventory and realization | The future exact four logical devices | None by itself |
+| `ncdp-profiled-inventory` | Eligibility for profiled inventory and realization | The exact four logical devices | None by itself |
 
-Future intended membership is exact: `core-02` and `edge-junos-01` carry both
+Current membership is exact: `core-02` and `edge-junos-01` carry both
 tags; `transit-ios-01` and `access-sw-01` carry only
 `ncdp-profiled-inventory`. No tag is inferred from the other.
 
 The profiled tag grants no credential, device command, deployment, SNMP, fleet,
-observability, Oxidized, or protected-write capability. Current NetBox has not
-yet been migrated to this contract.
-[ADR 0024](../adr/0024-two-router-live-and-ephemeral-staging.md) therefore
-remains the current reference-environment truth.
+observability, Oxidized, or protected-write capability. B3-4 accepts the
+four-device persistent LIVE realization in
+[ADR 0031](../adr/0031-four-device-persistent-live-realization.md). ADR 0024
+remains the historical source for the legacy exact-two runtime and dormant
+Terraform staging contract.
 
 ## Exact Git-owned population
 
@@ -80,7 +82,7 @@ engine. B3-1 performs no actual staging target execution.
 
 ## Persistent realization admission
 
-`PersistentProfiledRealization` is a secret-free future LIVE admission model.
+`PersistentProfiledRealization` is the secret-free LIVE admission model.
 It binds:
 
 - one stable realization and CML lab identity;
@@ -93,13 +95,15 @@ It binds:
 
 It contains no CML client or mutation method. Missing or extra members,
 duplicate identities, wrong profile pairs, cross-device management bindings,
-or STAGING endpoints fail validation. The new module is not imported by the
-current two-node observability realization.
+or STAGING endpoints fail validation. The observability runtime retains a
+separate exact-two target projection while admitting the exact four-node CML
+population; it does not consume this model as target inventory.
 
 ## CML-anchored host trust
 
-`CmlAnchoredHostTrustRecord` and its exact four-record generation are metadata
-contracts, not enrollment or a `known_hosts` renderer. A record binds:
+`CmlAnchoredHostTrustRecord` and its exact four-record generation are the
+secret-free evidence contracts used by the private B3-4 enrollment path. A
+record binds:
 
 - LIVE or STAGING realization identity and exact CML lab/node UUIDs;
 - stable NetBox identity and logical device name;
@@ -111,8 +115,8 @@ contracts, not enrollment or a `known_hosts` renderer. A record binds:
 The trust generation rejects missing members and duplicate stable-device or CML
 node identities. A fingerprint cannot be represented without its CML anchor and
 stable device binding. Normal evidence deliberately has no raw public-key field.
-Future private key bytes needed to render a strict `known_hosts` file are a
-B3-4 private-material concern.
+Public key bytes needed by SSH remain only in the private exact-four
+`known_hosts` rendering. They do not enter normal evidence or the repository.
 
 Trust policy remains:
 
@@ -120,11 +124,14 @@ Trust policy remains:
 - never accept `ssh-keyscan` or another network observation by itself;
 - use no ambient user `known_hosts` as authority;
 - no auto-add, blind `ssh-keygen -R`, disabled host checking, or fallback; and
-- no key enrollment, replacement, or deletion in B3-1.
+- atomic publication of only the exact CML-anchored generation.
 
-The later canonical LIVE trust authority will cover all four profiled devices.
-Oxidized will receive an exact legacy devices-1/2 projection only after that
-migration is implemented; B3-1 leaves current Oxidized trust unchanged.
+The canonical profiled LIVE trust authority covers all four profiled devices.
+Oxidized remains on its independent exact devices-1/2 trust projection; B3-4
+does not widen its runtime population. When the Junos CML node was replaced,
+that exact-two trust was freshly CML-anchored to the new node UUID as required
+by ADR 0020. The observed key bytes remained the same, but realization-bound
+metadata was republished.
 
 ## Deferred authority migration
 
@@ -134,7 +141,7 @@ role, creates no CML object, changes no host trust, expands no Terraform graph,
 and changes no observability or protected delivery authority. Those operations
 require separately reviewed B3 increments and external acceptance evidence.
 
-## B3-2 NetBox authority state
+## NetBox authority state through B3-4
 
 Detour B3-2 migrates only the local NetBox authority. The reviewed,
 no-delete operator tool is
@@ -151,8 +158,8 @@ NetBox now assigns these stable identities and management relationships:
 |---|---:|---|---|---|---|---|
 | `core-02` | 1 | active | `core` | present with legacy tags preserved | `192.168.4.14/24` | `192.168.4.30/24` |
 | `edge-junos-01` | 2 | active | `edge` | present with legacy tags preserved | `192.168.4.20/24` | `192.168.4.40/24` |
-| `transit-ios-01` | 8 | planned | `transit` | present; no `ncdp-managed` | `192.168.4.16/24` | `192.168.4.31/24` |
-| `access-sw-01` | 9 | planned | `access` | present; no `ncdp-managed` | `192.168.4.17/24` | `192.168.4.32/24` |
+| `transit-ios-01` | 8 | active | `transit` | present; no `ncdp-managed` | `192.168.4.16/24` | `192.168.4.31/24` |
+| `access-sw-01` | 9 | active | `access` | present; no `ncdp-managed` | `192.168.4.17/24` | `192.168.4.32/24` |
 
 The two IOS devices use exact operational interfaces
 `GigabitEthernet0/0` through `GigabitEthernet0/3`. Their physical and L3
@@ -170,13 +177,10 @@ NetBox cable IDs 1 through 4 record the approved physical topology:
 - `core-02/GigabitEthernet3` to
   `access-sw-01/GigabitEthernet0/1`.
 
-The new devices deliberately remain planned. Consequently, normal legacy
-inventory remains exact devices 1/2, active per-device profile resolution works
-for core/Junos, and `resolve_profiled_population()` still fails closed until
-B3-4 supplies CML realization and host-trust acceptance and activates the IOS
-members. No VLAN, prefix, OpenBao credential, CML node, device configuration,
-host key, Terraform resource, Buildkite authority, or protected-write scope is
-created by B3-2. ADR 0024 therefore remains current live-environment truth.
+B3-2 deliberately left the new devices planned. B3-4 activated them only after
+the exact persistent CML realization, management readiness, credentials, and
+CML-anchored trust passed. Normal legacy inventory remains exact devices 1/2,
+while `resolve_profiled_population()` now returns exact devices 1/2/8/9.
 
 The exact mutation and independent verification evidence is recorded in the
 [B3-2 acceptance record](../acceptance/profiled-netbox-inventory-detour-b3-2.md).
@@ -201,3 +205,36 @@ historical evidence is removed.
 
 The [B3-3 acceptance record](../acceptance/profiled-openbao-onboarding-detour-b3-3.md)
 contains the secret-free applied-state evidence.
+
+## B3-4 persistent LIVE state
+
+The operator-owned `NCDP Live` lab now contains two infrastructure nodes and
+the exact four profiled devices. It remains outside Terraform. The physical
+data-plane links match NetBox cables 1 through 4, while each management
+interface attaches to the existing management switch. No VLAN, OSPF, ACL, or
+endpoint configuration is introduced.
+
+The new IOS bootstrap path reads only the exact OpenBao credentials for stable
+NetBox devices 8 and 9, derives IOS type-9 scrypt verifiers in memory, and stores
+no plaintext password in CML configuration or evidence. `access-sw-01` uses
+routed `GigabitEthernet0/0` with `no switchport` for independent management.
+
+The exact-four private LIVE trust generation is CML-anchored before network key
+observation and is published atomically outside the repository. It is the trust
+input for four real `ProfileReadOnlyAdapter` PASS results. Ambient user trust,
+Oxidized trust, auto-add, fallback, and algorithm relaxation are not used.
+
+The existing vJunos image required the explicitly authorized wipe/delete/
+recreate workaround after reboot failed to reapply stored Day-0. The replacement
+retains stable NetBox/logical identity and accepted configuration but has a new
+CML node UUID. The exact identities, topology, fingerprints, and read-only
+results are in the
+[B3-4 acceptance record](../acceptance/persistent-profiled-live-realization-detour-b3-4.md).
+
+Observability admits the exact four-device persistent CML population but still
+projects only the legacy `ncdp-managed` devices 1/2. Oxidized, SNMP, v1 fleet,
+and protected write authority likewise remain exact-two. Automatic disposable
+CML and protected delivery remain paused, and the Terraform staging topology is
+unchanged. Buildkite observability runtime and synthetic SNMPv3 runtime checks
+are separately paused until explicit operator decisions integrate them with the
+expanded profiled topology; the implementations remain intact.

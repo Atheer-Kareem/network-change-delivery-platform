@@ -86,8 +86,11 @@ and accepted managed-state references. Detour B2 adds a parallel
 [profile-bound read-only inventory and adapter](profile-bound-read-only-inventory.md)
 without changing the v1 planning or write path. Detour B3-1 adds separate
 [profile-aware population, realization, trust, and staging contracts](profile-aware-population-and-realization.md)
-without importing them into current runtimes. ADR 0024 remains authoritative
-for the current two-router live and disposable reference environment.
+without importing them into v1 planning or write runtimes. Detour B3-4 accepts
+the four-device persistent LIVE realization under
+[ADR 0031](../adr/0031-four-device-persistent-live-realization.md). Legacy
+delivery, Oxidized, observability targets, SNMP, and protected authority remain
+exact devices 1/2; disposable CML and protected delivery remain paused.
 
 ## Implemented now
 
@@ -119,10 +122,12 @@ identity, commit-bound least-privilege deployment, real personal-CML device
 acceptance, independent validation, and same-build deployment retry hardening
 are externally accepted. See the
 [Buildkite live-deployment boundary](buildkite-live-deployment.md).
-Increment 8 now provides the accepted Terraform/CML ephemeral staging
-lifecycle. The manually owned two-router `NCDP Live` realization remains
-outside Terraform; each staging run creates, validates, and destroys a separate
-two-router realization with run-scoped state. See the
+Increment 8 provides the accepted Terraform/CML ephemeral staging lifecycle.
+The manually owned four-device `NCDP Live` realization remains outside
+Terraform. The preserved disposable implementation still describes a separate
+two-router realization with run-scoped state, but automatic staging is paused
+until explicit operator restoration after the intended profiled Terraform
+topology is ready. See the
 [Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).
 
 Increment 10 provides durable append-only audit correlation and private

@@ -21,6 +21,7 @@ from network_change_delivery.observability_private_paths import (
     validate_observability_root,
     validate_private_file,
 )
+from network_change_delivery.profiled_live_cml import ACCESS_NODE_ID, TRANSIT_NODE_ID
 
 LIVE_LAB_ID = "09605569-0468-4fc4-8684-beb5a1342b9c"
 LIVE_LAB_TITLE = "NCDP Live"
@@ -39,6 +40,24 @@ EXPECTED_NODES = {
         "address": "192.168.4.20",
         "definition": "vjunos-router",
         "image": "vjunos-router-23-2r1-15",
+    },
+}
+EXPECTED_PROFILED_NON_TARGET_NODES = {
+    TRANSIT_NODE_ID: {
+        "name": "transit-ios-01",
+        "cml_label": "transit-ios-01",
+        "address": "192.168.4.16",
+        "definition": "iosv",
+        "image": "iosv-159-3-m12",
+        "required_configuration": (),
+    },
+    ACCESS_NODE_ID: {
+        "name": "access-sw-01",
+        "cml_label": "access-sw-01",
+        "address": "192.168.4.17",
+        "definition": "iosvl2",
+        "image": "iosvl2-2020",
+        "required_configuration": ("no switchport",),
     },
 }
 _UUID_PATTERN = r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
@@ -61,7 +80,7 @@ class RealizationNode(BaseModel):
 
 
 class RealizationAdmission(BaseModel):
-    """Private, expiring authorization for the exact persistent live realization."""
+    """Private exact-two target projection from the admitted profiled LIVE lab."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -222,7 +241,7 @@ class CmlRealizationAuthority:
         *,
         now: datetime | None = None,
     ) -> RealizationAdmission:
-        """Validate exact live identity, collision absence, and BOOTED state."""
+        """Validate exact profiled LIVE identity and legacy target readiness."""
         if lab_id != LIVE_LAB_ID or set(node_ids) != set(EXPECTED_NODES):
             raise ObservabilityRealizationError("CML node population rejected")
         lab_ids = self._get("/api/v0/labs")
@@ -266,7 +285,10 @@ class CmlRealizationAuthority:
                 configuration = self._configuration(candidate, foreign_node_id)
                 if any(
                     expected["address"] in configuration
-                    for expected in EXPECTED_NODES.values()
+                    for expected in (
+                        *EXPECTED_NODES.values(),
+                        *EXPECTED_PROFILED_NON_TARGET_NODES.values(),
+                    )
                 ):
                     raise ObservabilityRealizationError(
                         "CML address ownership ambiguous"
@@ -279,14 +301,41 @@ class CmlRealizationAuthority:
         actual_ids = self._get(f"/api/v0/labs/{lab_id}/nodes")
         if not isinstance(actual_ids, list):
             raise ObservabilityRealizationError("CML node population rejected")
+        admitted_non_targets: set[str] = set()
         for actual_id in actual_ids:
             if actual_id in node_ids.values():
                 continue
-            infrastructure = self._get(f"/api/v0/labs/{lab_id}/nodes/{actual_id}")
-            if not isinstance(infrastructure, dict) or infrastructure.get(
-                "node_definition"
-            ) not in {"external_connector", "unmanaged_switch"}:
+            node = self._get(f"/api/v0/labs/{lab_id}/nodes/{actual_id}")
+            if not isinstance(node, dict):
                 raise ObservabilityRealizationError("CML node population rejected")
+            expected_profiled = EXPECTED_PROFILED_NON_TARGET_NODES.get(actual_id)
+            if expected_profiled is not None:
+                configuration = self._configuration(lab_id, actual_id)
+                image = node.get("image_definition") or node.get("image_definition_id")
+                if (
+                    node.get("label") != expected_profiled["cml_label"]
+                    or node.get("node_definition") != expected_profiled["definition"]
+                    or image != expected_profiled["image"]
+                    or node.get("state") != "BOOTED"
+                    or expected_profiled["name"] not in configuration
+                    or expected_profiled["address"] not in configuration
+                    or any(
+                        marker not in configuration
+                        for marker in expected_profiled["required_configuration"]
+                    )
+                ):
+                    raise ObservabilityRealizationError(
+                        "profiled non-target CML node rejected"
+                    )
+                admitted_non_targets.add(actual_id)
+                continue
+            if node.get("node_definition") not in {
+                "external_connector",
+                "unmanaged_switch",
+            }:
+                raise ObservabilityRealizationError("CML node population rejected")
+        if admitted_non_targets != set(EXPECTED_PROFILED_NON_TARGET_NODES):
+            raise ObservabilityRealizationError("CML node population rejected")
         nodes: list[RealizationNode] = []
         for identity, expected in EXPECTED_NODES.items():
             node_id = node_ids[identity]

@@ -21,13 +21,15 @@ a production deployment template.
 2. **Validate visibly.** Buildkite exposes lint, tests, packaging, Terraform
    validation, and pipeline contracts as separate gates that converge at
    `validation-complete`.
-3. **Exercise integration and assurance.** Runtime-relevant changes use a
-   disposable Terraform/CML realization for create → read-only validate →
-   destroy. On eligible protected-main builds, first-class Batfish assurance
-   independently evaluates the exact plan, policy, and frozen baseline/candidate.
-4. **Create an immutable promotion.** Promotion waits for CML staging and
-   Batfish, downloads the exact same-build assurance artifact, verifies it
-   independently, and binds the accepted bytes and digests.
+3. **Exercise integration and assurance.** The implemented disposable
+   Terraform/CML lifecycle provides create → read-only validate → destroy, and
+   Batfish independently evaluates the exact plan, policy, and frozen
+   baseline/candidate. Automatic CML staging is temporarily paused while its
+   topology remains two-device.
+4. **Create an immutable promotion.** When protected delivery is enabled,
+   promotion waits for CML staging and Batfish, downloads the exact same-build
+   assurance artifact, verifies it independently, and binds the accepted bytes
+   and digests. Protected delivery is paused with automatic CML staging.
 5. **Require a human decision.** Explicit authorization sits between immutable
    promotion and the only Buildkite boundary allowed to request device-write
    capability.
@@ -76,16 +78,17 @@ for any corrected attempt. No fleet-wide atomicity is claimed.
 | Area | Current reference implementation |
 | --- | --- |
 | Purpose | Personal NetDevOps learning, portfolio, and demonstration lab |
-| Managed devices | 2 |
-| Cisco | `core-02` · Cisco IOS XE |
+| Profile-aware LIVE devices | 4 |
+| Legacy v1/write population | 2 (`core-02`, `edge-junos-01`) |
+| Cisco | `core-02` · IOS XE; `transit-ios-01` · IOS; `access-sw-01` · IOS switching |
 | Junos | `edge-junos-01` · Junos |
 | Persistent lab | Manually/operator-owned `NCDP Live` in CML |
-| Disposable staging | Terraform-owned per-run CML realization |
+| Disposable staging | Implemented two-router Terraform path; automatic execution paused |
 | Inventory | NetBox, consumed read-only by automation |
 | Credentials | OpenBao with bounded workload/device authority |
-| CI/CD | Buildkite validation, assurance, promotion, authorization, deploy gate |
-| Evidence | AuditStore + Oxidized actual-state chronology |
-| Observability | Prometheus + Blackbox + Grafana + Alertmanager |
+| CI/CD | Buildkite validation and PR assurance; CML/protected path paused |
+| Evidence | AuditStore + exact-two Oxidized actual-state chronology |
+| Observability | Exact-two Prometheus + Blackbox + Grafana + Alertmanager |
 | Persistent SNMP polling | Deferred |
 | gNMI/OpenConfig | Deferred/skipped |
 
@@ -99,8 +102,9 @@ for any corrected attempt. No fleet-wide atomicity is claimed.
   authority.
 - Persistent live SNMP exporter polling is deferred; accepted SNMPv3 provisioning
   does not imply that polling exists.
-- The current protected Buildkite path promotes and executes one
-  `DeploymentPlan`; protected Buildkite fleet deployment remains deferred.
+- The accepted protected Buildkite path promotes and executes one
+  `DeploymentPlan`; it is currently paused with disposable CML staging, and
+  protected Buildkite fleet deployment remains deferred.
 
 ## Explore
 

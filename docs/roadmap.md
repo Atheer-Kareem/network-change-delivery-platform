@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — B1/B2 complete; B3-1 implemented for review:** B1 accepts the
+    - **Detour B — B1/B2/B3-1 complete; B3-2 implemented for review:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -126,8 +126,11 @@ acceptance records.
       algorithm relaxation. B3-1 separates the legacy `ncdp-managed`
       population from exact `ncdp-profiled-inventory` membership and defines
       additive four-device realization, CML-anchored trust metadata, and
-      run-scoped STAGING-only projection. No external authority is migrated;
-      subsequent B3 increments own NetBox metadata, four-device realization,
-      credentials, trust enrollment, and live/staging read-only acceptance.
+      run-scoped STAGING-only projection. B3-2 migrates local NetBox authority:
+      new stable devices 8/9 remain planned, management purpose is explicit,
+      and the four approved physical cables are recorded while legacy devices
+      1/2 and their runtime consumers remain exact-two. Subsequent B3 increments
+      own four-device CML realization, credentials, trust enrollment,
+      activation, and live/staging read-only acceptance.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

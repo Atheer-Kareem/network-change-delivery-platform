@@ -133,3 +133,50 @@ IPs, or cables. It allocates no address, provisions no OpenBao credential or
 role, creates no CML object, changes no host trust, expands no Terraform graph,
 and changes no observability or protected delivery authority. Those operations
 require separately reviewed B3 increments and external acceptance evidence.
+
+## B3-2 NetBox authority state
+
+Detour B3-2 migrates only the local NetBox authority. The reviewed,
+no-delete operator tool is
+[`migrate_b3_inventory.py`](../../scripts/netbox/migrate_b3_inventory.py). It
+uses the existing local NetBox administrative shell rather than widening the
+normal GET-only token. It inspects exact objects before reuse or creation,
+applies the bounded change in one database transaction, rejects conflicting
+identity, assignment, or cable state, and verifies the final population before
+commit. A second execution must report no created or updated objects.
+
+NetBox now assigns these stable identities and management relationships:
+
+| Device | NetBox ID | Status | Role | Profile tag | LIVE | STAGING |
+|---|---:|---|---|---|---|---|
+| `core-02` | 1 | active | `core` | present with legacy tags preserved | `192.168.4.14/24` | `192.168.4.30/24` |
+| `edge-junos-01` | 2 | active | `edge` | present with legacy tags preserved | `192.168.4.20/24` | `192.168.4.40/24` |
+| `transit-ios-01` | 8 | planned | `transit` | present; no `ncdp-managed` | `192.168.4.16/24` | `192.168.4.31/24` |
+| `access-sw-01` | 9 | planned | `access` | present; no `ncdp-managed` | `192.168.4.17/24` | `192.168.4.32/24` |
+
+The two IOS devices use exact operational interfaces
+`GigabitEthernet0/0` through `GigabitEthernet0/3`. Their physical and L3
+management owner is `GigabitEthernet0/0`, tagged both
+`ncdp-management-attachment` and `ncdp-protected`. The LIVE address is each
+device's primary IPv4; the distinct STAGING address is explicit and non-primary.
+
+NetBox cable IDs 1 through 4 record the approved physical topology:
+
+- `core-02/GigabitEthernet4` to `edge-junos-01/ge-0/0/0`;
+- `core-02/GigabitEthernet2` to
+  `transit-ios-01/GigabitEthernet0/1`;
+- `edge-junos-01/ge-0/0/1` to
+  `transit-ios-01/GigabitEthernet0/2`; and
+- `core-02/GigabitEthernet3` to
+  `access-sw-01/GigabitEthernet0/1`.
+
+The new devices deliberately remain planned. Consequently, normal legacy
+inventory remains exact devices 1/2, active per-device profile resolution works
+for core/Junos, and `resolve_profiled_population()` still fails closed until
+B3-4 supplies CML realization and host-trust acceptance and activates the IOS
+members. No VLAN, prefix, OpenBao credential, CML node, device configuration,
+host key, Terraform resource, Buildkite authority, or protected-write scope is
+created by B3-2. ADR 0024 therefore remains current live-environment truth.
+
+The exact mutation and independent verification evidence is recorded in the
+[B3-2 acceptance record](../acceptance/profiled-netbox-inventory-detour-b3-2.md).

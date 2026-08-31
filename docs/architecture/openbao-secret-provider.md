@@ -83,10 +83,11 @@ rejects AppRole; deployment roles, audiences, policies, and approval remain
 unchanged. A credential belongs to the logical NetBox device, not its LIVE or
 STAGING management IP; no address-specific secrets exist.
 
-The four staging capabilities are prepared for B3-5 but are not currently
-exercised by Buildkite. Automatic disposable CML and protected delivery are
-temporarily paused together during Detour B3. B3-5 must restore both only after
-the Terraform staging topology contains all four profiled devices.
+The four staging capabilities are prepared but are not currently exercised by
+Buildkite. Automatic disposable CML and protected delivery are temporarily
+paused together during Detour B. Restore both together only when the operator
+explicitly decides disposable CML staging is useful again and its Terraform
+topology is ready for the intended profiled population.
 
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role

@@ -212,13 +212,17 @@ def test_pipeline_contract() -> None:
     assert pr_batfish["if_changed"] == RUNTIME_CHANGE_CONDITION
 
     source = (ROOT / ".buildkite/pipeline.yml").read_text()
-    assert "# TEMPORARILY DISABLED DURING DETOUR B3." in source
-    assert "# Re-enable in B3-5 when Terraform staging contains all four" in source
+    assert "# TEMPORARILY DISABLED DURING DETOUR B." in source
+    assert (
+        "# Restore only when the operator explicitly decides disposable CML staging"
+        in source
+    )
     assert "#   key: cml-staging" in source
     assert (
-        "# Protected delivery temporarily paused with disposable CML staging." in source
+        "# Protected delivery remains paused while disposable CML staging is disabled."
+        in source
     )
-    assert "# Re-enable both together in B3-5." in source
+    assert "# Restore both together only by explicit operator decision." in source
     assert "#   key: protected-delivery" in source
     assert "#       key: promotion" in source
     assert "#         - cml-staging" in source
@@ -226,7 +230,7 @@ def test_pipeline_contract() -> None:
     assert "#     - validation-complete" in source
     assert "#     - pr-batfish-assurance" in source
     assert "#     queue: ncdp-staging" in source
-    assert "#   if: build.branch == \"main\"" in source
+    assert '#   if: build.branch == "main"' in source
     assert "#         queue: ncdp-deploy" in source
     assert "cml-staging" not in top_level_steps
     assert "protected-delivery" not in top_level_steps

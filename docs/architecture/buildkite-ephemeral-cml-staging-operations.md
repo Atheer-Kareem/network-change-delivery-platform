@@ -3,9 +3,10 @@
 > **Temporary Detour B pause:** the `cml-staging` pipeline step and the complete
 > protected-delivery group are commented out together. Quality validation,
 > Terraform static validation, and PR Batfish candidate assurance remain active.
-> B3-5 will re-enable staging and protected delivery together after Terraform
-> realizes all four profiled devices. The implementation and historical
-> acceptance below remain intact; staging has not been removed.
+> Restore staging and protected delivery together only when the operator
+> explicitly decides disposable CML staging is useful again and its Terraform
+> topology is ready for the intended profiled population. The implementation
+> and historical acceptance below remain intact; staging has not been removed.
 
 ## Trusted agent boundary
 
@@ -87,11 +88,12 @@ remain outside staging.
 The preserved pipeline block defines one `Ephemeral CML staging · create →
 validate → destroy` job and calls only
 `scripts/buildkite/ephemeral_staging.sh`. During B3-3 that block is commented
-out and creates no job. When B3-5 restores it, the wrapper verifies
-job/checkout identity, pipes the JWT to the existing Python driver, and uploads
-only `staging-evidence/staging-run.json`. The authoritative state machine remains
-`network_change_delivery.ephemeral_staging.run_staging_lifecycle`; Buildkite log
-presentation does not split lifecycle or cleanup ownership across jobs.
+out and creates no job. If the operator explicitly restores it, the wrapper
+verifies job/checkout identity, pipes the JWT to the existing Python driver, and
+uploads only `staging-evidence/staging-run.json`. The authoritative state machine
+remains `network_change_delivery.ephemeral_staging.run_staging_lifecycle`;
+Buildkite log presentation does not split lifecycle or cleanup ownership across
+jobs.
 
 When enabled, runtime-relevant pull requests make `cml-staging` wait for both
 `validation-complete` and successful `pr-batfish-assurance`. This orders the

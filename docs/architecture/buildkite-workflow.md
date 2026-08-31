@@ -21,8 +21,10 @@ PR Batfish candidate assurance              done
 
 The preserved `cml-staging` and complete `protected-delivery` YAML blocks are
 commented out, not bypassed. Promotion has not had its CML dependency removed,
-and no live-delivery path remains active without staging. B3-5 must restore the
-two blocks together after the exact four-device Terraform topology is accepted.
+and no live-delivery path remains active without staging. Restore the two blocks
+together only when the operator explicitly decides disposable CML staging is
+useful again and its Terraform topology is ready for the intended profiled
+population.
 
 ## Visible validation and barrier
 
@@ -48,8 +50,9 @@ Two visible contracts have distinct meanings:
 All applicable validations join at the keyed `validation-complete` wait.
 Legitimately skipped change-aware steps satisfy the barrier. The active PR
 Batfish step explicitly depends on it. The preserved staging definition still
-records its dependency on both the barrier and PR Batfish for restoration in
-B3-5, but it is not parsed as an active step during the pause.
+records its dependency on both the barrier and PR Batfish for any explicitly
+authorized restoration, but it is not parsed as an active step during the
+pause.
 Validation runs on the `ncdp-validation` queue. Local worker capacity is an
 operational setting and is not a portable platform contract.
 
@@ -79,15 +82,16 @@ non-PR `main` builds, but the entire group is currently commented out and is
 therefore unavailable on every build.
 
 A fork-origin runtime PR may run unprivileged validation and Batfish but cannot
-receive trusted staging credentials. After B3-5 restores the staging gate, a
-maintainer must reproduce or adopt that commit in the canonical repository
+receive trusted staging credentials. If the operator restores the staging gate,
+a maintainer must reproduce or adopt that commit in the canonical repository
 before the CML merge gate can pass.
 
 ## Protected-main assurance and promotion
 
-This entire accepted branch is temporarily inactive. When B3-5 restores it, a
-runtime-relevant non-PR `main` build will again make `batfish-assurance` and
-`cml-staging` eligible independently after `validation-complete`.
+This entire accepted branch is temporarily inactive. If the operator explicitly
+restores it with CML staging, a runtime-relevant non-PR `main` build will again
+make `batfish-assurance` and `cml-staging` eligible independently after
+`validation-complete`.
 Batfish uses the `ncdp-validation` queue, concurrency group
 `ncdp/batfish-assurance`, limit one, and no automatic or manual retry. Its fixed
 Compose project is `ncdp-batfish-assurance`. The step verifies commit identity,
@@ -116,8 +120,9 @@ promotion; automated metadata remains evidence rather than authorization.
 
 ## Protected deployment
 
-Protected delivery is temporarily unavailable with CML staging. When restored,
-the serialized `deploy-gate` runs on `ncdp-deploy` in
+Protected delivery remains paused while CML staging is disabled. Restore both
+together only by explicit operator decision. After restoration, the serialized
+`deploy-gate` runs on `ncdp-deploy` in
 `ncdp/network-change-deployment`, limit one, with automatic and manual retries
 disabled. It independently verifies the promotion artifact and its three
 recorded digests. A changed commit-bound live request must bind exactly to that

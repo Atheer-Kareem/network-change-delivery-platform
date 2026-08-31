@@ -7,12 +7,14 @@ repository pipeline definition. Persistent CML nodes, device configuration,
 host trust, NetBox, Terraform state, protected device authority, SNMP authority,
 and Buildkite external settings were not changed.
 
-The active `cml-staging` step is commented out with a direct B3-5 restoration
-marker. The complete protected-delivery group is commented out with it; its
-promotion dependency was not bypassed. Quality validation, Terraform static
-validation, pipeline contracts, and PR Batfish candidate assurance remain
-active. Staging scripts, Terraform, drivers, tests, and historical acceptance
-evidence remain present.
+The active `cml-staging` step is commented out with an explicit operator-decision
+restoration condition. The complete protected-delivery group is commented out
+with it; its promotion dependency was not bypassed. Both remain paused until the
+operator decides disposable CML staging is useful again and its Terraform
+topology is ready for the intended profiled population. Quality validation,
+Terraform static validation, pipeline contracts, and PR Batfish candidate
+assurance remain active. Staging scripts, Terraform, drivers, tests, and
+historical acceptance evidence remain present.
 
 ## Applied OpenBao authority
 

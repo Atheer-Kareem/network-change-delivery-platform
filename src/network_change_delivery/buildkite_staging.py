@@ -124,7 +124,7 @@ def validate_staging_state_root(
 
 
 class BuildkiteStagingSecretProvider:
-    """Reuse one JWT for two exact one-use, device-scoped OpenBao logins."""
+    """Reuse one JWT for exact one-use, device-scoped OpenBao logins."""
 
     _LOGIN_PATH = "/v1/auth/jwt/login"
 

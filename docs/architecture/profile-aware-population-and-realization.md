@@ -194,8 +194,10 @@ and JWT roles. Protected live deployment and SNMP authority remain their prior
 devices 1/2 only. Because the current Terraform staging realization is still
 two-device, B3-3 comments out automatic `cml-staging` and the complete protected
 delivery group together. Quality, Terraform static validation, and PR Batfish
-remain active. B3-5 owns four-device Terraform staging and must restore both
-paused blocks together; no CML feature or historical evidence is removed.
+remain active. Restore both paused blocks together only when the operator
+explicitly decides disposable CML staging is useful again and its Terraform
+topology is ready for the intended profiled population; no CML feature or
+historical evidence is removed.
 
 The [B3-3 acceptance record](../acceptance/profiled-openbao-onboarding-detour-b3-3.md)
 contains the secret-free applied-state evidence.

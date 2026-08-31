@@ -133,8 +133,10 @@ acceptance records.
       credentials for devices 8/9, extends local and staging read authority to
       exact IDs 1/2/8/9, and temporarily pauses both automatic CML staging and
       protected delivery while preserving quality, Terraform validation, and PR
-      Batfish. B3-5 owns four-device Terraform staging and restores both paused
-      pipeline blocks; later B3 work owns CML realization, trust enrollment,
-      activation, and live/staging read-only acceptance.
+      Batfish. The paused pipeline blocks remain disabled until the operator
+      explicitly decides disposable CML staging is useful again and its
+      Terraform topology is ready for the intended profiled population; both
+      blocks must then be restored together. Later B3 work owns CML realization,
+      trust enrollment, activation, and live/staging read-only acceptance.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

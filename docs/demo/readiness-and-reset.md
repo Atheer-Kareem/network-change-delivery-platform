@@ -75,9 +75,10 @@ Never perform generic Terraform state surgery.
 ## OpenBao
 
 Do not rotate working credentials, recreate auth methods, generate new
-SecretIDs, or mint presentation tokens to “freshen” the demo. Optional future
-loopback UI enablement is a separate operator enhancement; it is not a reset and
-does not replace AppRole/OIDC machine authentication.
+SecretIDs, or mint presentation tokens to “freshen” the demo. The native UI is
+available only through the existing loopback listener at
+`http://127.0.0.1:8200/ui/`; it requires existing authorized OpenBao
+authentication and does not replace AppRole/OIDC machine authentication.
 
 ## AuditStore and Oxidized
 

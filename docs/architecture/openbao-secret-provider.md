@@ -122,6 +122,13 @@ do not follow redirects, do not inherit environment proxy routing, and have no
 retry layer or response-body error exposure. Production proxy support would
 require an explicit reviewed design.
 
+The native operator UI is available locally at
+`http://127.0.0.1:8200/ui/` through that same loopback-only listener. It does
+not add a listener, network exposure, authentication method, or credential.
+Sign in with an existing authorized OpenBao authentication method appropriate
+to the operator task; the UI does not provide anonymous secret access. Never
+create or display a convenience token for a demonstration.
+
 OpenBao access is short-lived and least privilege, but the underlying IOS XE
 username/password stored in KV-v2 is static. This increment does not provide
 dynamic or short-lived Cisco credentials, per-command Cisco authorization,

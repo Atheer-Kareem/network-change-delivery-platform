@@ -79,6 +79,13 @@ Dependencies point inward to platform-owned policy and types; integrations
 implement explicit boundary contracts. Provider details must not become domain
 policy, and external observations must be normalized before policy consumes them.
 
+Detour B1 adds an architecture-only
+[multi-device contract](multi-device-architecture-contract.md) that separates
+NOS, role, capability, automation behavior, CML realization, management identity,
+and accepted managed-state references. It is not integrated with current
+execution. ADR 0024 remains authoritative for the current two-router live and
+disposable reference environment.
+
 ## Implemented now
 
 Architecture Baseline 1 and the first narrow Cisco IOS XE interface-description

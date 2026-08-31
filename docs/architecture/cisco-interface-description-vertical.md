@@ -27,10 +27,11 @@ explicit test/offline option; there is no automatic fallback.
 
 ## Trusted collection and preflight
 
-Ansible Runner invokes `ansible.netcommon.network_cli` with libssh. Host-key
-checking is enabled, auto-add is disabled, and a pre-existing entry is required
-in the current user's standard `~/.ssh/known_hosts`. Increment 2 does not support
-a custom trust-store path, discover keys with `ssh-keyscan`, or automatically
+Ansible Runner invokes `ansible.netcommon.network_cli` and explicitly selects
+Paramiko with `ansible_network_cli_ssh_type=paramiko`. Host-key checking is
+enabled, auto-add is disabled, and a pre-existing entry is required in the
+current user's standard `~/.ssh/known_hosts`. Increment 2 does not support a
+custom trust-store path, discover keys with `ssh-keyscan`, or automatically
 trust keys. Collection uses `cisco.ios.ios_facts`,
 `cisco.ios.ios_interfaces`, and `cisco.ios.ios_l3_interfaces`, then immediately
 normalizes only identity, IOS XE version, interface existence, description,

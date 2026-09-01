@@ -11,7 +11,9 @@ import stat
 import subprocess
 import tempfile
 from collections.abc import Mapping
+from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Literal
 
 import ansible_runner
@@ -46,6 +48,34 @@ SNMP_VIEW_TASK = "NCDP inspect SNMP view"
 SNMP_GROUP_TASK = "NCDP inspect SNMP group"
 SNMP_USER_TASK = "NCDP inspect SNMP user"
 SNMP_EXECUTION_TASK = "NCDP apply exact SNMP artifact"
+
+
+class VlanReadScope(StrEnum):
+    """Closed B4-3 Cisco VLAN read-only command scopes."""
+
+    CORE = "core_vlan_service"
+    ACCESS = "access_vlan_service"
+
+
+VLAN_READ_COMMANDS: Mapping[VlanReadScope, tuple[str, ...]] = MappingProxyType(
+    {
+        VlanReadScope.CORE: (
+            "show running-config interface GigabitEthernet3",
+            "show running-config | section ^interface GigabitEthernet3\\.",
+            "show running-config | section ^router ospf",
+        ),
+        VlanReadScope.ACCESS: (
+            "show vlan brief",
+            "show interfaces GigabitEthernet0/1 switchport",
+            "show interfaces GigabitEthernet0/2 switchport",
+            "show interfaces GigabitEthernet0/3 switchport",
+            "show running-config interface GigabitEthernet0/1",
+            "show running-config interface GigabitEthernet0/2",
+            "show running-config interface GigabitEthernet0/3",
+            "show running-config | section ^interface Vlan",
+        ),
+    }
+)
 
 
 class ProviderError(RuntimeError):
@@ -619,13 +649,14 @@ class AnsibleRunnerCiscoAdapter:
         self,
         target: ReadOnlyConnectionTarget,
         credentials: DeviceCredentials,
-        commands: tuple[str, ...],
+        scope: VlanReadScope,
         *,
         ssh_type: Literal["paramiko"],
     ) -> tuple[str, ...]:
-        """Read only the exact B4-3 VLAN service command set."""
-        if not commands or len(commands) > 9:
-            raise ProviderError("Cisco VLAN read-only command set is invalid")
+        """Read only one exact B4-3 VLAN service scope."""
+        if not isinstance(scope, VlanReadScope):
+            raise ProviderError("Cisco VLAN read-only scope is invalid")
+        commands = VLAN_READ_COMMANDS[scope]
         runner, selected = self._run(
             target,
             credentials,

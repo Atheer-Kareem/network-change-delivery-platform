@@ -10,9 +10,12 @@ import pytest
 from network_change_delivery.ansible_adapter import (
     EXECUTION_TASK,
     IDENTITY_TASK,
+    VLAN_READ_COMMANDS,
+    VLAN_READ_TASK,
     AnsibleRunnerCiscoAdapter,
     HostTrustError,
     ProviderError,
+    VlanReadScope,
     _known_hosts_path,
     effective_ansible_collection_path,
 )
@@ -22,6 +25,66 @@ from network_change_delivery.models import (
     InventoryDevice,
 )
 from network_change_delivery.secrets import DeviceCredentials
+
+
+@pytest.mark.parametrize("scope", tuple(VlanReadScope))
+def test_vlan_read_scope_forwards_only_immutable_exact_commands(
+    monkeypatch: pytest.MonkeyPatch, scope: VlanReadScope
+) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    captured: dict[str, object] = {}
+
+    def fake_run(*args: object, **kwargs: object):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(status="successful", rc=0), {
+            VLAN_READ_TASK: {"stdout": ["bounded"] * len(VLAN_READ_COMMANDS[scope])}
+        }
+
+    monkeypatch.setattr(adapter, "_run", fake_run)
+    result = adapter.collect_vlan_read_only(
+        object(),
+        DeviceCredentials(username="user", password="secret"),
+        scope,
+        ssh_type="paramiko",
+    )
+    assert result == ("bounded",) * len(VLAN_READ_COMMANDS[scope])
+    assert captured["args"][2] == "collect_vlan_state.yml"
+    assert captured["kwargs"]["extravars"] == {
+        "ncdp_vlan_commands": list(VLAN_READ_COMMANDS[scope])
+    }
+
+
+@pytest.mark.parametrize(
+    "commands",
+    [
+        (),
+        (*VLAN_READ_COMMANDS[VlanReadScope.CORE], "show version"),
+        tuple(reversed(VLAN_READ_COMMANDS[VlanReadScope.CORE])),
+        ("reload",),
+        VLAN_READ_COMMANDS[VlanReadScope.ACCESS][:-1],
+    ],
+)
+def test_arbitrary_vlan_cli_is_rejected_before_runner(
+    monkeypatch: pytest.MonkeyPatch, commands: tuple[str, ...]
+) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    called = False
+
+    def fake_run(*_args: object, **_kwargs: object):
+        nonlocal called
+        called = True
+        raise AssertionError("Runner must not receive unadmitted VLAN commands")
+
+    monkeypatch.setattr(adapter, "_run", fake_run)
+    with pytest.raises(ProviderError, match="scope is invalid"):
+        adapter.collect_vlan_read_only(
+            object(),
+            DeviceCredentials(username="user", password="secret"),
+            commands,  # type: ignore[arg-type]
+            ssh_type="paramiko",
+        )
+    assert not called
 
 
 def test_runner_error_normalization_is_bounded_and_secret_safe(monkeypatch) -> None:

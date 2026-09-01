@@ -46,6 +46,13 @@ profile-bound Cisco collectors. Its bounded O was:
 
 The managed-O digest is
 `sha256:04c4183c7d71e2e14e873f4c59bc8b11ea2022aaf302b04f2d5495ca56f4eb63`.
+The final acceptance observation used the normal stable-ID
+`OpenBaoSecretProvider` path and the corrected closed VLAN read scopes:
+`core_vlan_service` and `access_vlan_service`. The Cisco adapter, rather than
+its caller, maps each scope to its immutable reviewed `show` command tuple;
+arbitrary, partial, reordered, or extended CLI tuples are rejected before
+Runner starts. The bounded AppRole acceptance material was retired after the
+run.
 The bounded AppRole acceptance material was retired after collection.
 
 ## Proposed D1 and transition
@@ -85,10 +92,21 @@ credential owners, delivery targets, or ownership-envelope members. No LIVE
 endpoint cable or address is claimed.
 
 Pinned PyBatfish `2025.7.7.2423` and Batfish server `2026.07.20.3565` passed all
-29 combined invariants. Both host-to-gateway flows and both directions of the
-open pre-ACL inter-VLAN baseline passed. Normalized traces include `core-02`
-and exclude `edge-junos-01`/`transit-ios-01` as inter-VLAN transit. Remote
-routers learn neither service prefix through OSPF.
+29 combined invariants. The exact bounded per-trace results were:
+
+| Flow | Disposition | Ordered modeled path | Final node |
+|---|---|---|---|
+| USERS gateway | `ACCEPTED` | `assurance-users-probe` → `core-02` | `core-02` |
+| SERVERS gateway | `ACCEPTED` | `assurance-servers-probe` → `core-02` | `core-02` |
+| USERS → SERVERS | `ACCEPTED` | `assurance-users-probe` → `core-02` → `assurance-servers-probe` | `assurance-servers-probe` |
+| SERVERS → USERS | `ACCEPTED` | `assurance-servers-probe` → `core-02` → `assurance-users-probe` | `assurance-users-probe` |
+
+Each flow returned exactly one trace and its reported trace count matched the
+preserved collection. Exact endpoint assurance accepts only `ACCEPTED`; neither
+`DELIVERED_TO_SUBNET` nor `EXITS_NETWORK` can satisfy the contract. Every
+returned inter-VLAN path includes `core-02` and excludes
+`edge-junos-01`/`transit-ios-01`. Remote routers learn neither service prefix
+through OSPF.
 
 The deterministic seven-file snapshot digest is
 `sha256:18ba3232b8ec85019b0afcfd7239eb3818e8dc788948482a54ffb2eb430dcda6`.

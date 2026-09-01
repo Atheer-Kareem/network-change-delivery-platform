@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+from network_change_delivery.ansible_adapter import VlanReadScope
 from network_change_delivery.architecture_contracts import (
     AutomationProfileID,
     ManagedField,
@@ -150,10 +151,10 @@ def accepted_assurance(outcome: AssuranceOutcome = AssuranceOutcome.PASSED):
         invariants=tuple(
             InvariantResult(
                 name=name,
-                passed=passed or index > 0,
+                passed=passed or name != "vlan_gateway_flows",
                 detail="bounded",
             )
-            for index, name in enumerate(VLAN_COMBINED_INVARIANTS)
+            for name in VLAN_COMBINED_INVARIANTS
         ),
         outcome=outcome,
     )
@@ -264,13 +265,14 @@ def test_read_only_adapter_admits_only_exact_core_and_access_profiles() -> None:
             self,
             _target: object,
             _credentials: DeviceCredentials,
-            commands: tuple[str, ...],
+            scope: VlanReadScope,
             *,
             ssh_type: str,
         ) -> tuple[str, ...]:
             assert ssh_type == "paramiko"
-            if len(commands) == 3:
+            if scope is VlanReadScope.CORE:
                 return ("interface GigabitEthernet3\n shutdown\n", "", "")
+            assert scope is VlanReadScope.ACCESS
             switchport = """Administrative Mode: dynamic auto
 Access Mode VLAN: 1
 Trunking Native Mode VLAN: 1

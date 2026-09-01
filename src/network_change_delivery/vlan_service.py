@@ -12,11 +12,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from network_change_delivery.ansible_adapter import (
     AnsibleRunnerCiscoAdapter,
     ProviderError,
+    VlanReadScope,
 )
 from network_change_delivery.architecture_contracts import (
     AutomationProfileID,
@@ -666,7 +667,7 @@ class VlanCiscoReadOnlyCollector(Protocol):
         self,
         target: object,
         credentials: DeviceCredentials,
-        commands: tuple[str, ...],
+        scope: VlanReadScope,
         *,
         ssh_type: Literal["paramiko"],
     ) -> tuple[str, ...]: ...
@@ -697,11 +698,7 @@ class ProfileVlanReadOnlyAdapter:
             raw = self._cisco.collect_vlan_read_only(
                 target,
                 credentials,
-                (
-                    "show running-config interface GigabitEthernet3",
-                    "show running-config | section ^interface GigabitEthernet3\\.",
-                    "show running-config | section ^router ospf",
-                ),
+                VlanReadScope.CORE,
                 ssh_type="paramiko",
             )
             return parse_core_vlan_observation(intent, raw)
@@ -712,16 +709,7 @@ class ProfileVlanReadOnlyAdapter:
             raw = self._cisco.collect_vlan_read_only(
                 target,
                 credentials,
-                (
-                    "show vlan brief",
-                    "show interfaces GigabitEthernet0/1 switchport",
-                    "show interfaces GigabitEthernet0/2 switchport",
-                    "show interfaces GigabitEthernet0/3 switchport",
-                    "show running-config interface GigabitEthernet0/1",
-                    "show running-config interface GigabitEthernet0/2",
-                    "show running-config interface GigabitEthernet0/3",
-                    "show running-config | section ^interface Vlan",
-                ),
+                VlanReadScope.ACCESS,
                 ssh_type="paramiko",
             )
             return parse_access_vlan_observation(intent, raw)
@@ -934,11 +922,37 @@ def build_vlan_candidate_snapshot(
     return prepare_snapshot_with_layer1_from_bytes(source)
 
 
+class VlanTrace(BaseModel):
+    """One bounded Batfish path for an exact assurance-only fixture flow."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    disposition: str = Field(min_length=1, max_length=64, pattern=r"^[A-Z_]+$")
+    nodes: tuple[str, ...] = Field(min_length=1, max_length=16)
+    final_node: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def final_node_is_last_hop(self) -> VlanTrace:
+        if self.final_node != self.nodes[-1]:
+            raise ValueError("VLAN trace final node is inconsistent")
+        return self
+
+
 class VlanFlow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    name: str
-    reachable: bool
-    traversed_nodes: tuple[str, ...] = ()
+    name: Literal[
+        "users_gateway",
+        "servers_gateway",
+        "users_to_servers",
+        "servers_to_users",
+    ]
+    reported_trace_count: int = Field(ge=0, le=32)
+    traces: tuple[VlanTrace, ...] = Field(max_length=32)
+
+    @model_validator(mode="after")
+    def complete_trace_population(self) -> VlanFlow:
+        if self.reported_trace_count != len(self.traces):
+            raise ValueError("Batfish VLAN trace collection was truncated")
+        return self
 
 
 class VlanBatfishObservation(BaseModel):
@@ -1211,28 +1225,43 @@ class BatfishVlanAdapter:
                         session.q.traceroute(
                             startLocation=start,
                             headers={"srcIps": src, "dstIps": dst},
+                            maxTraces=32,
                         )
                         .answer(snapshot=snapshot)
                         .frame()
                     )
-                    traces = [
-                        trace for value in rows.get("Traces", ()) for trace in value
-                    ]
-                    reachable = any(
-                        str(trace.disposition).upper()
-                        in {"ACCEPTED", "DELIVERED_TO_SUBNET", "EXITS_NETWORK"}
-                        for trace in traces
-                    )
-                    traversed = tuple(
-                        dict.fromkeys(
-                            str(hop.node) for trace in traces for hop in trace.hops
-                        )
-                    )
+                    traces = []
+                    reported_trace_count = 0
+                    for _, row in rows.iterrows():
+                        count = row.get("TraceCount")
+                        if isinstance(count, bool):
+                            raise AssuranceProviderError(
+                                "Batfish VLAN trace count is invalid"
+                            )
+                        try:
+                            reported_trace_count += int(count)
+                        except (TypeError, ValueError, OverflowError):
+                            raise AssuranceProviderError(
+                                "Batfish VLAN trace count is invalid"
+                            ) from None
+                        for trace in row.get("Traces", ()):
+                            nodes = tuple(str(hop.node) for hop in trace.hops)
+                            if not nodes:
+                                raise AssuranceProviderError(
+                                    "Batfish VLAN trace has no modeled path"
+                                )
+                            traces.append(
+                                VlanTrace(
+                                    disposition=str(trace.disposition).upper(),
+                                    nodes=nodes,
+                                    final_node=nodes[-1],
+                                )
+                            )
                     flows.append(
                         VlanFlow(
                             name=name,
-                            reachable=reachable,
-                            traversed_nodes=traversed,
+                            reported_trace_count=reported_trace_count,
+                            traces=tuple(traces),
                         )
                     )
                 return VlanBatfishObservation(
@@ -1293,6 +1322,32 @@ def evaluate_vlan_assurance(
         if native not in {10, 20}
     }
     flow_map = {item.name: item for item in observation.flows}
+
+    def exact_flow(name: str, final_node: str) -> bool:
+        flow = flow_map.get(name)
+        return bool(
+            flow
+            and flow.traces
+            and all(
+                trace.disposition == "ACCEPTED" and trace.final_node == final_node
+                for trace in flow.traces
+            )
+        )
+
+    def every_path_has(name: str, node: str) -> bool:
+        flow = flow_map.get(name)
+        return bool(
+            flow and flow.traces and all(node in trace.nodes for trace in flow.traces)
+        )
+
+    def every_path_excludes(name: str, nodes: set[str]) -> bool:
+        flow = flow_map.get(name)
+        return bool(
+            flow
+            and flow.traces
+            and all(not nodes.intersection(trace.nodes) for trace in flow.traces)
+        )
+
     vlan_invariants = (
         InvariantResult(
             name="vlan_exact_modeled_population",
@@ -1353,38 +1408,31 @@ def evaluate_vlan_assurance(
         ),
         InvariantResult(
             name="vlan_gateway_flows",
-            passed=all(
-                flow_map.get(name) and flow_map[name].reachable
-                for name in ("users_gateway", "servers_gateway")
-            ),
-            detail="both access VLANs reach their core gateway",
+            passed=exact_flow("users_gateway", "core-02")
+            and exact_flow("servers_gateway", "core-02"),
+            detail="all gateway traces terminate ACCEPTED at core-02",
         ),
         InvariantResult(
             name="vlan_intervlan_open",
-            passed=all(
-                flow_map.get(name) and flow_map[name].reachable
-                for name in ("users_to_servers", "servers_to_users")
-            ),
-            detail="bidirectional pre-ACL inter-VLAN baseline is open",
+            passed=exact_flow("users_to_servers", "assurance-servers-probe")
+            and exact_flow("servers_to_users", "assurance-users-probe"),
+            detail="all inter-VLAN traces terminate ACCEPTED at the exact fixture",
         ),
         InvariantResult(
             name="vlan_intervlan_traverses_core",
-            passed=all(
-                flow_map.get(name) and "core-02" in flow_map[name].traversed_nodes
-                for name in ("users_to_servers", "servers_to_users")
-            ),
-            detail="inter-VLAN traces traverse core-02",
+            passed=every_path_has("users_to_servers", "core-02")
+            and every_path_has("servers_to_users", "core-02"),
+            detail="every inter-VLAN trace traverses core-02",
         ),
         InvariantResult(
             name="vlan_intervlan_excludes_remote_routers",
-            passed=all(
-                flow_map.get(name)
-                and not {"edge-junos-01", "transit-ios-01"}.intersection(
-                    flow_map[name].traversed_nodes
-                )
-                for name in ("users_to_servers", "servers_to_users")
+            passed=every_path_excludes(
+                "users_to_servers", {"edge-junos-01", "transit-ios-01"}
+            )
+            and every_path_excludes(
+                "servers_to_users", {"edge-junos-01", "transit-ios-01"}
             ),
-            detail="inter-VLAN forwarding does not transit remote routers",
+            detail="no inter-VLAN trace transits a remote router",
         ),
     )
     invariants = base.invariants + vlan_invariants

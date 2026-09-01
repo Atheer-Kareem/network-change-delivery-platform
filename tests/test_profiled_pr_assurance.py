@@ -45,7 +45,11 @@ from network_change_delivery.routed_underlay import (
     RoutedUnderlayIntent,
     build_routed_underlay_desired_state,
 )
-from network_change_delivery.vlan_service import VlanBatfishObservation, VlanFlow
+from network_change_delivery.vlan_service import (
+    VlanBatfishObservation,
+    VlanFlow,
+    VlanTrace,
+)
 
 ROOT = Path(__file__).parents[1]
 
@@ -240,24 +244,56 @@ def vlan_batfish_observation(
         connected_routes=("10.60.10.0/24", "10.60.20.0/24"),
         remote_ospf_vlan_routes=(),
         flows=(
-            VlanFlow(name="users_gateway", reachable=reachable),
-            VlanFlow(name="servers_gateway", reachable=reachable),
+            VlanFlow(
+                name="users_gateway",
+                reported_trace_count=1,
+                traces=(
+                    VlanTrace(
+                        disposition="ACCEPTED" if reachable else "EXITS_NETWORK",
+                        nodes=("assurance-users-probe", "core-02"),
+                        final_node="core-02",
+                    ),
+                ),
+            ),
+            VlanFlow(
+                name="servers_gateway",
+                reported_trace_count=1,
+                traces=(
+                    VlanTrace(
+                        disposition="ACCEPTED" if reachable else "EXITS_NETWORK",
+                        nodes=("assurance-servers-probe", "core-02"),
+                        final_node="core-02",
+                    ),
+                ),
+            ),
             VlanFlow(
                 name="users_to_servers",
-                reachable=reachable,
-                traversed_nodes=(
-                    "assurance-users-probe",
-                    "core-02",
-                    "assurance-servers-probe",
+                reported_trace_count=1,
+                traces=(
+                    VlanTrace(
+                        disposition="ACCEPTED" if reachable else "EXITS_NETWORK",
+                        nodes=(
+                            "assurance-users-probe",
+                            "core-02",
+                            "assurance-servers-probe",
+                        ),
+                        final_node="assurance-servers-probe",
+                    ),
                 ),
             ),
             VlanFlow(
                 name="servers_to_users",
-                reachable=reachable,
-                traversed_nodes=(
-                    "assurance-servers-probe",
-                    "core-02",
-                    "assurance-users-probe",
+                reported_trace_count=1,
+                traces=(
+                    VlanTrace(
+                        disposition="ACCEPTED" if reachable else "EXITS_NETWORK",
+                        nodes=(
+                            "assurance-servers-probe",
+                            "core-02",
+                            "assurance-users-probe",
+                        ),
+                        final_node="assurance-users-probe",
+                    ),
                 ),
             ),
         ),
@@ -265,8 +301,13 @@ def vlan_batfish_observation(
 
 
 class FakeBatfishProvider:
-    def __init__(self, nodes: tuple[str, ...] = PROFILED_MANAGED_NETWORK_NODES) -> None:
+    def __init__(
+        self,
+        nodes: tuple[str, ...] = PROFILED_MANAGED_NETWORK_NODES,
+        observation: VlanBatfishObservation | None = None,
+    ) -> None:
         self.nodes = nodes
+        self.observation = observation
         self.candidate_contents = ""
 
     def analyze(self, candidate: Path) -> VlanBatfishObservation:
@@ -281,7 +322,32 @@ class FakeBatfishProvider:
             "assurance-servers-probe.json",
             "assurance-users-probe.json",
         )
-        return vlan_batfish_observation(self.nodes)
+        return self.observation or vlan_batfish_observation(self.nodes)
+
+
+def replace_flow(
+    observation: VlanBatfishObservation,
+    name: str,
+    traces: tuple[VlanTrace, ...],
+) -> VlanBatfishObservation:
+    return observation.model_copy(
+        update={
+            "flows": tuple(
+                VlanFlow(
+                    name=flow.name,
+                    reported_trace_count=len(traces),
+                    traces=traces,
+                )
+                if flow.name == name
+                else flow
+                for flow in observation.flows
+            )
+        }
+    )
+
+
+def invariant(evidence: ProfiledPrAssuranceEvidence, name: str) -> bool:
+    return next(item.passed for item in evidence.invariants if item.name == name)
 
 
 def test_offline_allocation_reconstructs_exact_accepted_b3_5_copy() -> None:
@@ -345,6 +411,122 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
         assert "192.168.4" not in content
         assert "router ospf 1" in content
         assert "10.60.255.1" in content
+
+
+@pytest.mark.parametrize("disposition", ["EXITS_NETWORK", "DELIVERED_TO_SUBNET"])
+def test_weak_disposition_cannot_satisfy_exact_fixture_endpoint(
+    disposition: str,
+) -> None:
+    observation = replace_flow(
+        vlan_batfish_observation(),
+        "users_gateway",
+        (
+            VlanTrace(
+                disposition=disposition,
+                nodes=("assurance-users-probe", "core-02"),
+                final_node="core-02",
+            ),
+        ),
+    )
+    evidence = assure_profiled_pr_candidate(
+        FakeBatfishProvider(observation=observation)
+    )
+    assert evidence.outcome is AssuranceOutcome.FAILED
+    assert not invariant(evidence, "vlan_gateway_flows")
+
+
+def test_one_good_and_one_failed_trace_cannot_hide_failure() -> None:
+    observation = replace_flow(
+        vlan_batfish_observation(),
+        "users_gateway",
+        (
+            VlanTrace(
+                disposition="ACCEPTED",
+                nodes=("assurance-users-probe", "core-02"),
+                final_node="core-02",
+            ),
+            VlanTrace(
+                disposition="EXITS_NETWORK",
+                nodes=("assurance-users-probe", "core-02"),
+                final_node="core-02",
+            ),
+        ),
+    )
+    evidence = assure_profiled_pr_candidate(
+        FakeBatfishProvider(observation=observation)
+    )
+    assert not invariant(evidence, "vlan_gateway_flows")
+
+
+@pytest.mark.parametrize("unexpected", [None, "edge-junos-01", "transit-ios-01"])
+def test_every_intervlan_trace_must_use_only_core(
+    unexpected: str | None,
+) -> None:
+    middle = (unexpected,) if unexpected else ()
+    observation = replace_flow(
+        vlan_batfish_observation(),
+        "users_to_servers",
+        (
+            VlanTrace(
+                disposition="ACCEPTED",
+                nodes=(
+                    "assurance-users-probe",
+                    "core-02",
+                    "assurance-servers-probe",
+                ),
+                final_node="assurance-servers-probe",
+            ),
+            VlanTrace(
+                disposition="ACCEPTED",
+                nodes=(
+                    "assurance-users-probe",
+                    *middle,
+                    "assurance-servers-probe",
+                ),
+                final_node="assurance-servers-probe",
+            ),
+        ),
+    )
+    evidence = assure_profiled_pr_candidate(
+        FakeBatfishProvider(observation=observation)
+    )
+    if unexpected is None:
+        assert not invariant(evidence, "vlan_intervlan_traverses_core")
+    else:
+        assert not invariant(evidence, "vlan_intervlan_excludes_remote_routers")
+
+
+def test_wrong_final_fixture_does_not_pass_endpoint_contract() -> None:
+    observation = replace_flow(
+        vlan_batfish_observation(),
+        "users_to_servers",
+        (
+            VlanTrace(
+                disposition="ACCEPTED",
+                nodes=("assurance-users-probe", "core-02", "wrong-host"),
+                final_node="wrong-host",
+            ),
+        ),
+    )
+    evidence = assure_profiled_pr_candidate(
+        FakeBatfishProvider(observation=observation)
+    )
+    assert not invariant(evidence, "vlan_intervlan_open")
+
+
+def test_reported_trace_count_cannot_hide_truncation() -> None:
+    with pytest.raises(ValueError, match="truncated"):
+        VlanFlow(
+            name="users_gateway",
+            reported_trace_count=2,
+            traces=(
+                VlanTrace(
+                    disposition="ACCEPTED",
+                    nodes=("assurance-users-probe", "core-02"),
+                    final_node="core-02",
+                ),
+            ),
+        )
 
 
 @pytest.mark.parametrize(

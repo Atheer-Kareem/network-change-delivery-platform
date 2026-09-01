@@ -306,10 +306,12 @@ accepted baselines:
 D0_vlan != D0_ospf != D0_acl
 ```
 
-B5-1 supplies the missing canonical projection, append-only persistence, and
-resolution semantics. It deliberately creates no real D0. B5-2 will explicitly
-adopt fresh LIVE managed reality as four independent generation-1 baselines.
-The B4 proposals are D1 and are not accepted D0.
+B5-1 supplies the canonical projection, append-only persistence, and resolution
+semantics. B5-2 supplies a one-shot initializer that admits fresh LIVE reality
+only after matching explicit prior-B4 observation expectations, stages all four
+generation-one chains together, and requires a second independent `IN_SYNC`
+read before atomic promotion. The B4 proposals remain D1 and are not accepted
+D0.
 
 The lifecycle contract is:
 

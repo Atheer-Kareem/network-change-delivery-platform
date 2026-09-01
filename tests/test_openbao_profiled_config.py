@@ -58,6 +58,25 @@ class OpenBaoState:
                     }
                 },
             )
+        if path == f"/v1/auth/approle/role/{LOCAL_APPROLE_NAME}/role-id":
+            return httpx.Response(200, json={"data": {"role_id": "private-role"}})
+        if path == f"/v1/auth/approle/role/{LOCAL_APPROLE_NAME}/secret-id":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "secret_id": "private-session-secret",
+                        "secret_id_accessor": "session-accessor",
+                    }
+                },
+            )
+        if path == (
+            f"/v1/auth/approle/role/{LOCAL_APPROLE_NAME}/secret-id-accessor/destroy"
+        ):
+            assert json.loads(request.content) == {
+                "secret_id_accessor": "session-accessor"
+            }
+            return httpx.Response(204)
         if path == f"/v1/sys/policies/acl/{LOCAL_POLICY_NAME}":
             if request.method == "PUT":
                 self.policy = json.loads(request.content)["policy"]
@@ -131,6 +150,22 @@ def test_operator_configuration_is_idempotent_and_does_not_rotate() -> None:
     for value in (ADMIN_TOKEN, PASSWORD_8, PASSWORD_9):
         assert value not in repr(first)
         assert value not in repr(second)
+
+
+def test_bounded_session_is_issued_and_retired_without_secret_repr() -> None:
+    state = OpenBaoState()
+    state.policy = PROFILED_LOCAL_POLICY
+    operator = configurator(state, [])
+    session = operator.issue_bounded_session()
+    assert repr(session) == "ProfiledOpenBaoSession(<redacted>)"
+    assert "private-session-secret" not in repr(session)
+    operator.retire_bounded_session(session)
+    paths = tuple(request.url.path for request in state.requests)
+    assert paths[-3:] == (
+        f"/v1/auth/approle/role/{LOCAL_APPROLE_NAME}/role-id",
+        f"/v1/auth/approle/role/{LOCAL_APPROLE_NAME}/secret-id",
+        f"/v1/auth/approle/role/{LOCAL_APPROLE_NAME}/secret-id-accessor/destroy",
+    )
 
 
 def test_existing_profiled_path_with_wrong_schema_or_username_fails_closed() -> None:

@@ -7,7 +7,8 @@ Detour B5-1 adds a separate new-architecture managed-state foundation. It
 projects observation and intent into the same envelope-scoped canonical form,
 resolves D0 from a validated append-only acceptance chain, distinguishes
 D0-versus-O drift from D0-versus-D1 proposal change, and requires O' to equal D1
-before a future accepted-state advance. It does not initialize real D0 or add
+before a future accepted-state advance. B5-2 adds the commit-bound, two-pass,
+continuity-gated one-shot initializer for the first real D0; it does not add
 execution authority. See [managed state and drift](managed-state-drift.md).
 
 During Detour B3, the disposable CML step and complete protected-delivery group

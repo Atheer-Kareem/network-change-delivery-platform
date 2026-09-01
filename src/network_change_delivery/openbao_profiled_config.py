@@ -59,6 +59,18 @@ class ProfiledOpenBaoConfiguration:
     secret_versions: tuple[tuple[int, int], ...]
 
 
+@dataclass(frozen=True, repr=False)
+class ProfiledOpenBaoSession:
+    """One bounded personal-lab AppRole login, with no secret-bearing repr."""
+
+    role_id: str
+    secret_id: str
+    secret_id_accessor: str
+
+    def __repr__(self) -> str:
+        return "ProfiledOpenBaoSession(<redacted>)"
+
+
 def _random_password() -> str:
     return secrets.token_urlsafe(48)
 
@@ -288,4 +300,38 @@ class OpenBaoProfiledDeviceConfigurator:
             created_device_ids=tuple(created),
             reused_device_ids=tuple(reused),
             secret_versions=tuple(sorted(versions.items())),
+        )
+
+    def issue_bounded_session(self) -> ProfiledOpenBaoSession:
+        """Verify the accepted authority and issue one existing bounded SecretID."""
+        self._verify_owned_authority()
+        role_path = f"/v1/auth/approle/role/{LOCAL_APPROLE_NAME}"
+        role_id = self._data(self._request("GET", f"{role_path}/role-id")).get(
+            "role_id"
+        )
+        secret_data = self._data(
+            self._request("POST", f"{role_path}/secret-id", json={})
+        )
+        secret_id = secret_data.get("secret_id")
+        accessor = secret_data.get("secret_id_accessor")
+        if not all(
+            isinstance(value, str) and value for value in (role_id, secret_id, accessor)
+        ):
+            raise SecretError("OpenBao bounded AppRole session response is invalid")
+        return ProfiledOpenBaoSession(
+            role_id=role_id,
+            secret_id=secret_id,
+            secret_id_accessor=accessor,
+        )
+
+    def retire_bounded_session(self, session: ProfiledOpenBaoSession) -> None:
+        """Destroy exactly the issued SecretID by its non-secret accessor."""
+        if not isinstance(session, ProfiledOpenBaoSession):
+            raise SecretError("OpenBao bounded AppRole session is invalid")
+        role_path = f"/v1/auth/approle/role/{LOCAL_APPROLE_NAME}"
+        self._request(
+            "POST",
+            f"{role_path}/secret-id-accessor/destroy",
+            json={"secret_id_accessor": session.secret_id_accessor},
+            expected_statuses=(204,),
         )

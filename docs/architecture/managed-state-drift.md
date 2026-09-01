@@ -95,9 +95,17 @@ well as both state digests and zero-write marker. All comparisons require the
 same vertical and exact ownership envelope. Drift detection is pure and never
 updates D0.
 
-## Deferred initial adoption
+## Initial-adoption boundary
 
-B5-1 creates no operator store and persists no real state. B5-2 will fresh-read
-all four LIVE verticals, explicitly initial-adopt current managed reality,
-resolve each generation-1 chain independently, fresh-read again, and prove
-O equals D0. Only then will current Git B4 intent be compared as proposed D1.
+B5-1 creates no operator store and persists no real state. B5-2 supplies a
+one-shot operator workflow that first compares fresh LIVE managed projections
+with explicit last-accepted-B4 observation expectations. Those expectations
+are continuity gates, not D0. Only an exact continuity match may enter a private
+same-filesystem staging store as four `INITIAL_ADOPTION` generation-one
+records. A second independently credentialed LIVE pass must reconcile `IN_SYNC`
+for all four before the complete directory is atomically promoted. Failure
+before promotion removes only the run-owned staging tree and never creates the
+final store. An existing final store is never overwritten or reset.
+
+The real adoption and its exact evidence are recorded separately in the
+[B5-2 acceptance record](../acceptance/managed-state-initial-live-adoption-detour-b5-2.md).

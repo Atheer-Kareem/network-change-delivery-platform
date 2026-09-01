@@ -15,6 +15,8 @@ from network_change_delivery.managed_state_live import (
     collect_live_managed_state,
 )
 from network_change_delivery.managed_state_store import (
+    D0ObservationOutcome,
+    ManagedStateComparison,
     ManagedStateStore,
     compare_d0_to_d1,
     reconcile_d0_to_observation,
@@ -23,6 +25,40 @@ from network_change_delivery.openbao_profiled_config import (
     OpenBaoProfiledDeviceConfigurator,
 )
 from network_change_delivery.secrets import OpenBaoSecretProvider
+
+
+def verification_exit_status(
+    reconciliations: tuple[ManagedStateComparison, ...],
+) -> int:
+    """Return shell status for complete D0/O verification results."""
+    return (
+        int(
+            not all(
+                item.outcome is D0ObservationOutcome.IN_SYNC for item in reconciliations
+            )
+        )
+        * 2
+    )
+
+
+def build_verification_payload(
+    reconciliations: tuple[ManagedStateComparison, ...],
+    proposals: tuple[ManagedStateComparison, ...],
+) -> dict[str, object]:
+    """Build the bounded, secret-free verifier output."""
+    return {
+        "device_writes": 0,
+        "verticals": [
+            {
+                "vertical": vertical.value,
+                "d0_observation": reconciliation.model_dump(mode="json"),
+                "d0_d1": proposal.model_dump(mode="json"),
+            }
+            for vertical, reconciliation, proposal in zip(
+                EXACT_VERTICALS, reconciliations, proposals, strict=True
+            )
+        ],
+    }
 
 
 def main() -> int:
@@ -36,6 +72,8 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     checkout = Path(__file__).resolve().parents[2]
+    store = ManagedStateStore(arguments.store_root, checkout=checkout, create=False)
+    resolutions = tuple(store.resolve_current_d0(item) for item in EXACT_VERTICALS)
     issuer = OpenBaoProfiledDeviceConfigurator.from_environment()
     session = issuer.issue_bounded_session()
     try:
@@ -48,8 +86,6 @@ def main() -> int:
         )
     finally:
         issuer.retire_bounded_session(session)
-    store = ManagedStateStore(arguments.store_root, checkout=checkout, create=False)
-    resolutions = tuple(store.resolve_current_d0(item) for item in EXACT_VERTICALS)
     reconciliations = tuple(
         reconcile_d0_to_observation(resolution, state)
         for resolution, state in zip(resolutions, observed.states(), strict=True)
@@ -62,24 +98,12 @@ def main() -> int:
     )
     print(
         json.dumps(
-            {
-                "device_writes": 0,
-                "verticals": [
-                    {
-                        "vertical": vertical.value,
-                        "d0_observation": reconciliation.model_dump(mode="json"),
-                        "d0_d1": proposal.model_dump(mode="json"),
-                    }
-                    for vertical, reconciliation, proposal in zip(
-                        EXACT_VERTICALS, reconciliations, proposals, strict=True
-                    )
-                ],
-            },
+            build_verification_payload(reconciliations, proposals),
             sort_keys=True,
             indent=2,
         )
     )
-    return 0
+    return verification_exit_status(reconciliations)
 
 
 if __name__ == "__main__":

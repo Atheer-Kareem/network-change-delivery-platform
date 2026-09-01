@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -279,6 +280,37 @@ def test_cached_first_observation_cannot_pass_as_second(
         )
     assert not final.exists()
     assert not tuple(tmp_path.glob("cached.init-*"))
+
+
+def test_preexisting_staging_collision_is_not_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "network_change_delivery.managed_state_live.validate_adoption_source",
+        lambda *_args: None,
+    )
+    collision_id = uuid.UUID("00000000-0000-0000-0000-000000000123")
+    monkeypatch.setattr(
+        "network_change_delivery.managed_state_live.uuid4", lambda: collision_id
+    )
+    final = tmp_path / "managed-state"
+    staging = tmp_path / f"managed-state.init-{collision_id}"
+    staging.mkdir(mode=0o700)
+    sentinel = staging / "sentinel"
+    sentinel.write_text("must survive")
+
+    with pytest.raises(FileExistsError):
+        initialize_live_d0_store(
+            final_root=final,
+            checkout=Path.cwd(),
+            source_git_commit=SOURCE_COMMIT,
+            collect_first=observation_bundle,
+            collect_second=observation_bundle,
+        )
+
+    assert staging.is_dir()
+    assert sentinel.read_text() == "must survive"
+    assert not final.exists()
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="Git executable unavailable")

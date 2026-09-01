@@ -107,6 +107,13 @@ for all four before the complete directory is atomically promoted. Failure
 before promotion removes only the run-owned staging tree and never creates the
 final store. An existing final store is never overwritten or reset.
 
+The read-only `verify_live_d0.py` operator check validates the existing store
+before opening a credential session, prints the complete bounded result, and
+returns status 2 when any vertical is `DRIFT_DETECTED`. `CHANGE_PROPOSED` is
+not a verification failure. Initialization cleanup is ownership-safe: a
+staging-looking path is removed only when this invocation successfully created
+that exact directory.
+
 The B5-2 run has now initialized exactly four generation-one D0 chains. Its
 second independent observation reconciled `IN_SYNC` for all four; comparison
 with current Git D1 returned `CHANGE_PROPOSED` for all four. The exact immutable

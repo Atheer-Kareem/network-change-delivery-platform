@@ -689,8 +689,10 @@ def initialize_live_d0_store(
     enforce_pre_adoption_continuity(expectation, first)
     staging = final_root.with_name(f"{final_root.name}.init-{uuid4()}")
     promoted = False
+    staging_created = False
     try:
         staging.mkdir(mode=0o700)
+        staging_created = True
         store = ManagedStateStore(staging, checkout=checkout)
         when = accepted_at or datetime.now(UTC)
         records = tuple(
@@ -778,6 +780,6 @@ def initialize_live_d0_store(
             d0_d1,
         )
     except Exception:
-        if not promoted and staging.exists():
+        if not promoted and staging_created and staging.exists():
             _safe_remove_staging(staging, final_root)
         raise

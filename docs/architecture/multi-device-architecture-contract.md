@@ -264,10 +264,12 @@ running configuration.
 
 Initial examples are:
 
-- VLAN: VLAN presence, port mode, access VLAN, allowed/native set, and owned
-  gateway deployment.
-- OSPF: process, router ID, interface participation, area, network type, passive
-  state, cost, and only explicitly managed authentication/timers.
+- routed underlay: exact L3 presence, address set, and administrative state;
+- VLAN: VLAN presence, port mode, access VLAN, allowed set, owned gateway
+  deployment, and managed interface administrative state (not native VLAN);
+- OSPF: process, router ID, interface participation, area, network type, and
+  passive state; cost, authentication, and timers remain outside the current
+  envelope.
 - ACL: normalized rule semantics and order, attachment, direction, and default
   action.
 
@@ -278,6 +280,7 @@ Scope identity namespaces are closed and kind-specific:
 
 - device: `netbox:dcim.device:<positive-id>`;
 - interface: `netbox:dcim.interface:<positive-id>`;
+- IP address: `netbox:ipam.ipaddress:<positive-id>`;
 - VLAN: `netbox:ipam.vlan:<positive-id>`;
 - prefix: `netbox:ipam.prefix:<positive-id>`; and
 - Git-owned policy: `git:policy:<safe-stable-token>`.
@@ -303,8 +306,10 @@ accepted baselines:
 D0_vlan != D0_ospf != D0_acl
 ```
 
-B1 defines no persistence or resolution mechanism. B5 will persist and resolve
-these references and compare normalized observed state.
+B5-1 supplies the missing canonical projection, append-only persistence, and
+resolution semantics. It deliberately creates no real D0. B5-2 will explicitly
+adopt fresh LIVE managed reality as four independent generation-1 baselines.
+The B4 proposals are D1 and are not accepted D0.
 
 The lifecycle contract is:
 
@@ -319,6 +324,9 @@ Out-of-band managed drift is never silently overwritten, automatically healed,
 or accepted because a device is reachable. An operator either restores reviewed
 desired state through normal delivery or adopts legitimate emergency reality
 into reviewed Git intent.
+
+See [managed state and drift](managed-state-drift.md) for the exact canonical
+projection, immutable record chain, and D0/O/D1 comparison outcomes.
 
 ## Future coordinated service delivery
 

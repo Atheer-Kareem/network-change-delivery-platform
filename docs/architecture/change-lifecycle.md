@@ -3,6 +3,13 @@
 The current protected Buildkite lifecycle binds review, execution, and evidence
 to the same immutable single-device plan.
 
+Detour B5-1 adds a separate new-architecture managed-state foundation. It
+projects observation and intent into the same envelope-scoped canonical form,
+resolves D0 from a validated append-only acceptance chain, distinguishes
+D0-versus-O drift from D0-versus-D1 proposal change, and requires O' to equal D1
+before a future accepted-state advance. It does not initialize real D0 or add
+execution authority. See [managed state and drift](managed-state-drift.md).
+
 During Detour B3, the disposable CML step and complete protected-delivery group
 are temporarily commented out together. The lifecycle below remains the
 accepted design if the operator explicitly decides disposable CML staging is

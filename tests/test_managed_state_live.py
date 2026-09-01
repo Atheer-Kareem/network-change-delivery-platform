@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -280,6 +281,7 @@ def test_cached_first_observation_cannot_pass_as_second(
     assert not tuple(tmp_path.glob("cached.init-*"))
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="Git executable unavailable")
 def test_source_validation_rejects_wrong_head_and_dirty_tree(tmp_path: Path) -> None:
     checkout = tmp_path / "repo"
     checkout.mkdir()

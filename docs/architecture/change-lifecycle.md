@@ -12,7 +12,10 @@ continuity-gated one-shot initializer for the first real D0; it does not add
 execution authority. See [managed state and drift](managed-state-drift.md).
 The accepted run initialized four independent generation-one chains and proved
 fresh O equals D0 for each; current Git D1 remains a four-vertical proposed
-change.
+change. B5-3 then demonstrated the read-only drift boundary: one manual
+`no shutdown` on `transit-ios-01/GigabitEthernet0/1` produced routed-underlay
+drift, a manual `shutdown` restored D0, and no NCDP-authorized device write or
+D0 advancement occurred. See the [B5-3 acceptance record](../acceptance/managed-state-controlled-drift-detour-b5-3.md).
 
 During Detour B3, the disposable CML step and complete protected-delivery group
 are temporarily commented out together. The lifecycle below remains the

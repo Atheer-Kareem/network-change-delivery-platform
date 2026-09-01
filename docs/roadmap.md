@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — complete through B4-2:** B1 accepts the
+    - **Detour B — complete through B4-3:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -162,7 +162,13 @@ acceptance records.
       router-ID identities and adds OSPF intent, real read-only observation,
       O-to-D1 rendering, and combined `routed_underlay + ospf` assurance. The
       router IDs are not loopbacks or advertised routes. Live application
-      remains deferred while protected delivery is disabled. Legacy protected
+      remains deferred while protected delivery is disabled. B4-3 allocates
+      exact planned core VLAN subinterfaces/gateways, adds VLAN intent and real
+      read-only observation, and assures router-on-a-stick plus access switching.
+      Its active Batfish model keeps four managed network devices and adds two
+      assurance-only host fixtures to prove gateway and bidirectional pre-ACL
+      inter-VLAN behavior through core; no endpoint NetBox/CML authority or
+      network write is created. Legacy protected
       assurance remains preserved and disabled; no protected promotion or
       execution authority was migrated.
     - **12F — on hold:** demonstration runbook and rehearsal.

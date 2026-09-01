@@ -717,6 +717,7 @@ class ManagedField(StrEnum):
     VLAN_ALLOWED_VLANS = "vlan.allowed_vlans"
     VLAN_NATIVE_VLAN = "vlan.native_vlan"
     VLAN_GATEWAY = "vlan.gateway"
+    VLAN_INTERFACE_ADMIN_ENABLED = "vlan.interface_admin_enabled"
     OSPF_PROCESS = "ospf.process"
     OSPF_ROUTER_ID = "ospf.router_id"
     OSPF_INTERFACE_PARTICIPATION = "ospf.interface_participation"

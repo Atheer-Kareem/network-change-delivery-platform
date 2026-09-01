@@ -11,7 +11,9 @@ import stat
 import subprocess
 import tempfile
 from collections.abc import Mapping
+from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Literal
 
 import ansible_runner
@@ -38,6 +40,7 @@ IDENTITY_TASK = "NCDP collect identity"
 INTERFACES_TASK = "NCDP collect interfaces"
 L3_INTERFACES_TASK = "NCDP collect layer 3 interfaces"
 OSPF_READ_TASK = "NCDP inspect exact OSPF configuration"
+VLAN_READ_TASK = "NCDP inspect exact VLAN service configuration"
 EXECUTION_TASK = "NCDP apply exact approved artifact"
 SNMP_PREFLIGHT_TASK = "NCDP inspect exact SNMP owned names"
 SNMP_ENGINE_TASK = "NCDP inspect SNMP engine"
@@ -45,6 +48,34 @@ SNMP_VIEW_TASK = "NCDP inspect SNMP view"
 SNMP_GROUP_TASK = "NCDP inspect SNMP group"
 SNMP_USER_TASK = "NCDP inspect SNMP user"
 SNMP_EXECUTION_TASK = "NCDP apply exact SNMP artifact"
+
+
+class VlanReadScope(StrEnum):
+    """Closed B4-3 Cisco VLAN read-only command scopes."""
+
+    CORE = "core_vlan_service"
+    ACCESS = "access_vlan_service"
+
+
+VLAN_READ_COMMANDS: Mapping[VlanReadScope, tuple[str, ...]] = MappingProxyType(
+    {
+        VlanReadScope.CORE: (
+            "show running-config interface GigabitEthernet3",
+            "show running-config | section ^interface GigabitEthernet3\\.",
+            "show running-config | section ^router ospf",
+        ),
+        VlanReadScope.ACCESS: (
+            "show vlan brief",
+            "show interfaces GigabitEthernet0/1 switchport",
+            "show interfaces GigabitEthernet0/2 switchport",
+            "show interfaces GigabitEthernet0/3 switchport",
+            "show running-config interface GigabitEthernet0/1",
+            "show running-config interface GigabitEthernet0/2",
+            "show running-config interface GigabitEthernet0/3",
+            "show running-config | section ^interface Vlan",
+        ),
+    }
+)
 
 
 class ProviderError(RuntimeError):
@@ -380,6 +411,7 @@ class AnsibleRunnerCiscoAdapter:
                 INTERFACES_TASK,
                 L3_INTERFACES_TASK,
                 OSPF_READ_TASK,
+                VLAN_READ_TASK,
                 EXECUTION_TASK,
                 SNMP_PREFLIGHT_TASK,
                 SNMP_ENGINE_TASK,
@@ -612,6 +644,41 @@ class AnsibleRunnerCiscoAdapter:
         ):
             raise ProviderError("Cisco OSPF read-only result was incomplete")
         return tuple(stdout)  # type: ignore[return-value]
+
+    def collect_vlan_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        scope: VlanReadScope,
+        *,
+        ssh_type: Literal["paramiko"],
+    ) -> tuple[str, ...]:
+        """Read only one exact B4-3 VLAN service scope."""
+        if not isinstance(scope, VlanReadScope):
+            raise ProviderError("Cisco VLAN read-only scope is invalid")
+        commands = VLAN_READ_COMMANDS[scope]
+        runner, selected = self._run(
+            target,
+            credentials,
+            "collect_vlan_state.yml",
+            extravars={"ncdp_vlan_commands": list(commands)},
+            ssh_type=ssh_type,
+            profile_bound=True,
+        )
+        if (
+            getattr(runner, "status", None) != "successful"
+            or getattr(runner, "rc", 1) != 0
+            or VLAN_READ_TASK not in selected
+        ):
+            raise ProviderError("Cisco VLAN read-only collection failed")
+        stdout = selected[VLAN_READ_TASK].get("stdout")
+        if (
+            not isinstance(stdout, list)
+            or len(stdout) != len(commands)
+            or any(not isinstance(value, str) for value in stdout)
+        ):
+            raise ProviderError("Cisco VLAN read-only result was incomplete")
+        return tuple(stdout)
 
     def execute(
         self,

@@ -14,6 +14,8 @@ from network_change_delivery.assurance import (
     ParseSummary,
     build_snapshot_manifest,
     evaluate_assurance,
+    prepare_snapshot_with_layer1,
+    prepare_snapshot_with_layer1_from_bytes,
 )
 
 
@@ -87,6 +89,42 @@ def test_manifest_rejects_symlink_and_empty_snapshot(tmp_path: Path) -> None:
     (root / "link").symlink_to(target)
     with pytest.raises(ValueError, match="symlink"):
         build_snapshot_manifest(tmp_path / "links")
+
+
+def test_b4_3_snapshot_admits_only_exact_topology_and_host_fixtures(
+    tmp_path: Path,
+) -> None:
+    source = (
+        ("configs/core-02.cfg", b"hostname core-02\n"),
+        ("batfish/layer1_topology.json", b'{"edges":[]}\n'),
+        ("hosts/assurance-users-probe.json", b'{"hostname":"users"}\n'),
+        ("hosts/assurance-servers-probe.json", b'{"hostname":"servers"}\n'),
+    )
+    with prepare_snapshot_with_layer1_from_bytes(source) as prepared:
+        assert tuple(item.relative_path for item in prepared.manifest.files) == tuple(
+            path for path, _ in sorted(source)
+        )
+
+    for invalid in (
+        (*source, ("hosts/rogue.json", b"{}")),
+        tuple(item for item in source if "servers" not in item[0]),
+        (*source, ("../escape", b"x")),
+    ):
+        with pytest.raises(ValueError):
+            prepare_snapshot_with_layer1_from_bytes(invalid)
+
+    root = tmp_path / "snapshot"
+    (root / "configs").mkdir(parents=True)
+    (root / "batfish").mkdir()
+    (root / "hosts").mkdir()
+    (root / "configs/core.cfg").write_text("hostname core\n")
+    (root / "batfish/layer1_topology.json").write_text('{"edges":[]}\n')
+    (root / "hosts/assurance-users-probe.json").write_text("{}\n")
+    target = root / "host.json"
+    target.write_text("{}\n")
+    (root / "hosts/assurance-servers-probe.json").symlink_to(target)
+    with pytest.raises(ValueError, match="regular"):
+        prepare_snapshot_with_layer1(root)
 
 
 def test_manifest_count_and_size_boundaries(tmp_path: Path) -> None:

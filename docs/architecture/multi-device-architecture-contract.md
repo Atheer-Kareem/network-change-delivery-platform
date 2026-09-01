@@ -211,6 +211,12 @@ The three routed links have exact NetBox-owned interface assignments:
 `edge-junos-01/ge-0/0/1`, and `10.60.0.10/30` on
 `transit-ios-01/GigabitEthernet0/2`.
 
+B4-3 adds exact NetBox gateway authority without changing the accepted B3-5
+allocation digest: virtual interfaces `core-02/GigabitEthernet3.10` (ID 21)
+and `.20` (ID 22), with gateway IP objects `10.60.10.1/24` (ID 26) and
+`10.60.20.1/24` (ID 27). Both subinterfaces have parent interface ID 7. These
+are intended IPAM relationships, not claims about LIVE running configuration.
+
 `NetBoxReferenceDataPlaneProvider.resolve_reference_allocation()` resolves only
 this exact tagged population through GET requests and validates the accepted
 NetBox identities, values, interface ownership, cables, and VLAN-prefix
@@ -218,9 +224,10 @@ relationships against the closed Git-owned topology catalog. Missing, extra,
 duplicated, wrong, or swapped facts fail closed. The copied IDs and values in
 the catalog are admission evidence, not a second source of IPAM authority.
 
-No loopback interface, VLAN gateway, or endpoint address is allocated yet. The
-three `/32` objects are unassigned OSPF router IDs only. No routed address,
-router ID, or VLAN has been configured on a device. Git will own
+No loopback interface or endpoint address is allocated. The three `/32`
+objects are unassigned OSPF router IDs only. The VLAN gateways are allocated
+to planned NetBox subinterfaces, but no routed address, router ID, or VLAN has
+been configured on a device. Git owns
 only how these resolved objects participate in later VLAN, OSPF, ACL, and
 assurance intent.
 
@@ -431,17 +438,32 @@ composes `routed_underlay + ospf` for four-node Batfish assurance. Live
 application remains deferred while protected delivery is disabled. See the
 [B4-2 acceptance record](../acceptance/ospf-triangle-detour-b4-2.md).
 
+### Current B4-3 VLAN proposal
+
+B4-3 adds a separate `vlan` envelope over devices 1 and 9, VLANs 1/2,
+prefixes 6/7, the six exact parent/subinterface/access interfaces, gateway IP
+identities 26/27, and `git:policy:vlan-access-service`. It owns VLAN presence,
+port mode, access/allowed VLANs, gateway state, and admin-enabled state. Native
+VLAN, OSPF, ACLs, descriptions, and unrelated switch configuration remain
+outside the envelope.
+
+The final candidate implements IOS-XE router-on-a-stick gateways and an IOSvL2
+trunk plus two access ports. Batfish retains the four managed network devices
+and adds exactly two assurance-only hosts, `assurance-users-probe` and
+`assurance-servers-probe`. They are neither NetBox/CML objects nor managed
+targets. Four infrastructure edges remain physical authority; two additional
+host edges exist only in the assurance snapshot. This allows pinned Batfish to
+prove both gateway flows and open bidirectional pre-ACL inter-VLAN routing
+through `core-02`. See the
+[B4-3 acceptance record](../acceptance/vlan-service-detour-b4-3.md).
+
 ### Still future and not configured
 
 The physical realization and NetBox allocations do not configure services.
 These items remain future reviewed increments:
 
 - applying the B4-1 routed-underlay proposal to devices;
-- creating VLANs on devices;
-- creating IOS-XE router-on-a-stick subinterfaces on `core-02`;
-- configuring the `core-02` to `access-sw-01` trunk;
-- configuring VLAN 10 and VLAN 20 access ports;
-- allocating and configuring VLAN gateways;
+- applying the B4-3 VLAN/router-on-a-stick proposal to devices;
 - applying the B4-2 OSPF proposal;
 - configuring ACLs or security policy;
 - creating endpoint nodes or allocating endpoint addresses; and
@@ -455,9 +477,14 @@ own inter-VLAN routing through IOS-XE 802.1Q subinterfaces. This does not make
 `access-sw-01` a VLAN gateway or claim broader IOSvL2 routing behavior. A later
 gateway migration to switch SVIs remains a distinct coordinated service change.
 
-The reserved future traffic fixtures remain `users-host-01` and
+The reserved future LIVE/CML traffic fixtures remain `users-host-01` and
 `servers-host-01`, likely implemented as lightweight Alpine CML nodes. They are
 not NCDP-managed network devices, fleet members, canaries/waves,
 network-device `DeploymentPlan` recipients, credential owners, or members of
 the four-device managed-network population. Their eventual data-plane addresses
 must remain identical between LIVE and STAGING realizations.
+
+The similarly purposed `assurance-users-probe` and
+`assurance-servers-probe` are distinct Batfish-only fixtures. Their `.100`
+addresses are synthetic packet coordinates, not NetBox allocations or reserved
+future endpoint identities.

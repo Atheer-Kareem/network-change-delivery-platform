@@ -184,6 +184,107 @@ def prepare_snapshot_from_bytes(
         raise
 
 
+def prepare_snapshot_with_layer1_from_bytes(
+    source: Iterable[tuple[str, bytes]],
+) -> PreparedSnapshot:
+    """Stage exact configs plus one canonical Batfish layer-1 topology file.
+
+    This bounded extension deliberately does not alter the historical
+    configs-only snapshot representation or its digests.
+    """
+    source = tuple(sorted(source, key=lambda item: item[0]))
+    if not source or len(source) > MAX_FILES:
+        raise ValueError("snapshot exceeds bounded file limits")
+    paths = [path for path, _content in source]
+    if (
+        len(paths) != len(set(paths))
+        or sum(len(data) for _, data in source) > MAX_BYTES
+    ):
+        raise ValueError("snapshot paths or bytes exceed bounded limits")
+    topology = "batfish/layer1_topology.json"
+    admitted_hosts = {
+        "hosts/assurance-users-probe.json",
+        "hosts/assurance-servers-probe.json",
+    }
+    present_hosts = {path for path in paths if path.startswith("hosts/")}
+    if (
+        paths.count(topology) != 1
+        or not any(path.startswith("configs/") for path in paths)
+        or present_hosts not in (set(), admitted_hosts)
+    ):
+        raise ValueError("snapshot requires configs and exact layer-1 topology")
+    for path in paths:
+        relative = PurePosixPath(path)
+        if (
+            relative.is_absolute()
+            or relative.as_posix() != path
+            or any(part in {"", ".", ".."} for part in relative.parts)
+            or not (
+                path.startswith("configs/")
+                or path == topology
+                or path in admitted_hosts
+            )
+            or (path.startswith("configs/") and len(relative.parts) != 2)
+        ):
+            raise ValueError("extended snapshot path is not admitted")
+    manifest = _manifest_from_bytes(source)
+    staging = Path(tempfile.mkdtemp(prefix="ncdp-batfish-layer1-"))
+    try:
+        staging.chmod(0o700)
+        for relative, content in source:
+            target = staging / relative
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            fd = os.open(
+                target,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            try:
+                offset = 0
+                while offset < len(content):
+                    written = os.write(fd, content[offset:])
+                    if written <= 0:
+                        raise OSError("snapshot staging write made no progress")
+                    offset += written
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        return PreparedSnapshot(staging, manifest)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def prepare_snapshot_with_layer1(root: Path) -> PreparedSnapshot:
+    """Freeze bounded configs, layer-1 topology, and exact B4-3 hosts."""
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("snapshot root must be a real directory")
+    configs = root / "configs"
+    topology = root / "batfish" / "layer1_topology.json"
+    if (
+        configs.is_symlink()
+        or not configs.is_dir()
+        or topology.is_symlink()
+        or not topology.is_file()
+    ):
+        raise ValueError("snapshot configs and layer-1 topology are required")
+    source: list[tuple[str, bytes]] = []
+    for path in sorted(configs.iterdir(), key=lambda item: item.name):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("snapshot configs must be regular flat files")
+        source.append((f"configs/{path.name}", _read_regular(path)))
+    source.append(("batfish/layer1_topology.json", _read_regular(topology)))
+    hosts = root / "hosts"
+    if hosts.exists():
+        if hosts.is_symlink() or not hosts.is_dir():
+            raise ValueError("snapshot hosts path must be a real directory")
+        for path in sorted(hosts.iterdir(), key=lambda item: item.name):
+            if path.is_symlink() or not path.is_file():
+                raise ValueError("snapshot hosts must be regular flat files")
+            source.append((f"hosts/{path.name}", _read_regular(path)))
+    return prepare_snapshot_with_layer1_from_bytes(source)
+
+
 def build_snapshot_manifest(root: Path) -> SnapshotManifest:
     with prepare_snapshot(root) as prepared:
         return prepared.manifest

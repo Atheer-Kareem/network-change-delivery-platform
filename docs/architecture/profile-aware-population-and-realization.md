@@ -6,8 +6,9 @@ Detour B3-1 introduced repository-only authority contracts. B3-2 through B3-5
 then applied the reviewed NetBox, OpenBao, persistent CML, LIVE trust, and
 data-plane IPAM boundaries without changing v1 planning or write behavior.
 B4-1 adds an exact read-only routed-underlay intent/observation/assurance path.
-B4-2 adds exact OSPF router-ID authority and a separate read-only OSPF vertical;
-neither increment broadens any write path.
+B4-2 adds exact OSPF router-ID authority and a separate read-only OSPF vertical.
+B4-3 adds exact VLAN gateway authority and a read-only router-on-a-stick/access
+service vertical. None of these increments broadens a write path.
 
 The two inventory populations are intentionally different:
 
@@ -249,6 +250,25 @@ Observation owns only process/router-ID and the six admitted interface facts.
 Transition rendering binds O and the independent OSPF D1. Final-state Batfish
 assurance composes unchanged routed-underlay D1 with OSPF D1 and does not import
 live NetBox, OpenBao, CML, or device access into PR assurance.
+
+## B4-3 VLAN read-only path
+
+`ReferenceVlanServiceAllocation` binds VLANs 10/20 and prefixes 6/7 to core
+parent interface ID 7, planned subinterfaces 21/22, gateway IPs 26/27, access
+interfaces 18–20, and cable 4. The normal provider is GET-only; the accepted
+offline reconstruction is PR evidence rather than a replacement for NetBox.
+
+`ProfileVlanReadOnlyAdapter` admits only `core-02` IOS-XE and `access-sw-01`
+IOSvL2. It observes the exact managed parent, subinterfaces, VLAN database,
+trunk, access ports, and relevant SVI conflicts through strict read-only
+transports. Transition rendering binds real O to the independent VLAN D1 and
+has no execution surface.
+
+The active offline Batfish model distinguishes four managed network nodes from
+two supplemental assurance-only hosts. The fixtures and their synthetic `.100`
+coordinates do not enter profiled inventory, NetBox authority, ownership
+envelopes, CML, OpenBao, or delivery targets. Four infrastructure edges remain
+accepted physical truth; two synthetic fixture edges exist only in Batfish.
 
 ## B3-3 OpenBao and pipeline state
 

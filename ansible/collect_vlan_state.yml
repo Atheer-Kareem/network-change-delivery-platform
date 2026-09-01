@@ -1,0 +1,12 @@
+---
+- name: Collect bounded Cisco VLAN service state
+  hosts: all
+  gather_facts: false
+  vars:
+    ansible_user: "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_USERNAME') }}"
+    ansible_password: "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_PASSWORD') }}"
+  tasks:
+    - name: NCDP inspect exact VLAN service configuration
+      cisco.ios.ios_command:
+        commands: "{{ ncdp_vlan_commands }}"
+      changed_when: false

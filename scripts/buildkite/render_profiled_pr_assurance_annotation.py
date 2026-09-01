@@ -39,16 +39,30 @@ def render_annotation(evidence: ProfiledPrAssuranceEvidence) -> str:
             + ", ".join(_safe(item.value) for item in evidence.active_service_stack)
             + "` |"
         ),
-        f"| Nodes | `{len(evidence.candidate_nodes)}` |",
+        f"| Managed network nodes | `{len(evidence.managed_network_nodes)}` |",
+        f"| Assurance fixture hosts | `{len(evidence.assurance_fixture_hosts)}` |",
+        f"| Modeled nodes | `{len(evidence.modeled_nodes)}` |",
         f"| OSPF routers | `{evidence.ospf_router_count}` |",
         f"| OSPF adjacencies | `{evidence.ospf_adjacency_count}` |",
+        f"| VLANs | `{evidence.vlan_count}` |",
+        f"| Gateways | `{evidence.vlan_gateway_count}` |",
+        (
+            "| Layer-1 edges | `"
+            f"{evidence.infrastructure_layer1_edge_count} infrastructure + "
+            f"{evidence.assurance_fixture_edge_count} assurance = "
+            f"{evidence.total_layer1_edge_count}` |"
+        ),
         f"| Invariants | `{passed} / {len(evidence.invariants)} passed` |",
         f"| Candidate | `{_safe(evidence.candidate_snapshot_digest)}` |",
         f"| Evidence | `{_safe(evidence.digest)}` |",
         "",
-        "### Candidate nodes",
+        "### Managed network nodes",
         "",
-        *[f"- `{_safe(node)}`" for node in evidence.candidate_nodes],
+        *[f"- `{_safe(node)}`" for node in evidence.managed_network_nodes],
+        "",
+        "### Batfish-only assurance hosts",
+        "",
+        *[f"- `{_safe(node)}`" for node in evidence.assurance_fixture_hosts],
         "",
         "### Service subjects",
         "",

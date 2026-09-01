@@ -31,7 +31,10 @@ def main() -> int:
         return 2
     print(
         "profiled PR assurance: "
-        f"{evidence.outcome.value}; nodes={len(evidence.candidate_nodes)}; "
+        f"{evidence.outcome.value}; managed_nodes="
+        f"{len(evidence.managed_network_nodes)}; fixtures="
+        f"{len(evidence.assurance_fixture_hosts)}; modeled_nodes="
+        f"{len(evidence.modeled_nodes)}; "
         f"invariants={sum(item.passed for item in evidence.invariants)}/"
         f"{len(evidence.invariants)}"
     )

@@ -129,6 +129,26 @@ B4-1 standalone assurance remains 10/10 including `ospf_absent`; that isolation
 contract is not weakened when B4-2 composes the service stack. See the
 [B4-2 acceptance record](../acceptance/ospf-triangle-detour-b4-2.md).
 
+## B4-3 composed VLAN assurance
+
+The canonical profiled PR stack is now exactly `routed_underlay, ospf, vlan`.
+The managed network population remains the four profiled devices. B4-3 alone
+adds two Batfish host fixtures under `hosts/`, plus two synthetic host
+attachment edges alongside the four accepted infrastructure edges.
+
+The initial attempt originated packets at `@enter(access-sw-01[Gi0/2|Gi0/3])`.
+Pinned Batfish returned `NO_ROUTE` because the source was an L2-only network
+node with no modeled endpoint forwarding context. This was a modeling-boundary
+finding, not a VLAN candidate failure. Exact host models now provide the L3
+origins required to prove both gateways and bidirectional pre-ACL inter-VLAN
+routing through `core-02`, while Junos and transit are forbidden by evidence
+from that path.
+
+The bounded snapshot surface admits only `configs/*`, the one exact
+`batfish/layer1_topology.json`, and the two named host JSON files. Historical
+B4-1/B4-2 snapshot bytes and digests remain unchanged. See the
+[B4-3 acceptance record](../acceptance/vlan-service-detour-b4-3.md).
+
 ## Assurance-to-promotion handoff
 
 When explicitly restored, the preserved legacy immutable promotion waits for

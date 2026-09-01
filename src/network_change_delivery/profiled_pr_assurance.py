@@ -14,9 +14,7 @@ from network_change_delivery.architecture_contracts import Sha256Digest
 from network_change_delivery.assurance import AssuranceOutcome, InvariantResult
 from network_change_delivery.audit import canonical_json_bytes, sha256_identity
 from network_change_delivery.ospf_triangle import (
-    OspfTriangleAssuranceProvider,
     OspfTriangleIntent,
-    assure_ospf_triangle_candidate,
     build_ospf_desired_state,
 )
 from network_change_delivery.reference_data_plane import (
@@ -29,44 +27,44 @@ from network_change_delivery.reference_routing_identity import (
     build_accepted_routing_identity_evidence,
     routing_identity_allocation_digest,
 )
+from network_change_delivery.reference_vlan_service import (
+    ACCEPTED_VLAN_SERVICE_ALLOCATION_DIGEST,
+    build_accepted_vlan_service_evidence,
+    vlan_service_allocation_digest,
+)
 from network_change_delivery.routed_underlay import (
     ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST,
     RoutedUnderlayIntent,
     build_routed_underlay_desired_state,
 )
+from network_change_delivery.vlan_service import (
+    ACCEPTED_VLAN_CANDIDATE_DIGEST,
+    ACCEPTED_VLAN_D1_DIGEST,
+    ASSURANCE_FIXTURE_HOSTS,
+    MODELED_NODES,
+    VLAN_COMBINED_INVARIANTS,
+    VlanAssuranceProvider,
+    VlanServiceIntent,
+    assure_vlan_candidate,
+    build_vlan_desired_state,
+)
 
 PROFILED_ARCHITECTURE_IDENTITY = "profiled-four-device"
-PROFILED_CANDIDATE_NODES = (
+PROFILED_MANAGED_NETWORK_NODES = (
     "access-sw-01",
     "core-02",
     "edge-junos-01",
     "transit-ios-01",
 )
+PROFILED_ASSURANCE_FIXTURE_HOSTS = ASSURANCE_FIXTURE_HOSTS
+PROFILED_MODELED_NODES = MODELED_NODES
 ROUTED_UNDERLAY_D1_DIGEST = ACCEPTED_ROUTED_UNDERLAY_D1_DIGEST
 OSPF_D1_DIGEST = (
     "sha256:55f5718089228eb4e9f3badebca036135461c10b3c4312184462b5468d463182"
 )
-PROFILED_COMBINED_CANDIDATE_DIGEST = (
-    "sha256:7e7f67500084682194be69d81d94f58d8ae0f6c8722e5de3b3a6c25521e5c269"
-)
-PROFILED_COMBINED_INVARIANTS = (
-    "candidate_exact_parse_files",
-    "candidate_parse_status",
-    "candidate_exact_nodes",
-    "candidate_initialization_issues",
-    "exact_routed_interface_prefixes",
-    "exact_two_participants_per_link",
-    "access_switch_excluded",
-    "management_addresses_excluded",
-    "exact_direct_neighbor_flows",
-    "ospf_exact_routers",
-    "ospf_access_excluded",
-    "ospf_exact_interfaces",
-    "ospf_management_excluded",
-    "ospf_exact_adjacencies",
-    "ospf_remote_routes",
-    "ospf_remote_reachability",
-)
+PROFILED_COMBINED_CANDIDATE_DIGEST = ACCEPTED_VLAN_CANDIDATE_DIGEST
+VLAN_D1_DIGEST = ACCEPTED_VLAN_D1_DIGEST
+PROFILED_COMBINED_INVARIANTS = VLAN_COMBINED_INVARIANTS
 
 
 class ProfiledService(StrEnum):
@@ -74,6 +72,7 @@ class ProfiledService(StrEnum):
 
     ROUTED_UNDERLAY = "routed_underlay"
     OSPF = "ospf"
+    VLAN = "vlan"
 
 
 class ProfiledServiceSubject(BaseModel):
@@ -88,20 +87,28 @@ class ProfiledPrAssuranceEvidence(BaseModel):
     """Deterministic secret-free evidence for one exact profiled candidate."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     architecture_identity: Literal["profiled-four-device"] = (
         PROFILED_ARCHITECTURE_IDENTITY
     )
     active_service_stack: tuple[ProfiledService, ...]
     accepted_source_allocation_digest: Sha256Digest
     accepted_routing_identity_digest: Sha256Digest
+    accepted_vlan_service_digest: Sha256Digest
     service_subjects: tuple[ProfiledServiceSubject, ...]
     candidate_snapshot_digest: Sha256Digest
-    candidate_nodes: tuple[str, ...]
+    managed_network_nodes: tuple[str, ...]
+    assurance_fixture_hosts: tuple[str, ...]
+    modeled_nodes: tuple[str, ...]
     pybatfish_version: str
     batfish_version: str
     ospf_router_count: int
     ospf_adjacency_count: int
+    vlan_count: int
+    vlan_gateway_count: int
+    infrastructure_layer1_edge_count: int
+    assurance_fixture_edge_count: int
+    total_layer1_edge_count: int
     invariants: tuple[InvariantResult, ...]
     outcome: AssuranceOutcome
     digest: Sha256Digest
@@ -125,11 +132,17 @@ class ProfiledPrAssuranceEvidence(BaseModel):
         )
         if (
             self.active_service_stack
-            != (ProfiledService.ROUTED_UNDERLAY, ProfiledService.OSPF)
+            != (
+                ProfiledService.ROUTED_UNDERLAY,
+                ProfiledService.OSPF,
+                ProfiledService.VLAN,
+            )
             or self.accepted_source_allocation_digest
             != ACCEPTED_REFERENCE_ALLOCATION_DIGEST
             or self.accepted_routing_identity_digest
             != ACCEPTED_ROUTING_IDENTITY_ALLOCATION_DIGEST
+            or self.accepted_vlan_service_digest
+            != ACCEPTED_VLAN_SERVICE_ALLOCATION_DIGEST
             or self.service_subjects
             != (
                 ProfiledServiceSubject(
@@ -140,11 +153,22 @@ class ProfiledPrAssuranceEvidence(BaseModel):
                     service=ProfiledService.OSPF,
                     digest=OSPF_D1_DIGEST,
                 ),
+                ProfiledServiceSubject(
+                    service=ProfiledService.VLAN,
+                    digest=VLAN_D1_DIGEST,
+                ),
             )
             or self.candidate_snapshot_digest != PROFILED_COMBINED_CANDIDATE_DIGEST
-            or self.candidate_nodes != PROFILED_CANDIDATE_NODES
+            or self.managed_network_nodes != PROFILED_MANAGED_NETWORK_NODES
+            or self.assurance_fixture_hosts != PROFILED_ASSURANCE_FIXTURE_HOSTS
+            or self.modeled_nodes != PROFILED_MODELED_NODES
             or self.ospf_router_count != 3
             or self.ospf_adjacency_count != 3
+            or self.vlan_count != 2
+            or self.vlan_gateway_count != 2
+            or self.infrastructure_layer1_edge_count != 4
+            or self.assurance_fixture_edge_count != 2
+            or self.total_layer1_edge_count != 6
             or invariant_names != PROFILED_COMBINED_INVARIANTS
             or self.outcome is not expected_outcome
         ):
@@ -155,36 +179,49 @@ class ProfiledPrAssuranceEvidence(BaseModel):
 
 
 def assure_profiled_pr_candidate(
-    provider: OspfTriangleAssuranceProvider | None = None,
+    provider: VlanAssuranceProvider | None = None,
 ) -> ProfiledPrAssuranceEvidence:
     """Evaluate the current explicit profiled service stack entirely offline."""
     allocation = build_accepted_reference_allocation_evidence()
     allocation_digest = reference_allocation_digest(allocation)
     routing = build_accepted_routing_identity_evidence()
     routing_digest = routing_identity_allocation_digest(routing)
+    vlan_allocation = build_accepted_vlan_service_evidence()
+    vlan_allocation_digest = vlan_service_allocation_digest(vlan_allocation)
     underlay_intent = RoutedUnderlayIntent.from_reference_allocation(allocation)
     underlay_desired = build_routed_underlay_desired_state(underlay_intent)
     ospf_intent = OspfTriangleIntent.from_allocations(allocation, routing)
     ospf_desired = build_ospf_desired_state(ospf_intent)
+    vlan_intent = VlanServiceIntent.from_allocations(allocation, vlan_allocation)
+    vlan_desired = build_vlan_desired_state(vlan_intent)
     if underlay_desired.digest != ROUTED_UNDERLAY_D1_DIGEST:
         raise ValueError("profiled PR routed-underlay D1 digest changed")
     if ospf_desired.digest != OSPF_D1_DIGEST:
         raise ValueError("profiled PR OSPF D1 digest changed")
-    combined = assure_ospf_triangle_candidate(
+    if vlan_desired.digest != VLAN_D1_DIGEST:
+        raise ValueError("profiled PR VLAN D1 digest changed")
+    combined = assure_vlan_candidate(
         underlay_intent,
         underlay_desired,
         ospf_intent,
         ospf_desired,
+        vlan_intent,
+        vlan_desired,
         provider,
     )
     if combined.candidate_snapshot_digest != PROFILED_COMBINED_CANDIDATE_DIGEST:
         raise ValueError("profiled PR candidate snapshot digest changed")
     unsigned = ProfiledPrAssuranceEvidence.model_construct(
-        schema_version="2",
+        schema_version="3",
         architecture_identity=PROFILED_ARCHITECTURE_IDENTITY,
-        active_service_stack=(ProfiledService.ROUTED_UNDERLAY, ProfiledService.OSPF),
+        active_service_stack=(
+            ProfiledService.ROUTED_UNDERLAY,
+            ProfiledService.OSPF,
+            ProfiledService.VLAN,
+        ),
         accepted_source_allocation_digest=allocation_digest,
         accepted_routing_identity_digest=routing_digest,
+        accepted_vlan_service_digest=vlan_allocation_digest,
         service_subjects=(
             ProfiledServiceSubject(
                 service=ProfiledService.ROUTED_UNDERLAY,
@@ -194,13 +231,24 @@ def assure_profiled_pr_candidate(
                 service=ProfiledService.OSPF,
                 digest=ospf_desired.digest,
             ),
+            ProfiledServiceSubject(
+                service=ProfiledService.VLAN,
+                digest=vlan_desired.digest,
+            ),
         ),
         candidate_snapshot_digest=combined.candidate_snapshot_digest,
-        candidate_nodes=combined.candidate_nodes,
+        managed_network_nodes=combined.managed_network_nodes,
+        assurance_fixture_hosts=combined.assurance_fixture_hosts,
+        modeled_nodes=combined.modeled_nodes,
         pybatfish_version=combined.pybatfish_version,
         batfish_version=combined.batfish_version,
         ospf_router_count=combined.ospf_router_count,
         ospf_adjacency_count=combined.ospf_adjacency_count,
+        vlan_count=combined.vlan_count,
+        vlan_gateway_count=combined.vlan_gateway_count,
+        infrastructure_layer1_edge_count=combined.infrastructure_layer1_edge_count,
+        assurance_fixture_edge_count=combined.assurance_fixture_edge_count,
+        total_layer1_edge_count=combined.total_layer1_edge_count,
         invariants=combined.invariants,
         outcome=combined.outcome,
         digest="sha256:" + "0" * 64,

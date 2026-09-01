@@ -21,9 +21,12 @@ from network_change_delivery.ospf_triangle import (
 )
 from network_change_delivery.profiled_pr_assurance import (
     OSPF_D1_DIGEST,
-    PROFILED_CANDIDATE_NODES,
+    PROFILED_ASSURANCE_FIXTURE_HOSTS,
     PROFILED_COMBINED_CANDIDATE_DIGEST,
+    PROFILED_MANAGED_NETWORK_NODES,
+    PROFILED_MODELED_NODES,
     ROUTED_UNDERLAY_D1_DIGEST,
+    VLAN_D1_DIGEST,
     ProfiledPrAssuranceEvidence,
     ProfiledService,
     assure_profiled_pr_candidate,
@@ -42,6 +45,7 @@ from network_change_delivery.routed_underlay import (
     RoutedUnderlayIntent,
     build_routed_underlay_desired_state,
 )
+from network_change_delivery.vlan_service import VlanBatfishObservation, VlanFlow
 
 ROOT = Path(__file__).parents[1]
 
@@ -62,7 +66,7 @@ def desired_state():
 
 
 def batfish_observation(
-    nodes: tuple[str, ...] = PROFILED_CANDIDATE_NODES,
+    nodes: tuple[str, ...] = PROFILED_MANAGED_NETWORK_NODES,
 ) -> OspfTriangleBatfishObservation:
     desired = desired_state()
     node_names = {
@@ -76,7 +80,7 @@ def batfish_observation(
         candidate_parse=ParseSummary(
             files=tuple(
                 ParseFileResult(relative_path=f"{name}.cfg", status="PASSED")
-                for name in PROFILED_CANDIDATE_NODES
+                for name in PROFILED_MANAGED_NETWORK_NODES
             ),
             nodes=nodes,
             initialization_issue_count=0,
@@ -199,19 +203,85 @@ def batfish_observation(
     )
 
 
+def vlan_batfish_observation(
+    nodes: tuple[str, ...] = PROFILED_MANAGED_NETWORK_NODES,
+    *,
+    modeled_nodes: tuple[str, ...] = PROFILED_MODELED_NODES,
+    reachable: bool = True,
+) -> VlanBatfishObservation:
+    return VlanBatfishObservation(
+        ospf=batfish_observation(nodes),
+        modeled_nodes=modeled_nodes,
+        layer1_edges=(
+            (("access-sw-01", "GigabitEthernet0/1"), ("core-02", "GigabitEthernet3")),
+            (("access-sw-01", "GigabitEthernet0/2"), ("assurance-users-probe", "eth0")),
+            (
+                ("access-sw-01", "GigabitEthernet0/3"),
+                ("assurance-servers-probe", "eth0"),
+            ),
+            (("core-02", "GigabitEthernet2"), ("transit-ios-01", "GigabitEthernet0/1")),
+            (("core-02", "GigabitEthernet4"), ("edge-junos-01", "ge-0/0/0")),
+            (("edge-junos-01", "ge-0/0/1"), ("transit-ios-01", "GigabitEthernet0/2")),
+        ),
+        switched_vlans=(
+            (10, ("GigabitEthernet0/1", "GigabitEthernet0/2")),
+            (20, ("GigabitEthernet0/1", "GigabitEthernet0/3")),
+        ),
+        switchports=(
+            ("access-sw-01", "GigabitEthernet0/1", "trunk", (10, 20), None, 1),
+            ("access-sw-01", "GigabitEthernet0/2", "access", (), 10, 1),
+            ("access-sw-01", "GigabitEthernet0/3", "access", (), 20, 1),
+        ),
+        gateways=(
+            ("core-02", "GigabitEthernet3.10", "['10.60.10.1/24']"),
+            ("core-02", "GigabitEthernet3.20", "['10.60.20.1/24']"),
+        ),
+        access_l3_interfaces=(),
+        connected_routes=("10.60.10.0/24", "10.60.20.0/24"),
+        remote_ospf_vlan_routes=(),
+        flows=(
+            VlanFlow(name="users_gateway", reachable=reachable),
+            VlanFlow(name="servers_gateway", reachable=reachable),
+            VlanFlow(
+                name="users_to_servers",
+                reachable=reachable,
+                traversed_nodes=(
+                    "assurance-users-probe",
+                    "core-02",
+                    "assurance-servers-probe",
+                ),
+            ),
+            VlanFlow(
+                name="servers_to_users",
+                reachable=reachable,
+                traversed_nodes=(
+                    "assurance-servers-probe",
+                    "core-02",
+                    "assurance-users-probe",
+                ),
+            ),
+        ),
+    )
+
+
 class FakeBatfishProvider:
-    def __init__(self, nodes: tuple[str, ...] = PROFILED_CANDIDATE_NODES) -> None:
+    def __init__(self, nodes: tuple[str, ...] = PROFILED_MANAGED_NETWORK_NODES) -> None:
         self.nodes = nodes
         self.candidate_contents = ""
 
-    def analyze(self, candidate: Path) -> OspfTriangleBatfishObservation:
+    def analyze(self, candidate: Path) -> VlanBatfishObservation:
         config_root = candidate / "configs"
         paths = tuple(sorted(config_root.iterdir()))
         assert tuple(path.name for path in paths) == tuple(
-            f"{name}.cfg" for name in PROFILED_CANDIDATE_NODES
+            f"{name}.cfg" for name in PROFILED_MANAGED_NETWORK_NODES
         )
         self.candidate_contents = "\n".join(path.read_text() for path in paths)
-        return batfish_observation(self.nodes)
+        host_paths = tuple(sorted((candidate / "hosts").iterdir()))
+        assert tuple(path.name for path in host_paths) == (
+            "assurance-servers-probe.json",
+            "assurance-users-probe.json",
+        )
+        return vlan_batfish_observation(self.nodes)
 
 
 def test_offline_allocation_reconstructs_exact_accepted_b3_5_copy() -> None:
@@ -250,6 +320,7 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
     assert first.active_service_stack == (
         ProfiledService.ROUTED_UNDERLAY,
         ProfiledService.OSPF,
+        ProfiledService.VLAN,
     )
     assert first.accepted_source_allocation_digest == (
         ACCEPTED_REFERENCE_ALLOCATION_DIGEST
@@ -257,11 +328,14 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
     assert tuple(subject.digest for subject in first.service_subjects) == (
         ROUTED_UNDERLAY_D1_DIGEST,
         OSPF_D1_DIGEST,
+        VLAN_D1_DIGEST,
     )
     assert first.candidate_snapshot_digest == PROFILED_COMBINED_CANDIDATE_DIGEST
-    assert first.candidate_nodes == PROFILED_CANDIDATE_NODES
+    assert first.managed_network_nodes == PROFILED_MANAGED_NETWORK_NODES
+    assert first.assurance_fixture_hosts == PROFILED_ASSURANCE_FIXTURE_HOSTS
+    assert first.modeled_nodes == PROFILED_MODELED_NODES
     assert first.outcome is AssuranceOutcome.PASSED
-    assert len(first.invariants) == 16
+    assert len(first.invariants) == 29
     assert all(item.passed for item in first.invariants)
     for content in (
         first_provider.candidate_contents,
@@ -279,13 +353,13 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
         ("core-02", "edge-junos-01"),
         ("access-sw-01", "core-02", "edge-junos-01"),
         ("core-02", "edge-junos-01", "transit-ios-01"),
-        (*PROFILED_CANDIDATE_NODES, "rogue-01"),
+        (*PROFILED_MANAGED_NETWORK_NODES, "rogue-01"),
     ],
 )
 def test_non_exact_candidate_population_cannot_pass(
     nodes: tuple[str, ...],
 ) -> None:
-    with pytest.raises(ValueError, match="profiled PR assurance evidence"):
+    with pytest.raises(ValueError, match="assurance"):
         assure_profiled_pr_candidate(FakeBatfishProvider(nodes))
 
 
@@ -300,11 +374,14 @@ def test_evidence_io_and_annotation_are_typed_and_allowlisted(tmp_path: Path) ->
         "Profiled PR Batfish assurance",
         "profiled-four-device",
         "routed_underlay",
-        "4",
-        "16 / 16 passed",
-        *PROFILED_CANDIDATE_NODES,
+        "vlan",
+        "6",
+        "29 / 29 passed",
+        *PROFILED_MANAGED_NETWORK_NODES,
+        *PROFILED_ASSURANCE_FIXTURE_HOSTS,
         ROUTED_UNDERLAY_D1_DIGEST,
         OSPF_D1_DIGEST,
+        VLAN_D1_DIGEST,
         PROFILED_COMBINED_CANDIDATE_DIGEST,
     ):
         assert value in annotation

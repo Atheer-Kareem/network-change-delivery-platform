@@ -38,6 +38,7 @@ IDENTITY_TASK = "NCDP collect identity"
 INTERFACES_TASK = "NCDP collect interfaces"
 L3_INTERFACES_TASK = "NCDP collect layer 3 interfaces"
 OSPF_READ_TASK = "NCDP inspect exact OSPF configuration"
+VLAN_READ_TASK = "NCDP inspect exact VLAN service configuration"
 EXECUTION_TASK = "NCDP apply exact approved artifact"
 SNMP_PREFLIGHT_TASK = "NCDP inspect exact SNMP owned names"
 SNMP_ENGINE_TASK = "NCDP inspect SNMP engine"
@@ -380,6 +381,7 @@ class AnsibleRunnerCiscoAdapter:
                 INTERFACES_TASK,
                 L3_INTERFACES_TASK,
                 OSPF_READ_TASK,
+                VLAN_READ_TASK,
                 EXECUTION_TASK,
                 SNMP_PREFLIGHT_TASK,
                 SNMP_ENGINE_TASK,
@@ -612,6 +614,40 @@ class AnsibleRunnerCiscoAdapter:
         ):
             raise ProviderError("Cisco OSPF read-only result was incomplete")
         return tuple(stdout)  # type: ignore[return-value]
+
+    def collect_vlan_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        commands: tuple[str, ...],
+        *,
+        ssh_type: Literal["paramiko"],
+    ) -> tuple[str, ...]:
+        """Read only the exact B4-3 VLAN service command set."""
+        if not commands or len(commands) > 9:
+            raise ProviderError("Cisco VLAN read-only command set is invalid")
+        runner, selected = self._run(
+            target,
+            credentials,
+            "collect_vlan_state.yml",
+            extravars={"ncdp_vlan_commands": list(commands)},
+            ssh_type=ssh_type,
+            profile_bound=True,
+        )
+        if (
+            getattr(runner, "status", None) != "successful"
+            or getattr(runner, "rc", 1) != 0
+            or VLAN_READ_TASK not in selected
+        ):
+            raise ProviderError("Cisco VLAN read-only collection failed")
+        stdout = selected[VLAN_READ_TASK].get("stdout")
+        if (
+            not isinstance(stdout, list)
+            or len(stdout) != len(commands)
+            or any(not isinstance(value, str) for value in stdout)
+        ):
+            raise ProviderError("Cisco VLAN read-only result was incomplete")
+        return tuple(stdout)
 
     def execute(
         self,

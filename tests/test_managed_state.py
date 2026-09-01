@@ -142,6 +142,39 @@ def test_routed_observation_equivalence_and_unowned_operational_state() -> None:
     )
 
 
+def test_routed_observation_is_normalized_by_stable_identity_not_provider_order() -> (
+    None
+):
+    desired = build_current_git_managed_d1()[0]
+    intent = service_inputs()[0]
+    interfaces = tuple(
+        ObservedRoutedInterfaceState(
+            device_identity=item.interface.device,
+            interface=item.interface,
+            exists=True,
+            ipv4_addresses=item.ipv4_addresses,
+            admin_enabled=item.admin_enabled,
+            operational_status="up",
+        )
+        for item in desired.payload.interfaces
+    )
+    grouped_provider_order = (
+        interfaces[0],
+        interfaces[2],
+        interfaces[1],
+        interfaces[4],
+        interfaces[3],
+        interfaces[5],
+    )
+    observation = RoutedUnderlayObservation(
+        observed_at=NOW, interfaces=grouped_provider_order
+    )
+    assert (
+        project_routed_underlay_observation(observation, intent).digest
+        == desired.digest
+    )
+
+
 def test_ospf_observation_equivalence_excludes_process_identity() -> None:
     desired = build_current_git_managed_d1()[1]
     intent = service_inputs()[1]

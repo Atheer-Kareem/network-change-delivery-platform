@@ -114,8 +114,24 @@ not a verification failure. Initialization cleanup is ownership-safe: a
 staging-looking path is removed only when this invocation successfully created
 that exact directory.
 
-The B5-2 run has now initialized exactly four generation-one D0 chains. Its
-second independent observation reconciled `IN_SYNC` for all four; comparison
-with current Git D1 returned `CHANGE_PROPOSED` for all four. The exact immutable
+The B5-2 run initialized exactly four generation-one D0 chains. Its second
+independent observation reconciled `IN_SYNC` for all four; comparison with
+current Git D1 returned `CHANGE_PROPOSED` for all four. The exact immutable
 identities and digests are in the
 [B5-2 acceptance record](../acceptance/managed-state-initial-live-adoption-detour-b5-2.md).
+
+## Controlled drift and recovery
+
+B5-3 exercised this boundary against LIVE using one manual CML-console change
+on `transit-ios-01/GigabitEthernet0/1`. `no shutdown` changed the owned
+`routed_underlay.admin_enabled` projection and produced `DRIFT_DETECTED` for
+that vertical only; `ospf`, `vlan`, and `acl` remained `IN_SYNC`. The operator
+then entered `shutdown`, and the final read-only verification returned
+`IN_SYNC` for all four. NCDP-authorized device writes were zero; the two
+out-of-band transitions were the introduction and restoration of the running
+configuration. D0 was never advanced, and all D0/D1 comparisons remained
+`CHANGE_PROPOSED`.
+
+The exact evidence, artifact digests, record-integrity checks, and canonical
+routed-underlay state sequence are recorded in the
+[B5-3 acceptance record](../acceptance/managed-state-controlled-drift-detour-b5-3.md).

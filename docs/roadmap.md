@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — complete through B5-2:** B1 accepts the
+    - **Detour B — complete through B5-3:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -186,7 +186,14 @@ acceptance records.
       adoption evidence records the one-shot operator run; no B4 proposal is
       silently promoted to D0.
       The accepted run created exactly four generation-one records, then proved
-      second-pass `O == D0` for all four. Each comparison with current Git D1 is
-      `CHANGE_PROPOSED`, not drift; no device write occurred.
+      second-pass `O == D0` for all four. B5-3 exercised controlled drift with
+      two manual running-configuration transitions on
+      `transit-ios-01/GigabitEthernet0/1`: `no shutdown` produced
+      `DRIFT_DETECTED`, and `shutdown` restored D0. Pre-drift and recovery were
+      `IN_SYNC` for all four; every D0/D1 comparison remained
+      `CHANGE_PROPOSED`; NCDP-authorized writes were zero. The persistent D0
+      store remained unchanged. Disposable CML staging, protected delivery,
+      observability runtime validation, and synthetic SNMPv3 runtime validation
+      remain paused.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

@@ -44,7 +44,7 @@ from network_change_delivery.ospf_triangle import (
     OspfTriangleBatfishObservation,
     OspfTriangleIntent,
     build_ospf_triangle_candidate_snapshot,
-    evaluate_ospf_triangle_assurance,
+    evaluate_ospf_triangle_invariants,
 )
 from network_change_delivery.profile_inventory import (
     ProfiledInventoryDevice,
@@ -98,7 +98,7 @@ ACCEPTED_VLAN_D1_DIGEST = (
 ACCEPTED_VLAN_CANDIDATE_DIGEST = (
     "sha256:18ba3232b8ec85019b0afcfd7239eb3818e8dc788948482a54ffb2eb430dcda6"
 )
-VLAN_COMBINED_INVARIANTS = (
+VLAN_SHARED_INVARIANTS = (
     "candidate_exact_parse_files",
     "candidate_parse_status",
     "candidate_exact_nodes",
@@ -125,9 +125,15 @@ VLAN_COMBINED_INVARIANTS = (
     "vlan_connected_routes",
     "vlan_not_advertised_ospf",
     "vlan_gateway_flows",
+)
+VLAN_STANDALONE_BEHAVIOR_INVARIANTS = (
     "vlan_intervlan_open",
     "vlan_intervlan_traverses_core",
     "vlan_intervlan_excludes_remote_routers",
+)
+VLAN_COMBINED_INVARIANTS = (
+    *VLAN_SHARED_INVARIANTS,
+    *VLAN_STANDALONE_BEHAVIOR_INVARIANTS,
 )
 
 
@@ -1284,13 +1290,16 @@ class BatfishVlanAdapter:
                 ) from error
 
 
-def evaluate_vlan_assurance(
+def _evaluate_vlan_invariants(
     underlay: RoutedUnderlayDesiredState,
     ospf: OspfDesiredState,
     vlan: VlanDesiredState,
-    snapshot_digest: str,
     observation: VlanBatfishObservation,
-) -> VlanServiceAssuranceEvidence:
+    *,
+    include_standalone_behavior: bool,
+) -> tuple[InvariantResult, ...]:
+    if vlan.digest != ACCEPTED_VLAN_D1_DIGEST:
+        raise ValueError("VLAN shared invariants require accepted D1")
     # Compose the historical routed-underlay/OSPF checks over their exact
     # ownership envelope. VLAN gateways and assurance-host coordinates are
     # deliberately evaluated by the VLAN invariants below.
@@ -1307,9 +1316,7 @@ def evaluate_vlan_assurance(
             )
         }
     )
-    base = evaluate_ospf_triangle_assurance(
-        underlay, ospf, snapshot_digest, ospf_observation
-    )
+    base = evaluate_ospf_triangle_invariants(underlay, ospf, ospf_observation)
     expected_edges = {tuple(sorted(edge)) for edge in LAYER1_EDGES}
     expected_switchports = {
         ("access-sw-01", "GigabitEthernet0/1", "trunk", (10, 20), None),
@@ -1348,7 +1355,7 @@ def evaluate_vlan_assurance(
             and all(not nodes.intersection(trace.nodes) for trace in flow.traces)
         )
 
-    vlan_invariants = (
+    vlan_shared_invariants = (
         InvariantResult(
             name="vlan_exact_modeled_population",
             passed=observation.modeled_nodes == MODELED_NODES,
@@ -1412,6 +1419,8 @@ def evaluate_vlan_assurance(
             and exact_flow("servers_gateway", "core-02"),
             detail="all gateway traces terminate ACCEPTED at core-02",
         ),
+    )
+    vlan_standalone_invariants = (
         InvariantResult(
             name="vlan_intervlan_open",
             passed=exact_flow("users_to_servers", "assurance-servers-probe")
@@ -1435,7 +1444,47 @@ def evaluate_vlan_assurance(
             detail="no inter-VLAN trace transits a remote router",
         ),
     )
-    invariants = base.invariants + vlan_invariants
+    invariants = base + vlan_shared_invariants
+    expected_names = VLAN_SHARED_INVARIANTS
+    if include_standalone_behavior:
+        invariants += vlan_standalone_invariants
+        expected_names = VLAN_COMBINED_INVARIANTS
+    if tuple(item.name for item in invariants) != expected_names:
+        raise ValueError("VLAN invariant composition is inconsistent")
+    return invariants
+
+
+def evaluate_vlan_shared_invariants(
+    underlay: RoutedUnderlayDesiredState,
+    ospf: OspfDesiredState,
+    vlan: VlanDesiredState,
+    observation: VlanBatfishObservation,
+) -> tuple[InvariantResult, ...]:
+    """Evaluate the 26 VLAN-stack invariants shared by later services."""
+    return _evaluate_vlan_invariants(
+        underlay,
+        ospf,
+        vlan,
+        observation,
+        include_standalone_behavior=False,
+    )
+
+
+def evaluate_vlan_assurance(
+    underlay: RoutedUnderlayDesiredState,
+    ospf: OspfDesiredState,
+    vlan: VlanDesiredState,
+    snapshot_digest: str,
+    observation: VlanBatfishObservation,
+) -> VlanServiceAssuranceEvidence:
+    """Evaluate standalone B4-3 evidence including open inter-VLAN behavior."""
+    invariants = _evaluate_vlan_invariants(
+        underlay,
+        ospf,
+        vlan,
+        observation,
+        include_standalone_behavior=True,
+    )
     outcome = (
         AssuranceOutcome.PASSED
         if all(item.passed for item in invariants)

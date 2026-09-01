@@ -64,7 +64,7 @@ from network_change_delivery.vlan_service import (
     ASSURANCE_FIXTURE_HOSTS,
     MANAGED_NETWORK_NODES,
     MODELED_NODES,
-    VLAN_COMBINED_INVARIANTS,
+    VLAN_SHARED_INVARIANTS,
     BatfishVlanAdapter,
     VlanBatfishObservation,
     VlanDesiredState,
@@ -72,6 +72,7 @@ from network_change_delivery.vlan_service import (
     VlanTrace,
     build_vlan_candidate_snapshot,
     evaluate_vlan_assurance,
+    evaluate_vlan_shared_invariants,
 )
 
 ACL_POLICY_IDENTITY = "git:policy:users-servers-https"
@@ -90,7 +91,7 @@ ACCEPTED_ACL_D1_DIGEST = (
 ACCEPTED_ACL_CANDIDATE_DIGEST = (
     "sha256:afa5422fdd6c230693fda6c7ae05648251fbdc5468f0e5c415b236eb3506be36"
 )
-ACL_SHARED_INVARIANTS = VLAN_COMBINED_INVARIANTS[:26]
+ACL_SHARED_INVARIANTS = VLAN_SHARED_INVARIANTS
 ACL_SECURITY_INVARIANTS = (
     "acl_accepted_b4_3_baseline",
     "acl_exact_policy",
@@ -947,14 +948,17 @@ def evaluate_acl_security_assurance(
     secured_digest: str,
     observation: AclSecurityBatfishObservation,
 ) -> AclSecurityAssuranceEvidence:
+    if baseline_digest != ACCEPTED_VLAN_CANDIDATE_DIGEST:
+        raise ValueError("ACL behavioral baseline candidate digest is not accepted")
     baseline = evaluate_vlan_assurance(
-        underlay, ospf, vlan, baseline_digest, observation.baseline_vlan
+        underlay,
+        ospf,
+        vlan,
+        ACCEPTED_VLAN_CANDIDATE_DIGEST,
+        observation.baseline_vlan,
     )
-    secured_vlan = evaluate_vlan_assurance(
-        underlay, ospf, vlan, ACCEPTED_VLAN_CANDIDATE_DIGEST, observation.secured_vlan
-    )
-    shared = tuple(
-        item for item in secured_vlan.invariants if item.name in ACL_SHARED_INVARIANTS
+    shared = evaluate_vlan_shared_invariants(
+        underlay, ospf, vlan, observation.secured_vlan
     )
     expected_lines = tuple(_rule_cli(rule) for rule in acl.rules)
     observed_lines = tuple(item.line for item in observation.acl_lines)

@@ -1219,13 +1219,12 @@ class BatfishOspfTriangleAdapter:
                 raise AssuranceProviderError("Batfish service unavailable") from None
 
 
-def evaluate_ospf_triangle_assurance(
+def evaluate_ospf_triangle_invariants(
     underlay: RoutedUnderlayDesiredState,
     ospf: OspfDesiredState,
-    candidate_snapshot_digest: str,
     observation: OspfTriangleBatfishObservation,
-) -> OspfTriangleAssuranceEvidence:
-    """Evaluate exact underlay and OSPF final-state invariants."""
+) -> tuple[InvariantResult, ...]:
+    """Evaluate the 16 underlay/OSPF invariants without evidence identity."""
     expected_processes = {
         (router.logical_name, str(router.router_id)) for router in ospf.routers
     }
@@ -1309,10 +1308,20 @@ def evaluate_ospf_triangle_assurance(
             detail="representative remote-link reachability succeeds",
         ),
     )
-    invariants = (
+    return (
         evaluate_routed_underlay_common_invariants(underlay, observation.underlay)
         + ospf_invariants
     )
+
+
+def evaluate_ospf_triangle_assurance(
+    underlay: RoutedUnderlayDesiredState,
+    ospf: OspfDesiredState,
+    candidate_snapshot_digest: str,
+    observation: OspfTriangleBatfishObservation,
+) -> OspfTriangleAssuranceEvidence:
+    """Evaluate exact underlay and OSPF final-state evidence."""
+    invariants = evaluate_ospf_triangle_invariants(underlay, ospf, observation)
     outcome = (
         AssuranceOutcome.PASSED
         if all(item.passed for item in invariants)

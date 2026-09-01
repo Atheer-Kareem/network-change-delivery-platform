@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import network_change_delivery.security_policy as security_policy
 from network_change_delivery.assurance import (
     AssuranceOutcome,
     ParseFileResult,
@@ -68,11 +69,15 @@ from network_change_delivery.security_policy import (
     build_acl_proposal_evidence,
 )
 from network_change_delivery.vlan_service import (
+    ACCEPTED_VLAN_CANDIDATE_DIGEST,
+    VLAN_COMBINED_INVARIANTS,
+    VLAN_SHARED_INVARIANTS,
     VlanBatfishObservation,
     VlanFlow,
     VlanServiceIntent,
     VlanTrace,
     build_vlan_desired_state,
+    evaluate_vlan_assurance,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -546,6 +551,124 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
         assert "router ospf 1" in content
         assert "10.60.255.1" in content
         assert ACL_NAME in content
+
+
+def test_b4_3_standalone_remains_exact_29_of_29() -> None:
+    inputs = acl_service_inputs()
+    evidence = evaluate_vlan_assurance(
+        inputs[1],
+        inputs[3],
+        inputs[5],
+        ACCEPTED_VLAN_CANDIDATE_DIGEST,
+        vlan_batfish_observation(),
+    )
+    assert evidence.candidate_snapshot_digest == ACCEPTED_VLAN_CANDIDATE_DIGEST
+    assert tuple(item.name for item in evidence.invariants) == VLAN_COMBINED_INVARIANTS
+    assert len(evidence.invariants) == 29
+    assert all(item.passed for item in evidence.invariants)
+
+
+def test_b4_4_evaluates_secured_vlan_directly_without_false_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = acl_batfish_observation()
+    standalone_calls = []
+    shared_calls = []
+    standalone = security_policy.evaluate_vlan_assurance
+    shared = security_policy.evaluate_vlan_shared_invariants
+
+    def record_standalone(underlay, ospf, vlan, digest, observed):
+        standalone_calls.append((digest, observed))
+        return standalone(underlay, ospf, vlan, digest, observed)
+
+    def record_shared(underlay, ospf, vlan, observed):
+        shared_calls.append(observed)
+        return shared(underlay, ospf, vlan, observed)
+
+    monkeypatch.setattr(security_policy, "evaluate_vlan_assurance", record_standalone)
+    monkeypatch.setattr(
+        security_policy, "evaluate_vlan_shared_invariants", record_shared
+    )
+    evidence = assure_acl_security_candidate(
+        *acl_service_inputs(), provider=FakeBatfishProvider(observation=observation)
+    )
+
+    assert standalone_calls == [
+        (ACCEPTED_VLAN_CANDIDATE_DIGEST, observation.baseline_vlan)
+    ]
+    assert shared_calls == [observation.secured_vlan]
+    assert tuple(item.name for item in evidence.invariants[:26]) == (
+        VLAN_SHARED_INVARIANTS
+    )
+    assert evidence.outcome is AssuranceOutcome.PASSED
+
+
+@pytest.mark.parametrize(
+    ("damage", "failed_invariant"),
+    [
+        ("trunk", "vlan_exact_switchports"),
+        ("gateway", "vlan_exact_gateways"),
+        ("ospf", "ospf_exact_adjacencies"),
+        ("underlay", "exact_routed_interface_prefixes"),
+    ],
+)
+def test_broken_secured_shared_state_fails_b4_4(
+    damage: str, failed_invariant: str
+) -> None:
+    observation = acl_batfish_observation()
+    secured = observation.secured_vlan
+    if damage == "trunk":
+        secured = secured.model_copy(
+            update={
+                "switchports": (
+                    (
+                        "access-sw-01",
+                        "GigabitEthernet0/1",
+                        "trunk",
+                        (10,),
+                        None,
+                        1,
+                    ),
+                    *secured.switchports[1:],
+                )
+            }
+        )
+    elif damage == "gateway":
+        secured = secured.model_copy(update={"gateways": secured.gateways[:1]})
+    elif damage == "ospf":
+        secured = secured.model_copy(
+            update={
+                "ospf": secured.ospf.model_copy(
+                    update={
+                        "edges": (
+                            secured.ospf.edges[0].model_copy(
+                                update={"nodes": ("access-sw-01", "core-02")}
+                            ),
+                            *secured.ospf.edges[1:],
+                        )
+                    }
+                )
+            }
+        )
+    else:
+        secured = secured.model_copy(
+            update={
+                "ospf": secured.ospf.model_copy(
+                    update={
+                        "underlay": secured.ospf.underlay.model_copy(
+                            update={"interface_prefixes": ()}
+                        )
+                    }
+                )
+            }
+        )
+    evidence = assure_profiled_pr_candidate(
+        FakeBatfishProvider(
+            observation=observation.model_copy(update={"secured_vlan": secured})
+        )
+    )
+    assert evidence.outcome is AssuranceOutcome.FAILED
+    assert not invariant(evidence, failed_invariant)
 
 
 @pytest.mark.parametrize("disposition", ["ACCEPTED", "EXITS_NETWORK"])

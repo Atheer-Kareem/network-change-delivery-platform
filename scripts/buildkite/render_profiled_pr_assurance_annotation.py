@@ -26,6 +26,13 @@ def _safe(value: object) -> str:
 
 def render_annotation(evidence: ProfiledPrAssuranceEvidence) -> str:
     passed = sum(item.passed for item in evidence.invariants)
+    secured = {item.name: item for item in evidence.secured_flows}
+
+    def disposition(name: str) -> str:
+        flow = secured[name]
+        values = tuple(dict.fromkeys(item.disposition for item in flow.traces))
+        return ", ".join(values)
+
     lines = [
         "## :fish: Profiled PR Batfish assurance",
         "",
@@ -46,6 +53,10 @@ def render_annotation(evidence: ProfiledPrAssuranceEvidence) -> str:
         f"| OSPF adjacencies | `{evidence.ospf_adjacency_count}` |",
         f"| VLANs | `{evidence.vlan_count}` |",
         f"| Gateways | `{evidence.vlan_gateway_count}` |",
+        f"| ACL policies | `{evidence.acl_policy_count}` |",
+        f"| ACL rules | `{evidence.acl_rule_count}` |",
+        f"| ACL attachments | `{evidence.acl_attachment_count}` |",
+        "| ACL attachment | `core-02/GigabitEthernet3.20 out` |",
         (
             "| Layer-1 edges | `"
             f"{evidence.infrastructure_layer1_edge_count} infrastructure + "
@@ -53,7 +64,11 @@ def render_annotation(evidence: ProfiledPrAssuranceEvidence) -> str:
             f"{evidence.total_layer1_edge_count}` |"
         ),
         f"| Invariants | `{passed} / {len(evidence.invariants)} passed` |",
-        f"| Candidate | `{_safe(evidence.candidate_snapshot_digest)}` |",
+        (
+            "| Behavioral baseline | `"
+            f"{_safe(evidence.behavioral_baseline_candidate_digest)}` |"
+        ),
+        f"| Secured candidate | `{_safe(evidence.secured_candidate_digest)}` |",
         f"| Evidence | `{_safe(evidence.digest)}` |",
         "",
         "### Managed network nodes",
@@ -70,6 +85,13 @@ def render_annotation(evidence: ProfiledPrAssuranceEvidence) -> str:
             f"- `{_safe(subject.service.value)}` — `{_safe(subject.digest)}`"
             for subject in evidence.service_subjects
         ],
+        "",
+        "### Security behavior",
+        "",
+        f"- USERS → SERVERS HTTPS — `{_safe(disposition('users_https'))}`",
+        f"- USERS → SERVERS SSH — `{_safe(disposition('users_ssh'))}`",
+        f"- USERS → SERVERS ICMP — `{_safe(disposition('users_icmp'))}`",
+        f"- SERVERS → USERS — `{_safe(disposition('servers_to_users'))}`",
         "",
         "### Invariants",
         "",

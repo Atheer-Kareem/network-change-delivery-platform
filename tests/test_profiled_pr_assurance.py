@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import network_change_delivery.security_policy as security_policy
 from network_change_delivery.assurance import (
     AssuranceOutcome,
     ParseFileResult,
@@ -18,8 +19,11 @@ from network_change_delivery.ospf_triangle import (
     BatfishOspfProcess,
     BatfishOspfRoute,
     OspfTriangleBatfishObservation,
+    OspfTriangleIntent,
+    build_ospf_desired_state,
 )
 from network_change_delivery.profiled_pr_assurance import (
+    ACL_D1_DIGEST,
     OSPF_D1_DIGEST,
     PROFILED_ASSURANCE_FIXTURE_HOSTS,
     PROFILED_COMBINED_CANDIDATE_DIGEST,
@@ -38,6 +42,12 @@ from network_change_delivery.reference_data_plane import (
     build_accepted_reference_allocation_evidence,
     reference_allocation_digest,
 )
+from network_change_delivery.reference_routing_identity import (
+    build_accepted_routing_identity_evidence,
+)
+from network_change_delivery.reference_vlan_service import (
+    build_accepted_vlan_service_evidence,
+)
 from network_change_delivery.routed_underlay import (
     BatfishInterfacePrefix,
     RoutedUnderlayBatfishObservation,
@@ -45,10 +55,29 @@ from network_change_delivery.routed_underlay import (
     RoutedUnderlayIntent,
     build_routed_underlay_desired_state,
 )
+from network_change_delivery.security_policy import (
+    ACCEPTED_ACL_CANDIDATE_DIGEST,
+    ACL_NAME,
+    AclObservation,
+    AclSecurityBatfishObservation,
+    AclSecurityFlow,
+    AclSecurityIntent,
+    BatfishAclAttachment,
+    BatfishAclLine,
+    assure_acl_security_candidate,
+    build_acl_desired_state,
+    build_acl_proposal_evidence,
+)
 from network_change_delivery.vlan_service import (
+    ACCEPTED_VLAN_CANDIDATE_DIGEST,
+    VLAN_COMBINED_INVARIANTS,
+    VLAN_SHARED_INVARIANTS,
     VlanBatfishObservation,
     VlanFlow,
+    VlanServiceIntent,
     VlanTrace,
+    build_vlan_desired_state,
+    evaluate_vlan_assurance,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -66,6 +95,30 @@ def desired_state():
     allocation = build_accepted_reference_allocation_evidence()
     return build_routed_underlay_desired_state(
         RoutedUnderlayIntent.from_reference_allocation(allocation)
+    )
+
+
+def acl_service_inputs():
+    allocation = build_accepted_reference_allocation_evidence()
+    routing = build_accepted_routing_identity_evidence()
+    vlan = build_accepted_vlan_service_evidence()
+    underlay_intent = RoutedUnderlayIntent.from_reference_allocation(allocation)
+    underlay_desired = build_routed_underlay_desired_state(underlay_intent)
+    ospf_intent = OspfTriangleIntent.from_allocations(allocation, routing)
+    ospf_desired = build_ospf_desired_state(ospf_intent)
+    vlan_intent = VlanServiceIntent.from_allocations(allocation, vlan)
+    vlan_desired = build_vlan_desired_state(vlan_intent)
+    acl_intent = AclSecurityIntent.from_allocations(allocation, vlan, vlan_desired)
+    acl_desired = build_acl_desired_state(acl_intent)
+    return (
+        underlay_intent,
+        underlay_desired,
+        ospf_intent,
+        ospf_desired,
+        vlan_intent,
+        vlan_desired,
+        acl_intent,
+        acl_desired,
     )
 
 
@@ -304,43 +357,127 @@ class FakeBatfishProvider:
     def __init__(
         self,
         nodes: tuple[str, ...] = PROFILED_MANAGED_NETWORK_NODES,
-        observation: VlanBatfishObservation | None = None,
+        observation: AclSecurityBatfishObservation | None = None,
     ) -> None:
         self.nodes = nodes
         self.observation = observation
         self.candidate_contents = ""
 
-    def analyze(self, candidate: Path) -> VlanBatfishObservation:
-        config_root = candidate / "configs"
-        paths = tuple(sorted(config_root.iterdir()))
+    def analyze(
+        self, baseline_candidate: Path, secured_candidate: Path
+    ) -> AclSecurityBatfishObservation:
+        baseline_paths = tuple(sorted((baseline_candidate / "configs").iterdir()))
+        paths = tuple(sorted((secured_candidate / "configs").iterdir()))
         assert tuple(path.name for path in paths) == tuple(
             f"{name}.cfg" for name in PROFILED_MANAGED_NETWORK_NODES
         )
+        assert ACL_NAME not in "\n".join(path.read_text() for path in baseline_paths)
         self.candidate_contents = "\n".join(path.read_text() for path in paths)
-        host_paths = tuple(sorted((candidate / "hosts").iterdir()))
+        assert ACL_NAME in self.candidate_contents
+        host_paths = tuple(sorted((secured_candidate / "hosts").iterdir()))
         assert tuple(path.name for path in host_paths) == (
             "assurance-servers-probe.json",
             "assurance-users-probe.json",
         )
-        return self.observation or vlan_batfish_observation(self.nodes)
+        return self.observation or acl_batfish_observation(self.nodes)
 
 
-def replace_flow(
-    observation: VlanBatfishObservation,
+def security_flows(*, secured: bool) -> tuple[AclSecurityFlow, ...]:
+    expected = (
+        ("users_https", "ACCEPTED", "assurance-servers-probe"),
+        (
+            "users_ssh",
+            "DENIED_OUT" if secured else "ACCEPTED",
+            "core-02" if secured else "assurance-servers-probe",
+        ),
+        (
+            "users_icmp",
+            "DENIED_OUT" if secured else "ACCEPTED",
+            "core-02" if secured else "assurance-servers-probe",
+        ),
+        ("servers_to_users", "ACCEPTED", "assurance-users-probe"),
+        ("users_gateway", "ACCEPTED", "core-02"),
+        ("servers_gateway", "ACCEPTED", "core-02"),
+    )
+    sources = {
+        "users_https": "assurance-users-probe",
+        "users_ssh": "assurance-users-probe",
+        "users_icmp": "assurance-users-probe",
+        "servers_to_users": "assurance-servers-probe",
+        "users_gateway": "assurance-users-probe",
+        "servers_gateway": "assurance-servers-probe",
+    }
+    return tuple(
+        AclSecurityFlow(
+            name=name,
+            reported_trace_count=1,
+            traces=(
+                VlanTrace(
+                    disposition=disposition,
+                    nodes=(sources[name], "core-02")
+                    if final == "core-02"
+                    else (sources[name], "core-02", final),
+                    final_node=final,
+                ),
+            ),
+        )
+        for name, disposition, final in expected
+    )
+
+
+def acl_batfish_observation(
+    nodes: tuple[str, ...] = PROFILED_MANAGED_NETWORK_NODES,
+) -> AclSecurityBatfishObservation:
+    vlan = vlan_batfish_observation(nodes)
+    return AclSecurityBatfishObservation(
+        baseline_vlan=vlan,
+        secured_vlan=vlan,
+        baseline_flows=security_flows(secured=False),
+        secured_flows=security_flows(secured=True),
+        acl_lines=(
+            BatfishAclLine(
+                filter_name=ACL_NAME,
+                line_index=0,
+                line=("10 permit tcp 10.60.10.0 0.0.0.255 10.60.20.0 0.0.0.255 eq 443"),
+                action="PERMIT",
+            ),
+            BatfishAclLine(
+                filter_name=ACL_NAME,
+                line_index=1,
+                line="20 deny ip 10.60.10.0 0.0.0.255 10.60.20.0 0.0.0.255",
+                action="DENY",
+            ),
+            BatfishAclLine(
+                filter_name=ACL_NAME,
+                line_index=2,
+                line="30 permit ip any any",
+                action="PERMIT",
+            ),
+        ),
+        acl_attachments=(
+            BatfishAclAttachment(
+                interface="GigabitEthernet3.20", outgoing_filter=ACL_NAME
+            ),
+        ),
+    )
+
+
+def replace_security_flow(
+    observation: AclSecurityBatfishObservation,
     name: str,
     traces: tuple[VlanTrace, ...],
-) -> VlanBatfishObservation:
+) -> AclSecurityBatfishObservation:
     return observation.model_copy(
         update={
-            "flows": tuple(
-                VlanFlow(
+            "secured_flows": tuple(
+                AclSecurityFlow(
                     name=flow.name,
                     reported_trace_count=len(traces),
                     traces=traces,
                 )
                 if flow.name == name
                 else flow
-                for flow in observation.flows
+                for flow in observation.secured_flows
             )
         }
     )
@@ -387,6 +524,7 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
         ProfiledService.ROUTED_UNDERLAY,
         ProfiledService.OSPF,
         ProfiledService.VLAN,
+        ProfiledService.ACL,
     )
     assert first.accepted_source_allocation_digest == (
         ACCEPTED_REFERENCE_ALLOCATION_DIGEST
@@ -395,13 +533,14 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
         ROUTED_UNDERLAY_D1_DIGEST,
         OSPF_D1_DIGEST,
         VLAN_D1_DIGEST,
+        ACL_D1_DIGEST,
     )
     assert first.candidate_snapshot_digest == PROFILED_COMBINED_CANDIDATE_DIGEST
     assert first.managed_network_nodes == PROFILED_MANAGED_NETWORK_NODES
     assert first.assurance_fixture_hosts == PROFILED_ASSURANCE_FIXTURE_HOSTS
     assert first.modeled_nodes == PROFILED_MODELED_NODES
     assert first.outcome is AssuranceOutcome.PASSED
-    assert len(first.invariants) == 29
+    assert len(first.invariants) == 40
     assert all(item.passed for item in first.invariants)
     for content in (
         first_provider.candidate_contents,
@@ -411,15 +550,132 @@ def test_profiled_pr_assurance_is_exact_deterministic_and_d1_only() -> None:
         assert "192.168.4" not in content
         assert "router ospf 1" in content
         assert "10.60.255.1" in content
+        assert ACL_NAME in content
 
 
-@pytest.mark.parametrize("disposition", ["EXITS_NETWORK", "DELIVERED_TO_SUBNET"])
-def test_weak_disposition_cannot_satisfy_exact_fixture_endpoint(
-    disposition: str,
-) -> None:
-    observation = replace_flow(
+def test_b4_3_standalone_remains_exact_29_of_29() -> None:
+    inputs = acl_service_inputs()
+    evidence = evaluate_vlan_assurance(
+        inputs[1],
+        inputs[3],
+        inputs[5],
+        ACCEPTED_VLAN_CANDIDATE_DIGEST,
         vlan_batfish_observation(),
-        "users_gateway",
+    )
+    assert evidence.candidate_snapshot_digest == ACCEPTED_VLAN_CANDIDATE_DIGEST
+    assert tuple(item.name for item in evidence.invariants) == VLAN_COMBINED_INVARIANTS
+    assert len(evidence.invariants) == 29
+    assert all(item.passed for item in evidence.invariants)
+
+
+def test_b4_4_evaluates_secured_vlan_directly_without_false_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = acl_batfish_observation()
+    standalone_calls = []
+    shared_calls = []
+    standalone = security_policy.evaluate_vlan_assurance
+    shared = security_policy.evaluate_vlan_shared_invariants
+
+    def record_standalone(underlay, ospf, vlan, digest, observed):
+        standalone_calls.append((digest, observed))
+        return standalone(underlay, ospf, vlan, digest, observed)
+
+    def record_shared(underlay, ospf, vlan, observed):
+        shared_calls.append(observed)
+        return shared(underlay, ospf, vlan, observed)
+
+    monkeypatch.setattr(security_policy, "evaluate_vlan_assurance", record_standalone)
+    monkeypatch.setattr(
+        security_policy, "evaluate_vlan_shared_invariants", record_shared
+    )
+    evidence = assure_acl_security_candidate(
+        *acl_service_inputs(), provider=FakeBatfishProvider(observation=observation)
+    )
+
+    assert standalone_calls == [
+        (ACCEPTED_VLAN_CANDIDATE_DIGEST, observation.baseline_vlan)
+    ]
+    assert shared_calls == [observation.secured_vlan]
+    assert tuple(item.name for item in evidence.invariants[:26]) == (
+        VLAN_SHARED_INVARIANTS
+    )
+    assert evidence.outcome is AssuranceOutcome.PASSED
+
+
+@pytest.mark.parametrize(
+    ("damage", "failed_invariant"),
+    [
+        ("trunk", "vlan_exact_switchports"),
+        ("gateway", "vlan_exact_gateways"),
+        ("ospf", "ospf_exact_adjacencies"),
+        ("underlay", "exact_routed_interface_prefixes"),
+    ],
+)
+def test_broken_secured_shared_state_fails_b4_4(
+    damage: str, failed_invariant: str
+) -> None:
+    observation = acl_batfish_observation()
+    secured = observation.secured_vlan
+    if damage == "trunk":
+        secured = secured.model_copy(
+            update={
+                "switchports": (
+                    (
+                        "access-sw-01",
+                        "GigabitEthernet0/1",
+                        "trunk",
+                        (10,),
+                        None,
+                        1,
+                    ),
+                    *secured.switchports[1:],
+                )
+            }
+        )
+    elif damage == "gateway":
+        secured = secured.model_copy(update={"gateways": secured.gateways[:1]})
+    elif damage == "ospf":
+        secured = secured.model_copy(
+            update={
+                "ospf": secured.ospf.model_copy(
+                    update={
+                        "edges": (
+                            secured.ospf.edges[0].model_copy(
+                                update={"nodes": ("access-sw-01", "core-02")}
+                            ),
+                            *secured.ospf.edges[1:],
+                        )
+                    }
+                )
+            }
+        )
+    else:
+        secured = secured.model_copy(
+            update={
+                "ospf": secured.ospf.model_copy(
+                    update={
+                        "underlay": secured.ospf.underlay.model_copy(
+                            update={"interface_prefixes": ()}
+                        )
+                    }
+                )
+            }
+        )
+    evidence = assure_profiled_pr_candidate(
+        FakeBatfishProvider(
+            observation=observation.model_copy(update={"secured_vlan": secured})
+        )
+    )
+    assert evidence.outcome is AssuranceOutcome.FAILED
+    assert not invariant(evidence, failed_invariant)
+
+
+@pytest.mark.parametrize("disposition", ["ACCEPTED", "EXITS_NETWORK"])
+def test_secured_ssh_requires_exact_acl_denial(disposition: str) -> None:
+    observation = replace_security_flow(
+        acl_batfish_observation(),
+        "users_ssh",
         (
             VlanTrace(
                 disposition=disposition,
@@ -432,55 +688,44 @@ def test_weak_disposition_cannot_satisfy_exact_fixture_endpoint(
         FakeBatfishProvider(observation=observation)
     )
     assert evidence.outcome is AssuranceOutcome.FAILED
-    assert not invariant(evidence, "vlan_gateway_flows")
+    assert not invariant(evidence, "acl_ssh_blocked")
 
 
-def test_one_good_and_one_failed_trace_cannot_hide_failure() -> None:
-    observation = replace_flow(
-        vlan_batfish_observation(),
-        "users_gateway",
+def test_one_good_and_one_bypass_trace_cannot_hide_failure() -> None:
+    observation = replace_security_flow(
+        acl_batfish_observation(),
+        "users_https",
         (
             VlanTrace(
                 disposition="ACCEPTED",
-                nodes=("assurance-users-probe", "core-02"),
-                final_node="core-02",
+                nodes=("assurance-users-probe", "core-02", "assurance-servers-probe"),
+                final_node="assurance-servers-probe",
             ),
             VlanTrace(
-                disposition="EXITS_NETWORK",
-                nodes=("assurance-users-probe", "core-02"),
-                final_node="core-02",
+                disposition="ACCEPTED",
+                nodes=("assurance-users-probe", "assurance-servers-probe"),
+                final_node="assurance-servers-probe",
             ),
         ),
     )
     evidence = assure_profiled_pr_candidate(
         FakeBatfishProvider(observation=observation)
     )
-    assert not invariant(evidence, "vlan_gateway_flows")
+    assert not invariant(evidence, "acl_https_preserved")
 
 
-@pytest.mark.parametrize("unexpected", [None, "edge-junos-01", "transit-ios-01"])
-def test_every_intervlan_trace_must_use_only_core(
-    unexpected: str | None,
-) -> None:
-    middle = (unexpected,) if unexpected else ()
-    observation = replace_flow(
-        vlan_batfish_observation(),
-        "users_to_servers",
+@pytest.mark.parametrize("unexpected", ["edge-junos-01", "transit-ios-01"])
+def test_security_flow_rejects_remote_router_transit(unexpected: str) -> None:
+    observation = replace_security_flow(
+        acl_batfish_observation(),
+        "users_https",
         (
             VlanTrace(
                 disposition="ACCEPTED",
                 nodes=(
                     "assurance-users-probe",
                     "core-02",
-                    "assurance-servers-probe",
-                ),
-                final_node="assurance-servers-probe",
-            ),
-            VlanTrace(
-                disposition="ACCEPTED",
-                nodes=(
-                    "assurance-users-probe",
-                    *middle,
+                    unexpected,
                     "assurance-servers-probe",
                 ),
                 final_node="assurance-servers-probe",
@@ -490,16 +735,13 @@ def test_every_intervlan_trace_must_use_only_core(
     evidence = assure_profiled_pr_candidate(
         FakeBatfishProvider(observation=observation)
     )
-    if unexpected is None:
-        assert not invariant(evidence, "vlan_intervlan_traverses_core")
-    else:
-        assert not invariant(evidence, "vlan_intervlan_excludes_remote_routers")
+    assert not invariant(evidence, "acl_https_preserved")
 
 
-def test_wrong_final_fixture_does_not_pass_endpoint_contract() -> None:
-    observation = replace_flow(
-        vlan_batfish_observation(),
-        "users_to_servers",
+def test_wrong_final_fixture_does_not_pass_security_contract() -> None:
+    observation = replace_security_flow(
+        acl_batfish_observation(),
+        "users_https",
         (
             VlanTrace(
                 disposition="ACCEPTED",
@@ -511,7 +753,7 @@ def test_wrong_final_fixture_does_not_pass_endpoint_contract() -> None:
     evidence = assure_profiled_pr_candidate(
         FakeBatfishProvider(observation=observation)
     )
-    assert not invariant(evidence, "vlan_intervlan_open")
+    assert not invariant(evidence, "acl_https_preserved")
 
 
 def test_reported_trace_count_cannot_hide_truncation() -> None:
@@ -527,6 +769,28 @@ def test_reported_trace_count_cannot_hide_truncation() -> None:
                 ),
             ),
         )
+
+
+def test_failed_combined_assurance_invalidates_acl_proposal() -> None:
+    inputs = acl_service_inputs()
+    assurance = assure_acl_security_candidate(*inputs, provider=FakeBatfishProvider())
+    observation = AclObservation(
+        observed_at=assurance.generated_at, policy_present=False
+    )
+    proposal = build_acl_proposal_evidence(inputs[6], observation, inputs[7], assurance)
+    assert proposal.combined_assurance.outcome is AssuranceOutcome.PASSED
+    failed_invariants = (
+        assurance.invariants[0].model_copy(update={"passed": False}),
+        *assurance.invariants[1:],
+    )
+    failed = assurance.model_copy(
+        update={
+            "invariants": failed_invariants,
+            "outcome": AssuranceOutcome.FAILED,
+        }
+    )
+    with pytest.raises(ValueError, match="proposal evidence"):
+        build_acl_proposal_evidence(inputs[6], observation, inputs[7], failed)
 
 
 @pytest.mark.parametrize(
@@ -557,13 +821,16 @@ def test_evidence_io_and_annotation_are_typed_and_allowlisted(tmp_path: Path) ->
         "profiled-four-device",
         "routed_underlay",
         "vlan",
+        "acl",
         "6",
-        "29 / 29 passed",
+        "40 / 40 passed",
         *PROFILED_MANAGED_NETWORK_NODES,
         *PROFILED_ASSURANCE_FIXTURE_HOSTS,
         ROUTED_UNDERLAY_D1_DIGEST,
         OSPF_D1_DIGEST,
         VLAN_D1_DIGEST,
+        ACL_D1_DIGEST,
+        ACCEPTED_ACL_CANDIDATE_DIGEST,
         PROFILED_COMBINED_CANDIDATE_DIGEST,
     ):
         assert value in annotation

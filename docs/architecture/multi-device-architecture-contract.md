@@ -457,6 +457,22 @@ prove both gateway flows and open bidirectional pre-ACL inter-VLAN routing
 through `core-02`. See the
 [B4-3 acceptance record](../acceptance/vlan-service-detour-b4-3.md).
 
+### Current B4-4 ACL security proposal
+
+B4-4 adds one `acl` envelope over device 1, core subinterface identity 22,
+prefix identities 6/7, and `git:policy:users-servers-https`. It owns only rule
+semantics/order, attachment/direction, and effective default action. The exact
+outbound ACL on core `GigabitEthernet3.20` permits USERS-to-SERVERS TCP/443,
+denies other USERS-to-SERVERS IPv4, and permits all other traffic. Outbound
+attachment protects the SERVERS destination while leaving independently
+initiated SERVERS-to-USERS traffic outside the ACL path.
+
+Pinned differential assurance compares the accepted open B4-3 candidate with
+the secured B4-4 candidate. The same two Batfish-only hosts prove HTTPS remains
+open, SSH and ICMP are denied outbound at core, reverse traffic stays open,
+and gateways remain reachable. No LIVE ACL is applied. See the
+[B4-4 acceptance record](../acceptance/acl-security-detour-b4-4.md).
+
 ### Still future and not configured
 
 The physical realization and NetBox allocations do not configure services.
@@ -465,7 +481,7 @@ These items remain future reviewed increments:
 - applying the B4-1 routed-underlay proposal to devices;
 - applying the B4-3 VLAN/router-on-a-stick proposal to devices;
 - applying the B4-2 OSPF proposal;
-- configuring ACLs or security policy;
+- applying the B4-4 ACL security proposal;
 - creating endpoint nodes or allocating endpoint addresses; and
 - turning router-ID identities into configured loopbacks or advertised routes.
 

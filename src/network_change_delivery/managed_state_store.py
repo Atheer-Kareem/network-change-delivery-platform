@@ -54,6 +54,39 @@ class ManagedStateAcceptanceMode(StrEnum):
     POST_WRITE_VALIDATED = "post_write_validated"
 
 
+class D0ObservationOutcome(StrEnum):
+    IN_SYNC = "in_sync"
+    DRIFT_DETECTED = "drift_detected"
+
+
+class D0ProposalOutcome(StrEnum):
+    NO_CHANGE = "no_change"
+    CHANGE_PROPOSED = "change_proposed"
+
+
+class PostWriteOutcome(StrEnum):
+    CONVERGED = "converged"
+    POST_VALIDATION_FAILED = "post_validation_failed"
+
+
+class ManagedStateComparison(BaseModel):
+    """Pure comparison evidence bound to one exact managed-state subject."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    vertical: ManagedVertical
+    ownership_envelope: ManagedOwnershipEnvelope
+    left_digest: Sha256Digest
+    right_digest: Sha256Digest
+    outcome: D0ObservationOutcome | D0ProposalOutcome | PostWriteOutcome
+    device_writes: Literal[0] = 0
+
+    @model_validator(mode="after")
+    def exact_subject(self) -> ManagedStateComparison:
+        if self.ownership_envelope.vertical is not self.vertical:
+            raise ValueError("managed-state comparison subject disagrees")
+        return self
+
+
 class ManagedStateAcceptanceEvidence(BaseModel):
     """Secret-free intrinsic evidence for one explicit accepted state."""
 
@@ -68,6 +101,7 @@ class ManagedStateAcceptanceEvidence(BaseModel):
     source_git_commit: GitCommit
     source_observation_evidence_digest: Sha256Digest
     previous_accepted_state: AcceptedManagedStateRef | None = None
+    postwrite_convergence: ManagedStateComparison | None = None
     digest: Sha256Digest
 
     def calculated_digest(self) -> str:
@@ -92,10 +126,17 @@ class ManagedStateAcceptanceEvidence(BaseModel):
         ):
             raise ValueError("managed-state acceptance bindings disagree")
         if self.acceptance_mode is ManagedStateAcceptanceMode.INITIAL_ADOPTION:
-            if self.previous_accepted_state is not None:
-                raise ValueError("initial adoption cannot have a predecessor")
-        elif self.previous_accepted_state is None:
-            raise ValueError("post-write acceptance requires a predecessor")
+            if (
+                self.previous_accepted_state is not None
+                or self.postwrite_convergence is not None
+            ):
+                raise ValueError(
+                    "initial adoption cannot have a predecessor or convergence proof"
+                )
+        elif self.previous_accepted_state is None or self.postwrite_convergence is None:
+            raise ValueError(
+                "post-write acceptance requires a predecessor and convergence proof"
+            )
         if self.previous_accepted_state is not None:
             previous = self.previous_accepted_state
             expected_identity = (
@@ -107,12 +148,25 @@ class ManagedStateAcceptanceEvidence(BaseModel):
                 or previous.acceptance_evidence.identity != expected_identity
             ):
                 raise ValueError("previous accepted-state reference is not canonical")
+        if self.postwrite_convergence is not None:
+            comparison = self.postwrite_convergence
+            if (
+                comparison.outcome is not PostWriteOutcome.CONVERGED
+                or comparison.vertical is not self.vertical
+                or comparison.ownership_envelope != self.ownership_envelope
+                or comparison.left_digest != self.canonical_state_digest
+                or comparison.right_digest != self.canonical_state_digest
+                or comparison.device_writes != 0
+            ):
+                raise ValueError(
+                    "post-write acceptance does not prove converged O-prime and D1"
+                )
         if self.digest != self.calculated_digest():
             raise ValueError("managed-state acceptance evidence digest is invalid")
         return self
 
 
-def build_acceptance_evidence(
+def _build_acceptance_evidence(
     *,
     acceptance_mode: ManagedStateAcceptanceMode,
     accepted_at: datetime,
@@ -120,8 +174,8 @@ def build_acceptance_evidence(
     source_git_commit: str,
     source_observation_evidence_digest: str,
     previous_accepted_state: AcceptedManagedStateRef | None = None,
+    postwrite_convergence: ManagedStateComparison | None = None,
 ) -> ManagedStateAcceptanceEvidence:
-    """Build intrinsic evidence; this is never an automatic adoption API."""
     unsigned = ManagedStateAcceptanceEvidence.model_construct(
         schema_version="1",
         acceptance_mode=acceptance_mode,
@@ -133,11 +187,58 @@ def build_acceptance_evidence(
         source_git_commit=source_git_commit,
         source_observation_evidence_digest=source_observation_evidence_digest,
         previous_accepted_state=previous_accepted_state,
+        postwrite_convergence=postwrite_convergence,
         digest="sha256:" + "0" * 64,
     )
     payload = unsigned.model_dump(mode="json")
     payload["digest"] = unsigned.calculated_digest()
     return ManagedStateAcceptanceEvidence.model_validate(payload)
+
+
+def build_initial_adoption_evidence(
+    *,
+    accepted_at: datetime,
+    observed_state: ManagedStateSnapshot,
+    source_git_commit: str,
+    source_observation_evidence_digest: str,
+) -> ManagedStateAcceptanceEvidence:
+    """Explicitly adopt fresh observed reality as generation-one D0 evidence."""
+    observed_state = _validate_state(observed_state)
+    return _build_acceptance_evidence(
+        acceptance_mode=ManagedStateAcceptanceMode.INITIAL_ADOPTION,
+        accepted_at=accepted_at,
+        canonical_state=observed_state,
+        source_git_commit=source_git_commit,
+        source_observation_evidence_digest=source_observation_evidence_digest,
+    )
+
+
+def build_postwrite_validated_evidence(
+    *,
+    accepted_at: datetime,
+    postwrite_state: ManagedStateSnapshot,
+    reviewed_desired_state: ManagedStateSnapshot,
+    previous_accepted_state: AcceptedManagedStateRef,
+    source_git_commit: str,
+    source_observation_evidence_digest: str,
+) -> ManagedStateAcceptanceEvidence:
+    """Build advancement evidence only after subject-bound O-prime/D1 convergence."""
+    postwrite_state = _validate_state(postwrite_state)
+    reviewed_desired_state = _validate_state(reviewed_desired_state)
+    comparison = compare_postwrite_to_d1(postwrite_state, reviewed_desired_state)
+    if comparison.outcome is not PostWriteOutcome.CONVERGED:
+        raise ManagedStateStoreError(
+            "post-write managed state did not converge to reviewed D1"
+        )
+    return _build_acceptance_evidence(
+        acceptance_mode=ManagedStateAcceptanceMode.POST_WRITE_VALIDATED,
+        accepted_at=accepted_at,
+        canonical_state=postwrite_state,
+        source_git_commit=source_git_commit,
+        source_observation_evidence_digest=source_observation_evidence_digest,
+        previous_accepted_state=previous_accepted_state,
+        postwrite_convergence=comparison,
+    )
 
 
 def derive_accepted_managed_state_ref(
@@ -283,31 +384,9 @@ def _validate_chain(
             raise ValueError("managed-state chain predecessor is broken")
 
 
-class D0ObservationOutcome(StrEnum):
-    IN_SYNC = "in_sync"
-    DRIFT_DETECTED = "drift_detected"
-
-
-class D0ProposalOutcome(StrEnum):
-    NO_CHANGE = "no_change"
-    CHANGE_PROPOSED = "change_proposed"
-
-
-class PostWriteOutcome(StrEnum):
-    CONVERGED = "converged"
-    POST_VALIDATION_FAILED = "post_validation_failed"
-
-
-class ManagedStateComparison(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    vertical: ManagedVertical
-    left_digest: Sha256Digest
-    right_digest: Sha256Digest
-    outcome: D0ObservationOutcome | D0ProposalOutcome | PostWriteOutcome
-    device_writes: Literal[0] = 0
-
-
-def _same_subject(left: ManagedStateSnapshot, right: ManagedStateSnapshot) -> None:
+def _same_subject(
+    left: ManagedStateSnapshot, right: ManagedStateSnapshot
+) -> tuple[ManagedStateSnapshot, ManagedStateSnapshot]:
     left = _validate_state(left)
     right = _validate_state(right)
     if (
@@ -315,6 +394,7 @@ def _same_subject(left: ManagedStateSnapshot, right: ManagedStateSnapshot) -> No
         or left.ownership_envelope != right.ownership_envelope
     ):
         raise ManagedStateStoreError("managed-state comparison subject differs")
+    return left, right
 
 
 def reconcile_d0_to_observation(
@@ -322,7 +402,7 @@ def reconcile_d0_to_observation(
 ) -> ManagedStateComparison:
     d0 = ManagedStateResolution.model_validate(d0.model_dump(mode="json"))
     accepted = d0.canonical_state
-    _same_subject(accepted, observed)
+    accepted, observed = _same_subject(accepted, observed)
     outcome = (
         D0ObservationOutcome.IN_SYNC
         if accepted.digest == observed.digest
@@ -330,6 +410,7 @@ def reconcile_d0_to_observation(
     )
     return ManagedStateComparison(
         vertical=accepted.vertical,
+        ownership_envelope=accepted.ownership_envelope,
         left_digest=accepted.digest,
         right_digest=observed.digest,
         outcome=outcome,
@@ -341,7 +422,7 @@ def compare_d0_to_d1(
 ) -> ManagedStateComparison:
     d0 = ManagedStateResolution.model_validate(d0.model_dump(mode="json"))
     accepted = d0.canonical_state
-    _same_subject(accepted, desired)
+    accepted, desired = _same_subject(accepted, desired)
     outcome = (
         D0ProposalOutcome.NO_CHANGE
         if accepted.digest == desired.digest
@@ -349,6 +430,7 @@ def compare_d0_to_d1(
     )
     return ManagedStateComparison(
         vertical=accepted.vertical,
+        ownership_envelope=accepted.ownership_envelope,
         left_digest=accepted.digest,
         right_digest=desired.digest,
         outcome=outcome,
@@ -358,7 +440,7 @@ def compare_d0_to_d1(
 def compare_postwrite_to_d1(
     postwrite: ManagedStateSnapshot, desired: ManagedStateSnapshot
 ) -> ManagedStateComparison:
-    _same_subject(postwrite, desired)
+    postwrite, desired = _same_subject(postwrite, desired)
     outcome = (
         PostWriteOutcome.CONVERGED
         if postwrite.digest == desired.digest
@@ -366,6 +448,7 @@ def compare_postwrite_to_d1(
     )
     return ManagedStateComparison(
         vertical=desired.vertical,
+        ownership_envelope=desired.ownership_envelope,
         left_digest=postwrite.digest,
         right_digest=desired.digest,
         outcome=outcome,

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import network_change_delivery.managed_state_store as managed_state_store
 from network_change_delivery.managed_state import (
     RoutedUnderlayManagedStateSnapshot,
     build_current_git_managed_d1,
@@ -12,13 +13,16 @@ from network_change_delivery.managed_state import (
 from network_change_delivery.managed_state_store import (
     D0ObservationOutcome,
     D0ProposalOutcome,
+    ManagedStateAcceptanceEvidence,
     ManagedStateAcceptanceMode,
     ManagedStateAcceptanceRecord,
+    ManagedStateComparison,
     ManagedStateResolutionStatus,
     ManagedStateStore,
     ManagedStateStoreError,
     PostWriteOutcome,
-    build_acceptance_evidence,
+    build_initial_adoption_evidence,
+    build_postwrite_validated_evidence,
     compare_d0_to_d1,
     compare_postwrite_to_d1,
     derive_accepted_managed_state_ref,
@@ -39,13 +43,27 @@ def private_root(tmp_path: Path) -> Path:
 
 def initial_evidence(state=None):
     state = state or build_current_git_managed_d1()[0]
-    return build_acceptance_evidence(
-        acceptance_mode=ManagedStateAcceptanceMode.INITIAL_ADOPTION,
+    return build_initial_adoption_evidence(
         accepted_at=NOW,
-        canonical_state=state,
+        observed_state=state,
         source_git_commit=COMMIT,
         source_observation_evidence_digest=OBSERVATION,
     )
+
+
+def resign_evidence(evidence, **updates):
+    values = {
+        name: getattr(evidence, name)
+        for name in ManagedStateAcceptanceEvidence.model_fields
+        if name != "digest"
+    }
+    values.update(updates)
+    unsigned = ManagedStateAcceptanceEvidence.model_construct(
+        **values, digest="sha256:" + "0" * 64
+    )
+    payload = unsigned.model_dump(mode="json")
+    payload["digest"] = unsigned.calculated_digest()
+    return ManagedStateAcceptanceEvidence.model_validate(payload)
 
 
 def changed_underlay(state: RoutedUnderlayManagedStateSnapshot):
@@ -135,10 +153,10 @@ def test_postwrite_record_must_extend_exact_head(tmp_path: Path) -> None:
         private_root(tmp_path), checkout=Path(__file__).parents[1]
     )
     first = store.persist_acceptance(initial_evidence())
-    next_evidence = build_acceptance_evidence(
-        acceptance_mode=ManagedStateAcceptanceMode.POST_WRITE_VALIDATED,
+    next_evidence = build_postwrite_validated_evidence(
         accepted_at=NOW,
-        canonical_state=first.evidence.canonical_state,
+        postwrite_state=first.evidence.canonical_state,
+        reviewed_desired_state=first.evidence.canonical_state,
         source_git_commit=COMMIT,
         source_observation_evidence_digest="sha256:" + "2" * 64,
         previous_accepted_state=first.accepted_state_ref,
@@ -152,18 +170,9 @@ def test_postwrite_record_must_extend_exact_head(tmp_path: Path) -> None:
 def test_acceptance_modes_and_source_commit_fail_closed() -> None:
     state = build_current_git_managed_d1()[0]
     with pytest.raises(ValidationError):
-        build_acceptance_evidence(
-            acceptance_mode=ManagedStateAcceptanceMode.POST_WRITE_VALIDATED,
+        build_initial_adoption_evidence(
             accepted_at=NOW,
-            canonical_state=state,
-            source_git_commit=COMMIT,
-            source_observation_evidence_digest=OBSERVATION,
-        )
-    with pytest.raises(ValidationError):
-        build_acceptance_evidence(
-            acceptance_mode=ManagedStateAcceptanceMode.INITIAL_ADOPTION,
-            accepted_at=NOW,
-            canonical_state=state,
+            observed_state=state,
             source_git_commit="main",
             source_observation_evidence_digest=OBSERVATION,
         )
@@ -214,10 +223,9 @@ def test_two_generation_one_heads_fail_closed(tmp_path: Path) -> None:
     store = ManagedStateStore(root, checkout=checkout)
     other = ManagedStateStore(other_root, checkout=checkout)
     store.persist_acceptance(initial_evidence())
-    competing = build_acceptance_evidence(
-        acceptance_mode=ManagedStateAcceptanceMode.INITIAL_ADOPTION,
+    competing = build_initial_adoption_evidence(
         accepted_at=NOW,
-        canonical_state=build_current_git_managed_d1()[0],
+        observed_state=build_current_git_managed_d1()[0],
         source_git_commit=COMMIT,
         source_observation_evidence_digest="sha256:" + "9" * 64,
     )
@@ -248,13 +256,128 @@ def test_d0_observation_proposal_and_postwrite_relations(tmp_path: Path) -> None
     drift = reconcile_d0_to_observation(d0, changed)
     assert drift.outcome is D0ObservationOutcome.DRIFT_DETECTED
     assert drift.device_writes == 0
-    assert compare_d0_to_d1(d0, state).outcome is D0ProposalOutcome.NO_CHANGE
+    assert drift.ownership_envelope == state.ownership_envelope
+    no_change = compare_d0_to_d1(d0, state)
+    assert no_change.outcome is D0ProposalOutcome.NO_CHANGE
+    assert no_change.ownership_envelope == state.ownership_envelope
     assert compare_d0_to_d1(d0, changed).outcome is D0ProposalOutcome.CHANGE_PROPOSED
-    assert compare_postwrite_to_d1(state, state).outcome is PostWriteOutcome.CONVERGED
+    converged = compare_postwrite_to_d1(state, state)
+    assert converged.outcome is PostWriteOutcome.CONVERGED
+    assert converged.ownership_envelope == state.ownership_envelope
     assert (
         compare_postwrite_to_d1(changed, state).outcome
         is PostWriteOutcome.POST_VALIDATION_FAILED
     )
+
+
+def test_postwrite_builder_rejects_nonconverged_state_and_cannot_advance(
+    tmp_path: Path,
+) -> None:
+    state_a = build_current_git_managed_d1()[0]
+    state_b = changed_underlay(state_a)
+    second_interface = state_a.payload.interfaces[1]
+    payload_c = state_a.payload.model_copy(
+        update={
+            "interfaces": (
+                state_a.payload.interfaces[0],
+                second_interface.model_copy(update={"admin_enabled": False}),
+                *state_a.payload.interfaces[2:],
+            )
+        }
+    )
+    unsigned_c = state_a.model_construct(
+        schema_version=state_a.schema_version,
+        vertical=state_a.vertical,
+        ownership_envelope=state_a.ownership_envelope,
+        payload=payload_c,
+        digest="sha256:" + "0" * 64,
+    )
+    data_c = unsigned_c.model_dump(mode="json")
+    data_c["digest"] = unsigned_c.calculated_digest()
+    state_c = RoutedUnderlayManagedStateSnapshot.model_validate(data_c)
+
+    store = ManagedStateStore(
+        private_root(tmp_path), checkout=Path(__file__).parents[1]
+    )
+    first = store.persist_acceptance(initial_evidence(state_a))
+    with pytest.raises(ManagedStateStoreError):
+        build_postwrite_validated_evidence(
+            accepted_at=NOW,
+            postwrite_state=state_b,
+            reviewed_desired_state=state_c,
+            previous_accepted_state=first.accepted_state_ref,
+            source_git_commit=COMMIT,
+            source_observation_evidence_digest="sha256:" + "3" * 64,
+        )
+    assert store.resolve_current_d0("routed_underlay").head == first
+
+
+def test_postwrite_evidence_intrinsically_requires_exact_convergence_proof(
+    tmp_path: Path,
+) -> None:
+    states = build_current_git_managed_d1()
+    state = states[0]
+    store = ManagedStateStore(
+        private_root(tmp_path), checkout=Path(__file__).parents[1]
+    )
+    first = store.persist_acceptance(initial_evidence(state))
+    evidence = build_postwrite_validated_evidence(
+        accepted_at=NOW,
+        postwrite_state=state,
+        reviewed_desired_state=state,
+        previous_accepted_state=first.accepted_state_ref,
+        source_git_commit=COMMIT,
+        source_observation_evidence_digest="sha256:" + "4" * 64,
+    )
+    assert evidence.postwrite_convergence is not None
+    assert evidence.postwrite_convergence.outcome is PostWriteOutcome.CONVERGED
+    second = store.persist_acceptance(evidence)
+    assert second.generation == 2
+
+    failed = compare_postwrite_to_d1(changed_underlay(state), state)
+    wrong_subject = compare_postwrite_to_d1(states[1], states[1])
+    wrong_envelope = evidence.postwrite_convergence.model_copy(
+        update={
+            "ownership_envelope": state.ownership_envelope.model_copy(
+                update={"envelope_version": 2}
+            )
+        }
+    )
+    invalid_updates = (
+        {"previous_accepted_state": None},
+        {"postwrite_convergence": None},
+        {"postwrite_convergence": failed},
+        {"postwrite_convergence": wrong_subject},
+        {"postwrite_convergence": wrong_envelope},
+        {
+            "postwrite_convergence": evidence.postwrite_convergence.model_copy(
+                update={"left_digest": "sha256:" + "5" * 64}
+            )
+        },
+        {
+            "postwrite_convergence": evidence.postwrite_convergence.model_copy(
+                update={"right_digest": "sha256:" + "6" * 64}
+            )
+        },
+    )
+    for update in invalid_updates:
+        with pytest.raises(ValidationError):
+            resign_evidence(evidence, **update)
+
+    with pytest.raises(ValidationError):
+        ManagedStateComparison.model_validate(
+            evidence.postwrite_convergence.model_copy(
+                update={"device_writes": 1}
+            ).model_dump()
+        )
+
+
+def test_initial_adoption_has_no_predecessor_or_convergence_proof() -> None:
+    evidence = initial_evidence()
+    assert evidence.acceptance_mode is ManagedStateAcceptanceMode.INITIAL_ADOPTION
+    assert evidence.previous_accepted_state is None
+    assert evidence.postwrite_convergence is None
+    assert not hasattr(managed_state_store, "build_acceptance_evidence")
 
 
 def test_vertical_or_envelope_mismatch_fails_comparison(tmp_path: Path) -> None:

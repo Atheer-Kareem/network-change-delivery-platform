@@ -43,12 +43,21 @@ These do not replace the established B4 service-subject digests.
 `ManagedStateAcceptanceEvidence` records an explicit acceptance mode, UTC
 time, vertical, exact envelope, complete canonical state and digest, exact
 40-hex source commit, source observation/evidence digest, optional exact prior
-accepted-state reference, and its own intrinsic digest. The only modes are:
+accepted-state reference, optional subject-bound post-write convergence proof,
+and its own intrinsic digest. The only modes are:
 
 - `INITIAL_ADOPTION`: an operator explicitly accepts fresh observed managed
   reality as generation 1;
 - `POST_WRITE_VALIDATED`: independent O' has matched reviewed D1 and advances
-  an existing exact head.
+  an existing exact head. This is not a label: its intrinsic evidence must
+  contain a `CONVERGED` comparison with the exact vertical, ownership envelope,
+  equal O'/D1/new-D0 digests, and zero writes.
+
+Initial-adoption evidence has neither a predecessor nor convergence proof.
+Post-write evidence requires both. Public construction is mode-specific:
+`build_initial_adoption_evidence()` accepts fresh observed reality, while
+`build_postwrite_validated_evidence()` computes O'/D1 comparison itself and
+refuses a non-converged result. Without convergence proof, D0 cannot advance.
 
 There is no accept-drift, auto-heal, force, emergency-adoption, or baseline-sync
 API.
@@ -81,8 +90,10 @@ head is current D0.
 | `O' == D1` | post-write convergence proven | `CONVERGED` |
 | `O' != D1` | post-validation failed; do not advance D0 | `POST_VALIDATION_FAILED` |
 
-All comparisons require the same vertical and exact ownership envelope. Drift
-detection is pure and never updates D0.
+Every comparison result retains its exact vertical and ownership envelope as
+well as both state digests and zero-write marker. All comparisons require the
+same vertical and exact ownership envelope. Drift detection is pure and never
+updates D0.
 
 ## Deferred initial adoption
 

@@ -149,6 +149,21 @@ The bounded snapshot surface admits only `configs/*`, the one exact
 B4-1/B4-2 snapshot bytes and digests remain unchanged. See the
 [B4-3 acceptance record](../acceptance/vlan-service-detour-b4-3.md).
 
+## B4-4 differential ACL assurance
+
+The canonical profiled PR stack is now exactly `routed_underlay, ospf, vlan,
+acl`. B4-4 preserves the accepted B4-3 candidate as a behavioral baseline and
+compares the same packet headers with a secured candidate containing one exact
+outbound IOS-XE ACL on core `GigabitEthernet3.20`. The baseline is prior
+assurance evidence, not ACL D0.
+
+Semantic filter/interface questions prove the exact rules, order, catchall
+permit, attachment, and direction. All-trace probes prove USERS HTTPS remains
+accepted, USERS SSH and ICMP terminate `DENIED_OUT` at core, reverse traffic
+remains accepted, and both gateways remain reachable. Shared underlay, OSPF,
+VLAN, managed-node, assurance-host, and layer-1 invariants must also pass. See
+the [B4-4 acceptance record](../acceptance/acl-security-detour-b4-4.md).
+
 ## Assurance-to-promotion handoff
 
 When explicitly restored, the preserved legacy immutable promotion waits for

@@ -41,6 +41,7 @@ INTERFACES_TASK = "NCDP collect interfaces"
 L3_INTERFACES_TASK = "NCDP collect layer 3 interfaces"
 OSPF_READ_TASK = "NCDP inspect exact OSPF configuration"
 VLAN_READ_TASK = "NCDP inspect exact VLAN service configuration"
+ACL_READ_TASK = "NCDP inspect exact ACL security configuration"
 EXECUTION_TASK = "NCDP apply exact approved artifact"
 SNMP_PREFLIGHT_TASK = "NCDP inspect exact SNMP owned names"
 SNMP_ENGINE_TASK = "NCDP inspect SNMP engine"
@@ -74,6 +75,26 @@ VLAN_READ_COMMANDS: Mapping[VlanReadScope, tuple[str, ...]] = MappingProxyType(
             "show running-config interface GigabitEthernet0/3",
             "show running-config | section ^interface Vlan",
         ),
+    }
+)
+
+
+class AclReadScope(StrEnum):
+    """Closed B4-4 Cisco ACL read-only command scope."""
+
+    SECURITY_POLICY = "users_servers_security_policy"
+
+
+ACL_READ_COMMANDS: Mapping[AclReadScope, tuple[str, ...]] = MappingProxyType(
+    {
+        AclReadScope.SECURITY_POLICY: (
+            "show running-config | include ^ip access-list extended NCDP-",
+            "show running-config | section ^ip access-list extended "
+            "NCDP-SERVERS-PROTECT-OUT",
+            "show running-config | section ^interface GigabitEthernet3\\.",
+            "show running-config | include ^interface|ip access-group "
+            "NCDP-SERVERS-PROTECT-OUT",
+        )
     }
 )
 
@@ -412,6 +433,7 @@ class AnsibleRunnerCiscoAdapter:
                 L3_INTERFACES_TASK,
                 OSPF_READ_TASK,
                 VLAN_READ_TASK,
+                ACL_READ_TASK,
                 EXECUTION_TASK,
                 SNMP_PREFLIGHT_TASK,
                 SNMP_ENGINE_TASK,
@@ -678,6 +700,41 @@ class AnsibleRunnerCiscoAdapter:
             or any(not isinstance(value, str) for value in stdout)
         ):
             raise ProviderError("Cisco VLAN read-only result was incomplete")
+        return tuple(stdout)
+
+    def collect_acl_read_only(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        scope: AclReadScope,
+        *,
+        ssh_type: Literal["paramiko"],
+    ) -> tuple[str, ...]:
+        """Read only the exact B4-4 ACL security-policy scope."""
+        if not isinstance(scope, AclReadScope):
+            raise ProviderError("Cisco ACL read-only scope is invalid")
+        commands = ACL_READ_COMMANDS[scope]
+        runner, selected = self._run(
+            target,
+            credentials,
+            "collect_acl_state.yml",
+            extravars={"ncdp_acl_commands": list(commands)},
+            ssh_type=ssh_type,
+            profile_bound=True,
+        )
+        if (
+            getattr(runner, "status", None) != "successful"
+            or getattr(runner, "rc", 1) != 0
+            or ACL_READ_TASK not in selected
+        ):
+            raise ProviderError("Cisco ACL read-only collection failed")
+        stdout = selected[ACL_READ_TASK].get("stdout")
+        if (
+            not isinstance(stdout, list)
+            or len(stdout) != len(commands)
+            or any(not isinstance(value, str) for value in stdout)
+        ):
+            raise ProviderError("Cisco ACL read-only result was incomplete")
         return tuple(stdout)
 
     def execute(

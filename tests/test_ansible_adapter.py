@@ -8,10 +8,13 @@ from types import SimpleNamespace
 import pytest
 
 from network_change_delivery.ansible_adapter import (
+    ACL_READ_COMMANDS,
+    ACL_READ_TASK,
     EXECUTION_TASK,
     IDENTITY_TASK,
     VLAN_READ_COMMANDS,
     VLAN_READ_TASK,
+    AclReadScope,
     AnsibleRunnerCiscoAdapter,
     HostTrustError,
     ProviderError,
@@ -79,6 +82,68 @@ def test_arbitrary_vlan_cli_is_rejected_before_runner(
     monkeypatch.setattr(adapter, "_run", fake_run)
     with pytest.raises(ProviderError, match="scope is invalid"):
         adapter.collect_vlan_read_only(
+            object(),
+            DeviceCredentials(username="user", password="secret"),
+            commands,  # type: ignore[arg-type]
+            ssh_type="paramiko",
+        )
+    assert not called
+
+
+def test_acl_read_scope_forwards_only_immutable_exact_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    captured: dict[str, object] = {}
+
+    def fake_run(*args: object, **kwargs: object):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(status="successful", rc=0), {
+            ACL_READ_TASK: {
+                "stdout": ["bounded"]
+                * len(ACL_READ_COMMANDS[AclReadScope.SECURITY_POLICY])
+            }
+        }
+
+    monkeypatch.setattr(adapter, "_run", fake_run)
+    result = adapter.collect_acl_read_only(
+        object(),
+        DeviceCredentials(username="user", password="secret"),
+        AclReadScope.SECURITY_POLICY,
+        ssh_type="paramiko",
+    )
+    assert result == ("bounded",) * len(ACL_READ_COMMANDS[AclReadScope.SECURITY_POLICY])
+    assert captured["args"][2] == "collect_acl_state.yml"
+    assert captured["kwargs"]["extravars"] == {
+        "ncdp_acl_commands": list(ACL_READ_COMMANDS[AclReadScope.SECURITY_POLICY])
+    }
+
+
+@pytest.mark.parametrize(
+    "commands",
+    [
+        (),
+        (*ACL_READ_COMMANDS[AclReadScope.SECURITY_POLICY], "show version"),
+        tuple(reversed(ACL_READ_COMMANDS[AclReadScope.SECURITY_POLICY])),
+        ("configure terminal",),
+        ACL_READ_COMMANDS[AclReadScope.SECURITY_POLICY][:-1],
+    ],
+)
+def test_arbitrary_acl_cli_is_rejected_before_runner(
+    monkeypatch: pytest.MonkeyPatch, commands: tuple[str, ...]
+) -> None:
+    adapter = AnsibleRunnerCiscoAdapter()
+    called = False
+
+    def fake_run(*_args: object, **_kwargs: object):
+        nonlocal called
+        called = True
+        raise AssertionError("Runner must not receive unadmitted ACL commands")
+
+    monkeypatch.setattr(adapter, "_run", fake_run)
+    with pytest.raises(ProviderError, match="scope is invalid"):
+        adapter.collect_acl_read_only(
             object(),
             DeviceCredentials(username="user", password="secret"),
             commands,  # type: ignore[arg-type]

@@ -347,6 +347,17 @@ def _snapshot(
 def project_routed_underlay_observation(
     observation: RoutedUnderlayObservation, intent: RoutedUnderlayIntent
 ) -> RoutedUnderlayManagedStateSnapshot:
+    envelope = build_routed_underlay_ownership_envelope(intent)
+    expected_interfaces = tuple(
+        item.identity
+        for item in envelope.scope
+        if item.kind is ManagedScopeKind.INTERFACE
+    )
+    by_identity = {item.interface.interface: item for item in observation.interfaces}
+    if set(by_identity) != set(expected_interfaces):
+        raise ManagedStateProjectionError(
+            "routed-underlay observation identities do not match the envelope"
+        )
     payload = RoutedUnderlayManagedPayload(
         interfaces=tuple(
             RoutedInterfaceManagedState(
@@ -355,12 +366,12 @@ def project_routed_underlay_observation(
                 ipv4_addresses=tuple(sorted(item.ipv4_addresses, key=str)),
                 admin_enabled=item.admin_enabled if item.exists else None,
             )
-            for item in observation.interfaces
+            for item in (by_identity[identity] for identity in expected_interfaces)
         )
     )
     return _snapshot(
         RoutedUnderlayManagedStateSnapshot,
-        build_routed_underlay_ownership_envelope(intent),
+        envelope,
         payload,
     )  # type: ignore[return-value]
 

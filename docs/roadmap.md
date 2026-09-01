@@ -115,7 +115,7 @@ acceptance records.
       being hardened to require Batfish candidate assurance before trusted
       disposable CML staging, while protected main independently re-verifies
       both branches.
-    - **Detour B — implementation complete through B5-2:** B1 accepts the
+    - **Detour B — complete through B5-2:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos
@@ -183,7 +183,10 @@ acceptance records.
       two-pass LIVE initializer: four independent generation-one records are
       staged together, second-pass O must equal D0 for every vertical, and only
       then may the complete private store be atomically promoted. The exact
-      adoption evidence is recorded after the one-shot operator run; no B4
-      proposal is silently promoted to D0.
+      adoption evidence records the one-shot operator run; no B4 proposal is
+      silently promoted to D0.
+      The accepted run created exactly four generation-one records, then proved
+      second-pass `O == D0` for all four. Each comparison with current Git D1 is
+      `CHANGE_PROPOSED`, not drift; no device write occurred.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

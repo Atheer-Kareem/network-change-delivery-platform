@@ -313,6 +313,11 @@ generation-one chains together, and requires a second independent `IN_SYNC`
 read before atomic promotion. The B4 proposals remain D1 and are not accepted
 D0.
 
+The accepted B5-2 run created exact generation-one D0 for `routed_underlay`,
+`ospf`, `vlan`, and `acl`. A second independent LIVE read reconciled `IN_SYNC`
+for all four. Each current Git projection differs as `CHANGE_PROPOSED`; this is
+proposal change, not drift.
+
 The lifecycle contract is:
 
 ```text

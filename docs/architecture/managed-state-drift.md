@@ -107,5 +107,8 @@ for all four before the complete directory is atomically promoted. Failure
 before promotion removes only the run-owned staging tree and never creates the
 final store. An existing final store is never overwritten or reset.
 
-The real adoption and its exact evidence are recorded separately in the
+The B5-2 run has now initialized exactly four generation-one D0 chains. Its
+second independent observation reconciled `IN_SYNC` for all four; comparison
+with current Git D1 returned `CHANGE_PROPOSED` for all four. The exact immutable
+identities and digests are in the
 [B5-2 acceptance record](../acceptance/managed-state-initial-live-adoption-detour-b5-2.md).

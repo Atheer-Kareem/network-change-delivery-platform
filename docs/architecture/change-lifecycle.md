@@ -10,6 +10,9 @@ D0-versus-O drift from D0-versus-D1 proposal change, and requires O' to equal D1
 before a future accepted-state advance. B5-2 adds the commit-bound, two-pass,
 continuity-gated one-shot initializer for the first real D0; it does not add
 execution authority. See [managed state and drift](managed-state-drift.md).
+The accepted run initialized four independent generation-one chains and proved
+fresh O equals D0 for each; current Git D1 remains a four-vertical proposed
+change.
 
 During Detour B3, the disposable CML step and complete protected-delivery group
 are temporarily commented out together. The lifecycle below remains the

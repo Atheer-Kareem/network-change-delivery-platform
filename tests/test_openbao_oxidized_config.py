@@ -62,9 +62,11 @@ def test_configures_exact_read_only_approle() -> None:
     ).configure()
     assert "private-role-id" not in repr(bootstrap)
     assert "private-secret-id" not in repr(bootstrap)
-    assert OXIDIZED_POLICY.count("path ") == 2
+    assert OXIDIZED_POLICY.count("path ") == 4
     assert "devices/1/ssh" in OXIDIZED_POLICY
     assert "devices/2/ssh" in OXIDIZED_POLICY
+    assert "devices/8/ssh" in OXIDIZED_POLICY
+    assert "devices/9/ssh" in OXIDIZED_POLICY
     assert "devices/3" not in OXIDIZED_POLICY
     assert "*" not in OXIDIZED_POLICY
     assert 'capabilities = ["read"]' in OXIDIZED_POLICY

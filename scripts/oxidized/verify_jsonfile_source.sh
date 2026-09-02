@@ -90,11 +90,11 @@ while [ "${attempt}" -lt 30 ]; do
 done
 [ -n "${response}" ] || exit 1
 printf '%s' "${response}" | jq -e '
-  length == 2
-  and ([.[].name] | sort) == ["netbox-device-1", "netbox-device-2"]
-  and ([.[].model] | sort) == ["IOS", "JunOS"]
+  length == 4
+  and ([.[].name] | sort) == ["netbox-device-1", "netbox-device-2", "netbox-device-8", "netbox-device-9"]
+  and ([.[].model] | sort) == ["IOS", "IOS", "IOS", "JunOS"]
   and all(.[]; .status == "never" and .last == null)
   and all(.[]; (has("config") or has("diff")) | not)
 ' >/dev/null
 [ -z "$(find "${fixture}/configs" -type f -print -quit)" ] || exit 1
-echo "Oxidized JSONFile compatibility: PASS (2 nodes, status never)"
+echo "Oxidized JSONFile compatibility: PASS (4 nodes, status never)"

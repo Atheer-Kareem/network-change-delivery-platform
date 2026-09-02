@@ -27,7 +27,14 @@ from network_change_delivery.oxidized_private_paths import (
     validate_private_file,
 )
 
-EXPECTED_NODES = frozenset({"netbox-device-1", "netbox-device-2"})
+EXPECTED_NODES = frozenset(
+    {
+        "netbox-device-1",
+        "netbox-device-2",
+        "netbox-device-8",
+        "netbox-device-9",
+    }
+)
 CONTROL_GROUP = "managed"
 API_MAX_BYTES = 64 * 1024
 HTTP_TIMEOUT = 3.0
@@ -50,12 +57,20 @@ class CollectionOutcome(StrEnum):
 
 class CollectionReady(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     refreshed_at: datetime
     expires_at: datetime
-    nodes: tuple[Literal["netbox-device-1", "netbox-device-2"], ...]
+    nodes: tuple[
+        Literal[
+            "netbox-device-1",
+            "netbox-device-2",
+            "netbox-device-8",
+            "netbox-device-9",
+        ],
+        ...,
+    ]
     container_id: str = Field(pattern=r"^[0-9a-f]{64}$")
-    service_contract: Literal["10C-6"] = "10C-6"
+    service_contract: Literal["configuration-collection"] = "configuration-collection"
     host_trust_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @field_validator("refreshed_at", "expires_at")
@@ -157,7 +172,7 @@ def read_collection_ready(
         marker.expires_at <= current
         or marker.refreshed_at > current
         or set(marker.nodes) != EXPECTED_NODES
-        or len(marker.nodes) != 2
+        or len(marker.nodes) != 4
         or marker.container_id != container_id
         or marker.host_trust_sha256 != trust.known_hosts_sha256
     ):
@@ -199,7 +214,7 @@ class OxidizedController:
             raise OxidizedControlError("Oxidized node status unavailable") from None
         mapped = {node.name: node for node in nodes}
         if (
-            len(nodes) != 2
+            len(nodes) != 4
             or set(mapped) != EXPECTED_NODES
             or any(node.group != CONTROL_GROUP for node in nodes)
         ):

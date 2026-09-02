@@ -20,28 +20,26 @@ from network_change_delivery.oxidized_host_trust import (
     parse_known_hosts,
     publish_host_trust,
 )
+from network_change_delivery.profiled_live_cml import (
+    ACCESS_NODE_ID,
+    CORE_NODE_ID,
+    JUNOS_NODE_ID,
+    LIVE_LAB_ID,
+    TRANSIT_NODE_ID,
+    ProfiledLiveCmlOperator,
+)
 
 SSH_KEYSCAN = Path("/usr/bin/ssh-keyscan")
 SSH_KEYGEN = Path("/usr/bin/ssh-keygen")
-LIVE_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
+LIVE_LAB = LIVE_LAB_ID
 LIVE_TITLE = "NCDP Live"
-EXPECTED = {
-    "netbox-device-1": {
-        "stable_name": "core-02",
-        "cml_label": "cat8000v-0",
-        "ip": "192.168.4.14",
-        "node_definition": "cat8000v",
-        "image": "cat8000v-17-18-02",
-    },
-    "netbox-device-2": {
-        "stable_name": "edge-junos-01",
-        "cml_label": "vjunos-router-0",
-        "ip": "192.168.4.20",
-        "node_definition": "vjunos-router",
-        "image": "vjunos-router-23-2r1-15",
-    },
-}
-ALGORITHM_PRIORITY = ("ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa")
+ALGORITHM_PRIORITY = (
+    "ssh-ed25519",
+    "ecdsa-sha2-nistp256",
+    "ecdsa-sha2-nistp384",
+    "ecdsa-sha2-nistp521",
+    "ssh-rsa",
+)
 
 
 class EnrollmentError(ValueError):
@@ -120,44 +118,16 @@ def _configuration(client: httpx.Client, lab_id: str, node_id: str) -> str:
     raise EnrollmentError("CML stored Day-0 material unavailable")
 
 
-def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]) -> None:
-    lab_ids = _get(client, "/api/v0/labs")
-    if not isinstance(lab_ids, list) or lab_id not in lab_ids:
+def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]):
+    if lab_id != LIVE_LAB:
         raise EnrollmentError("CML enrollment lab identity rejected")
-    live_matches = []
-    for candidate in lab_ids:
-        lab = _get(client, f"/api/v0/labs/{candidate}")
-        title = lab.get("lab_title") or lab.get("title")
-        if title == LIVE_TITLE:
-            live_matches.append(candidate)
-    if live_matches != [lab_id] or lab_id != LIVE_LAB:
-        raise EnrollmentError("CML enrollment lab identity rejected")
-    actual_node_ids = _get(client, f"/api/v0/labs/{lab_id}/nodes")
-    for logical, expected in EXPECTED.items():
-        node_id = node_ids[logical]
-        if node_id not in actual_node_ids:
-            raise EnrollmentError("CML enrollment node identity rejected")
-        node = _get(client, f"/api/v0/labs/{lab_id}/nodes/{node_id}")
-        configuration = _configuration(client, lab_id, node_id)
-        image = node.get("image_definition") or node.get("image_definition_id")
-        checks = {
-            "label": node.get("label") == expected["cml_label"],
-            "node_definition": node.get("node_definition")
-            == expected["node_definition"],
-            "image": image == expected["image"],
-            "booted": node.get("state") == "BOOTED",
-            "configuration_type": isinstance(configuration, str),
-            "hostname_marker": isinstance(configuration, str)
-            and expected["stable_name"] in configuration,
-            "address_marker": isinstance(configuration, str)
-            and expected["ip"] in configuration,
-        }
-        failed = [name for name, accepted in checks.items() if not accepted]
-        if failed:
-            raise EnrollmentError(
-                f"CML enrollment node anchor rejected for {logical}: "
-                + ",".join(failed)
-            )
+    try:
+        return ProfiledLiveCmlOperator(client).anchor_profiled_live(
+            transit_node_id=node_ids["netbox-device-8"],
+            access_node_id=node_ids["netbox-device-9"],
+        )
+    except (KeyError, ValueError, RuntimeError):
+        raise EnrollmentError("CML enrollment anchor rejected") from None
 
 
 def _scan(host: str) -> str:
@@ -171,6 +141,8 @@ def _scan(host: str) -> str:
                 "10",
                 "-t",
                 "ed25519,ecdsa,rsa",
+                "-p",
+                "22",
                 host,
             ],
             stdin=subprocess.DEVNULL,
@@ -205,24 +177,24 @@ def _scan(host: str) -> str:
 def enroll(lab_id: str, node_ids: dict[str, str]) -> None:
     client = _client()
     try:
-        _anchor(client, lab_id, node_ids)
+        anchors = _anchor(client, lab_id, node_ids)
     finally:
         client.close()
     selected = {
-        logical: _scan(expected["ip"]) for logical, expected in EXPECTED.items()
+        anchor.logical_name: _scan(anchor.management_address) for anchor in anchors
     }
     known_hosts = ("\n".join(selected.values()) + "\n").encode()
     parsed = parse_known_hosts(known_hosts)
     nodes = tuple(
         HostTrustNode(
-            node=logical,
-            stable_name=expected["stable_name"],
-            cml_node_id=node_ids[logical],
-            management_ip=expected["ip"],
-            algorithm=parsed[expected["ip"]][0],
-            fingerprint=parsed[expected["ip"]][1],
+            node=f"netbox-device-{anchor.device_id}",
+            stable_name=anchor.logical_name,
+            cml_node_id=anchor.cml_node_id,
+            management_ip=anchor.management_address,
+            algorithm=parsed[anchor.management_address][0],
+            fingerprint=parsed[anchor.management_address][1],
         )
-        for logical, expected in EXPECTED.items()
+        for anchor in anchors
     )
     publish_host_trust(known_hosts, lab_id=lab_id, nodes=nodes, root=DEFAULT_TRUST_ROOT)
     for item in nodes:
@@ -235,8 +207,10 @@ def enroll(lab_id: str, node_ids: dict[str, str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lab-id", required=True)
-    parser.add_argument("--core-id", required=True)
-    parser.add_argument("--junos-id", required=True)
+    parser.add_argument("--core-id", default=CORE_NODE_ID)
+    parser.add_argument("--junos-id", default=JUNOS_NODE_ID)
+    parser.add_argument("--transit-id", default=TRANSIT_NODE_ID)
+    parser.add_argument("--access-id", default=ACCESS_NODE_ID)
     arguments = parser.parse_args()
     try:
         enroll(
@@ -244,6 +218,8 @@ def main() -> int:
             {
                 "netbox-device-1": arguments.core_id,
                 "netbox-device-2": arguments.junos_id,
+                "netbox-device-8": arguments.transit_id,
+                "netbox-device-9": arguments.access_id,
             },
         )
     except (EnrollmentError, OxidizedHostTrustError) as error:

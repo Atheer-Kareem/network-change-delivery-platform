@@ -36,8 +36,11 @@ def generation(root: Path):
     root.mkdir(mode=0o700, parents=True)
     key1, fingerprint1 = key(b"synthetic-cisco-public-key")
     key2, fingerprint2 = key(b"synthetic-junos-public-key")
+    key8, fingerprint8 = key(b"synthetic-iosv-public-key")
+    key9, fingerprint9 = key(b"synthetic-iosvl2-public-key")
     known_hosts = (
         f"192.168.4.14 ssh-rsa {key1}\n192.168.4.20 ssh-ed25519 {key2}\n"
+        f"192.168.4.16 ssh-ed25519 {key8}\n192.168.4.17 ssh-rsa {key9}\n"
     ).encode()
     nodes = (
         HostTrustNode(
@@ -47,6 +50,22 @@ def generation(root: Path):
             management_ip="192.168.4.14",
             algorithm="ssh-rsa",
             fingerprint=fingerprint1,
+        ),
+        HostTrustNode(
+            node="netbox-device-8",
+            stable_name="transit-ios-01",
+            cml_node_id="88888888-8888-8888-8888-888888888888",
+            management_ip="192.168.4.16",
+            algorithm="ssh-ed25519",
+            fingerprint=fingerprint8,
+        ),
+        HostTrustNode(
+            node="netbox-device-9",
+            stable_name="access-sw-01",
+            cml_node_id="99999999-9999-9999-9999-999999999999",
+            management_ip="192.168.4.17",
+            algorithm="ssh-rsa",
+            fingerprint=fingerprint9,
         ),
         HostTrustNode(
             node="netbox-device-2",
@@ -71,13 +90,16 @@ def publish(root: Path):
     )
 
 
-def test_exact_two_reviewed_hosts_are_accepted(tmp_path: Path) -> None:
+def test_exact_four_reviewed_hosts_are_accepted(tmp_path: Path) -> None:
     root = tmp_path / "private" / "ssh"
     metadata = publish(root)
     assert validate_host_trust(root) == metadata
+    assert metadata.schema_version == "2"
     assert {item.node for item in metadata.nodes} == {
         "netbox-device-1",
         "netbox-device-2",
+        "netbox-device-8",
+        "netbox-device-9",
     }
     assert not (root / AMBIGUITY_NAME).exists()
 
@@ -169,15 +191,14 @@ def test_cml_enrollment_is_anchored_before_fixed_keyscan() -> None:
         Path(__file__).parents[1] / "scripts/oxidized/enroll_cml_host_trust.py"
     ).read_text()
     assert source.index("_anchor(client, lab_id, node_ids)") < source.index(
-        "_scan(expected"
+        "_scan(anchor"
     )
     for contract in (
         'Path("/usr/bin/ssh-keyscan")',
         'Path("/usr/bin/ssh-keygen")',
-        "title == LIVE_TITLE",
+        "ProfiledLiveCmlOperator(client).anchor_profiled_live",
         "lab_id != LIVE_LAB",
-        'node.get("state") == "BOOTED"',
-        'LIVE_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"',
+        "LIVE_LAB = LIVE_LAB_ID",
     ):
         assert contract in source
     for forbidden in (

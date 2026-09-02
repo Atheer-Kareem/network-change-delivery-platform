@@ -30,6 +30,12 @@ OXIDIZED_POLICY = """path "ncdp/data/devices/1/ssh" {
 path "ncdp/data/devices/2/ssh" {
   capabilities = ["read"]
 }
+path "ncdp/data/devices/8/ssh" {
+  capabilities = ["read"]
+}
+path "ncdp/data/devices/9/ssh" {
+  capabilities = ["read"]
+}
 """
 OXIDIZED_ROLE = {
     "bind_secret_id": True,

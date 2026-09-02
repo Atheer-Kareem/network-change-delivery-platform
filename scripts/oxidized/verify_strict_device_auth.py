@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Authenticate to the two fresh devices with dedicated strict host trust only."""
+"""Authenticate the exact profiled fleet with dedicated strict host trust only."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from pathlib import Path
 
 import paramiko
 
-from network_change_delivery.inventory import NetBoxInventoryProvider
 from network_change_delivery.openbao_oxidized_bootstrap import OpenBaoOxidizedBootstrap
 from network_change_delivery.oxidized_host_trust import (
     DEFAULT_TRUST_ROOT,
     validate_host_trust,
 )
+from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.secrets import OpenBaoSecretProvider
 
 STATE_ROOT = Path("/Users/netdevops/.local/state/ncdp/oxidized")
@@ -43,7 +43,7 @@ def _private(path: Path) -> str:
 def main() -> int:
     try:
         trust = validate_host_trust(DEFAULT_TRUST_ROOT)
-        inventory = NetBoxInventoryProvider(
+        inventory = NetBoxProfileInventoryProvider(
             "http://127.0.0.1:8000", _private(CONFIG_ROOT / "netbox-token")
         )
         bootstrap = OpenBaoOxidizedBootstrap("http://127.0.0.1:8200")

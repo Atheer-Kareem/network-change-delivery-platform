@@ -87,8 +87,8 @@ for any corrected attempt. No fleet-wide atomicity is claimed.
 | Inventory | NetBox, consumed read-only by automation |
 | Credentials | OpenBao with bounded workload/device authority |
 | CI/CD | Buildkite validation and PR assurance; CML/protected path paused |
-| Evidence | AuditStore + exact-two Oxidized actual-state chronology |
-| Observability | Exact-two Prometheus + Blackbox + Grafana + Alertmanager |
+| Evidence | AuditStore + exact-four Oxidized actual-state chronology |
+| Observability | Exact-four Prometheus + Blackbox + Grafana + Alertmanager |
 | Persistent SNMP polling | Deferred |
 | gNMI/OpenConfig | Deferred/skipped |
 

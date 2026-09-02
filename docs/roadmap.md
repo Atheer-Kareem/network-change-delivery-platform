@@ -218,6 +218,15 @@ acceptance records.
       and synthetic SNMPv3 validation as active hard quality gates; active
       runtime filenames use semantic management-reachability names while
       historical 11A/11B/11C acceptance records remain unchanged. Other legacy
+      persistent Oxidized configuration collection/chronology is now the third
+      retained consumer migrated to profiled exact-four: explicit profile
+      capability, SSH/22 collection, exact-four CML-anchored trust, and exact
+      four read-only OpenBao paths. Its private Git history remains additive and
+      preserved. Successful IOSv/IOSvL2 collection proves passive capability
+      only and does not authorize writes. Live SNMP remains the next separate
+      exact-two migration target; legacy planning/write/protected-delivery
+      consumers remain exact-two, staging remains paused, and protected delivery
+      remains paused. Other legacy
       consumers remain unchanged.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

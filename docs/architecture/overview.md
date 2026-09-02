@@ -135,6 +135,12 @@ Oxidized Cisco/Junos configuration chronology, including accepted protected
 PRE/write/POST correlation with causality explicitly not proven. See
 [Audit and configuration history](audit-and-configuration-history.md).
 
+Persistent Oxidized collection now admits the profiled exact-four fleet through
+explicit profile capability and SSH/22 transport (including Junos); its
+read-only OpenBao authority, CML-anchored trust, and readiness are exact-four,
+while the private Git chronology remains preserved and additive. This passive
+capability does not authorize configuration writes.
+
 Increments 11A and 11B provide the accepted continuous-observability plane:
 credential-free management-service probes, persistent metrics, an immutable
 Grafana dashboard, and advisory operator alerts. See

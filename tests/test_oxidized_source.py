@@ -4,11 +4,12 @@ import json
 import os
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from network_change_delivery.architecture_contracts import AutomationProfileID
 from network_change_delivery.inventory import InventoryError
-from network_change_delivery.models import InventoryDevice
 from network_change_delivery.oxidized_source import (
     OxidizedSourceError,
     OxidizedSourcePublicationAmbiguousError,
@@ -21,21 +22,25 @@ from network_change_delivery.secrets import (
 )
 
 
-def device(device_id: int, platform: str, *, port: int) -> InventoryDevice:
-    return InventoryDevice(
-        name=f"mutable-{device_id}",
-        host=f"192.0.2.{device_id}",
-        port=port,
-        platform=platform,
-        expected_hostname=f"mutable-{device_id}",
-        inventory_source="netbox",
-        inventory_object_id=f"netbox:dcim.device:{device_id}",
-    )
+class Device:
+    def __init__(self, device_id: int, profile: AutomationProfileID, host: str):
+        self.device_identity = f"netbox:dcim.device:{device_id}"
+        self.host = host
+        self.automation_profile_id = profile
+
+    def live_read_only_target(self):
+        return SimpleNamespace(host=self.host)
+
+
+def device(device_id: int, profile: AutomationProfileID, *, host: str) -> Device:
+    return Device(device_id, profile, host)
 
 
 DEVICES = (
-    device(1, "cisco_iosxe", port=22),
-    device(2, "junos", port=830),
+    device(1, AutomationProfileID.CAT8000V_IOSXE, host="192.0.2.1"),
+    device(2, AutomationProfileID.VJUNOS_ROUTER, host="192.0.2.2"),
+    device(8, AutomationProfileID.IOSV_159_3_M12, host="192.0.2.8"),
+    device(9, AutomationProfileID.IOSVL2_2020, host="192.0.2.9"),
 )
 
 
@@ -44,10 +49,10 @@ class Inventory:
         self.devices = devices
         self.error = error
 
-    def resolve_managed_devices(self):
+    def resolve_profiled_population(self):
         if self.error:
             raise self.error
-        return self.devices
+        return SimpleNamespace(devices=self.devices)
 
 
 class Secrets:
@@ -55,13 +60,13 @@ class Secrets:
         self.fail_id = fail_id
         self.source = source
 
-    def reference(self, target: InventoryDevice) -> CredentialReference:
-        device_id = int((target.inventory_object_id or "").rsplit(":", 1)[1])
+    def reference(self, target: Device) -> CredentialReference:
+        device_id = int(target.device_identity.rsplit(":", 1)[1])
         reference = f"openbao:kv-v2:ncdp/devices/{device_id}/ssh"
         return CredentialReference(self.source, reference)  # type: ignore[arg-type]
 
-    def load(self, target: InventoryDevice) -> DeviceCredentials:
-        device_id = int((target.inventory_object_id or "").rsplit(":", 1)[1])
+    def load(self, target: Device) -> DeviceCredentials:
+        device_id = int(target.device_identity.rsplit(":", 1)[1])
         if device_id == self.fail_id:
             raise SecretError("bounded failure")
         return DeviceCredentials(
@@ -75,15 +80,14 @@ def test_exact_population_maps_deterministically_and_forces_ssh_22(
     root = tmp_path / "oxidized"
     result = materialize_oxidized_source(Inventory(DEVICES[::-1]), Secrets(), root)
     payload = json.loads(result.path.read_text())
-    assert result.identities == (
-        "netbox:dcim.device:1",
-        "netbox:dcim.device:2",
-    )
-    assert result.node_names == ("netbox-device-1", "netbox-device-2")
+    assert result.identities == tuple(f"netbox:dcim.device:{i}" for i in (1, 2, 8, 9))
+    assert result.node_names == tuple(f"netbox-device-{i}" for i in (1, 2, 8, 9))
     assert result.changed is True
     assert [(node["name"], node["model"], node["ssh_port"]) for node in payload] == [
         ("netbox-device-1", "ios", 22),
         ("netbox-device-2", "junos", 22),
+        ("netbox-device-8", "ios", 22),
+        ("netbox-device-9", "ios", 22),
     ]
     assert all(node["group"] == "managed" for node in payload)
     assert all(
@@ -108,7 +112,15 @@ def test_identical_source_is_not_republished(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "population",
-    [(), (DEVICES[0],), (DEVICES[1],), (*DEVICES, device(3, "junos", port=830))],
+    [
+        (),
+        (DEVICES[0],),
+        (DEVICES[1],),
+        (
+            *DEVICES,
+            device(3, AutomationProfileID.VJUNOS_ROUTER, host="192.0.2.3"),
+        ),
+    ],
 )
 def test_population_must_be_exact(population) -> None:
     with pytest.raises(OxidizedSourceError, match="population"):
@@ -130,10 +142,10 @@ def test_non_openbao_reference_is_rejected(tmp_path: Path) -> None:
 
 
 def test_invalid_ipv4_is_rejected_before_publication(tmp_path: Path) -> None:
-    invalid = DEVICES[0].model_copy(update={"host": "not-an-ipv4-address"})
+    invalid = Device(1, AutomationProfileID.CAT8000V_IOSXE, "not-an-ipv4-address")
     with pytest.raises(OxidizedSourceError, match="credential loading"):
         materialize_oxidized_source(
-            Inventory((invalid, DEVICES[1])), Secrets(), tmp_path / "oxidized"
+            Inventory((invalid, *DEVICES[1:])), Secrets(), tmp_path / "oxidized"
         )
     assert not (tmp_path / "oxidized").exists()
 

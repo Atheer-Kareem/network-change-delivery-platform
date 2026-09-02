@@ -45,14 +45,15 @@ Terraform staging contract.
 
 ## Exact Git-owned population
 
-Git freezes behavior admission without inventing future NetBox object IDs:
+Git freezes the accepted profile behavior and the exact already-admitted NetBox
+stable device identities; NetBox remains the authority that owns those IDs:
 
-| Stable name | Role | Platform slug | Device-type slug | NOS | Automation profile | CML realization profile |
-|---|---|---|---|---|---|---|
-| `core-02` | `core` | `cisco-ios-xe` | `c8000v` | `iosxe` | `cat8000v_iosxe` | `cml_cat8000v_17_18_02` |
-| `edge-junos-01` | `edge` | `juniper-junos` | `vjunos-router-lab` | `junos` | `vjunos_router` | `cml_vjunos_router_23_2r1_15` |
-| `transit-ios-01` | `transit` | `cisco-ios` | `iosv-159-3-m12` | `ios` | `iosv_159_3_m12` | `cml_iosv_159_3_m12` |
-| `access-sw-01` | `access` | `cisco-ios` | `iosvl2-2020` | `ios` | `iosvl2_2020` | `cml_iosvl2_2020` |
+| Stable identity | Stable name | Role | Platform slug | Device-type slug | NOS | Automation profile | CML realization profile |
+|---|---|---|---|---|---|---|---|
+| `netbox:dcim.device:1` | `core-02` | `core` | `cisco-ios-xe` | `c8000v` | `iosxe` | `cat8000v_iosxe` | `cml_cat8000v_17_18_02` |
+| `netbox:dcim.device:2` | `edge-junos-01` | `edge` | `juniper-junos` | `vjunos-router-lab` | `junos` | `vjunos_router` | `cml_vjunos_router_23_2r1_15` |
+| `netbox:dcim.device:8` | `transit-ios-01` | `transit` | `cisco-ios` | `iosv-159-3-m12` | `ios` | `iosv_159_3_m12` | `cml_iosv_159_3_m12` |
+| `netbox:dcim.device:9` | `access-sw-01` | `access` | `cisco-ios` | `iosvl2-2020` | `ios` | `iosvl2_2020` | `cml_iosvl2_2020` |
 
 Role is independently resolved factual metadata and never selects behavior.
 The exact `(platform slug, device-type slug)` pair selects automation and CML
@@ -65,8 +66,8 @@ profiled tag, and returns an immutable tuple in the table order. Missing,
 extra, inactive, duplicated, mistagged, or mismatched members fail closed.
 Per-device profiled resolution uses the same tag and the same name-to-facts
 catalog check: a name outside the exact four, or an admitted name with mismatched
-role, platform, device type, NOS, automation profile, or CML profile, fails
-closed. It has no `ncdp-managed` fallback.
+stable identity, role, platform, device type, NOS, automation profile, or CML
+profile, fails closed. It has no `ncdp-managed` fallback.
 
 ## LIVE and STAGING projection
 
@@ -116,9 +117,10 @@ It contains no CML client or mutation method. Missing or extra members,
 duplicate identities, wrong profile pairs, cross-device management bindings,
 or STAGING endpoints fail validation. Management-service observability consumes
 the same profiled exact-four population for its target projection, deriving the
-service from each automation profile; its paused runtime still maintains a
-separate bounded readiness/admission artifact rather than using this model as
-that artifact directly.
+service from each automation profile; its separate bounded readiness/admission
+artifact does not use this model directly. The local runtime quality validation
+is active; this does not change the separate operator decision to keep
+disposable CML staging and protected delivery paused.
 
 ## CML-anchored host trust
 
@@ -337,6 +339,7 @@ Observability admits and projects the exact four-device persistent CML
 population, deriving each management service from its automation profile.
 Oxidized, SNMP, v1 fleet, and protected write authority remain exact-two.
 Automatic disposable CML and protected delivery remain paused, and the
-Terraform staging topology is unchanged. Observability runtime and synthetic
-SNMPv3 runtime checks are separately paused until explicit operator decisions
-restore them; the implementations remain intact.
+Terraform staging topology is unchanged. The operator has restored local
+observability runtime and synthetic SNMPv3 quality validation. The latter keeps
+its two-agent disposable fixture because it proves protocol behavior rather
+than the LIVE fleet; live SNMP remains a separate upcoming exact-four migration.

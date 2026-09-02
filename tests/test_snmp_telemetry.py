@@ -324,7 +324,10 @@ def test_generation_is_ordered_digest_bound_and_separate_from_11a() -> None:
         "exporter_image_id",
         "module_config_sha256",
     }
-    assert ObservabilityReady.model_fields["service_contract"].default == "11A"
+    assert (
+        ObservabilityReady.model_fields["service_contract"].default
+        == "management-service-reachability"
+    )
     with pytest.raises(ValidationError, match="digest rejected"):
         generation.model_copy(update={"digest": "sha256:" + "f" * 64}).model_validate(
             generation.model_copy(update={"digest": "sha256:" + "f" * 64})

@@ -3,7 +3,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 quality_image=${NCDP_QUALITY_IMAGE:?NCDP_QUALITY_IMAGE required}
-project="ncdp-observability-11b-test-${BUILDKITE_BUILD_NUMBER:-$$}"
+project="ncdp-observability-runtime-test-${BUILDKITE_BUILD_NUMBER:-$$}"
 network="${project}-telemetry"
 prometheus_image='prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0'
 blackbox_image='prom/blackbox-exporter:v0.27.0@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d'
@@ -453,4 +453,4 @@ history=$(curl --silent --fail --get --data-urlencode \
 jq -e '.data.result | length == 4 and all(.[].value[1]; tonumber > 0)' \
   >/dev/null <<<"${history}"
 
-echo "observability 11B synthetic runtime: PASS (exact ARM64 images, config/rules, five hardened services, Grafana, profile-derived TCP 22/830 targets, FIRING/RESOLVED delivery, persistence, retirement)"
+echo "observability runtime validation: PASS (exact ARM64 images, config/rules, five hardened services, Grafana, profile-derived TCP 22/830 targets, FIRING/RESOLVED delivery, persistence, retirement)"

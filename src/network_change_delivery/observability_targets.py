@@ -30,14 +30,12 @@ from network_change_delivery.observability_private_paths import (
     validate_observability_root,
     validate_private_file,
 )
-from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
-
-EXPECTED_IDENTITIES = (
-    "netbox:dcim.device:1",
-    "netbox:dcim.device:2",
-    "netbox:dcim.device:8",
-    "netbox:dcim.device:9",
+from network_change_delivery.profile_inventory import (
+    PROFILED_POPULATION_IDENTITIES,
+    NetBoxProfileInventoryProvider,
+    admit_profiled_subject,
 )
+
 MAX_PUBLICATION_BYTES = 64 * 1024
 READINESS_TTL = timedelta(minutes=15)
 
@@ -84,6 +82,16 @@ class ObservabilityTarget(BaseModel):
             ipaddress.IPv4Address(self.host)
         except ValueError:
             raise ValueError("observability target address rejected") from None
+        try:
+            admit_profiled_subject(
+                device_identity=self.inventory_object_id,
+                logical_name=self.device_name,
+                platform_slug=self.platform_slug,
+                network_os=self.network_os,
+                automation_profile_id=self.automation_profile_id,
+            )
+        except ValueError:
+            raise ValueError("observability target subject rejected") from None
         profile = get_automation_profile(self.automation_profile_id)
         if (
             profile.network_os is not self.network_os
@@ -147,7 +155,7 @@ class TargetGeneration(BaseModel):
                 or self.realization_lab_id is None
                 or self.realization_digest is None
                 or tuple(item.inventory_object_id for item in self.targets)
-                != EXPECTED_IDENTITIES
+                != PROFILED_POPULATION_IDENTITIES
                 or self.failure_classification is not None
             ):
                 raise ValueError("active target generation rejected")
@@ -182,7 +190,9 @@ class ObservabilityReady(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal["2"] = "2"
-    service_contract: Literal["11A"] = "11A"
+    service_contract: Literal["management-service-reachability"] = (
+        "management-service-reachability"
+    )
     refreshed_at: datetime
     expires_at: datetime
     target_generation_digest: Sha256
@@ -207,7 +217,7 @@ class ObservabilityReady(BaseModel):
             self.refreshed_at.tzinfo is None
             or self.refreshed_at.utcoffset() is None
             or self.expires_at <= self.refreshed_at
-            or self.targets != EXPECTED_IDENTITIES
+            or self.targets != PROFILED_POPULATION_IDENTITIES
         ):
             raise ValueError("observability readiness rejected")
         return self
@@ -224,7 +234,10 @@ def targets_from_inventory(
     """Project exact profiled LIVE management endpoints into reachability targets."""
     population = inventory.resolve_profiled_population()
     devices = population.devices
-    if tuple(item.inventory_object_id for item in devices) != EXPECTED_IDENTITIES:
+    if (
+        tuple(item.inventory_object_id for item in devices)
+        != PROFILED_POPULATION_IDENTITIES
+    ):
         raise ObservabilityTargetError("observability inventory population rejected")
     targets: list[ObservabilityTarget] = []
     for device in devices:

@@ -85,6 +85,13 @@ PROFILE_CASES = (
     ),
 )
 
+PROFILED_DEVICE_IDS = {
+    "core-02": 1,
+    "edge-junos-01": 2,
+    "transit-ios-01": 8,
+    "access-sw-01": 9,
+}
+
 
 def page(results: list[object], *, count: int | None = None, next_: object = None):
     return {
@@ -106,7 +113,7 @@ def device_payload(
     device_type_model: str = "C8000V",
     role_slug: str = "core",
     name: str = "core-02",
-    device_id: int = 4,
+    device_id: int = 1,
     **changes: object,
 ) -> dict[str, object]:
     value: dict[str, object] = {
@@ -131,7 +138,7 @@ def interface_payload(
     interface_id: int,
     name: str,
     *,
-    device_id: int = 4,
+    device_id: int = 1,
     device_name: str = "core-02",
     tags: list[dict[str, str]] | None = None,
 ) -> dict[str, object]:
@@ -150,7 +157,7 @@ def ip_payload(
     *,
     interface_id: int = 50,
     interface_name: str = "Gi0/0",
-    device_id: int = 4,
+    device_id: int = 1,
     device_name: str = "core-02",
     status: str = "active",
     extra_tags: tuple[str, ...] = (),
@@ -181,6 +188,7 @@ def fixture_payloads(
     interfaces: list[dict[str, object]] | None = None,
     ips: list[dict[str, object]] | None = None,
 ) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
+    device_id = PROFILED_DEVICE_IDS.get(name, 99)
     device = device_payload(
         platform_slug=platform_slug,
         platform_name=platform_name,
@@ -188,18 +196,21 @@ def fixture_payloads(
         device_type_model=device_type_model,
         role_slug=role_slug,
         name=name,
+        device_id=device_id,
         **(device_changes or {}),
     )
     resolved_interfaces = interfaces or [
         interface_payload(
             50,
             "Gi0/0",
+            device_id=device_id,
             device_name=name,
             tags=[tag(MANAGEMENT_ATTACHMENT_TAG), tag(PROTECTED_INTERFACE_TAG)],
         ),
         interface_payload(
             51,
             "Gi0/1",
+            device_id=device_id,
             device_name=name,
             tags=[tag(PROTECTED_INTERFACE_TAG)],
         ),
@@ -209,12 +220,14 @@ def fixture_payloads(
             40,
             "192.0.2.14/24",
             MANAGEMENT_LIVE_TAG,
+            device_id=device_id,
             device_name=name,
         ),
         ip_payload(
             41,
             "192.0.2.114/24",
             MANAGEMENT_STAGING_TAG,
+            device_id=device_id,
             device_name=name,
         ),
     ]
@@ -625,8 +638,8 @@ def test_provider_issues_get_only_with_exact_device_filters_and_no_redirects(
     assert [request.method for request in requests] == ["GET", "GET", "GET"]
     assert requests[0].url.params["name"] == "core-02"
     assert requests[0].url.params["tag"] == PROFILED_INVENTORY_TAG
-    assert requests[1].url.params["device_id"] == "4"
-    assert requests[2].url.params["device_id"] == "4"
+    assert requests[1].url.params["device_id"] == "1"
+    assert requests[2].url.params["device_id"] == "1"
     assert options["follow_redirects"] is False
     assert options["trust_env"] is False
     assert options["verify"] is True

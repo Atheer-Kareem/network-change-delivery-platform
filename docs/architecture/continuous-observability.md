@@ -100,10 +100,16 @@ Successful final 11A acceptance does not retire these targets or stop
 
 Management-service observability is migrated to the profiled exact-four fleet;
 its target generation, CML realization admission, and readiness artifact bind
-all four managed identities. The observability runtime remains paused by
-operator decision: this architectural migration neither starts services nor
-publishes a new live readiness record. Exact-two remains elsewhere only for
-legacy consumers that have not yet migrated. That coexistence is transitional:
+all four managed identities. The operator has restored management-service
+observability runtime validation as a hard quality gate; it validates an
+isolated local runtime and does not publish a live readiness record. The
+operator has also restored synthetic SNMPv3 validation as a hard quality gate.
+Its two-agent fixture is the minimum disposable protocol-validation topology,
+not evidence that live SNMP has completed its profiled exact-four migration.
+Live SNMP remains a separate migration whose final target is all four profiled
+devices. Disposable CML staging and protected delivery remain paused. Exact-two
+remains elsewhere only for legacy consumers that have not yet migrated. That
+coexistence is transitional:
 the target architecture is one profiled exact-four managed fleet with explicit
 profile/capability gating, and `ncdp-managed` is removed only after no
 legitimate runtime consumer remains.
@@ -138,8 +144,10 @@ device bridge gives only the exporter egress toward UDP/161 targets; disposable
 agents join that bridge during synthetic validation, while Prometheus and the
 other five services do not. Ordinary base Compose invocation, installation,
 update, LaunchAgent reconciliation, and live Prometheus configuration remain
-five-service and SNMP-free. The overlay must not make the 11A target generation
-or `ObservabilityReady(service_contract="11A")` depend on SNMP health.
+five-service and SNMP-free. The overlay must not make the management-service
+target generation or
+`ObservabilityReady(service_contract="management-service-reachability")`
+depend on SNMP health.
 
 The exporter is a protocol translator, not inventory authority. NetBox
 continues to own stable device identity and stable numeric interface object

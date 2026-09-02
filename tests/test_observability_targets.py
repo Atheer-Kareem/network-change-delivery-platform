@@ -17,8 +17,8 @@ from network_change_delivery.observability_private_paths import (
     validate_private_file,
 )
 from network_change_delivery.observability_targets import (
-    EXPECTED_IDENTITIES,
     ManagementService,
+    ObservabilityTarget,
     ObservabilityTargetError,
     TargetFailureClassification,
     TargetGenerationState,
@@ -28,6 +28,7 @@ from network_change_delivery.observability_targets import (
     render_file_sd,
     targets_from_inventory,
 )
+from network_change_delivery.profile_inventory import PROFILED_POPULATION_IDENTITIES
 
 
 def device(
@@ -117,7 +118,10 @@ def test_profiled_inventory_derives_all_management_services() -> None:
         (22, ManagementService.SSH),
         (22, ManagementService.SSH),
     ]
-    assert tuple(item.inventory_object_id for item in targets) == EXPECTED_IDENTITIES
+    assert (
+        tuple(item.inventory_object_id for item in targets)
+        == PROFILED_POPULATION_IDENTITIES
+    )
 
 
 @pytest.mark.parametrize(
@@ -141,6 +145,22 @@ def test_identity_and_platform_contract_fail_closed(changed) -> None:
     candidate.live_read_only_target = DEVICES[0].live_read_only_target
     with pytest.raises((ObservabilityTargetError, ValueError)):
         targets_from_inventory(Inventory((candidate, *DEVICES[1:])))
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"device_name": "edge-junos-01"},
+        {"platform_slug": "juniper-junos"},
+        {"network_os": NetworkOS.JUNOS},
+        {"automation_profile_id": AutomationProfileID.VJUNOS_ROUTER},
+        {"management_service": ManagementService.NETCONF, "port": 830},
+    ],
+)
+def test_target_rejects_mismatched_profiled_subject_semantics(changed) -> None:
+    target = targets_from_inventory(Inventory())[0]
+    with pytest.raises(ValueError):
+        ObservabilityTarget.model_validate({**target.model_dump(), **changed})
 
 
 def test_file_sd_keeps_route_private_and_identity_stable() -> None:

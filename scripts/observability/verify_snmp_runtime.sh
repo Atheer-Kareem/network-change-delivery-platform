@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 quality_image=${NCDP_QUALITY_IMAGE:?NCDP_QUALITY_IMAGE required}
 run_id=${BUILDKITE_BUILD_NUMBER:-$$}
-project="ncdp-observability-11c2-test-${run_id}"
+project="ncdp-snmpv3-synthetic-test-${run_id}"
 telemetry_network="${project}-telemetry"
 snmp_control_network="${project}-snmp-control"
 snmp_device_network="${project}-snmp-device"
@@ -23,6 +23,9 @@ module_root=${test_root}/modules
 auth_root=${test_root}/auth
 agent_1_root=${test_root}/agent-1
 agent_2_root=${test_root}/agent-2
+# These two agents are a minimum disposable SNMPv3 protocol fixture. They do
+# not select, model, or limit the managed fleet; live SNMP migration remains a
+# separate profiled exact-four concern.
 evidence_root=${test_root}/evidence
 prometheus_port=$((29090 + run_id % 100))
 grafana_port=$((23000 + run_id % 100))
@@ -160,7 +163,7 @@ write_auth_b() {
 }
 
 # Preserve the accepted five-service runtime through its existing unchanged gate.
-if [ "${NCDP_SKIP_11B_REGRESSION:-0}" != 1 ]; then
+if [ "${NCDP_SKIP_OBSERVABILITY_REGRESSION:-0}" != 1 ]; then
   NCDP_QUALITY_IMAGE="${quality_image}" "${root}/scripts/observability/verify_runtime.sh"
 fi
 
@@ -575,4 +578,4 @@ fi
 rm -rf "${test_root}"
 [ ! -e "${test_root}" ]
 trap - EXIT
-echo "observability 11C-2 synthetic runtime: PASS (split control/device networks, SNMPv3 authPriv SHA256/AES128, directory rotation/reload, normalized Prometheus telemetry, secret scan, 11A/11B preserved)"
+echo "synthetic SNMPv3 validation: PASS (two-agent protocol fixture, split control/device networks, authPriv SHA256/AES128, directory rotation/reload, normalized Prometheus telemetry, secret scan, management-service runtime preserved)"

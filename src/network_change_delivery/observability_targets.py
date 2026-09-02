@@ -13,32 +13,29 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from network_change_delivery.architecture_contracts import (
+    AutomationProfileID,
+    ManagementService,
+    NetworkOS,
+    get_automation_profile,
+)
 from network_change_delivery.audit import (
     NetBoxDeviceIdentity,
     Sha256,
     canonical_json_bytes,
 )
-from network_change_delivery.inventory import ManagedInventoryProvider
 from network_change_delivery.observability_private_paths import (
     ObservabilityPrivatePathError,
     ensure_private_tree,
     validate_observability_root,
     validate_private_file,
 )
-
-EXPECTED_IDENTITIES = (
-    "netbox:dcim.device:1",
-    "netbox:dcim.device:2",
+from network_change_delivery.profile_inventory import (
+    PROFILED_POPULATION_IDENTITIES,
+    NetBoxProfileInventoryProvider,
+    admit_profiled_subject,
 )
-EXPECTED_NAMES = {
-    "netbox:dcim.device:1": "core-02",
-    "netbox:dcim.device:2": "edge-junos-01",
-}
-EXPECTED_PLATFORMS = {
-    "netbox:dcim.device:1": "cisco_iosxe",
-    "netbox:dcim.device:2": "junos",
-}
-MANAGEMENT_SERVICES = {"cisco_iosxe": "ssh", "junos": "netconf"}
+
 MAX_PUBLICATION_BYTES = 64 * 1024
 READINESS_TTL = timedelta(minutes=15)
 
@@ -63,11 +60,6 @@ class TargetFailureClassification(StrEnum):
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
-class ManagementService(StrEnum):
-    SSH = "ssh"
-    NETCONF = "netconf"
-
-
 class ObservabilityTarget(BaseModel):
     """One stable NetBox identity and its private management-service route."""
 
@@ -75,7 +67,9 @@ class ObservabilityTarget(BaseModel):
 
     inventory_object_id: NetBoxDeviceIdentity
     device_name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
-    platform: Literal["cisco_iosxe", "junos"]
+    platform_slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    network_os: NetworkOS
+    automation_profile_id: AutomationProfileID
     host: str
     port: int = Field(ge=1, le=65535)
     management_service: ManagementService
@@ -88,8 +82,27 @@ class ObservabilityTarget(BaseModel):
             ipaddress.IPv4Address(self.host)
         except ValueError:
             raise ValueError("observability target address rejected") from None
-        expected_service = MANAGEMENT_SERVICES[self.platform]
-        if self.management_service.value != expected_service:
+        try:
+            admit_profiled_subject(
+                device_identity=self.inventory_object_id,
+                logical_name=self.device_name,
+                platform_slug=self.platform_slug,
+                network_os=self.network_os,
+                automation_profile_id=self.automation_profile_id,
+            )
+        except ValueError:
+            raise ValueError("observability target subject rejected") from None
+        profile = get_automation_profile(self.automation_profile_id)
+        if (
+            profile.network_os is not self.network_os
+            or len(profile.readiness_services) != 1
+        ):
+            raise ValueError("observability management service rejected")
+        expected = profile.readiness_services[0]
+        if (
+            self.management_service is not expected.service
+            or self.port != expected.port
+        ):
             raise ValueError("observability management service rejected")
         return self
 
@@ -98,7 +111,9 @@ class ObservabilityTarget(BaseModel):
         return {
             "instance": self.inventory_object_id,
             "device_name": self.device_name,
-            "platform": self.platform,
+            "platform": self.platform_slug,
+            "network_os": self.network_os.value,
+            "automation_profile": self.automation_profile_id.value,
             "management_service": self.management_service.value,
             "telemetry_source": self.telemetry_source,
             "environment": self.environment,
@@ -115,7 +130,7 @@ class TargetGeneration(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     state: TargetGenerationState
     generated_at: datetime
     expires_at: datetime | None = None
@@ -140,7 +155,7 @@ class TargetGeneration(BaseModel):
                 or self.realization_lab_id is None
                 or self.realization_digest is None
                 or tuple(item.inventory_object_id for item in self.targets)
-                != EXPECTED_IDENTITIES
+                != PROFILED_POPULATION_IDENTITIES
                 or self.failure_classification is not None
             ):
                 raise ValueError("active target generation rejected")
@@ -174,8 +189,10 @@ class ObservabilityReady(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1"] = "1"
-    service_contract: Literal["11A"] = "11A"
+    schema_version: Literal["2"] = "2"
+    service_contract: Literal["management-service-reachability"] = (
+        "management-service-reachability"
+    )
     refreshed_at: datetime
     expires_at: datetime
     target_generation_digest: Sha256
@@ -184,7 +201,12 @@ class ObservabilityReady(BaseModel):
         pattern=r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
     )
     realization_digest: Sha256
-    targets: tuple[NetBoxDeviceIdentity, NetBoxDeviceIdentity]
+    targets: tuple[
+        NetBoxDeviceIdentity,
+        NetBoxDeviceIdentity,
+        NetBoxDeviceIdentity,
+        NetBoxDeviceIdentity,
+    ]
     prometheus_container_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     blackbox_container_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
@@ -195,41 +217,50 @@ class ObservabilityReady(BaseModel):
             self.refreshed_at.tzinfo is None
             or self.refreshed_at.utcoffset() is None
             or self.expires_at <= self.refreshed_at
-            or self.targets != EXPECTED_IDENTITIES
+            or self.targets != PROFILED_POPULATION_IDENTITIES
         ):
             raise ValueError("observability readiness rejected")
         return self
 
 
 def targets_from_inventory(
-    inventory: ManagedInventoryProvider,
-) -> tuple[ObservabilityTarget, ObservabilityTarget]:
-    """Resolve the exact managed population using the existing inventory model."""
-    devices = inventory.resolve_managed_devices()
-    if tuple(item.inventory_object_id for item in devices) != EXPECTED_IDENTITIES:
+    inventory: NetBoxProfileInventoryProvider,
+) -> tuple[
+    ObservabilityTarget,
+    ObservabilityTarget,
+    ObservabilityTarget,
+    ObservabilityTarget,
+]:
+    """Project exact profiled LIVE management endpoints into reachability targets."""
+    population = inventory.resolve_profiled_population()
+    devices = population.devices
+    if (
+        tuple(item.inventory_object_id for item in devices)
+        != PROFILED_POPULATION_IDENTITIES
+    ):
         raise ObservabilityTargetError("observability inventory population rejected")
     targets: list[ObservabilityTarget] = []
     for device in devices:
-        identity = device.inventory_object_id
-        if (
-            identity is None
-            or device.inventory_source != "netbox"
-            or device.name != EXPECTED_NAMES[identity]
-            or device.platform != EXPECTED_PLATFORMS[identity]
-        ):
-            raise ObservabilityTargetError("observability inventory identity rejected")
-        service = ManagementService(MANAGEMENT_SERVICES[device.platform])
+        target = device.live_read_only_target()
+        profile = get_automation_profile(device.automation_profile_id)
+        if len(profile.readiness_services) != 1:
+            raise ObservabilityTargetError("observability management service rejected")
+        service = profile.readiness_services[0]
+        if target.port != service.port:
+            raise ObservabilityTargetError("observability management service rejected")
         targets.append(
             ObservabilityTarget(
-                inventory_object_id=identity,
-                device_name=device.name,
-                platform=device.platform,
-                host=device.host,
-                port=device.port,
-                management_service=service,
+                inventory_object_id=device.inventory_object_id,
+                device_name=device.logical_name,
+                platform_slug=device.platform.slug,
+                network_os=device.network_os,
+                automation_profile_id=device.automation_profile_id,
+                host=target.host,
+                port=target.port,
+                management_service=service.service,
             )
         )
-    return (targets[0], targets[1])
+    return (targets[0], targets[1], targets[2], targets[3])
 
 
 def render_file_sd(targets: tuple[ObservabilityTarget, ...]) -> bytes:
@@ -295,7 +326,7 @@ def _generation(
 ) -> TargetGeneration:
     generated = (now or datetime.now(UTC)).astimezone(UTC)
     unsigned = TargetGeneration.model_construct(
-        schema_version="1",
+        schema_version="2",
         state=state,
         generated_at=generated,
         expires_at=generated + READINESS_TTL

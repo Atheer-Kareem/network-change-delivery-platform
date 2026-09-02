@@ -38,6 +38,8 @@ def test_pipeline_contract() -> None:
         "quality-package-build",
         "quality-terraform-cml",
         "quality-snmp-generator",
+        "quality-observability-runtime",
+        "quality-snmpv3-synthetic",
         "buildkite-definition",
         "ncdp-pipeline-contract",
         "validation-complete",
@@ -56,6 +58,8 @@ def test_pipeline_contract() -> None:
         "quality-package-build",
         "quality-terraform-cml",
         "quality-snmp-generator",
+        "quality-observability-runtime",
+        "quality-snmpv3-synthetic",
         "buildkite-definition",
         "ncdp-pipeline-contract",
     }
@@ -104,6 +108,49 @@ def test_pipeline_contract() -> None:
         "src/network_change_delivery/snmp_mib.py",
     ]
     assert "depends_on" not in snmp_generator
+
+    runtime_checks = {
+        "quality-observability-runtime": {
+            "label": ":chart_with_upwards_trend: Observability runtime validation",
+            "command": (
+                "NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
+                "scripts/observability/verify_runtime.sh"
+            ),
+            "paths": [
+                "infrastructure/observability/**",
+                "scripts/observability/**",
+                "src/network_change_delivery/observability_*.py",
+                "src/network_change_delivery/profile_inventory.py",
+                "src/network_change_delivery/architecture_contracts.py",
+                "tests/test_observability_*.py",
+            ],
+        },
+        "quality-snmpv3-synthetic": {
+            "label": ":satellite: Synthetic SNMPv3 validation",
+            "command": (
+                "NCDP_SKIP_OBSERVABILITY_REGRESSION=1 "
+                "NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
+                "scripts/observability/verify_snmp_runtime.sh"
+            ),
+            "paths": [
+                "infrastructure/observability/**",
+                "scripts/observability/**",
+                "src/network_change_delivery/observability_*.py",
+                "src/network_change_delivery/snmp_*.py",
+                "tests/test_observability_*.py",
+                "tests/test_snmp_*.py",
+            ],
+        },
+    }
+    for key, expected in runtime_checks.items():
+        step = steps[key]
+        assert step["label"] == expected["label"]
+        assert step["depends_on"] == "quality-env"
+        assert step["command"] == expected["command"]
+        assert step["agents"]["queue"] == "ncdp-validation"
+        assert step["retry"] == {"automatic": False}
+        assert step["if_changed"] == {"include": expected["paths"]}
+        assert "soft_fail" not in step
 
     terraform = steps["quality-terraform-cml"]
     terraform_command = terraform["command"]
@@ -185,20 +232,8 @@ def test_pipeline_contract() -> None:
     assert pr_batfish["if_changed"] == RUNTIME_CHANGE_CONDITION
 
     source = (ROOT / ".buildkite/pipeline.yml").read_text()
-    assert "quality-observability-11b" not in top_level_steps
-    assert "quality-observability-11c2" not in top_level_steps
-    assert (
-        "# Restore only by explicit operator decision when observability is being"
-        in source
-    )
-    assert "#   key: quality-observability-11b" in source
-    assert (
-        "# Restore only by explicit operator decision when SNMPv3 observability is"
-        in source
-    )
-    assert "#   key: quality-observability-11c2" in source
-    assert "#   command: NCDP_QUALITY_IMAGE=" in source
-    assert "# TEMPORARILY DISABLED DURING DETOUR B." in source
+    assert "quality-observability-11b" not in source
+    assert "quality-observability-11c2" not in source
     assert (
         "# Restore only when the operator explicitly decides disposable CML staging"
         in source
@@ -460,8 +495,8 @@ def test_installed_buildkite_change_evaluation(
     rendered = yaml.safe_load(result.stdout)
     rendered_steps = {step["key"]: step for step in rendered["steps"]}
     assert "skip" in rendered_steps["quality-snmp-generator"]
-    assert "quality-observability-11b" not in rendered_steps
-    assert "quality-observability-11c2" not in rendered_steps
+    assert "skip" in rendered_steps["quality-observability-runtime"]
+    assert "skip" in rendered_steps["quality-snmpv3-synthetic"]
     assert "skip" not in rendered_steps["validation-complete"]
     assert ("skip" not in rendered_steps["pr-batfish-assurance"]) is live_path_expected
     assert "cml-staging" not in rendered_steps
@@ -504,10 +539,53 @@ def test_installed_buildkite_change_evaluation_runs_applicable_checks_before_bar
         "pr-batfish-assurance",
     ):
         assert "skip" not in rendered_steps[key]
-    assert "quality-observability-11b" not in rendered_steps
-    assert "quality-observability-11c2" not in rendered_steps
+    assert "skip" not in rendered_steps["quality-observability-runtime"]
+    assert "skip" not in rendered_steps["quality-snmpv3-synthetic"]
     assert "cml-staging" not in rendered_steps
     assert "protected-delivery" not in rendered_steps
+
+
+@pytest.mark.parametrize(
+    "changed_path",
+    (
+        "src/network_change_delivery/profile_inventory.py",
+        "src/network_change_delivery/architecture_contracts.py",
+    ),
+)
+def test_installed_buildkite_change_evaluation_routes_observability_contract_inputs(
+    tmp_path: Path,
+    changed_path: str,
+) -> None:
+    agent = shutil.which("buildkite-agent")
+    if agent is None:
+        pytest.skip("Buildkite agent is not installed in this test environment")
+
+    changed_files_path = tmp_path / "changed-files.txt"
+    changed_files_path.write_text(f"{changed_path}\n")
+    result = subprocess.run(
+        [
+            agent,
+            "pipeline",
+            "upload",
+            str(ROOT / ".buildkite/pipeline.yml"),
+            "--dry-run",
+            "--format",
+            "yaml",
+            "--reject-secrets",
+            "--reject-parse-warnings",
+            "--changed-files-path",
+            str(changed_files_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "BUILDKITE_AGENT_ACCESS_TOKEN": "local-dry-run"},
+    )
+    rendered = yaml.safe_load(result.stdout)
+    observability_runtime = {step["key"]: step for step in rendered["steps"]}[
+        "quality-observability-runtime"
+    ]
+    assert "skip" not in observability_runtime
 
 
 def test_external_bootstrap_fetches_diff_base() -> None:

@@ -9,20 +9,33 @@ import pytest
 
 from network_change_delivery.observability_realization import (
     ADMISSION_TTL,
-    EXPECTED_PROFILED_NON_TARGET_NODES,
+    EXPECTED_NODES,
     CmlRealizationAuthority,
     ObservabilityRealizationError,
     publish_admission,
     read_admission,
     retire_admission,
 )
+from network_change_delivery.profiled_live_cml import (
+    ACCESS_NODE_ID,
+    CORE_NODE_ID,
+    JUNOS_NODE_ID,
+    TRANSIT_NODE_ID,
+)
 
 LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
-CORE = "22222222-2222-2222-2222-222222222222"
-JUNOS = "33333333-3333-3333-3333-333333333333"
+CORE = CORE_NODE_ID
+JUNOS = JUNOS_NODE_ID
 BRIDGE = "66666666-6666-6666-6666-666666666666"
 SWITCH = "77777777-7777-7777-7777-777777777777"
-TRANSIT, ACCESS = tuple(EXPECTED_PROFILED_NON_TARGET_NODES)
+TRANSIT = TRANSIT_NODE_ID
+ACCESS = ACCESS_NODE_ID
+EXPECTED_BY_NODE = {
+    CORE: EXPECTED_NODES["netbox:dcim.device:1"],
+    JUNOS: EXPECTED_NODES["netbox:dcim.device:2"],
+    TRANSIT: EXPECTED_NODES["netbox:dcim.device:8"],
+    ACCESS: EXPECTED_NODES["netbox:dcim.device:9"],
+}
 
 
 def transport(
@@ -112,7 +125,7 @@ def transport(
             f"/api/v0/labs/{LAB}/nodes/{ACCESS}",
         }:
             node_id = path.rsplit("/", maxsplit=1)[-1]
-            expected = EXPECTED_PROFILED_NON_TARGET_NODES[node_id]
+            expected = EXPECTED_BY_NODE[node_id]
             return httpx.Response(
                 200,
                 json={
@@ -197,7 +210,7 @@ def transport(
             f"/api/v0/labs/{LAB}/nodes/{ACCESS}/configuration",
         }:
             node_id = path.split("/")[-2]
-            expected = EXPECTED_PROFILED_NON_TARGET_NODES[node_id]
+            expected = EXPECTED_BY_NODE[node_id]
             markers = " ".join(expected["required_configuration"])
             return httpx.Response(
                 200,
@@ -232,6 +245,8 @@ def admit(client: CmlRealizationAuthority, now=None):
         {
             "netbox:dcim.device:1": CORE,
             "netbox:dcim.device:2": JUNOS,
+            "netbox:dcim.device:8": TRANSIT,
+            "netbox:dcim.device:9": ACCESS,
         },
         now=now,
     )
@@ -245,12 +260,11 @@ def test_exact_realization_admission_is_digest_bound_and_private(
     record = admit(client, now)
     client.close()
     assert record.expires_at == now + ADMISSION_TTL
-    assert record.schema_version == "2"
+    assert record.schema_version == "3"
     assert record.lab_id == LAB
     assert record.lab_title == "NCDP Live"
     assert record.lab_state == "STARTED"
-    assert [item.cml_node_id for item in record.nodes] == [CORE, JUNOS]
-    assert len(EXPECTED_PROFILED_NON_TARGET_NODES) == 2
+    assert [item.cml_node_id for item in record.nodes] == [CORE, JUNOS, TRANSIT, ACCESS]
     root = tmp_path / "external" / "observability"
     path = publish_admission(root, record)
     assert read_admission(root, now=now) == record
@@ -275,7 +289,7 @@ def test_supported_stored_configuration_shapes_admit_exact_realization(
     client = authority(configuration_shape=configuration_shape)
     record = admit(client)
     client.close()
-    assert [node.cml_node_id for node in record.nodes] == [CORE, JUNOS]
+    assert [node.cml_node_id for node in record.nodes] == [CORE, JUNOS, TRANSIT, ACCESS]
 
 
 @pytest.mark.parametrize(
@@ -393,12 +407,12 @@ def test_stopped_live_unbooted_node_and_foreign_collision_fail_closed(
     client.close()
 
 
-def test_profiled_non_target_node_mismatch_fails_without_widening_targets() -> None:
+def test_profiled_target_node_mismatch_fails_closed() -> None:
     fallback = transport()
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == f"/api/v0/labs/{LAB}/nodes/{ACCESS}":
-            expected = EXPECTED_PROFILED_NON_TARGET_NODES[ACCESS]
+            expected = EXPECTED_BY_NODE[ACCESS]
             return httpx.Response(
                 200,
                 json={
@@ -417,7 +431,7 @@ def test_profiled_non_target_node_mismatch_fails_without_widening_targets() -> N
         "private-password",
         transport=httpx.MockTransport(handler),
     )
-    with pytest.raises(ObservabilityRealizationError, match="non-target"):
+    with pytest.raises(ObservabilityRealizationError, match="node admission"):
         admit(client)
     client.close()
 

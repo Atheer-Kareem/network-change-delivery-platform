@@ -14,6 +14,10 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from network_change_delivery.architecture_contracts import (
+    CmlRealizationProfileID,
+    get_cml_realization_profile,
+)
 from network_change_delivery.audit import Sha256, canonical_json_bytes
 from network_change_delivery.observability_private_paths import (
     ObservabilityPrivatePathError,
@@ -21,44 +25,69 @@ from network_change_delivery.observability_private_paths import (
     validate_observability_root,
     validate_private_file,
 )
-from network_change_delivery.profiled_live_cml import ACCESS_NODE_ID, TRANSIT_NODE_ID
+from network_change_delivery.profiled_live_cml import (
+    ACCESS_NODE_ID,
+    CORE_NODE_ID,
+    JUNOS_NODE_ID,
+    TRANSIT_NODE_ID,
+)
 
 LIVE_LAB_ID = "09605569-0468-4fc4-8684-beb5a1342b9c"
 LIVE_LAB_TITLE = "NCDP Live"
 ADMISSION_TTL = timedelta(minutes=15)
+
+
+def _expected_node(
+    *,
+    name: str,
+    cml_node_id: str,
+    cml_label: str,
+    address: str,
+    realization_profile_id: CmlRealizationProfileID,
+    required_configuration: tuple[str, ...] = (),
+) -> dict[str, str | tuple[str, ...]]:
+    profile = get_cml_realization_profile(realization_profile_id)
+    return {
+        "name": name,
+        "cml_node_id": cml_node_id,
+        "cml_label": cml_label,
+        "address": address,
+        "definition": profile.node_definition,
+        "image": profile.image_definition,
+        "required_configuration": required_configuration,
+    }
+
+
 EXPECTED_NODES = {
-    "netbox:dcim.device:1": {
-        "name": "core-02",
-        "cml_label": "cat8000v-0",
-        "address": "192.168.4.14",
-        "definition": "cat8000v",
-        "image": "cat8000v-17-18-02",
-    },
-    "netbox:dcim.device:2": {
-        "name": "edge-junos-01",
-        "cml_label": "vjunos-router-0",
-        "address": "192.168.4.20",
-        "definition": "vjunos-router",
-        "image": "vjunos-router-23-2r1-15",
-    },
-}
-EXPECTED_PROFILED_NON_TARGET_NODES = {
-    TRANSIT_NODE_ID: {
-        "name": "transit-ios-01",
-        "cml_label": "transit-ios-01",
-        "address": "192.168.4.16",
-        "definition": "iosv",
-        "image": "iosv-159-3-m12",
-        "required_configuration": (),
-    },
-    ACCESS_NODE_ID: {
-        "name": "access-sw-01",
-        "cml_label": "access-sw-01",
-        "address": "192.168.4.17",
-        "definition": "iosvl2",
-        "image": "iosvl2-2020",
-        "required_configuration": ("no switchport",),
-    },
+    "netbox:dcim.device:1": _expected_node(
+        name="core-02",
+        cml_node_id=CORE_NODE_ID,
+        cml_label="cat8000v-0",
+        address="192.168.4.14",
+        realization_profile_id=CmlRealizationProfileID.CAT8000V_17_18_02,
+    ),
+    "netbox:dcim.device:2": _expected_node(
+        name="edge-junos-01",
+        cml_node_id=JUNOS_NODE_ID,
+        cml_label="vjunos-router-0",
+        address="192.168.4.20",
+        realization_profile_id=CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15,
+    ),
+    "netbox:dcim.device:8": _expected_node(
+        name="transit-ios-01",
+        cml_node_id=TRANSIT_NODE_ID,
+        cml_label="transit-ios-01",
+        address="192.168.4.16",
+        realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
+    ),
+    "netbox:dcim.device:9": _expected_node(
+        name="access-sw-01",
+        cml_node_id=ACCESS_NODE_ID,
+        cml_label="access-sw-01",
+        address="192.168.4.17",
+        realization_profile_id=CmlRealizationProfileID.IOSVL2_2020,
+        required_configuration=("no switchport",),
+    ),
 }
 _UUID_PATTERN = r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
 
@@ -70,27 +99,27 @@ class ObservabilityRealizationError(ValueError):
 class RealizationNode(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    inventory_object_id: Literal["netbox:dcim.device:1", "netbox:dcim.device:2"]
-    stable_name: Literal["core-02", "edge-junos-01"]
+    inventory_object_id: str = Field(pattern=r"^netbox:dcim\.device:[1-9][0-9]*$")
+    stable_name: str = Field(min_length=1, max_length=64)
     cml_node_id: str = Field(pattern=_UUID_PATTERN)
-    management_ip: Literal["192.168.4.14", "192.168.4.20"]
-    node_definition: Literal["cat8000v", "vjunos-router"]
-    image_definition: Literal["cat8000v-17-18-02", "vjunos-router-23-2r1-15"]
+    management_ip: str
+    node_definition: str
+    image_definition: str
     state: Literal["BOOTED"] = "BOOTED"
 
 
 class RealizationAdmission(BaseModel):
-    """Private exact-two target projection from the admitted profiled LIVE lab."""
+    """Private exact-four target admission from the profiled LIVE lab."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     lab_id: Literal["09605569-0468-4fc4-8684-beb5a1342b9c"] = LIVE_LAB_ID
     lab_title: Literal["NCDP Live"] = LIVE_LAB_TITLE
     lab_state: Literal["STARTED"] = "STARTED"
     admitted_at: datetime
     expires_at: datetime
-    nodes: tuple[RealizationNode, RealizationNode]
+    nodes: tuple[RealizationNode, RealizationNode, RealizationNode, RealizationNode]
     digest: Sha256
 
     @model_validator(mode="after")
@@ -107,6 +136,7 @@ class RealizationAdmission(BaseModel):
             expected = EXPECTED_NODES[node.inventory_object_id]
             if (
                 node.stable_name != expected["name"]
+                or node.cml_node_id != expected["cml_node_id"]
                 or node.management_ip != expected["address"]
                 or node.node_definition != expected["definition"]
                 or node.image_definition != expected["image"]
@@ -241,7 +271,7 @@ class CmlRealizationAuthority:
         *,
         now: datetime | None = None,
     ) -> RealizationAdmission:
-        """Validate exact profiled LIVE identity and legacy target readiness."""
+        """Validate exact profiled LIVE identity and target readiness."""
         if lab_id != LIVE_LAB_ID or set(node_ids) != set(EXPECTED_NODES):
             raise ObservabilityRealizationError("CML node population rejected")
         lab_ids = self._get("/api/v0/labs")
@@ -285,10 +315,7 @@ class CmlRealizationAuthority:
                 configuration = self._configuration(candidate, foreign_node_id)
                 if any(
                     expected["address"] in configuration
-                    for expected in (
-                        *EXPECTED_NODES.values(),
-                        *EXPECTED_PROFILED_NON_TARGET_NODES.values(),
-                    )
+                    for expected in EXPECTED_NODES.values()
                 ):
                     raise ObservabilityRealizationError(
                         "CML address ownership ambiguous"
@@ -301,45 +328,21 @@ class CmlRealizationAuthority:
         actual_ids = self._get(f"/api/v0/labs/{lab_id}/nodes")
         if not isinstance(actual_ids, list):
             raise ObservabilityRealizationError("CML node population rejected")
-        admitted_non_targets: set[str] = set()
         for actual_id in actual_ids:
             if actual_id in node_ids.values():
                 continue
             node = self._get(f"/api/v0/labs/{lab_id}/nodes/{actual_id}")
             if not isinstance(node, dict):
                 raise ObservabilityRealizationError("CML node population rejected")
-            expected_profiled = EXPECTED_PROFILED_NON_TARGET_NODES.get(actual_id)
-            if expected_profiled is not None:
-                configuration = self._configuration(lab_id, actual_id)
-                image = node.get("image_definition") or node.get("image_definition_id")
-                if (
-                    node.get("label") != expected_profiled["cml_label"]
-                    or node.get("node_definition") != expected_profiled["definition"]
-                    or image != expected_profiled["image"]
-                    or node.get("state") != "BOOTED"
-                    or expected_profiled["name"] not in configuration
-                    or expected_profiled["address"] not in configuration
-                    or any(
-                        marker not in configuration
-                        for marker in expected_profiled["required_configuration"]
-                    )
-                ):
-                    raise ObservabilityRealizationError(
-                        "profiled non-target CML node rejected"
-                    )
-                admitted_non_targets.add(actual_id)
-                continue
             if node.get("node_definition") not in {
                 "external_connector",
                 "unmanaged_switch",
             }:
                 raise ObservabilityRealizationError("CML node population rejected")
-        if admitted_non_targets != set(EXPECTED_PROFILED_NON_TARGET_NODES):
-            raise ObservabilityRealizationError("CML node population rejected")
         nodes: list[RealizationNode] = []
         for identity, expected in EXPECTED_NODES.items():
             node_id = node_ids[identity]
-            if node_id not in actual_ids:
+            if node_id != expected["cml_node_id"] or node_id not in actual_ids:
                 raise ObservabilityRealizationError("CML node identity rejected")
             node = self._get(f"/api/v0/labs/{lab_id}/nodes/{node_id}")
             if not isinstance(node, dict):
@@ -353,6 +356,10 @@ class CmlRealizationAuthority:
                 or node.get("state") != "BOOTED"
                 or expected["name"] not in configuration
                 or expected["address"] not in configuration
+                or any(
+                    marker not in configuration
+                    for marker in expected["required_configuration"]
+                )
             ):
                 raise ObservabilityRealizationError("CML node admission rejected")
             nodes.append(
@@ -367,7 +374,7 @@ class CmlRealizationAuthority:
             )
         admitted = (now or datetime.now(UTC)).astimezone(UTC)
         unsigned = RealizationAdmission.model_construct(
-            schema_version="2",
+            schema_version="3",
             lab_id=lab_id,
             lab_title=LIVE_LAB_TITLE,
             lab_state="STARTED",

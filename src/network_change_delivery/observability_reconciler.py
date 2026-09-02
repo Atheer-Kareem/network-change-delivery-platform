@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
 
-from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
+from network_change_delivery.inventory import InventoryError
 from network_change_delivery.observability_private_paths import validate_private_file
 from network_change_delivery.observability_realization import (
     CmlRealizationAuthority,
@@ -36,6 +36,7 @@ from network_change_delivery.observability_targets import (
     publish_generation,
     targets_from_inventory,
 )
+from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 
 STATE_ROOT = Path("/Users/netdevops/.local/state/ncdp/observability")
 CONFIG_ROOT = Path("/Users/netdevops/.config/ncdp/observability")
@@ -182,7 +183,7 @@ def _reconcile_locked() -> str:
             raise error from None
         try:
             targets = targets_from_inventory(
-                NetBoxInventoryProvider(
+                NetBoxProfileInventoryProvider(
                     settings["netbox_url"],
                     _private_text(CONFIG_ROOT / "netbox-token"),
                 )

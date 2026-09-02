@@ -40,7 +40,7 @@ MEMBERS = (
         "192.0.2.20/24",
     ),
     (
-        31,
+        8,
         "transit-ios-01",
         "transit",
         "cisco-ios",
@@ -50,7 +50,7 @@ MEMBERS = (
         "192.0.2.16/24",
     ),
     (
-        42,
+        9,
         "access-sw-01",
         "access",
         "cisco-ios",
@@ -249,9 +249,15 @@ def test_profiled_population_rejects_wrong_or_duplicate_names() -> None:
 
 
 def test_profiled_population_rejects_duplicate_stable_identity() -> None:
-    duplicate = mutate(devices(), "access-sw-01", lambda item: item.update(id=31))
+    duplicate = mutate(devices(), "access-sw-01", lambda item: item.update(id=8))
     with pytest.raises(InventoryError, match="duplicate stable identity"):
         profiled_provider(duplicate).resolve_profiled_population()
+
+
+def test_profiled_population_rejects_recreated_logical_name_with_new_identity() -> None:
+    substituted = mutate(devices(), "transit-ios-01", lambda item: item.update(id=99))
+    with pytest.raises(InventoryError, match="Git catalog"):
+        profiled_provider(substituted).resolve_profiled_population()
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,7 @@ global:
   evaluation_interval: 15s
 
 rule_files:
-  - /etc/ncdp/rules/11b-alerts.yml
+  - /etc/ncdp/rules/management-reachability-alerts.yml
 
 alerting:
   alertmanagers:

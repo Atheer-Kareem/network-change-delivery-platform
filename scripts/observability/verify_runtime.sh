@@ -3,7 +3,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 quality_image=${NCDP_QUALITY_IMAGE:?NCDP_QUALITY_IMAGE required}
-project="ncdp-observability-11b-test-${BUILDKITE_BUILD_NUMBER:-$$}"
+project="ncdp-observability-runtime-test-${BUILDKITE_BUILD_NUMBER:-$$}"
 network="${project}-telemetry"
 prometheus_image='prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0'
 blackbox_image='prom/blackbox-exporter:v0.27.0@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d'
@@ -110,15 +110,15 @@ chmod 0700 "${config_root}" "${runtime_root}" "${runtime_root}/rules" \
   "${state_root}/grafana" "${state_root}/alertmanager"
 cp "${root}/infrastructure/observability/prometheus.yml" "${config_root}/prometheus.yml"
 cp "${root}/infrastructure/observability/blackbox.yml" "${config_root}/blackbox.yml"
-cp "${root}/infrastructure/observability/rules/11b-alerts.yml" "${runtime_root}/rules/11b-alerts.yml"
-cp "${root}/infrastructure/observability/rules/11b-alerts.test.yml" "${runtime_root}/rules/11b-alerts.test.yml"
+cp "${root}/infrastructure/observability/rules/management-reachability-alerts.yml" "${runtime_root}/rules/management-reachability-alerts.yml"
+cp "${root}/infrastructure/observability/rules/management-reachability-alerts.test.yml" "${runtime_root}/rules/management-reachability-alerts.test.yml"
 cp "${root}/infrastructure/observability/alertmanager.yml" "${runtime_root}/alertmanager/alertmanager.yml"
 cp "${root}/infrastructure/observability/grafana/provisioning/datasources/prometheus.yml" "${runtime_root}/grafana/provisioning/datasources/prometheus.yml"
 cp "${root}/infrastructure/observability/grafana/provisioning/dashboards/dashboards.yml" "${runtime_root}/grafana/provisioning/dashboards/dashboards.yml"
 cp "${root}/infrastructure/observability/grafana/dashboards/ncdp-management-reachability.json" "${runtime_root}/grafana/dashboards/ncdp-management-reachability.json"
 cp "${root}/scripts/observability/demo_receiver.py" "${runtime_root}/receiver/demo_receiver.py"
 chmod 0600 "${config_root}/prometheus.yml" "${config_root}/blackbox.yml" \
-  "${runtime_root}/rules/11b-alerts.yml" "${runtime_root}/rules/11b-alerts.test.yml" \
+  "${runtime_root}/rules/management-reachability-alerts.yml" "${runtime_root}/rules/management-reachability-alerts.test.yml" \
   "${runtime_root}/alertmanager/alertmanager.yml" \
   "${runtime_root}/grafana/provisioning/datasources/prometheus.yml" \
   "${runtime_root}/grafana/provisioning/dashboards/dashboards.yml" \
@@ -138,13 +138,13 @@ docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "${uid}:${gid}" \
   -v "${runtime_root}/rules:/etc/ncdp/rules:ro" \
   --entrypoint /bin/promtool "${prometheus_image}" \
-  check rules /etc/ncdp/rules/11b-alerts.yml
+  check rules /etc/ncdp/rules/management-reachability-alerts.yml
 docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "${uid}:${gid}" \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
   --workdir /etc/ncdp/rules -v "${runtime_root}/rules:/etc/ncdp/rules:ro" \
   --entrypoint /bin/promtool "${prometheus_image}" \
-  test rules 11b-alerts.test.yml
+  test rules management-reachability-alerts.test.yml
 docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "${uid}:${gid}" \
   -v "${runtime_root}/alertmanager/alertmanager.yml:/etc/ncdp/alertmanager.yml:ro" \
@@ -336,14 +336,20 @@ NCDP_TEST_CISCO_IP=${cisco_ip} NCDP_TEST_JUNOS_IP=${junos_ip} quality_python -c 
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from network_change_delivery.models import InventoryDevice
+from network_change_delivery.architecture_contracts import AutomationProfileID, NetworkOS
 from network_change_delivery.observability_targets import TargetGenerationState, publish_generation, targets_from_inventory
 
+class Device(SimpleNamespace):
+    def live_read_only_target(self):
+        return SimpleNamespace(host=self.host, port=self.port)
+
 devices = (
-    InventoryDevice(name="core-02", host=os.environ["NCDP_TEST_CISCO_IP"], port=22, platform="cisco_iosxe", expected_hostname="core-02", inventory_source="netbox", inventory_object_id="netbox:dcim.device:1"),
-    InventoryDevice(name="edge-junos-01", host=os.environ["NCDP_TEST_JUNOS_IP"], port=830, platform="junos", expected_hostname="edge-junos-01", inventory_source="netbox", inventory_object_id="netbox:dcim.device:2"),
+    Device(inventory_object_id="netbox:dcim.device:1", logical_name="core-02", platform=SimpleNamespace(slug="cisco-ios-xe"), network_os=NetworkOS.IOSXE, automation_profile_id=AutomationProfileID.CAT8000V_IOSXE, host=os.environ["NCDP_TEST_CISCO_IP"], port=22),
+    Device(inventory_object_id="netbox:dcim.device:2", logical_name="edge-junos-01", platform=SimpleNamespace(slug="juniper-junos"), network_os=NetworkOS.JUNOS, automation_profile_id=AutomationProfileID.VJUNOS_ROUTER, host=os.environ["NCDP_TEST_JUNOS_IP"], port=830),
+    Device(inventory_object_id="netbox:dcim.device:8", logical_name="transit-ios-01", platform=SimpleNamespace(slug="cisco-ios"), network_os=NetworkOS.IOS, automation_profile_id=AutomationProfileID.IOSV_159_3_M12, host=os.environ["NCDP_TEST_CISCO_IP"], port=22),
+    Device(inventory_object_id="netbox:dcim.device:9", logical_name="access-sw-01", platform=SimpleNamespace(slug="cisco-ios"), network_os=NetworkOS.IOS, automation_profile_id=AutomationProfileID.IOSVL2_2020, host=os.environ["NCDP_TEST_CISCO_IP"], port=22),
 )
-inventory = SimpleNamespace(resolve_managed_devices=lambda: devices)
+inventory = SimpleNamespace(resolve_profiled_population=lambda: SimpleNamespace(devices=devices))
 realization = SimpleNamespace(lab_id="11111111-1111-1111-1111-111111111111", digest="sha256:" + "a" * 64)
 publish_generation(Path(os.environ["NCDP_TEST_STATE_ROOT"]), state=TargetGenerationState.ACTIVE, targets=targets_from_inventory(inventory), realization=realization)
 '
@@ -352,18 +358,18 @@ for _ in $(seq 1 45); do
   result=$(curl --silent --fail --get --data-urlencode \
     'query=probe_success{job="ncdp-management-service"}' \
     "http://127.0.0.1:${NCDP_PROMETHEUS_PORT}/api/v1/query" || true)
-  if jq -e '.data.result | length == 2 and all(.[]; .value[1] == "1")' \
+  if jq -e '.data.result | length == 4 and all(.[]; .value[1] == "1")' \
     >/dev/null 2>&1 <<<"${result}"; then
     break
   fi
   sleep 1
 done
 jq -e '
-  .data.result | length == 2
-  and ([.[].metric.instance] | sort == ["netbox:dcim.device:1","netbox:dcim.device:2"])
+  .data.result | length == 4
+  and ([.[].metric.instance] | sort == ["netbox:dcim.device:1","netbox:dcim.device:2","netbox:dcim.device:8","netbox:dcim.device:9"])
   and all(.[].metric;
-    (.device_name == "core-02" or .device_name == "edge-junos-01")
-    and (.platform == "cisco_iosxe" or .platform == "junos")
+    (.device_name == "core-02" or .device_name == "edge-junos-01" or .device_name == "transit-ios-01" or .device_name == "access-sw-01")
+    and (.platform == "cisco-ios-xe" or .platform == "juniper-junos" or .platform == "cisco-ios")
     and (.management_service == "ssh" or .management_service == "netconf")
     and .telemetry_source == "tcp_connect"
     and .environment == "operator_cml"
@@ -444,7 +450,7 @@ done
 history=$(curl --silent --fail --get --data-urlencode \
   'query=count_over_time(probe_success{job="ncdp-management-service"}[10m])' \
   "http://127.0.0.1:${NCDP_PROMETHEUS_PORT}/api/v1/query")
-jq -e '.data.result | length == 2 and all(.[].value[1]; tonumber > 0)' \
+jq -e '.data.result | length == 4 and all(.[].value[1]; tonumber > 0)' \
   >/dev/null <<<"${history}"
 
-echo "observability 11B synthetic runtime: PASS (exact ARM64 images, config/rules, five hardened services, Grafana, TCP 22/830, FIRING/RESOLVED delivery, persistence, retirement)"
+echo "observability runtime validation: PASS (exact ARM64 images, config/rules, five hardened services, Grafana, profile-derived TCP 22/830 targets, FIRING/RESOLVED delivery, persistence, retirement)"

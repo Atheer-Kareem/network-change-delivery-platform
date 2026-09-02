@@ -21,10 +21,10 @@ from network_change_delivery.observability_private_paths import (
     validate_private_file,
 )
 from network_change_delivery.observability_targets import (
-    EXPECTED_IDENTITIES,
     ObservabilityReady,
     TargetGeneration,
 )
+from network_change_delivery.profile_inventory import PROFILED_POPULATION_IDENTITIES
 
 SERVICE_LABEL = "com.ncdp.observability"
 PROJECT_NAME = "ncdp-observability"
@@ -145,7 +145,7 @@ def publish_readiness(
         target_file_sha256=generation.target_file_sha256,
         realization_lab_id=generation.realization_lab_id,
         realization_digest=generation.realization_digest,
-        targets=EXPECTED_IDENTITIES,
+        targets=PROFILED_POPULATION_IDENTITIES,
         prometheus_container_id=prometheus_container_id,
         blackbox_container_id=blackbox_container_id,
         source_commit=source_commit,
@@ -446,7 +446,7 @@ def wait_service_health(*, require_device_targets: bool, attempts: int = 30) -> 
                     ]
                     target_ok = {
                         item.get("labels", {}).get("instance") for item in active
-                    } == set(EXPECTED_IDENTITIES)
+                    } == set(PROFILED_POPULATION_IDENTITIES)
                 if (
                     ready.status_code == 200
                     and len(results) == 1

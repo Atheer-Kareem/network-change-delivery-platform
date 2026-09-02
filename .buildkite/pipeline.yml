@@ -87,39 +87,42 @@ steps:
         - "scripts/observability/check_snmp_generator.py"
         - "src/network_change_delivery/snmp_mib.py"
 
-  # TEMPORARILY DISABLED DURING DETOUR B.
-  # Restore only by explicit operator decision when observability is being
-  # integrated with the expanded profiled topology.
-  # - label: ":chart_with_upwards_trend: Observability runtime validation"
-  #   key: quality-observability-11b
-  #   depends_on: quality-env
-  #   command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_runtime.sh
-  #   agents:
-  #     queue: ncdp-validation
-  #   if_changed:
-  #     include:
-  #       - "infrastructure/observability/**"
-  #       - "scripts/observability/**"
-  #       - "src/network_change_delivery/observability_*.py"
-  #       - "tests/test_observability_*.py"
+  - label: ":chart_with_upwards_trend: Observability runtime validation"
+    key: quality-observability-runtime
+    depends_on: quality-env
+    command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_runtime.sh
+    agents:
+      queue: ncdp-validation
+    retry:
+      automatic: false
+    if_changed:
+      include:
+        - "infrastructure/observability/**"
+        - "scripts/observability/**"
+        - "src/network_change_delivery/observability_*.py"
+        - "src/network_change_delivery/profile_inventory.py"
+        - "src/network_change_delivery/architecture_contracts.py"
+        - "tests/test_observability_*.py"
 
-  # TEMPORARILY DISABLED DURING DETOUR B.
-  # Restore only by explicit operator decision when SNMPv3 observability is
-  # being integrated with the expanded profiled topology.
-  # - label: ":satellite: Synthetic SNMPv3 validation"
-  #   key: quality-observability-11c2
-  #   depends_on: quality-env
-  #   command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_snmp_runtime.sh
-  #   agents:
-  #     queue: ncdp-validation
-  #   if_changed:
-  #     include:
-  #       - "infrastructure/observability/**"
-  #       - "scripts/observability/**"
-  #       - "src/network_change_delivery/observability_*.py"
-  #       - "src/network_change_delivery/snmp_*.py"
-  #       - "tests/test_observability_*.py"
-  #       - "tests/test_snmp_*.py"
+  - label: ":satellite: Synthetic SNMPv3 validation"
+    key: quality-snmpv3-synthetic
+    depends_on: quality-env
+    command: >-
+      NCDP_SKIP_OBSERVABILITY_REGRESSION=1
+      NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER}
+      scripts/observability/verify_snmp_runtime.sh
+    agents:
+      queue: ncdp-validation
+    retry:
+      automatic: false
+    if_changed:
+      include:
+        - "infrastructure/observability/**"
+        - "scripts/observability/**"
+        - "src/network_change_delivery/observability_*.py"
+        - "src/network_change_delivery/snmp_*.py"
+        - "tests/test_observability_*.py"
+        - "tests/test_snmp_*.py"
 
   - label: ":buildkite: Buildkite definition · parse and secret scan"
     key: buildkite-definition

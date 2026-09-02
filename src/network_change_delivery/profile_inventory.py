@@ -184,9 +184,10 @@ class ProfiledDeviceName(StrEnum):
 
 
 class _ProfiledPopulationMember(BaseModel):
-    """One catalog-internal expected member without a future NetBox object ID."""
+    """One exact Git-admitted logical identity and NetBox subject binding."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+    device_identity: str = Field(pattern=r"^netbox:dcim\.device:[1-9][0-9]*$")
     logical_name: ProfiledDeviceName
     operational_role: OperationalRole
     platform_slug: Slug
@@ -210,6 +211,7 @@ class _ProfiledPopulationMember(BaseModel):
 
 PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
     _ProfiledPopulationMember(
+        device_identity="netbox:dcim.device:1",
         logical_name=ProfiledDeviceName.CORE_02,
         operational_role=OperationalRole.CORE,
         platform_slug="cisco-ios-xe",
@@ -219,6 +221,7 @@ PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
         cml_realization_profile_id=CmlRealizationProfileID.CAT8000V_17_18_02,
     ),
     _ProfiledPopulationMember(
+        device_identity="netbox:dcim.device:2",
         logical_name=ProfiledDeviceName.EDGE_JUNOS_01,
         operational_role=OperationalRole.EDGE,
         platform_slug="juniper-junos",
@@ -228,6 +231,7 @@ PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
         cml_realization_profile_id=(CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15),
     ),
     _ProfiledPopulationMember(
+        device_identity="netbox:dcim.device:8",
         logical_name=ProfiledDeviceName.TRANSIT_IOS_01,
         operational_role=OperationalRole.TRANSIT,
         platform_slug="cisco-ios",
@@ -237,6 +241,7 @@ PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
         cml_realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
     ),
     _ProfiledPopulationMember(
+        device_identity="netbox:dcim.device:9",
         logical_name=ProfiledDeviceName.ACCESS_SW_01,
         operational_role=OperationalRole.ACCESS,
         platform_slug="cisco-ios",
@@ -255,6 +260,13 @@ PROFILED_POPULATION_BY_NAME: Mapping[ProfiledDeviceName, _ProfiledPopulationMemb
 
 if len(PROFILED_POPULATION_BY_NAME) != 4:
     raise RuntimeError("profiled population catalog must contain exactly four names")
+
+PROFILED_POPULATION_IDENTITIES = tuple(
+    member.device_identity for member in PROFILED_POPULATION_CATALOG
+)
+
+if len(PROFILED_POPULATION_IDENTITIES) != len(set(PROFILED_POPULATION_IDENTITIES)):
+    raise RuntimeError("profiled population catalog must contain unique identities")
 
 
 def _expected_profiled_member(logical_name: str) -> _ProfiledPopulationMember:
@@ -389,7 +401,9 @@ def _admit_profiled_device(
     """Compare resolved NetBox facts with the one Git-owned name binding."""
     member = _expected_profiled_member(device.logical_name)
     if (
-        device.operational_role is not member.operational_role
+        device.device_identity != member.device_identity
+        or device.logical_name != member.logical_name
+        or device.operational_role is not member.operational_role
         or device.platform.slug != member.platform_slug
         or device.device_type.slug != member.device_type_slug
         or device.network_os is not member.network_os
@@ -400,6 +414,25 @@ def _admit_profiled_device(
             "NetBox profile target does not match its Git-owned population member"
         )
     return member
+
+
+def admit_profiled_subject(
+    *,
+    device_identity: str,
+    logical_name: str,
+    platform_slug: str,
+    network_os: NetworkOS,
+    automation_profile_id: AutomationProfileID,
+) -> None:
+    """Fail closed unless one target is the exact admitted profiled subject."""
+    member = _expected_profiled_member(logical_name)
+    if (
+        device_identity != member.device_identity
+        or platform_slug != member.platform_slug
+        or network_os is not member.network_os
+        or automation_profile_id is not member.automation_profile_id
+    ):
+        raise InventoryError("profiled target does not match its Git-owned subject")
 
 
 class ProfiledInventoryPopulation(BaseModel):
@@ -419,6 +452,8 @@ class ProfiledInventoryPopulation(BaseModel):
         identities = tuple(device.device_identity for device in self.devices)
         if names != expected_names:
             raise ValueError("profiled inventory population names are not exact")
+        if identities != PROFILED_POPULATION_IDENTITIES:
+            raise ValueError("profiled inventory population identities are not exact")
         if len(identities) != len(set(identities)):
             raise ValueError("profiled inventory population identities are duplicated")
         for device in self.devices:

@@ -7,28 +7,30 @@ planning, approval, deployment, recovery, or audit authority.
 ## Data and authority flow
 
 ```text
-NetBox managed population ─┐
-                           ├─> bounded materializer ─> private file_sd targets
+NetBox profiled population ─┐
+                            ├─> bounded materializer ─> private file_sd targets
 CML live admission ────────┘                              │
                                                           v
 Prometheus (stable NetBox labels) ─> Blackbox TCP connect ─> admitted endpoint
 ```
 
-`NetBoxInventoryProvider` supplies the exact `ncdp-managed` population and the
-existing `InventoryDevice` endpoint contract. Current Cisco IOS XE resolves to
-SSH on port 22 and Junos resolves to NETCONF on port 830. Blackbox receives the
-private `host:port` only through `__param_target`; relabeling preserves
+`NetBoxProfileInventoryProvider` supplies the exact Git-admitted profiled
+population: devices 1 (`core-02`), 2 (`edge-junos-01`), 8 (`transit-ios-01`),
+and 9 (`access-sw-01`). Each target obtains its LIVE endpoint and one
+management readiness service from its `AutomationProfile`; currently that is
+SSH/22 for the IOS-XE, IOSv, and IOSvL2 profiles, and NETCONF/830 for the Junos
+profile. Profile membership does not grant unrelated capabilities: this is only
+management-service TCP reachability. Blackbox receives the private `host:port`
+only through `__param_target`; relabeling preserves
 `instance="netbox:dcim.device:<id>"`. TCP success has no stronger meaning than
 connection acceptance.
 
-CML admission independently proves that those addresses belong to exact lab
-UUID `09605569-0468-4fc4-8684-beb5a1342b9c`, titled `NCDP Live`, in running
-state. Since B3-4, realization admission requires the exact two infrastructure
-nodes plus the four approved profiled network nodes, but target generation
-continues to project only legacy `ncdp-managed` devices 1 and 2. The two IOS
-nodes therefore grant no observability eligibility merely by existing in CML.
-Admission uses private CML API authority, exact node UUIDs, definitions, images,
-BOOTED state, and stored Day-0 identity markers. A valid ephemeral
+CML admission independently proves that the four target addresses belong to
+exact lab UUID `09605569-0468-4fc4-8684-beb5a1342b9c`, titled `NCDP Live`, in
+running state. The external connector and management switch are CML
+infrastructure, not observability targets. Admission uses private CML API
+authority, exact node UUIDs, definitions, images, BOOTED state, and stored
+Day-0 identity markers. A valid ephemeral
 `NCDP Staging ...` lab at `.30/.40` may coexist; every other active router
 realization is still inspected and rejected if it claims any profiled LIVE
 management address.
@@ -94,6 +96,29 @@ safety-significant:
 Successful final 11A acceptance does not retire these targets or stop
 `NCDP Live`; ACTIVE reconciliation is the intended steady state.
 
+## Current migration and runtime status
+
+Management-service observability is migrated to the profiled exact-four fleet;
+its target generation, CML realization admission, and readiness artifact bind
+all four managed identities. Observability runtime validation and synthetic
+SNMPv3 validation are restored as active, visible hard Buildkite gates. The
+first observed failure was a Docker identity collision caused by the
+synthetic-SNMP step invoking its nested management-runtime regression alongside
+the dedicated management-runtime step. The Buildkite synthetic-SNMP invocation
+now sets `NCDP_SKIP_OBSERVABILITY_REGRESSION=1`; standalone/local synthetic
+validation retains its default nested regression. Both runtime validations
+subsequently passed according to operator-observed pipeline evidence. The
+synthetic two-agent fixture is a minimum disposable
+protocol-validation topology, not managed-fleet cardinality or evidence that
+live SNMP has completed its profiled exact-four migration. Live SNMP remains a
+separate migration whose final target is all four profiled devices. Disposable
+CML staging and protected delivery remain paused. Exact-two remains elsewhere
+only for legacy consumers that have not yet migrated. That coexistence is
+transitional:
+the target architecture is one profiled exact-four managed fleet with explicit
+profile/capability gating, and `ncdp-managed` is removed only after no
+legitimate runtime consumer remains.
+
 ## Boundaries
 
 Prometheus is not inventory authority, Oxidized configuration history, or
@@ -124,8 +149,10 @@ device bridge gives only the exporter egress toward UDP/161 targets; disposable
 agents join that bridge during synthetic validation, while Prometheus and the
 other five services do not. Ordinary base Compose invocation, installation,
 update, LaunchAgent reconciliation, and live Prometheus configuration remain
-five-service and SNMP-free. The overlay must not make the 11A target generation
-or `ObservabilityReady(service_contract="11A")` depend on SNMP health.
+five-service and SNMP-free. The overlay must not make the management-service
+target generation or
+`ObservabilityReady(service_contract="management-service-reachability")`
+depend on SNMP health.
 
 The exporter is a protocol translator, not inventory authority. NetBox
 continues to own stable device identity and stable numeric interface object

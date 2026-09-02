@@ -8,14 +8,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from network_change_delivery.models import InventoryDevice
+from network_change_delivery.architecture_contracts import (
+    AutomationProfileID,
+    NetworkOS,
+)
 from network_change_delivery.observability_private_paths import (
     ObservabilityPrivatePathError,
     validate_private_file,
 )
 from network_change_delivery.observability_targets import (
-    EXPECTED_IDENTITIES,
     ManagementService,
+    ObservabilityTarget,
     ObservabilityTargetError,
     TargetFailureClassification,
     TargetGenerationState,
@@ -25,29 +28,70 @@ from network_change_delivery.observability_targets import (
     render_file_sd,
     targets_from_inventory,
 )
+from network_change_delivery.profile_inventory import PROFILED_POPULATION_IDENTITIES
 
 
 def device(
     identity: str,
     name: str,
-    platform: str,
+    slug: str,
+    network_os: NetworkOS,
+    profile: AutomationProfileID,
     host: str,
     port: int,
-) -> InventoryDevice:
-    return InventoryDevice(
-        name=name,
+):
+    class Device(SimpleNamespace):
+        def live_read_only_target(self):
+            return SimpleNamespace(host=self.host, port=self.port)
+
+    return Device(
+        inventory_object_id=identity,
+        logical_name=name,
+        platform=SimpleNamespace(slug=slug),
+        network_os=network_os,
+        automation_profile_id=profile,
         host=host,
         port=port,
-        platform=platform,  # type: ignore[arg-type]
-        expected_hostname=name,
-        inventory_source="netbox",
-        inventory_object_id=identity,
     )
 
 
 DEVICES = (
-    device("netbox:dcim.device:1", "core-02", "cisco_iosxe", "192.0.2.14", 22),
-    device("netbox:dcim.device:2", "edge-junos-01", "junos", "192.0.2.20", 830),
+    device(
+        "netbox:dcim.device:1",
+        "core-02",
+        "cisco-ios-xe",
+        NetworkOS.IOSXE,
+        AutomationProfileID.CAT8000V_IOSXE,
+        "192.0.2.14",
+        22,
+    ),
+    device(
+        "netbox:dcim.device:2",
+        "edge-junos-01",
+        "juniper-junos",
+        NetworkOS.JUNOS,
+        AutomationProfileID.VJUNOS_ROUTER,
+        "192.0.2.20",
+        830,
+    ),
+    device(
+        "netbox:dcim.device:8",
+        "transit-ios-01",
+        "cisco-ios",
+        NetworkOS.IOS,
+        AutomationProfileID.IOSV_159_3_M12,
+        "192.0.2.16",
+        22,
+    ),
+    device(
+        "netbox:dcim.device:9",
+        "access-sw-01",
+        "cisco-ios",
+        NetworkOS.IOS,
+        AutomationProfileID.IOSVL2_2020,
+        "192.0.2.17",
+        22,
+    ),
 )
 
 
@@ -55,8 +99,8 @@ class Inventory:
     def __init__(self, devices=DEVICES) -> None:
         self.devices = devices
 
-    def resolve_managed_devices(self):
-        return self.devices
+    def resolve_profiled_population(self):
+        return SimpleNamespace(devices=self.devices)
 
 
 def realization():
@@ -66,13 +110,18 @@ def realization():
     )
 
 
-def test_existing_inventory_port_mapping_becomes_management_service() -> None:
+def test_profiled_inventory_derives_all_management_services() -> None:
     targets = targets_from_inventory(Inventory())
     assert [(item.port, item.management_service) for item in targets] == [
         (22, ManagementService.SSH),
         (830, ManagementService.NETCONF),
+        (22, ManagementService.SSH),
+        (22, ManagementService.SSH),
     ]
-    assert tuple(item.inventory_object_id for item in targets) == EXPECTED_IDENTITIES
+    assert (
+        tuple(item.inventory_object_id for item in targets)
+        == PROFILED_POPULATION_IDENTITIES
+    )
 
 
 @pytest.mark.parametrize(
@@ -87,29 +136,50 @@ def test_population_is_exact_ordered_and_unique(population) -> None:
 @pytest.mark.parametrize(
     "changed",
     [
-        {"platform": "junos", "port": 22},
-        {"name": "renamed-core"},
-        {"inventory_source": "local_yaml"},
+        {"automation_profile_id": AutomationProfileID.VJUNOS_ROUTER},
         {"inventory_object_id": "netbox:dcim.device:3"},
     ],
 )
 def test_identity_and_platform_contract_fail_closed(changed) -> None:
-    candidate = DEVICES[0].model_copy(update=changed)
+    candidate = SimpleNamespace(**{**DEVICES[0].__dict__, **changed})
+    candidate.live_read_only_target = DEVICES[0].live_read_only_target
     with pytest.raises((ObservabilityTargetError, ValueError)):
-        targets_from_inventory(Inventory((candidate, DEVICES[1])))
+        targets_from_inventory(Inventory((candidate, *DEVICES[1:])))
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"device_name": "edge-junos-01"},
+        {"platform_slug": "juniper-junos"},
+        {"network_os": NetworkOS.JUNOS},
+        {"automation_profile_id": AutomationProfileID.VJUNOS_ROUTER},
+        {"management_service": ManagementService.NETCONF, "port": 830},
+    ],
+)
+def test_target_rejects_mismatched_profiled_subject_semantics(changed) -> None:
+    target = targets_from_inventory(Inventory())[0]
+    with pytest.raises(ValueError):
+        ObservabilityTarget.model_validate({**target.model_dump(), **changed})
 
 
 def test_file_sd_keeps_route_private_and_identity_stable() -> None:
     payload = json.loads(render_file_sd(targets_from_inventory(Inventory())))
     assert payload[0]["targets"] == ["192.0.2.14:22"]
     assert payload[1]["targets"] == ["192.0.2.20:830"]
-    for index, item in enumerate(payload, start=1):
+    assert [item["targets"] for item in payload[2:]] == [
+        ["192.0.2.16:22"],
+        ["192.0.2.17:22"],
+    ]
+    for index, item in zip((1, 2, 8, 9), payload, strict=True):
         labels = item["labels"]
         assert labels["instance"] == f"netbox:dcim.device:{index}"
         assert set(labels) == {
             "instance",
             "device_name",
             "platform",
+            "network_os",
+            "automation_profile",
             "management_service",
             "telemetry_source",
             "environment",
@@ -131,6 +201,7 @@ def test_active_generation_is_canonical_private_and_digest_bound(
         now=now,
     )
     assert read_generation(root, now=now) == generation
+    assert generation.schema_version == "2"
     assert generation.expires_at == now + timedelta(minutes=15)
     assert generation.failure_classification is None
     for path in (
@@ -139,6 +210,33 @@ def test_active_generation_is_canonical_private_and_digest_bound(
     ):
         assert path.stat().st_uid == os.getuid()
         assert path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        DEVICES[:3],
+        DEVICES[::-1],
+        (*DEVICES, DEVICES[0]),
+    ],
+)
+def test_active_generation_rejects_noncanonical_target_population(
+    tmp_path: Path, targets
+) -> None:
+    projected = targets_from_inventory(Inventory())
+    if len(targets) == 3:
+        candidate = projected[:3]
+    elif len(targets) == 4:
+        candidate = projected[::-1]
+    else:
+        candidate = (*projected, projected[0])
+    with pytest.raises(ValueError, match="active target generation"):
+        publish_generation(
+            tmp_path / "external" / "observability",
+            state=TargetGenerationState.ACTIVE,
+            targets=candidate,
+            realization=realization(),
+        )
 
 
 def test_retired_failed_and_ambiguous_states_are_distinct(tmp_path: Path) -> None:

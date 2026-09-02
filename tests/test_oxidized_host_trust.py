@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,13 @@ from network_change_delivery.oxidized_host_trust import (
     validate_host_trust,
 )
 from network_change_delivery.oxidized_service import publish_readiness
+from network_change_delivery.profiled_live_cml import (
+    ACCESS_NODE_ID,
+    CORE_NODE_ID,
+    JUNOS_NODE_ID,
+    LIVE_LAB_ID,
+    TRANSIT_NODE_ID,
+)
 
 
 def key(seed: bytes) -> tuple[str, str]:
@@ -46,7 +54,7 @@ def generation(root: Path):
         HostTrustNode(
             node="netbox-device-1",
             stable_name="core-02",
-            cml_node_id="11111111-1111-1111-1111-111111111111",
+            cml_node_id=CORE_NODE_ID,
             management_ip="192.168.4.14",
             algorithm="ssh-rsa",
             fingerprint=fingerprint1,
@@ -54,7 +62,7 @@ def generation(root: Path):
         HostTrustNode(
             node="netbox-device-8",
             stable_name="transit-ios-01",
-            cml_node_id="88888888-8888-8888-8888-888888888888",
+            cml_node_id=TRANSIT_NODE_ID,
             management_ip="192.168.4.16",
             algorithm="ssh-ed25519",
             fingerprint=fingerprint8,
@@ -62,7 +70,7 @@ def generation(root: Path):
         HostTrustNode(
             node="netbox-device-9",
             stable_name="access-sw-01",
-            cml_node_id="99999999-9999-9999-9999-999999999999",
+            cml_node_id=ACCESS_NODE_ID,
             management_ip="192.168.4.17",
             algorithm="ssh-rsa",
             fingerprint=fingerprint9,
@@ -70,7 +78,7 @@ def generation(root: Path):
         HostTrustNode(
             node="netbox-device-2",
             stable_name="edge-junos-01",
-            cml_node_id="22222222-2222-2222-2222-222222222222",
+            cml_node_id=JUNOS_NODE_ID,
             management_ip="192.168.4.20",
             algorithm="ssh-ed25519",
             fingerprint=fingerprint2,
@@ -79,12 +87,17 @@ def generation(root: Path):
     return known_hosts, nodes
 
 
-def publish(root: Path):
-    known_hosts, nodes = generation(root)
+def publish(
+    root: Path,
+    *,
+    lab_id: str = LIVE_LAB_ID,
+    nodes: tuple[HostTrustNode, ...] | None = None,
+):
+    known_hosts, valid_nodes = generation(root)
     return publish_host_trust(
         known_hosts,
-        lab_id="33333333-3333-3333-3333-333333333333",
-        nodes=nodes,
+        lab_id=lab_id,
+        nodes=valid_nodes if nodes is None else nodes,
         root=root,
         now=datetime(2026, 8, 27, tzinfo=UTC),
     )
@@ -102,6 +115,38 @@ def test_exact_four_reviewed_hosts_are_accepted(tmp_path: Path) -> None:
         "netbox-device-9",
     }
     assert not (root / AMBIGUITY_NAME).exists()
+
+
+def _rewrite_metadata(root: Path, **updates: object) -> None:
+    metadata_path = root / "host-trust.json"
+    payload = json.loads(metadata_path.read_text())
+    payload.update(updates)
+    metadata_path.write_text(json.dumps(payload) + "\n")
+    metadata_path.chmod(0o600)
+
+
+@pytest.mark.parametrize("kind", ["lab", "wrong-cml", "swapped-cml", "duplicate-cml"])
+def test_cml_realization_binding_is_exact_and_fail_closed(
+    tmp_path: Path, kind: str
+) -> None:
+    root = tmp_path / "private" / "ssh"
+    publish(root)
+    if kind == "lab":
+        _rewrite_metadata(root, lab_id="33333333-3333-3333-3333-333333333333")
+    else:
+        metadata_path = root / "host-trust.json"
+        payload = json.loads(metadata_path.read_text())
+        if kind == "wrong-cml":
+            payload["nodes"][0]["cml_node_id"] = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        elif kind == "swapped-cml":
+            payload["nodes"][0]["cml_node_id"] = JUNOS_NODE_ID
+            payload["nodes"][3]["cml_node_id"] = CORE_NODE_ID
+        else:
+            payload["nodes"][3]["cml_node_id"] = CORE_NODE_ID
+        metadata_path.write_text(json.dumps(payload) + "\n")
+        metadata_path.chmod(0o600)
+    with pytest.raises(OxidizedHostTrustError):
+        validate_host_trust(root)
 
 
 @pytest.mark.parametrize(

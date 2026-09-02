@@ -30,6 +30,12 @@ from network_change_delivery.profiled_live_cml import (
 )
 
 LIVE_LAB = LIVE_LAB_ID
+EXPECTED_CML_NODE_IDS = {
+    "netbox-device-1": CORE_NODE_ID,
+    "netbox-device-2": JUNOS_NODE_ID,
+    "netbox-device-8": TRANSIT_NODE_ID,
+    "netbox-device-9": ACCESS_NODE_ID,
+}
 
 
 class EnrollmentError(ValueError):
@@ -72,6 +78,8 @@ def _client() -> httpx.Client:
 def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]):
     if lab_id != LIVE_LAB:
         raise EnrollmentError("CML enrollment lab identity rejected")
+    if node_ids != EXPECTED_CML_NODE_IDS:
+        raise EnrollmentError("CML enrollment node identities rejected")
     try:
         return ProfiledLiveCmlOperator(client).anchor_profiled_live(
             transit_node_id=node_ids["netbox-device-8"],

@@ -16,11 +16,25 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from network_change_delivery.profiled_live_cml import (
+    ACCESS_NODE_ID,
+    CORE_NODE_ID,
+    JUNOS_NODE_ID,
+    LIVE_LAB_ID,
+    TRANSIT_NODE_ID,
+)
+
 EXPECTED_HOSTS = {
     "netbox-device-1": "192.168.4.14",
     "netbox-device-2": "192.168.4.20",
     "netbox-device-8": "192.168.4.16",
     "netbox-device-9": "192.168.4.17",
+}
+EXPECTED_CML_NODE_IDS = {
+    "netbox-device-1": CORE_NODE_ID,
+    "netbox-device-2": JUNOS_NODE_ID,
+    "netbox-device-8": TRANSIT_NODE_ID,
+    "netbox-device-9": ACCESS_NODE_ID,
 }
 SUPPORTED_KEY_ALGORITHMS = frozenset(
     {
@@ -201,12 +215,17 @@ def _validate_host_trust(root: Path, *, reject_ambiguity: bool) -> HostTrustMeta
         "netbox-device-9": "access-sw-01",
     }
     if (
-        metadata.known_hosts_sha256 != digest
+        metadata.lab_id != LIVE_LAB_ID
+        or metadata.known_hosts_sha256 != digest
         or set(expected_nodes) != set(EXPECTED_HOSTS)
         or len(metadata.nodes) != 4
         or any(
             expected_nodes[node] != (stable_names[node], ip, *parsed[ip])
             for node, ip in EXPECTED_HOSTS.items()
+        )
+        or any(
+            item.cml_node_id != EXPECTED_CML_NODE_IDS.get(item.node)
+            for item in metadata.nodes
         )
         or len({item.cml_node_id for item in metadata.nodes}) != 4
     ):

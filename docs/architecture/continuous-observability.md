@@ -110,11 +110,17 @@ validation retains its default nested regression. Both runtime validations
 subsequently passed according to operator-observed pipeline evidence. The
 synthetic two-agent fixture is a minimum disposable
 protocol-validation topology, not managed-fleet cardinality or evidence that
-live SNMP has completed its profiled exact-four migration. Live SNMP remains a
-separate migration whose final target is all four profiled devices. Disposable
-CML staging and protected delivery remain paused. Exact-two remains elsewhere
-only for legacy consumers that have not yet migrated. That coexistence is
-transitional:
+live SNMP has completed its profiled migration. The current SNMP projection is
+capability-derived: `cat8000v_iosxe` and `vjunos_router` qualify, while
+`iosv_159_3_m12` and `iosvl2_2020` are intentionally excluded because they do
+not satisfy the accepted SHA256/AES128 contract. This is a telemetry subset of
+the exact-four managed fleet, not legacy `ncdp-managed` admission. Live SNMP
+remains deferred to 11C-4. Disposable CML staging and protected delivery
+remain paused. Within the SNMP story, the protected provisioning path remains
+a transitional exact-two authority; SNMP telemetry admission itself is no
+longer legacy exact-two. Elsewhere in NCDP, legacy planning/write, protected,
+and paused staging consumers retain separate exact-two retirement work. That
+coexistence is transitional:
 the target architecture is one profiled exact-four managed fleet with explicit
 profile/capability gating, and `ncdp-managed` is removed only after no
 legitimate runtime consumer remains.

@@ -343,11 +343,15 @@ profile capability (IOS-XE/IOSv/IOSvL2 use the `ios` model; Junos uses
 `junos`; all collection uses SSH/22). Its CML-anchored trust and read-only
 OpenBao authority are exact-four, while its existing private Git chronology is
 preserved additively. Successful collection is passive observation evidence and
-does not authorize IOSv/IOSvL2 writes or imply write causality. Live SNMP,
-legacy v1 planning/write execution, and protected write authority remain
-exact-two.
+does not authorize IOSv/IOSvL2 writes or imply write causality. Legacy v1
+planning/write execution and protected write authority remain exact-two. SNMP
+telemetry is separately projected from the exact-four profiled population by
+the explicit `SNMPV3_AUTHPRIV_SHA256_AES128` capability; the current projection
+is devices 1 and 2, while IOSv and IOSvL2 are excluded by the accepted
+SHA256/AES128 contract.
 Automatic disposable CML and protected delivery remain paused, and the
 Terraform staging topology is unchanged. The operator has restored local
 observability runtime and synthetic SNMPv3 quality validation. The latter keeps
 its two-agent disposable fixture because it proves protocol behavior rather
-than the LIVE fleet; live SNMP remains a separate upcoming exact-four migration.
+than the LIVE fleet; live SNMP remains a separate deferred migration whose
+targets are selected by an explicit profile capability projection.

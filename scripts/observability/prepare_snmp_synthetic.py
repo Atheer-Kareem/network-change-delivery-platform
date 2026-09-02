@@ -8,6 +8,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from network_change_delivery.architecture_contracts import AutomationProfileID
 from network_change_delivery.snmp_private import publish_snmp_auth
 from network_change_delivery.snmp_prometheus import render_snmp_prometheus_config
 from network_change_delivery.snmp_publication import (
@@ -60,7 +61,11 @@ def _target(device_number: int, generation: str) -> SnmpPollingTarget:
         identity=SnmpTargetIdentity(
             device=device,
             device_name=f"synthetic-snmp-{device_number}",
-            platform="cisco_iosxe" if device_number == 1 else "junos",
+            automation_profile_id=(
+                AutomationProfileID.CAT8000V_IOSXE
+                if device_number == 1
+                else AutomationProfileID.VJUNOS_ROUTER
+            ),
             credential=SnmpCredentialReference(
                 device=device,
                 reference=(

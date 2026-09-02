@@ -42,6 +42,7 @@ ChangeId = Annotated[
 
 NCDP_SNMP_VIEW = "NCDP_IFMIB"
 NCDP_SNMP_GROUP = "NCDP_SNMP_RO"
+LEGACY_SNMP_PROVISIONING_DEVICE_IDS = (1, 2)
 
 
 class SnmpProvisioningError(ValueError):
@@ -92,8 +93,9 @@ class SnmpV3InterfaceTelemetryIntent(BaseModel):
     def exact_contract(self) -> SnmpV3InterfaceTelemetryIntent:
         generation = validate_snmp_generation(self.generation)
         device_id = int(self.device.removeprefix("netbox:dcim.device:"))
-        if device_id not in {1, 2} or self.username != snmp_username(
-            device_id, generation
+        if (
+            device_id not in LEGACY_SNMP_PROVISIONING_DEVICE_IDS
+            or self.username != snmp_username(device_id, generation)
         ):
             raise ValueError("SNMP provisioning username rejected")
         if self.credential.device != self.device:

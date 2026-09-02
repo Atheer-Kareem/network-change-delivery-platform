@@ -94,6 +94,7 @@ class Capability(StrEnum):
     IOS_ACL = "ios_acl"
     JUNOS_FIREWALL_FILTER = "junos_firewall_filter"
     COMMIT_CONFIRMED = "commit_confirmed"
+    SNMPV3_AUTHPRIV_SHA256_AES128 = "snmpv3_authpriv_sha256_aes128"
 
 
 class AutomationProfileID(StrEnum):
@@ -360,6 +361,7 @@ AUTOMATION_PROFILE_CATALOG: Mapping[AutomationProfileID, AutomationProfile] = (
                     Capability.DOT1Q_TRUNK,
                     Capability.OSPF,
                     Capability.IOS_ACL,
+                    Capability.SNMPV3_AUTHPRIV_SHA256_AES128,
                 ),
                 transport_family=TransportFamily.ANSIBLE_NETWORK_CLI,
                 adapter_family=AdapterFamily.CISCO_IOS,
@@ -410,6 +412,7 @@ AUTOMATION_PROFILE_CATALOG: Mapping[AutomationProfileID, AutomationProfile] = (
                     Capability.OSPF,
                     Capability.JUNOS_FIREWALL_FILTER,
                     Capability.COMMIT_CONFIRMED,
+                    Capability.SNMPV3_AUTHPRIV_SHA256_AES128,
                 ),
                 transport_family=TransportFamily.JUNOS_PYEZ_NETCONF,
                 adapter_family=AdapterFamily.JUNOS_PYEZ,

@@ -200,8 +200,9 @@ acceptance records.
       in Buildkite only; both validations subsequently passed according to
       operator-observed pipeline evidence. The synthetic two-agent fixture
       validates protocol behavior only; it is not completion evidence for the
-      separate live SNMP exact-four migration, whose target is all four profiled
-      devices.
+      separate live SNMP migration whose target is the explicit capability
+      projection of the profiled exact-four fleet: currently devices 1 and 2;
+      IOSv and IOSvL2 are excluded under the accepted SHA256/AES128 contract.
       The exact-two legacy path and profiled exact-four path are transitional
       coexistence, not the target end state: final NCDP is one profiled
       exact-four managed fleet with explicit profile/capability gating. Legacy

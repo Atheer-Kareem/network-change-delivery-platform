@@ -127,6 +127,10 @@ def test_exact_authorities_are_configured_and_read_back() -> None:
         assert role["token_policies"] == [snmp_provision_policy_name(device_id)]
     assert "ssh" not in SNMP_OBSERVABILITY_POLICY
     assert 'capabilities = ["read"]' in SNMP_OBSERVABILITY_POLICY
+    assert SNMP_OBSERVABILITY_POLICY.count("path ") == 2
+    assert "devices/8/" not in SNMP_OBSERVABILITY_POLICY
+    assert "devices/9/" not in SNMP_OBSERVABILITY_POLICY
+    assert SNMP_OBSERVABILITY_ROLE["secret_id_num_uses"] == 2
     assert SNMP_OBSERVABILITY_ROLE["token_no_default_policy"] is True
     assert SNMP_OBSERVABILITY_ROLE["token_num_uses"] == 1
     for device_id in (1, 2):

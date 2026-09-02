@@ -19,6 +19,7 @@ from network_change_delivery.secrets import (
     create_openbao_client,
     validate_openbao_url,
 )
+from network_change_delivery.snmp_profile import SNMP_PROFILED_DEVICE_IDENTITIES
 from network_change_delivery.snmp_telemetry import SnmpCredentialReference
 
 SNMP_GENERATION = "v1"
@@ -49,7 +50,7 @@ def validate_snmp_generation(value: str) -> str:
 
 def snmp_username(device_id: int, generation: str = SNMP_GENERATION) -> str:
     """Return one deterministic cross-vendor-safe controlled principal."""
-    if device_id not in {1, 2}:
+    if f"netbox:dcim.device:{device_id}" not in SNMP_PROFILED_DEVICE_IDENTITIES:
         raise SecretError("SNMP credential device rejected")
     generation = validate_snmp_generation(generation)
     value = f"ncdp_snmp_d{device_id}_{generation}"
@@ -70,7 +71,7 @@ def validate_snmp_secret(value: str, field: str = "SNMP credential") -> str:
 
 
 def snmp_secret_logical_path(device_id: int, generation: str) -> str:
-    if device_id not in {1, 2}:
+    if f"netbox:dcim.device:{device_id}" not in SNMP_PROFILED_DEVICE_IDENTITIES:
         raise SecretError("SNMP credential device rejected")
     return f"ncdp/devices/{device_id}/snmpv3/{validate_snmp_generation(generation)}"
 
@@ -81,13 +82,13 @@ def snmp_secret_api_path(device_id: int, generation: str) -> str:
 
 
 def snmp_provision_role_name(device_id: int) -> str:
-    if device_id not in {1, 2}:
+    if device_id not in (1, 2):
         raise SecretError("SNMP credential device rejected")
     return f"ncdp-buildkite-snmp-provision-device-{device_id}"
 
 
 def snmp_provision_policy_name(device_id: int) -> str:
-    if device_id not in {1, 2}:
+    if device_id not in (1, 2):
         raise SecretError("SNMP credential device rejected")
     return f"ncdp-buildkite-snmp-device-{device_id}-v1-read"
 

@@ -38,20 +38,26 @@ from network_change_delivery.snmp_credentials import (
     validate_snmp_generation,
     validate_snmp_secret,
 )
+from network_change_delivery.snmp_profile import SNMP_PROFILED_DEVICE_IDENTITIES
 
 SNMP_OBSERVABILITY_POLICY_NAME = "ncdp-observability-snmp-read"
 SNMP_OBSERVABILITY_ROLE_NAME = "ncdp-observability-snmp-source"
-SNMP_OBSERVABILITY_POLICY = """path "ncdp/data/devices/1/snmpv3/v1" {
-  capabilities = ["read"]
-}
-path "ncdp/data/devices/2/snmpv3/v1" {
-  capabilities = ["read"]
-}
-"""
+
+
+def snmp_observability_policy() -> str:
+    """Render read-only policy from the current profiled capability subset."""
+    return "".join(
+        f'path "ncdp/data/devices/{identity.rsplit(":", 1)[1]}/snmpv3/v1" {{\n'
+        '  capabilities = ["read"]\n}\n'
+        for identity in SNMP_PROFILED_DEVICE_IDENTITIES
+    )
+
+
+SNMP_OBSERVABILITY_POLICY = snmp_observability_policy()
 SNMP_OBSERVABILITY_ROLE = {
     "bind_secret_id": True,
     "secret_id_ttl": 1800,
-    "secret_id_num_uses": 2,
+    "secret_id_num_uses": len(SNMP_PROFILED_DEVICE_IDENTITIES),
     "token_no_default_policy": True,
     "token_policies": [SNMP_OBSERVABILITY_POLICY_NAME],
     "token_ttl": 300,

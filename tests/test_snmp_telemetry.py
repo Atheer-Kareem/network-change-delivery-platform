@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
+from network_change_delivery.architecture_contracts import AutomationProfileID
 from network_change_delivery.observability_targets import ObservabilityReady
 from network_change_delivery.snmp_telemetry import (
     MAX_EXPECTED_INTERFACES_PER_DEVICE,
@@ -207,7 +208,7 @@ def test_credential_reference_and_target_are_nonsecret_and_device_bound() -> Non
     target = SnmpTargetIdentity(
         device=DEVICE_1,
         device_name="core-02",
-        platform="cisco_iosxe",
+        automation_profile_id=AutomationProfileID.CAT8000V_IOSXE,
         credential=route,
     )
     assert target.credential.auth_selector == "ncdp_snmp_device_1_v1"
@@ -306,7 +307,13 @@ def test_generation_is_ordered_digest_bound_and_separate_from_11a() -> None:
         exporter_image_id="sha256:" + "e" * 64,
         module_config_sha256="sha256:" + "f" * 64,
     )
-    assert readiness.service_contract == "11C"
+    assert readiness.schema_version == "2"
+    assert readiness.service_contract == "snmpv3-interface-telemetry"
+    old_payload = readiness.model_dump(mode="json")
+    old_payload["schema_version"] = "1"
+    old_payload["service_contract"] = "11C"
+    with pytest.raises(ValidationError):
+        SnmpReadiness.model_validate(old_payload)
     serialized = readiness.model_dump_json().casefold()
     assert "password" not in serialized
     assert "auth" not in serialized

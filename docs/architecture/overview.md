@@ -148,8 +148,11 @@ Grafana dashboard, and advisory operator alerts. See
 Increment 11C-2 adds a disposable synthetic SNMPv3 exporter overlay without
 changing that persistent five-service runtime. Increment 11C-3 adds accepted,
 separately authorized Cisco and Junos SNMPv3 provisioning through the protected
-delivery path. Persistent live SNMP polling remains deferred as 11C-4, and 11D
-gNMI/OpenConfig is deferred/skipped.
+delivery path. The current SNMP-capable projection of the profiled exact-four
+fleet is the C8000V IOS-XE and vJunos profiles (devices 1 and 2); IOSv and
+IOSvL2 remain excluded because their accepted software capability is legacy
+SHA/SHA-1 rather than the required SHA256. Persistent live SNMP polling remains
+deferred as 11C-4, and 11D gNMI/OpenConfig is deferred/skipped.
 
 Increment 12A makes the Buildkite engineering story explicit: individual
 validation gates join at `validation-complete`; disposable CML staging and

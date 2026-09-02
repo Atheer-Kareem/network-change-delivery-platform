@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from network_change_delivery.architecture_contracts import AutomationProfileID
 from network_change_delivery.snmp_publication import (
     SnmpPollingTarget,
     SnmpTargetPublicationError,
@@ -28,7 +29,11 @@ def target(number: int, endpoint: str) -> SnmpPollingTarget:
         identity=SnmpTargetIdentity(
             device=device,
             device_name=f"synthetic-{number}",
-            platform="cisco_iosxe" if number == 1 else "junos",
+            automation_profile_id=(
+                AutomationProfileID.CAT8000V_IOSXE
+                if number == 1
+                else AutomationProfileID.VJUNOS_ROUTER
+            ),
             credential=SnmpCredentialReference(
                 device=device,
                 reference=(

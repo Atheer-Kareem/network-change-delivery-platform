@@ -8,6 +8,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from network_change_delivery.architecture_contracts import (
+    AutomationProfileID,
+)
 from network_change_delivery.audit import (
     NetBoxDeviceIdentity,
     NetBoxInterfaceIdentity,
@@ -15,6 +18,7 @@ from network_change_delivery.audit import (
     canonical_json_bytes,
     sha256_identity,
 )
+from network_change_delivery.snmp_profile import profile_supports_snmp
 
 MAX_EXPECTED_INTERFACES_PER_DEVICE = 64
 MAX_OBSERVED_INTERFACES_PER_DEVICE = 512
@@ -106,13 +110,15 @@ class SnmpTargetIdentity(BaseModel):
 
     device: NetBoxDeviceIdentity
     device_name: SnmpName
-    platform: Literal["cisco_iosxe", "junos"]
+    automation_profile_id: AutomationProfileID
     credential: SnmpCredentialReference
 
     @model_validator(mode="after")
     def credential_matches_device(self) -> SnmpTargetIdentity:
         if self.credential.device != self.device:
             raise ValueError("SNMP target credential device mismatch")
+        if not profile_supports_snmp(self.automation_profile_id):
+            raise ValueError("SNMP target profile lacks the accepted capability")
         return self
 
 
@@ -258,8 +264,10 @@ class SnmpReadiness(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1"] = "1"
-    service_contract: Literal["11C"] = "11C"
+    schema_version: Literal["2"] = "2"
+    service_contract: Literal["snmpv3-interface-telemetry"] = (
+        "snmpv3-interface-telemetry"
+    )
     state: SnmpTargetState
     refreshed_at: datetime
     expires_at: datetime

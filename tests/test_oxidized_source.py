@@ -8,7 +8,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from network_change_delivery.architecture_contracts import AutomationProfileID
+from network_change_delivery.architecture_contracts import (
+    AutomationProfileID,
+    NetworkOS,
+)
 from network_change_delivery.inventory import InventoryError
 from network_change_delivery.oxidized_source import (
     OxidizedSourceError,
@@ -23,9 +26,40 @@ from network_change_delivery.secrets import (
 
 
 class Device:
-    def __init__(self, device_id: int, profile: AutomationProfileID, host: str):
-        self.device_identity = f"netbox:dcim.device:{device_id}"
+    def __init__(
+        self,
+        device_id: int,
+        profile: AutomationProfileID,
+        host: str,
+        *,
+        identity: str | None = None,
+        logical_name: str | None = None,
+        platform_slug: str | None = None,
+        network_os: NetworkOS | None = None,
+    ):
+        self.device_identity = identity or f"netbox:dcim.device:{device_id}"
         self.host = host
+        self.logical_name = logical_name or {
+            1: "core-02",
+            2: "edge-junos-01",
+            8: "transit-ios-01",
+            9: "access-sw-01",
+        }.get(device_id, f"unknown-{device_id}")
+        self.platform = SimpleNamespace(
+            slug=platform_slug
+            or {
+                AutomationProfileID.CAT8000V_IOSXE: "cisco-ios-xe",
+                AutomationProfileID.VJUNOS_ROUTER: "juniper-junos",
+                AutomationProfileID.IOSV_159_3_M12: "cisco-ios",
+                AutomationProfileID.IOSVL2_2020: "cisco-ios",
+            }.get(profile, "unknown-platform")
+        )
+        self.network_os = network_os or {
+            AutomationProfileID.CAT8000V_IOSXE: NetworkOS.IOSXE,
+            AutomationProfileID.VJUNOS_ROUTER: NetworkOS.JUNOS,
+            AutomationProfileID.IOSV_159_3_M12: NetworkOS.IOS,
+            AutomationProfileID.IOSVL2_2020: NetworkOS.IOS,
+        }.get(profile, "unknown-nos")
         self.automation_profile_id = profile
 
     def live_read_only_target(self):
@@ -131,6 +165,44 @@ def test_duplicate_identity_is_rejected() -> None:
     with pytest.raises(OxidizedSourceError, match="population"):
         materialize_oxidized_source(
             Inventory((DEVICES[0], DEVICES[0])), Secrets(), Path("/tmp/x")
+        )
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        Device(1, AutomationProfileID.IOSVL2_2020, "192.0.2.1"),
+        Device(
+            9,
+            AutomationProfileID.IOSVL2_2020,
+            "192.0.2.9",
+            identity="netbox:dcim.device:8",
+        ),
+        Device(
+            1,
+            AutomationProfileID.CAT8000V_IOSXE,
+            "192.0.2.1",
+            platform_slug="cisco-ios",
+        ),
+    ],
+)
+def test_consumer_subject_admission_rejects_mismatched_profiled_subject(
+    candidate: Device, tmp_path: Path
+) -> None:
+    population = (
+        (candidate, DEVICES[0], DEVICES[1], DEVICES[3])
+        if candidate.device_identity.endswith(":8")
+        else (candidate, *DEVICES[1:])
+    )
+    with pytest.raises(OxidizedSourceError, match="profiled subject"):
+        materialize_oxidized_source(Inventory(population), Secrets(), tmp_path / "o")
+
+
+def test_unsupported_oxidized_profile_fails_closed(tmp_path: Path) -> None:
+    candidate = Device(1, "unsupported-profile", "192.0.2.1")  # type: ignore[arg-type]
+    with pytest.raises(OxidizedSourceError, match="profiled subject"):
+        materialize_oxidized_source(
+            Inventory((candidate, *DEVICES[1:])), Secrets(), tmp_path / "o"
         )
 
 

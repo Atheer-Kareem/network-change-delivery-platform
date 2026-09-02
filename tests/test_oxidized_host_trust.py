@@ -186,19 +186,22 @@ def test_readiness_is_bound_to_exact_trust_digest_and_retirement(
         read_collection_ready(readiness, "a" * 64, trust_root=root)
 
 
-def test_cml_enrollment_is_anchored_before_fixed_keyscan() -> None:
+def test_cml_enrollment_is_anchored_before_paramiko_key_observation() -> None:
     source = (
         Path(__file__).parents[1] / "scripts/oxidized/enroll_cml_host_trust.py"
     ).read_text()
     assert source.index("_anchor(client, lab_id, node_ids)") < source.index(
-        "_scan(anchor"
+        "_observe_key(anchor"
     )
     for contract in (
-        'Path("/usr/bin/ssh-keyscan")',
-        'Path("/usr/bin/ssh-keygen")',
         "ProfiledLiveCmlOperator(client).anchor_profiled_live",
         "lab_id != LIVE_LAB",
         "LIVE_LAB = LIVE_LAB_ID",
+        "socket.create_connection",
+        "paramiko.Transport",
+        "transport.start_client",
+        "transport.get_remote_server_key",
+        "(address, 22)",
     ):
         assert contract in source
     for forbidden in (

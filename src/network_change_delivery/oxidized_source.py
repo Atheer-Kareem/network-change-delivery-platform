@@ -25,6 +25,7 @@ from network_change_delivery.profile_inventory import (
     PROFILED_POPULATION_IDENTITIES,
     ProfiledInventoryDevice,
     ProfiledInventoryPopulation,
+    admit_profiled_subject,
 )
 from network_change_delivery.secrets import SecretError, SecretProvider
 
@@ -92,6 +93,16 @@ def _device_id(device: ProfiledInventoryDevice) -> int:
 def _source_node(
     device: ProfiledInventoryDevice, provider: SecretProvider
 ) -> _PrivateSourceNode:
+    try:
+        admit_profiled_subject(
+            device_identity=device.device_identity,
+            logical_name=device.logical_name,
+            platform_slug=device.platform.slug,
+            network_os=device.network_os,
+            automation_profile_id=device.automation_profile_id,
+        )
+    except (InventoryError, AttributeError, TypeError) as error:
+        raise OxidizedSourceError("Oxidized profiled subject rejected") from error
     device_id = _device_id(device)
     expected_reference = f"openbao:kv-v2:ncdp/devices/{device_id}/ssh"
     try:

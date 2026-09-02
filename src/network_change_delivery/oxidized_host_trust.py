@@ -26,8 +26,6 @@ SUPPORTED_KEY_ALGORITHMS = frozenset(
     {
         "ssh-ed25519",
         "ecdsa-sha2-nistp256",
-        "ecdsa-sha2-nistp384",
-        "ecdsa-sha2-nistp521",
         "ssh-rsa",
     }
 )
@@ -60,8 +58,6 @@ class HostTrustNode(BaseModel):
     algorithm: Literal[
         "ssh-ed25519",
         "ecdsa-sha2-nistp256",
-        "ecdsa-sha2-nistp384",
-        "ecdsa-sha2-nistp521",
         "ssh-rsa",
     ]
     fingerprint: str = Field(pattern=r"^SHA256:[A-Za-z0-9+/]{43}$")

@@ -5,16 +5,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import ssl
-import subprocess
 import sys
-from pathlib import Path
-from typing import Any
 
 import httpx
+import paramiko
 
 from network_change_delivery.oxidized_host_trust import (
     DEFAULT_TRUST_ROOT,
+    SUPPORTED_KEY_ALGORITHMS,
     HostTrustNode,
     OxidizedHostTrustError,
     parse_known_hosts,
@@ -29,17 +29,7 @@ from network_change_delivery.profiled_live_cml import (
     ProfiledLiveCmlOperator,
 )
 
-SSH_KEYSCAN = Path("/usr/bin/ssh-keyscan")
-SSH_KEYGEN = Path("/usr/bin/ssh-keygen")
 LIVE_LAB = LIVE_LAB_ID
-LIVE_TITLE = "NCDP Live"
-ALGORITHM_PRIORITY = (
-    "ssh-ed25519",
-    "ecdsa-sha2-nistp256",
-    "ecdsa-sha2-nistp384",
-    "ecdsa-sha2-nistp521",
-    "ssh-rsa",
-)
 
 
 class EnrollmentError(ValueError):
@@ -79,45 +69,6 @@ def _client() -> httpx.Client:
     return client
 
 
-def _get(client: httpx.Client, path: str) -> Any:
-    try:
-        response = client.get(path)
-        response.raise_for_status()
-        return response.json()
-    except (httpx.HTTPError, ValueError):
-        raise EnrollmentError("CML enrollment anchor unavailable") from None
-
-
-def _configuration(client: httpx.Client, lab_id: str, node_id: str) -> str:
-    for suffix in ("configuration", "configurations"):
-        try:
-            response = client.get(f"/api/v0/labs/{lab_id}/nodes/{node_id}/{suffix}")
-            if response.status_code != 200:
-                continue
-            payload = response.json()
-        except (httpx.HTTPError, ValueError):
-            continue
-        if isinstance(payload, str):
-            return payload
-        if isinstance(payload, dict):
-            value = payload.get("configuration") or payload.get("config/juniper.conf")
-            if isinstance(value, str):
-                return value
-    node = _get(client, f"/api/v0/labs/{lab_id}/nodes/{node_id}")
-    value = node.get("configuration") if isinstance(node, dict) else None
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        contents = [
-            item.get("content")
-            for item in value
-            if isinstance(item, dict) and isinstance(item.get("content"), str)
-        ]
-        if len(contents) == 1:
-            return contents[0]
-    raise EnrollmentError("CML stored Day-0 material unavailable")
-
-
 def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]):
     if lab_id != LIVE_LAB:
         raise EnrollmentError("CML enrollment lab identity rejected")
@@ -130,48 +81,27 @@ def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]):
         raise EnrollmentError("CML enrollment anchor rejected") from None
 
 
-def _scan(host: str) -> str:
-    if not SSH_KEYSCAN.is_file() or not SSH_KEYGEN.is_file():
-        raise EnrollmentError("fixed OpenSSH executables unavailable")
+def _observe_key(address: str) -> str:
+    """Observe one SSH/22 server key after its CML anchor is admitted."""
+    connection: socket.socket | None = None
+    transport: paramiko.Transport | None = None
     try:
-        result = subprocess.run(
-            [
-                str(SSH_KEYSCAN),
-                "-T",
-                "10",
-                "-t",
-                "ed25519,ecdsa,rsa",
-                "-p",
-                "22",
-                host,
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=True,
-            timeout=15,
-        )
-    except (OSError, subprocess.SubprocessError):
+        connection = socket.create_connection((address, 22), timeout=10)
+        transport = paramiko.Transport(connection)
+        transport.start_client(timeout=15)
+        key = transport.get_remote_server_key()
+        algorithm = key.get_name()
+        encoded = key.get_base64()
+        if algorithm not in SUPPORTED_KEY_ALGORITHMS or not encoded:
+            raise EnrollmentError(f"SSH host-key algorithm rejected: {algorithm}")
+        return f"{address} {algorithm} {encoded}"
+    except (OSError, paramiko.SSHException):
         raise EnrollmentError("SSH host-key observation failed") from None
-    choices: dict[str, str] = {}
-    try:
-        lines = result.stdout.decode("ascii").splitlines()
-    except UnicodeDecodeError:
-        raise EnrollmentError("SSH host-key observation malformed") from None
-    for line in lines:
-        if not line or line.startswith("#"):
-            continue
-        fields = line.split()
-        if len(fields) != 3 or fields[0] != host:
-            raise EnrollmentError("SSH host-key identity rejected")
-        algorithm = fields[1]
-        if algorithm not in ALGORITHM_PRIORITY or algorithm in choices:
-            raise EnrollmentError("SSH host-key observation conflicting")
-        choices[algorithm] = line
-    for algorithm in ALGORITHM_PRIORITY:
-        if algorithm in choices:
-            return choices[algorithm]
-    raise EnrollmentError("SSH host-key observation unavailable")
+    finally:
+        if transport is not None:
+            transport.close()
+        elif connection is not None:
+            connection.close()
 
 
 def enroll(lab_id: str, node_ids: dict[str, str]) -> None:
@@ -181,7 +111,8 @@ def enroll(lab_id: str, node_ids: dict[str, str]) -> None:
     finally:
         client.close()
     selected = {
-        anchor.logical_name: _scan(anchor.management_address) for anchor in anchors
+        anchor.logical_name: _observe_key(anchor.management_address)
+        for anchor in anchors
     }
     known_hosts = ("\n".join(selected.values()) + "\n").encode()
     parsed = parse_known_hosts(known_hosts)

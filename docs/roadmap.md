@@ -204,6 +204,10 @@ acceptance records.
       scope. The legacy path is removed only after no legitimate runtime
       consumer remains. The first bounded migration increment changes NetBox
       lifecycle/readiness only; it leaves all other legacy consumers and tags
-      intact.
+      intact. The second bounded migration increment migrates
+      management-service observability: its target generation, persistent CML
+      realization admission, and readiness contract now bind the profiled
+      exact-four population, while its runtime remains paused and other legacy
+      consumers remain unchanged.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

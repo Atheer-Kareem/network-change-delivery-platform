@@ -11,7 +11,10 @@ from types import SimpleNamespace
 import pytest
 
 from network_change_delivery import observability_reconciler
-from network_change_delivery.models import InventoryDevice
+from network_change_delivery.architecture_contracts import (
+    AutomationProfileID,
+    NetworkOS,
+)
 from network_change_delivery.observability_realization import (
     ObservabilityRealizationError,
 )
@@ -54,26 +57,61 @@ RUNTIME_ROOT = Path("/private/runtime")
 
 
 class Inventory:
-    def resolve_managed_devices(self):
-        return (
-            InventoryDevice(
-                name="core-02",
-                host="192.0.2.14",
-                port=22,
-                platform="cisco_iosxe",
-                expected_hostname="core-02",
-                inventory_source="netbox",
-                inventory_object_id="netbox:dcim.device:1",
-            ),
-            InventoryDevice(
-                name="edge-junos-01",
-                host="192.0.2.20",
-                port=830,
-                platform="junos",
-                expected_hostname="edge-junos-01",
-                inventory_source="netbox",
-                inventory_object_id="netbox:dcim.device:2",
-            ),
+    def resolve_profiled_population(self):
+        def device(identity, name, slug, network_os, profile, host, port):
+            class Device(SimpleNamespace):
+                def live_read_only_target(self):
+                    return SimpleNamespace(host=self.host, port=self.port)
+
+            return Device(
+                inventory_object_id=identity,
+                logical_name=name,
+                platform=SimpleNamespace(slug=slug),
+                network_os=network_os,
+                automation_profile_id=profile,
+                host=host,
+                port=port,
+            )
+
+        return SimpleNamespace(
+            devices=(
+                device(
+                    "netbox:dcim.device:1",
+                    "core-02",
+                    "cisco-ios-xe",
+                    NetworkOS.IOSXE,
+                    AutomationProfileID.CAT8000V_IOSXE,
+                    "192.0.2.14",
+                    22,
+                ),
+                device(
+                    "netbox:dcim.device:2",
+                    "edge-junos-01",
+                    "juniper-junos",
+                    NetworkOS.JUNOS,
+                    AutomationProfileID.VJUNOS_ROUTER,
+                    "192.0.2.20",
+                    830,
+                ),
+                device(
+                    "netbox:dcim.device:8",
+                    "transit-ios-01",
+                    "cisco-ios",
+                    NetworkOS.IOS,
+                    AutomationProfileID.IOSV_159_3_M12,
+                    "192.0.2.16",
+                    22,
+                ),
+                device(
+                    "netbox:dcim.device:9",
+                    "access-sw-01",
+                    "cisco-ios",
+                    NetworkOS.IOS,
+                    AutomationProfileID.IOSVL2_2020,
+                    "192.0.2.17",
+                    22,
+                ),
+            )
         )
 
 
@@ -123,6 +161,8 @@ def test_readiness_binds_generation_realization_containers_and_commit(
     assert marker.targets == (
         "netbox:dcim.device:1",
         "netbox:dcim.device:2",
+        "netbox:dcim.device:8",
+        "netbox:dcim.device:9",
     )
     assert (root / "runtime/observability-ready.json").stat().st_mode & 0o777 == 0o600
 
@@ -923,6 +963,18 @@ def test_refresh_stage_failure_remains_realization_rejected_and_stops_progressio
                 inventory_object_id="netbox:dcim.device:1",
                 cml_node_id="22222222-2222-2222-2222-222222222222",
             ),
+            SimpleNamespace(
+                inventory_object_id="netbox:dcim.device:2",
+                cml_node_id="33333333-3333-3333-3333-333333333333",
+            ),
+            SimpleNamespace(
+                inventory_object_id="netbox:dcim.device:8",
+                cml_node_id="44444444-4444-4444-4444-444444444444",
+            ),
+            SimpleNamespace(
+                inventory_object_id="netbox:dcim.device:9",
+                cml_node_id="55555555-5555-5555-5555-555555555555",
+            ),
         ),
     )
     refreshed = SimpleNamespace(digest="sha256:" + "a" * 64)
@@ -1038,6 +1090,18 @@ def test_successful_refresh_preserves_settings_validation_and_publication_order(
                 inventory_object_id="netbox:dcim.device:1",
                 cml_node_id="22222222-2222-2222-2222-222222222222",
             ),
+            SimpleNamespace(
+                inventory_object_id="netbox:dcim.device:2",
+                cml_node_id="33333333-3333-3333-3333-333333333333",
+            ),
+            SimpleNamespace(
+                inventory_object_id="netbox:dcim.device:8",
+                cml_node_id="44444444-4444-4444-4444-444444444444",
+            ),
+            SimpleNamespace(
+                inventory_object_id="netbox:dcim.device:9",
+                cml_node_id="55555555-5555-5555-5555-555555555555",
+            ),
         ),
     )
     refreshed = SimpleNamespace(digest="sha256:" + "a" * 64)
@@ -1057,8 +1121,14 @@ def test_successful_refresh_preserves_settings_validation_and_publication_order(
         def __init__(self, *_args):
             calls.append("cml_authority")
 
-        def admit(self, _lab_id, _node_ids):
+        def admit(self, _lab_id, node_ids):
             calls.append("cml_admit")
+            assert node_ids == {
+                "netbox:dcim.device:1": "22222222-2222-2222-2222-222222222222",
+                "netbox:dcim.device:2": "33333333-3333-3333-3333-333333333333",
+                "netbox:dcim.device:8": "44444444-4444-4444-4444-444444444444",
+                "netbox:dcim.device:9": "55555555-5555-5555-5555-555555555555",
+            }
             return refreshed
 
         def close(self):
@@ -1110,7 +1180,7 @@ def test_successful_refresh_still_materializes_targets_and_readiness(
     )
     monkeypatch.setattr(
         observability_reconciler,
-        "NetBoxInventoryProvider",
+        "NetBoxProfileInventoryProvider",
         lambda *_args: calls.append("inventory_provider") or Inventory(),
     )
     monkeypatch.setattr(
@@ -1205,5 +1275,5 @@ def test_reconciler_uses_no_openbao_ssh_or_configuration_collection() -> None:
         "diff",
     ):
         assert forbidden not in lowered
-    assert "NetBoxInventoryProvider" in source
+    assert "NetBoxProfileInventoryProvider" in source
     assert "CmlRealizationAuthority" in source

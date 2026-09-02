@@ -95,6 +95,18 @@ def test_profiled_subject_admission_precedes_capability_projection() -> None:
         eligible_profiled_subject(subject)
 
 
+def test_device_two_wrong_subject_identity_profile_and_nos_fail_closed() -> None:
+    subject = SimpleNamespace(
+        device_identity="netbox:dcim.device:1",
+        logical_name="edge-junos-01",
+        platform=SimpleNamespace(slug="cisco-ios-xe"),
+        network_os="iosxe",
+        automation_profile_id=AutomationProfileID.CAT8000V_IOSXE,
+    )
+    with pytest.raises(ValueError, match="Git-owned subject"):
+        eligible_profiled_subject(subject)
+
+
 def test_catalog_capability_assignments_are_explicitly_closed() -> None:
     assert {
         profile_id

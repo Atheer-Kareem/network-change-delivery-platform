@@ -195,5 +195,12 @@ acceptance records.
       store remained unchanged. Disposable CML staging, protected delivery,
       observability runtime validation, and synthetic SNMPv3 runtime validation
       remain paused.
+      The exact-two legacy path and profiled exact-four path are transitional
+      coexistence, not the target end state: final NCDP is one profiled
+      exact-four managed fleet with explicit profile/capability gating. Legacy
+      `ncdp-managed` remains only until each legitimate consumer has migrated
+      or been retired. The first bounded migration increment changes NetBox
+      lifecycle/readiness only; it leaves all other legacy consumers and tags
+      intact.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

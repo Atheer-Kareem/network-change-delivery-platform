@@ -21,6 +21,17 @@ Current membership is exact: `core-02` and `edge-junos-01` carry both
 tags; `transit-ios-01` and `access-sw-01` carry only
 `ncdp-profiled-inventory`. No tag is inferred from the other.
 
+This coexistence is transitional migration architecture, not the final managed
+fleet design. The target is one profiled exact-four managed-fleet architecture
+for devices 1/2/8/9, with each consumer admitting only the profiles and
+capabilities appropriate to its operation; fleet membership never grants every
+device identical router, write, or service behavior. The legacy
+`ncdp-managed` path remains only while its legitimate consumers are migrated
+or consciously retired, and it is removed only after the last such consumer is
+gone. The first migration increment moves NetBox lifecycle/readiness to the
+existing profiled population contract; it does not change other legacy
+consumers or the tag itself.
+
 The profiled tag grants no credential, device command, deployment, SNMP, fleet,
 observability, Oxidized, or protected-write capability. B3-4 accepts the
 four-device persistent LIVE realization in

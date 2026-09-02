@@ -11,7 +11,8 @@ import sys
 import time
 from pathlib import Path
 
-from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
+from network_change_delivery.inventory import InventoryError
+from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 
 PROJECT = "netbox-docker"
 EXPECTED_SERVICES = frozenset(
@@ -264,15 +265,11 @@ def _inspect_project(
 
 
 def _wait_health(token: str) -> None:
-    provider = NetBoxInventoryProvider(API_URL, token)
+    provider = NetBoxProfileInventoryProvider(API_URL, token)
     for _ in range(90):
         try:
-            devices = provider.resolve_managed_devices()
-            if {device.inventory_object_id for device in devices} == {
-                "netbox:dcim.device:1",
-                "netbox:dcim.device:2",
-            } and len(devices) == 2:
-                return
+            provider.resolve_profiled_population()
+            return
         except InventoryError:
             pass
         time.sleep(2)

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from network_change_delivery.inventory import InventoryError
 from network_change_delivery.netbox_lab_reconciler import (
     EXPECTED_SERVICES,
     NETBOX_IMAGE,
@@ -14,6 +15,7 @@ from network_change_delivery.netbox_lab_reconciler import (
     _private_token,
     _verify_files,
     _verify_model,
+    _wait_health,
 )
 
 
@@ -96,3 +98,57 @@ def test_source_contains_exact_image_and_no_destructive_compose() -> None:
     assert '"pull"' not in source.replace('"--pull"', "")
     assert "allow_legacy_location=True" in source
     assert "allow_absent=True" in source
+    assert "NetBoxProfileInventoryProvider" in source
+    assert "resolve_profiled_population()" in source
+    assert "resolve_managed_devices" not in source
+    assert "ncdp-managed" not in source
+
+
+def test_health_uses_profiled_population_without_legacy_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class ProfiledProvider:
+        def __init__(self, url: str, token: str) -> None:
+            calls.append((url, token))
+
+        def resolve_profiled_population(self) -> object:
+            return object()
+
+    monkeypatch.setattr(
+        "network_change_delivery.netbox_lab_reconciler.NetBoxProfileInventoryProvider",
+        ProfiledProvider,
+    )
+
+    _wait_health("test-token")
+
+    assert calls == [("http://127.0.0.1:8000", "test-token")]
+
+
+def test_health_fails_closed_when_profiled_population_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    class RejectedProfiledProvider:
+        def __init__(self, _url: str, _token: str) -> None:
+            pass
+
+        def resolve_profiled_population(self) -> object:
+            nonlocal attempts
+            attempts += 1
+            raise InventoryError("profiled population rejected")
+
+    monkeypatch.setattr(
+        "network_change_delivery.netbox_lab_reconciler.NetBoxProfileInventoryProvider",
+        RejectedProfiledProvider,
+    )
+    monkeypatch.setattr(
+        "network_change_delivery.netbox_lab_reconciler.time.sleep", lambda _: None
+    )
+
+    with pytest.raises(NetBoxLabError, match="authority health check failed"):
+        _wait_health("test-token")
+
+    assert attempts == 90

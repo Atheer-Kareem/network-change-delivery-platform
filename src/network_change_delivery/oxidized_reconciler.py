@@ -8,7 +8,6 @@ import sys
 import time
 from pathlib import Path
 
-from network_change_delivery.inventory import NetBoxInventoryProvider
 from network_change_delivery.openbao_oxidized_bootstrap import OpenBaoOxidizedBootstrap
 from network_change_delivery.oxidized_controller import EXPECTED_NODES
 from network_change_delivery.oxidized_host_trust import (
@@ -31,6 +30,7 @@ from network_change_delivery.oxidized_source import (
     OxidizedSourcePublicationAmbiguousError,
     materialize_oxidized_source,
 )
+from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.secrets import OpenBaoSecretProvider
 
 STATE_ROOT = Path("/Users/netdevops/.local/state/ncdp/oxidized")
@@ -145,7 +145,7 @@ def _wait_nodes() -> None:
                     isinstance(data, list)
                     and {item.get("name") for item in data if isinstance(item, dict)}
                     == EXPECTED_NODES
-                    and len(data) == 2
+                    and len(data) == 4
                     and all(
                         item.get("group") == "managed"
                         and isinstance(item.get("status"), str)
@@ -186,7 +186,9 @@ def reconcile() -> str:
     )
     try:
         result = materialize_oxidized_source(
-            NetBoxInventoryProvider(netbox_url, _private(CONFIG_ROOT / "netbox-token")),
+            NetBoxProfileInventoryProvider(
+                netbox_url, _private(CONFIG_ROOT / "netbox-token")
+            ),
             OpenBaoSecretProvider(
                 openbao_url, source_login.role_id, source_login.secret_id
             ),

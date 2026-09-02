@@ -16,11 +16,33 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from network_change_delivery.profiled_live_cml import (
+    ACCESS_NODE_ID,
+    CORE_NODE_ID,
+    JUNOS_NODE_ID,
+    LIVE_LAB_ID,
+    TRANSIT_NODE_ID,
+)
+
 EXPECTED_HOSTS = {
     "netbox-device-1": "192.168.4.14",
     "netbox-device-2": "192.168.4.20",
+    "netbox-device-8": "192.168.4.16",
+    "netbox-device-9": "192.168.4.17",
 }
-SUPPORTED_KEY_ALGORITHMS = frozenset({"ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"})
+EXPECTED_CML_NODE_IDS = {
+    "netbox-device-1": CORE_NODE_ID,
+    "netbox-device-2": JUNOS_NODE_ID,
+    "netbox-device-8": TRANSIT_NODE_ID,
+    "netbox-device-9": ACCESS_NODE_ID,
+}
+SUPPORTED_KEY_ALGORITHMS = frozenset(
+    {
+        "ssh-ed25519",
+        "ecdsa-sha2-nistp256",
+        "ssh-rsa",
+    }
+)
 DEFAULT_TRUST_ROOT = Path("/Users/netdevops/.config/ncdp/oxidized/ssh")
 KNOWN_HOSTS_NAME = "known_hosts"
 METADATA_NAME = "host-trust.json"
@@ -36,11 +58,22 @@ class OxidizedHostTrustError(ValueError):
 class HostTrustNode(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    node: Literal["netbox-device-1", "netbox-device-2"]
-    stable_name: Literal["core-02", "edge-junos-01"]
+    node: Literal[
+        "netbox-device-1",
+        "netbox-device-2",
+        "netbox-device-8",
+        "netbox-device-9",
+    ]
+    stable_name: Literal["core-02", "edge-junos-01", "transit-ios-01", "access-sw-01"]
     cml_node_id: str
-    management_ip: Literal["192.168.4.14", "192.168.4.20"]
-    algorithm: Literal["ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"]
+    management_ip: Literal[
+        "192.168.4.14", "192.168.4.20", "192.168.4.16", "192.168.4.17"
+    ]
+    algorithm: Literal[
+        "ssh-ed25519",
+        "ecdsa-sha2-nistp256",
+        "ssh-rsa",
+    ]
     fingerprint: str = Field(pattern=r"^SHA256:[A-Za-z0-9+/]{43}$")
 
     @field_validator("cml_node_id")
@@ -54,11 +87,11 @@ class HostTrustNode(BaseModel):
 class HostTrustMetadata(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     lab_id: str
     enrolled_at: datetime
     known_hosts_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    nodes: tuple[HostTrustNode, HostTrustNode]
+    nodes: tuple[HostTrustNode, ...]
 
     @field_validator("lab_id")
     @classmethod
@@ -178,16 +211,23 @@ def _validate_host_trust(root: Path, *, reject_ambiguity: bool) -> HostTrustMeta
     stable_names = {
         "netbox-device-1": "core-02",
         "netbox-device-2": "edge-junos-01",
+        "netbox-device-8": "transit-ios-01",
+        "netbox-device-9": "access-sw-01",
     }
     if (
-        metadata.known_hosts_sha256 != digest
+        metadata.lab_id != LIVE_LAB_ID
+        or metadata.known_hosts_sha256 != digest
         or set(expected_nodes) != set(EXPECTED_HOSTS)
-        or len(metadata.nodes) != 2
+        or len(metadata.nodes) != 4
         or any(
             expected_nodes[node] != (stable_names[node], ip, *parsed[ip])
             for node, ip in EXPECTED_HOSTS.items()
         )
-        or len({item.cml_node_id for item in metadata.nodes}) != 2
+        or any(
+            item.cml_node_id != EXPECTED_CML_NODE_IDS.get(item.node)
+            for item in metadata.nodes
+        )
+        or len({item.cml_node_id for item in metadata.nodes}) != 4
     ):
         raise OxidizedHostTrustError("Oxidized host-trust metadata rejected")
     return metadata
@@ -226,7 +266,7 @@ def publish_host_trust(
     known_hosts: bytes,
     *,
     lab_id: str,
-    nodes: tuple[HostTrustNode, HostTrustNode],
+    nodes: tuple[HostTrustNode, ...],
     root: Path = DEFAULT_TRUST_ROOT,
     now: datetime | None = None,
 ) -> HostTrustMetadata:

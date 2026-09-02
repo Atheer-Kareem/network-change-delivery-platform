@@ -30,8 +30,9 @@ device identical router, write, or service behavior. The legacy
 profiled architecture. A consumer may be retired instead only through an
 explicit decision that its capability is obsolete or outside final NCDP scope.
 The legacy path is removed only after no legitimate runtime consumer remains.
-The first migration increment moves NetBox lifecycle/readiness and the second
-moves management-service observability to the existing profiled population
+The first migration increment moves NetBox lifecycle/readiness, the second
+moves management-service observability, and the third moves persistent Oxidized
+configuration collection/chronology to the existing profiled population
 contract; they do not change the tag itself or other legacy consumers.
 
 The profiled tag alone grants no credential, device command, deployment, SNMP,
@@ -337,7 +338,14 @@ results are in the
 
 Observability admits and projects the exact four-device persistent CML
 population, deriving each management service from its automation profile.
-Oxidized, SNMP, v1 fleet, and protected write authority remain exact-two.
+Oxidized now consumes the exact-four profiled population through explicit
+profile capability (IOS-XE/IOSv/IOSvL2 use the `ios` model; Junos uses
+`junos`; all collection uses SSH/22). Its CML-anchored trust and read-only
+OpenBao authority are exact-four, while its existing private Git chronology is
+preserved additively. Successful collection is passive observation evidence and
+does not authorize IOSv/IOSvL2 writes or imply write causality. Live SNMP,
+legacy v1 planning/write execution, and protected write authority remain
+exact-two.
 Automatic disposable CML and protected delivery remain paused, and the
 Terraform staging topology is unchanged. The operator has restored local
 observability runtime and synthetic SNMPv3 quality validation. The latter keeps

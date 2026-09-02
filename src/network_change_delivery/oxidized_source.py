@@ -9,22 +9,33 @@ from contextlib import suppress
 from dataclasses import dataclass
 from ipaddress import IPv4Address
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from network_change_delivery.inventory import InventoryError, ManagedInventoryProvider
-from network_change_delivery.models import InventoryDevice
+from network_change_delivery.architecture_contracts import AutomationProfileID
+from network_change_delivery.inventory import InventoryError
 from network_change_delivery.oxidized_private_paths import (
     OxidizedPrivatePathError,
     ensure_private_directory,
     validate_oxidized_root,
     validate_private_file,
 )
+from network_change_delivery.profile_inventory import (
+    PROFILED_POPULATION_IDENTITIES,
+    ProfiledInventoryDevice,
+    ProfiledInventoryPopulation,
+    admit_profiled_subject,
+)
 from network_change_delivery.secrets import SecretError, SecretProvider
 
-EXPECTED_IDENTITIES = frozenset({"netbox:dcim.device:1", "netbox:dcim.device:2"})
-MODEL_MAP = {"cisco_iosxe": "ios", "junos": "junos"}
+EXPECTED_IDENTITIES = frozenset(PROFILED_POPULATION_IDENTITIES)
+OXIDIZED_MODEL_BY_PROFILE = {
+    AutomationProfileID.CAT8000V_IOSXE: "ios",
+    AutomationProfileID.VJUNOS_ROUTER: "junos",
+    AutomationProfileID.IOSV_159_3_M12: "ios",
+    AutomationProfileID.IOSVL2_2020: "ios",
+}
 SOURCE_GROUP = "managed"
 SOURCE_FILENAME = "router.json"
 
@@ -68,16 +79,30 @@ def _validate_existing_source(path: Path) -> None:
         raise OxidizedSourceError("Oxidized source path rejected") from error
 
 
-def _device_id(device: InventoryDevice) -> int:
-    identity = device.inventory_object_id
+class _ProfileInventory(Protocol):
+    def resolve_profiled_population(self) -> ProfiledInventoryPopulation: ...
+
+
+def _device_id(device: ProfiledInventoryDevice) -> int:
+    identity = device.device_identity
     if identity not in EXPECTED_IDENTITIES:
         raise OxidizedSourceError("Oxidized managed population is not exact")
     return int(identity.rsplit(":", maxsplit=1)[1])
 
 
 def _source_node(
-    device: InventoryDevice, provider: SecretProvider
+    device: ProfiledInventoryDevice, provider: SecretProvider
 ) -> _PrivateSourceNode:
+    try:
+        admit_profiled_subject(
+            device_identity=device.device_identity,
+            logical_name=device.logical_name,
+            platform_slug=device.platform.slug,
+            network_os=device.network_os,
+            automation_profile_id=device.automation_profile_id,
+        )
+    except (InventoryError, AttributeError, TypeError) as error:
+        raise OxidizedSourceError("Oxidized profiled subject rejected") from error
     device_id = _device_id(device)
     expected_reference = f"openbao:kv-v2:ncdp/devices/{device_id}/ssh"
     try:
@@ -90,8 +115,8 @@ def _source_node(
         credentials = provider.load(device)
         return _PrivateSourceNode(
             name=f"netbox-device-{device_id}",
-            ip=device.host,
-            model=MODEL_MAP[device.platform],
+            ip=device.live_read_only_target().host,
+            model=OXIDIZED_MODEL_BY_PROFILE[device.automation_profile_id],
             group=SOURCE_GROUP,
             username=credentials.username,
             password=credentials.password,
@@ -154,7 +179,7 @@ def _existing_payload_matches(path: Path, payload: bytes) -> bool:
 
 
 def materialize_oxidized_source(
-    inventory: ManagedInventoryProvider,
+    inventory: _ProfileInventory,
     secrets: SecretProvider,
     root: Path,
 ) -> MaterializedOxidizedSource:
@@ -164,13 +189,14 @@ def materialize_oxidized_source(
     except OxidizedPrivatePathError as error:
         raise OxidizedSourceError("Oxidized runtime root rejected") from error
     try:
-        devices = inventory.resolve_managed_devices()
+        population = inventory.resolve_profiled_population()
+        devices = population.devices
     except InventoryError as error:
         raise OxidizedSourceError(
             "Oxidized managed inventory resolution failed"
         ) from error
-    identities = tuple(device.inventory_object_id or "" for device in devices)
-    if len(identities) != 2 or set(identities) != EXPECTED_IDENTITIES:
+    identities = tuple(device.device_identity for device in devices)
+    if len(identities) != 4 or set(identities) != EXPECTED_IDENTITIES:
         raise OxidizedSourceError("Oxidized managed population is not exact")
     if len(set(identities)) != len(identities):
         raise OxidizedSourceError("Oxidized managed population contains duplicates")
@@ -200,5 +226,5 @@ def materialize_oxidized_source(
     changed = not _existing_payload_matches(path, payload)
     if changed:
         _publish(path, payload)
-    ordered_identities = tuple(device.inventory_object_id or "" for device in ordered)
+    ordered_identities = tuple(device.device_identity for device in ordered)
     return MaterializedOxidizedSource(path, ordered_identities, names, changed)

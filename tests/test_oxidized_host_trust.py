@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,13 @@ from network_change_delivery.oxidized_host_trust import (
     validate_host_trust,
 )
 from network_change_delivery.oxidized_service import publish_readiness
+from network_change_delivery.profiled_live_cml import (
+    ACCESS_NODE_ID,
+    CORE_NODE_ID,
+    JUNOS_NODE_ID,
+    LIVE_LAB_ID,
+    TRANSIT_NODE_ID,
+)
 
 
 def key(seed: bytes) -> tuple[str, str]:
@@ -36,22 +44,41 @@ def generation(root: Path):
     root.mkdir(mode=0o700, parents=True)
     key1, fingerprint1 = key(b"synthetic-cisco-public-key")
     key2, fingerprint2 = key(b"synthetic-junos-public-key")
+    key8, fingerprint8 = key(b"synthetic-iosv-public-key")
+    key9, fingerprint9 = key(b"synthetic-iosvl2-public-key")
     known_hosts = (
         f"192.168.4.14 ssh-rsa {key1}\n192.168.4.20 ssh-ed25519 {key2}\n"
+        f"192.168.4.16 ssh-ed25519 {key8}\n192.168.4.17 ssh-rsa {key9}\n"
     ).encode()
     nodes = (
         HostTrustNode(
             node="netbox-device-1",
             stable_name="core-02",
-            cml_node_id="11111111-1111-1111-1111-111111111111",
+            cml_node_id=CORE_NODE_ID,
             management_ip="192.168.4.14",
             algorithm="ssh-rsa",
             fingerprint=fingerprint1,
         ),
         HostTrustNode(
+            node="netbox-device-8",
+            stable_name="transit-ios-01",
+            cml_node_id=TRANSIT_NODE_ID,
+            management_ip="192.168.4.16",
+            algorithm="ssh-ed25519",
+            fingerprint=fingerprint8,
+        ),
+        HostTrustNode(
+            node="netbox-device-9",
+            stable_name="access-sw-01",
+            cml_node_id=ACCESS_NODE_ID,
+            management_ip="192.168.4.17",
+            algorithm="ssh-rsa",
+            fingerprint=fingerprint9,
+        ),
+        HostTrustNode(
             node="netbox-device-2",
             stable_name="edge-junos-01",
-            cml_node_id="22222222-2222-2222-2222-222222222222",
+            cml_node_id=JUNOS_NODE_ID,
             management_ip="192.168.4.20",
             algorithm="ssh-ed25519",
             fingerprint=fingerprint2,
@@ -60,26 +87,66 @@ def generation(root: Path):
     return known_hosts, nodes
 
 
-def publish(root: Path):
-    known_hosts, nodes = generation(root)
+def publish(
+    root: Path,
+    *,
+    lab_id: str = LIVE_LAB_ID,
+    nodes: tuple[HostTrustNode, ...] | None = None,
+):
+    known_hosts, valid_nodes = generation(root)
     return publish_host_trust(
         known_hosts,
-        lab_id="33333333-3333-3333-3333-333333333333",
-        nodes=nodes,
+        lab_id=lab_id,
+        nodes=valid_nodes if nodes is None else nodes,
         root=root,
         now=datetime(2026, 8, 27, tzinfo=UTC),
     )
 
 
-def test_exact_two_reviewed_hosts_are_accepted(tmp_path: Path) -> None:
+def test_exact_four_reviewed_hosts_are_accepted(tmp_path: Path) -> None:
     root = tmp_path / "private" / "ssh"
     metadata = publish(root)
     assert validate_host_trust(root) == metadata
+    assert metadata.schema_version == "2"
     assert {item.node for item in metadata.nodes} == {
         "netbox-device-1",
         "netbox-device-2",
+        "netbox-device-8",
+        "netbox-device-9",
     }
     assert not (root / AMBIGUITY_NAME).exists()
+
+
+def _rewrite_metadata(root: Path, **updates: object) -> None:
+    metadata_path = root / "host-trust.json"
+    payload = json.loads(metadata_path.read_text())
+    payload.update(updates)
+    metadata_path.write_text(json.dumps(payload) + "\n")
+    metadata_path.chmod(0o600)
+
+
+@pytest.mark.parametrize("kind", ["lab", "wrong-cml", "swapped-cml", "duplicate-cml"])
+def test_cml_realization_binding_is_exact_and_fail_closed(
+    tmp_path: Path, kind: str
+) -> None:
+    root = tmp_path / "private" / "ssh"
+    publish(root)
+    if kind == "lab":
+        _rewrite_metadata(root, lab_id="33333333-3333-3333-3333-333333333333")
+    else:
+        metadata_path = root / "host-trust.json"
+        payload = json.loads(metadata_path.read_text())
+        if kind == "wrong-cml":
+            payload["nodes"][0]["cml_node_id"] = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        elif kind == "swapped-cml":
+            payload["nodes"][0]["cml_node_id"] = JUNOS_NODE_ID
+            payload["nodes"][3]["cml_node_id"] = CORE_NODE_ID
+        else:
+            payload["nodes"][3]["cml_node_id"] = CORE_NODE_ID
+        metadata_path.write_text(json.dumps(payload) + "\n")
+        metadata_path.chmod(0o600)
+    with pytest.raises(OxidizedHostTrustError):
+        validate_host_trust(root)
 
 
 @pytest.mark.parametrize(
@@ -164,20 +231,22 @@ def test_readiness_is_bound_to_exact_trust_digest_and_retirement(
         read_collection_ready(readiness, "a" * 64, trust_root=root)
 
 
-def test_cml_enrollment_is_anchored_before_fixed_keyscan() -> None:
+def test_cml_enrollment_is_anchored_before_paramiko_key_observation() -> None:
     source = (
         Path(__file__).parents[1] / "scripts/oxidized/enroll_cml_host_trust.py"
     ).read_text()
     assert source.index("_anchor(client, lab_id, node_ids)") < source.index(
-        "_scan(expected"
+        "_observe_key(anchor"
     )
     for contract in (
-        'Path("/usr/bin/ssh-keyscan")',
-        'Path("/usr/bin/ssh-keygen")',
-        "title == LIVE_TITLE",
+        "ProfiledLiveCmlOperator(client).anchor_profiled_live",
         "lab_id != LIVE_LAB",
-        'node.get("state") == "BOOTED"',
-        'LIVE_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"',
+        "LIVE_LAB = LIVE_LAB_ID",
+        "socket.create_connection",
+        "paramiko.Transport",
+        "transport.start_client",
+        "transport.get_remote_server_key",
+        "(address, 22)",
     ):
         assert contract in source
     for forbidden in (

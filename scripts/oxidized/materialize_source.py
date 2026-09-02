@@ -5,11 +5,12 @@ import os
 import sys
 from pathlib import Path
 
-from network_change_delivery.inventory import InventoryError, NetBoxInventoryProvider
+from network_change_delivery.inventory import InventoryError
 from network_change_delivery.oxidized_source import (
     OxidizedSourceError,
     materialize_oxidized_source,
 )
+from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.secrets import OpenBaoSecretProvider, SecretError
 
 REQUIRED = (
@@ -30,7 +31,7 @@ def main() -> int:
         print("Oxidized materializer configuration missing", file=sys.stderr)
         return 2
     try:
-        inventory = NetBoxInventoryProvider(
+        inventory = NetBoxProfileInventoryProvider(
             os.environ["NCDP_OXIDIZED_NETBOX_URL"],
             os.environ["NCDP_OXIDIZED_NETBOX_TOKEN"],
         )

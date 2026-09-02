@@ -5,43 +5,37 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import ssl
-import subprocess
 import sys
-from pathlib import Path
-from typing import Any
 
 import httpx
+import paramiko
 
 from network_change_delivery.oxidized_host_trust import (
     DEFAULT_TRUST_ROOT,
+    SUPPORTED_KEY_ALGORITHMS,
     HostTrustNode,
     OxidizedHostTrustError,
     parse_known_hosts,
     publish_host_trust,
 )
+from network_change_delivery.profiled_live_cml import (
+    ACCESS_NODE_ID,
+    CORE_NODE_ID,
+    JUNOS_NODE_ID,
+    LIVE_LAB_ID,
+    TRANSIT_NODE_ID,
+    ProfiledLiveCmlOperator,
+)
 
-SSH_KEYSCAN = Path("/usr/bin/ssh-keyscan")
-SSH_KEYGEN = Path("/usr/bin/ssh-keygen")
-LIVE_LAB = "09605569-0468-4fc4-8684-beb5a1342b9c"
-LIVE_TITLE = "NCDP Live"
-EXPECTED = {
-    "netbox-device-1": {
-        "stable_name": "core-02",
-        "cml_label": "cat8000v-0",
-        "ip": "192.168.4.14",
-        "node_definition": "cat8000v",
-        "image": "cat8000v-17-18-02",
-    },
-    "netbox-device-2": {
-        "stable_name": "edge-junos-01",
-        "cml_label": "vjunos-router-0",
-        "ip": "192.168.4.20",
-        "node_definition": "vjunos-router",
-        "image": "vjunos-router-23-2r1-15",
-    },
+LIVE_LAB = LIVE_LAB_ID
+EXPECTED_CML_NODE_IDS = {
+    "netbox-device-1": CORE_NODE_ID,
+    "netbox-device-2": JUNOS_NODE_ID,
+    "netbox-device-8": TRANSIT_NODE_ID,
+    "netbox-device-9": ACCESS_NODE_ID,
 }
-ALGORITHM_PRIORITY = ("ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa")
 
 
 class EnrollmentError(ValueError):
@@ -81,148 +75,65 @@ def _client() -> httpx.Client:
     return client
 
 
-def _get(client: httpx.Client, path: str) -> Any:
-    try:
-        response = client.get(path)
-        response.raise_for_status()
-        return response.json()
-    except (httpx.HTTPError, ValueError):
-        raise EnrollmentError("CML enrollment anchor unavailable") from None
-
-
-def _configuration(client: httpx.Client, lab_id: str, node_id: str) -> str:
-    for suffix in ("configuration", "configurations"):
-        try:
-            response = client.get(f"/api/v0/labs/{lab_id}/nodes/{node_id}/{suffix}")
-            if response.status_code != 200:
-                continue
-            payload = response.json()
-        except (httpx.HTTPError, ValueError):
-            continue
-        if isinstance(payload, str):
-            return payload
-        if isinstance(payload, dict):
-            value = payload.get("configuration") or payload.get("config/juniper.conf")
-            if isinstance(value, str):
-                return value
-    node = _get(client, f"/api/v0/labs/{lab_id}/nodes/{node_id}")
-    value = node.get("configuration") if isinstance(node, dict) else None
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        contents = [
-            item.get("content")
-            for item in value
-            if isinstance(item, dict) and isinstance(item.get("content"), str)
-        ]
-        if len(contents) == 1:
-            return contents[0]
-    raise EnrollmentError("CML stored Day-0 material unavailable")
-
-
-def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]) -> None:
-    lab_ids = _get(client, "/api/v0/labs")
-    if not isinstance(lab_ids, list) or lab_id not in lab_ids:
+def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]):
+    if lab_id != LIVE_LAB:
         raise EnrollmentError("CML enrollment lab identity rejected")
-    live_matches = []
-    for candidate in lab_ids:
-        lab = _get(client, f"/api/v0/labs/{candidate}")
-        title = lab.get("lab_title") or lab.get("title")
-        if title == LIVE_TITLE:
-            live_matches.append(candidate)
-    if live_matches != [lab_id] or lab_id != LIVE_LAB:
-        raise EnrollmentError("CML enrollment lab identity rejected")
-    actual_node_ids = _get(client, f"/api/v0/labs/{lab_id}/nodes")
-    for logical, expected in EXPECTED.items():
-        node_id = node_ids[logical]
-        if node_id not in actual_node_ids:
-            raise EnrollmentError("CML enrollment node identity rejected")
-        node = _get(client, f"/api/v0/labs/{lab_id}/nodes/{node_id}")
-        configuration = _configuration(client, lab_id, node_id)
-        image = node.get("image_definition") or node.get("image_definition_id")
-        checks = {
-            "label": node.get("label") == expected["cml_label"],
-            "node_definition": node.get("node_definition")
-            == expected["node_definition"],
-            "image": image == expected["image"],
-            "booted": node.get("state") == "BOOTED",
-            "configuration_type": isinstance(configuration, str),
-            "hostname_marker": isinstance(configuration, str)
-            and expected["stable_name"] in configuration,
-            "address_marker": isinstance(configuration, str)
-            and expected["ip"] in configuration,
-        }
-        failed = [name for name, accepted in checks.items() if not accepted]
-        if failed:
-            raise EnrollmentError(
-                f"CML enrollment node anchor rejected for {logical}: "
-                + ",".join(failed)
-            )
-
-
-def _scan(host: str) -> str:
-    if not SSH_KEYSCAN.is_file() or not SSH_KEYGEN.is_file():
-        raise EnrollmentError("fixed OpenSSH executables unavailable")
+    if node_ids != EXPECTED_CML_NODE_IDS:
+        raise EnrollmentError("CML enrollment node identities rejected")
     try:
-        result = subprocess.run(
-            [
-                str(SSH_KEYSCAN),
-                "-T",
-                "10",
-                "-t",
-                "ed25519,ecdsa,rsa",
-                host,
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=True,
-            timeout=15,
+        return ProfiledLiveCmlOperator(client).anchor_profiled_live(
+            transit_node_id=node_ids["netbox-device-8"],
+            access_node_id=node_ids["netbox-device-9"],
         )
-    except (OSError, subprocess.SubprocessError):
-        raise EnrollmentError("SSH host-key observation failed") from None
-    choices: dict[str, str] = {}
+    except (KeyError, ValueError, RuntimeError):
+        raise EnrollmentError("CML enrollment anchor rejected") from None
+
+
+def _observe_key(address: str) -> str:
+    """Observe one SSH/22 server key after its CML anchor is admitted."""
+    connection: socket.socket | None = None
+    transport: paramiko.Transport | None = None
     try:
-        lines = result.stdout.decode("ascii").splitlines()
-    except UnicodeDecodeError:
-        raise EnrollmentError("SSH host-key observation malformed") from None
-    for line in lines:
-        if not line or line.startswith("#"):
-            continue
-        fields = line.split()
-        if len(fields) != 3 or fields[0] != host:
-            raise EnrollmentError("SSH host-key identity rejected")
-        algorithm = fields[1]
-        if algorithm not in ALGORITHM_PRIORITY or algorithm in choices:
-            raise EnrollmentError("SSH host-key observation conflicting")
-        choices[algorithm] = line
-    for algorithm in ALGORITHM_PRIORITY:
-        if algorithm in choices:
-            return choices[algorithm]
-    raise EnrollmentError("SSH host-key observation unavailable")
+        connection = socket.create_connection((address, 22), timeout=10)
+        transport = paramiko.Transport(connection)
+        transport.start_client(timeout=15)
+        key = transport.get_remote_server_key()
+        algorithm = key.get_name()
+        encoded = key.get_base64()
+        if algorithm not in SUPPORTED_KEY_ALGORITHMS or not encoded:
+            raise EnrollmentError(f"SSH host-key algorithm rejected: {algorithm}")
+        return f"{address} {algorithm} {encoded}"
+    except (OSError, paramiko.SSHException):
+        raise EnrollmentError("SSH host-key observation failed") from None
+    finally:
+        if transport is not None:
+            transport.close()
+        elif connection is not None:
+            connection.close()
 
 
 def enroll(lab_id: str, node_ids: dict[str, str]) -> None:
     client = _client()
     try:
-        _anchor(client, lab_id, node_ids)
+        anchors = _anchor(client, lab_id, node_ids)
     finally:
         client.close()
     selected = {
-        logical: _scan(expected["ip"]) for logical, expected in EXPECTED.items()
+        anchor.logical_name: _observe_key(anchor.management_address)
+        for anchor in anchors
     }
     known_hosts = ("\n".join(selected.values()) + "\n").encode()
     parsed = parse_known_hosts(known_hosts)
     nodes = tuple(
         HostTrustNode(
-            node=logical,
-            stable_name=expected["stable_name"],
-            cml_node_id=node_ids[logical],
-            management_ip=expected["ip"],
-            algorithm=parsed[expected["ip"]][0],
-            fingerprint=parsed[expected["ip"]][1],
+            node=f"netbox-device-{anchor.device_id}",
+            stable_name=anchor.logical_name,
+            cml_node_id=anchor.cml_node_id,
+            management_ip=anchor.management_address,
+            algorithm=parsed[anchor.management_address][0],
+            fingerprint=parsed[anchor.management_address][1],
         )
-        for logical, expected in EXPECTED.items()
+        for anchor in anchors
     )
     publish_host_trust(known_hosts, lab_id=lab_id, nodes=nodes, root=DEFAULT_TRUST_ROOT)
     for item in nodes:
@@ -235,8 +146,10 @@ def enroll(lab_id: str, node_ids: dict[str, str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lab-id", required=True)
-    parser.add_argument("--core-id", required=True)
-    parser.add_argument("--junos-id", required=True)
+    parser.add_argument("--core-id", default=CORE_NODE_ID)
+    parser.add_argument("--junos-id", default=JUNOS_NODE_ID)
+    parser.add_argument("--transit-id", default=TRANSIT_NODE_ID)
+    parser.add_argument("--access-id", default=ACCESS_NODE_ID)
     arguments = parser.parse_args()
     try:
         enroll(
@@ -244,6 +157,8 @@ def main() -> int:
             {
                 "netbox-device-1": arguments.core_id,
                 "netbox-device-2": arguments.junos_id,
+                "netbox-device-8": arguments.transit_id,
+                "netbox-device-9": arguments.access_id,
             },
         )
     except (EnrollmentError, OxidizedHostTrustError) as error:

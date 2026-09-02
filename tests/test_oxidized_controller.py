@@ -64,12 +64,17 @@ def test_readiness_missing_stale_wrong_container_and_wrong_nodes_fail(
     path.write_text(
         json.dumps(
             {
-                "schema_version": "2",
+                "schema_version": "3",
                 "refreshed_at": (now - timedelta(minutes=20)).isoformat(),
                 "expires_at": (now - timedelta(minutes=5)).isoformat(),
-                "nodes": ["netbox-device-1", "netbox-device-2"],
+                "nodes": [
+                    "netbox-device-1",
+                    "netbox-device-2",
+                    "netbox-device-8",
+                    "netbox-device-9",
+                ],
                 "container_id": CONTAINER,
-                "service_contract": "10C-6",
+                "service_contract": "configuration-collection",
                 "host_trust_sha256": TRUST_DIGEST,
             }
         )
@@ -78,6 +83,15 @@ def test_readiness_missing_stale_wrong_container_and_wrong_nodes_fail(
     with pytest.raises(OxidizedControlError):
         read_collection_ready(path, CONTAINER, now=now)
     publish_readiness(path, CONTAINER, now=now)
+    marker = json.loads(path.read_text())
+    assert marker["schema_version"] == "3"
+    assert marker["service_contract"] == "configuration-collection"
+    assert marker["nodes"] == [
+        "netbox-device-1",
+        "netbox-device-2",
+        "netbox-device-8",
+        "netbox-device-9",
+    ]
     with pytest.raises(OxidizedControlError):
         read_collection_ready(path, "b" * 64, now=now)
 
@@ -92,6 +106,18 @@ def nodes(last1=None):
         },
         {
             "name": "netbox-device-2",
+            "group": "managed",
+            "status": "never",
+            "last": None,
+        },
+        {
+            "name": "netbox-device-8",
+            "group": "managed",
+            "status": "never",
+            "last": None,
+        },
+        {
+            "name": "netbox-device-9",
             "group": "managed",
             "status": "never",
             "last": None,

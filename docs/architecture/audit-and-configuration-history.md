@@ -424,6 +424,17 @@ before the hard deadline, with no retry. Configuration-returning web endpoints
 are outside the controller contract. Real collection and observation
 publication remain disabled in 10C-5.
 
+Current state after the third retained-consumer migration: persistent Oxidized
+configuration collection and chronology use the profiled exact-four population
+(stable identities 1, 2, 8, and 9) with explicit profile capability, SSH/22 for
+all four including Junos, exact-four CML-anchored trust, and exact-four
+read-only OpenBao paths. CollectionReady is schema v3 with semantic
+`configuration-collection`; the private Git history and existing device-1/2
+paths are preserved and device-8/9 paths are additive. This remains passive
+observation evidence, not write authority or causality proof. Legacy planning,
+live SNMP, and protected delivery remain separate migrations; disposable
+staging and protected delivery remain paused.
+
 ### Strict live observation and host trust
 
 Increment 10C-6 explicitly overrides Oxidized 0.37.0's insecure SSH and Telnet

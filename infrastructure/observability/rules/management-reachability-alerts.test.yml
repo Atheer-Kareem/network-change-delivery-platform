@@ -1,12 +1,17 @@
 rule_files:
-  - 11b-alerts.yml
+  - management-reachability-alerts.yml
 
 tests:
+  # All four canonical profiled targets are recent and healthy.
   - interval: 15s
     input_series:
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:1"}'
         values: '1x19'
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:2"}'
+        values: '1x19'
+      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:8"}'
+        values: '1x19'
+      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:9"}'
         values: '1x19'
       - series: 'up{job="ncdp-blackbox-exporter"}'
         values: '1x19'
@@ -21,15 +26,21 @@ tests:
         alertname: NCDPBlackboxPipelineDown
         exp_alerts: []
 
+  # All four series remain present while one endpoint is down: this is not
+  # stale population, but the endpoint-specific service alert fires.
   - interval: 15s
     input_series:
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:1"}'
         values: '1x23'
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:2"}'
         values: '1x4 0x16 1x4'
+      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:8"}'
+        values: '1x23'
+      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:9"}'
+        values: '1x23'
     alert_rule_test:
-      - eval_time: 2m45s
-        alertname: NCDPManagementServiceDown
+      - eval_time: 4m
+        alertname: NCDPManagementTargetsStale
         exp_alerts: []
       - eval_time: 4m
         alertname: NCDPManagementServiceDown
@@ -46,17 +57,27 @@ tests:
         alertname: NCDPManagementServiceDown
         exp_alerts: []
 
+  # Three recent target series are below the exact-four population threshold.
   - interval: 15s
     input_series:
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:1"}'
         values: '1x19'
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:2"}'
-        values: '0x19'
+        values: '1x19'
+      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:8"}'
+        values: '1x19'
     alert_rule_test:
       - eval_time: 3m
         alertname: NCDPManagementTargetsStale
-        exp_alerts: []
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: target-population
+            exp_annotations:
+              summary: Management target population is stale
+              description: Fewer than four admitted management reachability series have recent samples.
 
+  # One recent target series is also stale population.
   - interval: 15s
     input_series:
       - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:1"}'
@@ -70,9 +91,11 @@ tests:
               component: target-population
             exp_annotations:
               summary: Management target population is stale
-              description: Fewer than two admitted management reachability series have recent samples.
+              description: Fewer than four admitted management reachability series have recent samples.
 
+  # No recent target series is stale population.
   - interval: 15s
+    input_series: []
     alert_rule_test:
       - eval_time: 2m
         alertname: NCDPManagementTargetsStale
@@ -82,25 +105,9 @@ tests:
               component: target-population
             exp_annotations:
               summary: Management target population is stale
-              description: Fewer than two admitted management reachability series have recent samples.
+              description: Fewer than four admitted management reachability series have recent samples.
 
-  - interval: 15s
-    input_series:
-      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:1"}'
-        values: '1x19 _x20'
-      - series: 'probe_success{job="ncdp-management-service",instance="netbox:dcim.device:2"}'
-        values: '1x39'
-    alert_rule_test:
-      - eval_time: 8m
-        alertname: NCDPManagementTargetsStale
-        exp_alerts:
-          - exp_labels:
-              severity: critical
-              component: target-population
-            exp_annotations:
-              summary: Management target population is stale
-              description: Fewer than two admitted management reachability series have recent samples.
-
+  # Blackbox pipeline alert behavior remains independent of endpoint probes.
   - interval: 15s
     input_series:
       - series: 'up{job="ncdp-blackbox-exporter"}'

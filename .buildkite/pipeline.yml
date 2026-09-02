@@ -95,7 +95,6 @@ steps:
       queue: ncdp-validation
     retry:
       automatic: false
-    soft_fail: true
     if_changed:
       include:
         - "infrastructure/observability/**"
@@ -116,7 +115,6 @@ steps:
       queue: ncdp-validation
     retry:
       automatic: false
-    soft_fail: true
     if_changed:
       include:
         - "infrastructure/observability/**"

@@ -515,7 +515,7 @@ def _installer_fixture(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, 
     for name in ("compose.yaml", "prometheus.yml", "blackbox.yml"):
         shutil.copy(root / "infrastructure/observability" / name, infrastructure / name)
     for relative in (
-        "rules/11b-alerts.yml",
+        "rules/management-reachability-alerts.yml",
         "alertmanager.yml",
         "grafana/provisioning/datasources/prometheus.yml",
         "grafana/provisioning/dashboards/dashboards.yml",
@@ -645,7 +645,7 @@ def test_installer_uses_runtime_python_without_host_python(tmp_path: Path) -> No
         assert path.is_dir()
         assert path.stat().st_mode & 0o777 == 0o700
     for relative in (
-        "rules/11b-alerts.yml",
+        "rules/management-reachability-alerts.yml",
         "alertmanager/alertmanager.yml",
         "grafana/provisioning/datasources/prometheus.yml",
         "grafana/provisioning/dashboards/dashboards.yml",
@@ -818,7 +818,7 @@ def test_update_runtime_transitions_existing_11a_state_to_five_services(
         assert path.is_dir()
         assert path.stat().st_mode & 0o777 == 0o700
     for relative in (
-        "rules/11b-alerts.yml",
+        "rules/management-reachability-alerts.yml",
         "alertmanager/alertmanager.yml",
         "grafana/provisioning/datasources/prometheus.yml",
         "grafana/provisioning/dashboards/dashboards.yml",

@@ -176,7 +176,7 @@ mkdir -p "${config_root}" "${runtime_root}/rules" \
   "${state_root}/alertmanager" "${module_root}" "${auth_root}" "${evidence_root}"
 find "${test_root}" -type d -exec chmod 0700 {} +
 cp "${root}/infrastructure/observability/blackbox.yml" "${config_root}/blackbox.yml"
-cp "${root}/infrastructure/observability/rules/11b-alerts.yml" "${runtime_root}/rules/11b-alerts.yml"
+cp "${root}/infrastructure/observability/rules/management-reachability-alerts.yml" "${runtime_root}/rules/management-reachability-alerts.yml"
 cp "${root}/infrastructure/observability/alertmanager.yml" "${runtime_root}/alertmanager/alertmanager.yml"
 cp "${root}/infrastructure/observability/grafana/provisioning/datasources/prometheus.yml" "${runtime_root}/grafana/provisioning/datasources/prometheus.yml"
 cp "${root}/infrastructure/observability/grafana/provisioning/dashboards/dashboards.yml" "${runtime_root}/grafana/provisioning/dashboards/dashboards.yml"

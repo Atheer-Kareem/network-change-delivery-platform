@@ -101,16 +101,14 @@ Successful final 11A acceptance does not retire these targets or stop
 Management-service observability is migrated to the profiled exact-four fleet;
 its target generation, CML realization admission, and readiness artifact bind
 all four managed identities. Observability runtime validation and synthetic
-SNMPv3 validation are restored as active, visible Buildkite steps, but both are
-temporarily `soft_fail` while their Buildkite-runtime behavior is reconciled
-after Detour B; restoration is not full runtime-gate acceptance. The first
-observed failure was a Docker identity collision caused by the synthetic-SNMP
-step invoking its nested management-runtime regression alongside the dedicated
-management-runtime step. The Buildkite synthetic-SNMP invocation now sets
-`NCDP_SKIP_OBSERVABILITY_REGRESSION=1`; standalone/local synthetic validation
-retains its default nested regression. Successful local runtime validation is
-not proof of Buildkite success, and remaining Buildkite failures are a separate
-increment. The synthetic two-agent fixture is a minimum disposable
+SNMPv3 validation are restored as active, visible hard Buildkite gates. The
+first observed failure was a Docker identity collision caused by the
+synthetic-SNMP step invoking its nested management-runtime regression alongside
+the dedicated management-runtime step. The Buildkite synthetic-SNMP invocation
+now sets `NCDP_SKIP_OBSERVABILITY_REGRESSION=1`; standalone/local synthetic
+validation retains its default nested regression. Both runtime validations
+subsequently passed according to operator-observed pipeline evidence. The
+synthetic two-agent fixture is a minimum disposable
 protocol-validation topology, not managed-fleet cardinality or evidence that
 live SNMP has completed its profiled exact-four migration. Live SNMP remains a
 separate migration whose final target is all four profiled devices. Disposable

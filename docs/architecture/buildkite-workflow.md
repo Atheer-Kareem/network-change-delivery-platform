@@ -6,10 +6,10 @@ authorization, and protected deployment. During Detour B, automatic disposable
 CML and the protected-delivery group are temporarily paused together while the
 four-device Terraform realization is incomplete. Quality validation, Terraform
 static validation, PR Batfish candidate assurance, and the restored
-observability-runtime and synthetic-SNMPv3 runtime checks remain active. The
-two restored runtime checks are temporarily `soft_fail` while their
-Buildkite-runtime behavior is reconciled after Detour B; they remain visible,
-change-aware validation rather than accepted hard gates.
+observability-runtime and synthetic-SNMPv3 runtime checks remain active hard
+quality gates. The duplicate nested runtime execution was removed from the
+Buildkite synthetic-SNMP invocation, and both runtime validations subsequently
+passed according to operator-observed pipeline evidence.
 
 ```text
 runtime pull request                 non-PR main during B3 pause
@@ -40,15 +40,16 @@ the image exists.
 
 Committed-diff integrity, Terraform CML static validation, SNMP module
 reproducibility, and Buildkite-definition validation are independent roots.
-Observability-runtime and synthetic-SNMPv3 validation are active siblings that
-depend on `quality-env`, run on `ncdp-validation`, have automatic retry
-disabled, and retain bounded `if_changed` routing. Both temporarily use plain
-`soft_fail: true`. The synthetic-SNMP Buildkite command disables its otherwise
-default nested observability regression with
+Observability-runtime and synthetic-SNMPv3 validation are active hard-gate
+siblings that depend on `quality-env`, run on `ncdp-validation`, have automatic
+retry disabled, and retain bounded `if_changed` routing. The synthetic-SNMP
+Buildkite command disables its otherwise default nested observability regression with
 `NCDP_SKIP_OBSERVABILITY_REGRESSION=1`, so the dedicated observability step is
 the sole first-class management-service runtime validator. This follows the
-observed duplicate Docker identity collision; it does not diagnose the remaining
-Buildkite-only failures or treat successful local runtime validation as proof.
+observed duplicate Docker identity collision. Active runtime/configuration
+filenames use semantic management-reachability names; historical 11A/11B/11C
+acceptance records retain their increment names. Successful local runtime
+validation is not substituted for the operator-observed Buildkite result.
 
 Two visible contracts have distinct meanings:
 

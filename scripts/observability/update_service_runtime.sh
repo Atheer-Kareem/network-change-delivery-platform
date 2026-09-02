@@ -32,16 +32,16 @@ uv build >/dev/null
 uv pip install --python "${runtime}/bin/python" --no-deps dist/network_change_delivery-*.whl >/dev/null
 uv pip install --python "${runtime}/bin/python" 'httpx==0.28.1' 'pydantic==2.13.4' 'pyyaml==6.0.3' >/dev/null
 cp infrastructure/observability/compose.yaml "${runtime}/compose.yaml"
-if [ -f infrastructure/observability/rules/11b-alerts.yml ]; then
+if [ -f infrastructure/observability/rules/management-reachability-alerts.yml ]; then
   mkdir -p "${runtime}/rules" "${runtime}/alertmanager" "${runtime}/grafana/provisioning/datasources" "${runtime}/grafana/provisioning/dashboards" "${runtime}/grafana/dashboards" "${runtime}/receiver"
-  cp infrastructure/observability/rules/11b-alerts.yml "${runtime}/rules/11b-alerts.yml"
+  cp infrastructure/observability/rules/management-reachability-alerts.yml "${runtime}/rules/management-reachability-alerts.yml"
   cp infrastructure/observability/alertmanager.yml "${runtime}/alertmanager/alertmanager.yml"
   cp infrastructure/observability/grafana/provisioning/datasources/prometheus.yml "${runtime}/grafana/provisioning/datasources/prometheus.yml"
   cp infrastructure/observability/grafana/provisioning/dashboards/dashboards.yml "${runtime}/grafana/provisioning/dashboards/dashboards.yml"
   cp infrastructure/observability/grafana/dashboards/ncdp-management-reachability.json "${runtime}/grafana/dashboards/ncdp-management-reachability.json"
   cp scripts/observability/demo_receiver.py "${runtime}/receiver/demo_receiver.py"
   for directory in "${runtime}/rules" "${runtime}/alertmanager" "${runtime}/grafana" "${runtime}/grafana/provisioning" "${runtime}/grafana/provisioning/datasources" "${runtime}/grafana/provisioning/dashboards" "${runtime}/grafana/dashboards" "${runtime}/receiver"; do chmod 0700 "${directory}"; done
-  for file in "${runtime}/rules/11b-alerts.yml" "${runtime}/alertmanager/alertmanager.yml" "${runtime}/grafana/provisioning/datasources/prometheus.yml" "${runtime}/grafana/provisioning/dashboards/dashboards.yml" "${runtime}/grafana/dashboards/ncdp-management-reachability.json" "${runtime}/receiver/demo_receiver.py"; do chmod 0600 "${file}"; done
+  for file in "${runtime}/rules/management-reachability-alerts.yml" "${runtime}/alertmanager/alertmanager.yml" "${runtime}/grafana/provisioning/datasources/prometheus.yml" "${runtime}/grafana/provisioning/dashboards/dashboards.yml" "${runtime}/grafana/dashboards/ncdp-management-reachability.json" "${runtime}/receiver/demo_receiver.py"; do chmod 0600 "${file}"; done
 fi
 stage_image_id() {
   image=$1

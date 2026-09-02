@@ -150,7 +150,7 @@ def test_pipeline_contract() -> None:
         assert step["agents"]["queue"] == "ncdp-validation"
         assert step["retry"] == {"automatic": False}
         assert step["if_changed"] == {"include": expected["paths"]}
-        assert step["soft_fail"] is True
+        assert "soft_fail" not in step
 
     terraform = steps["quality-terraform-cml"]
     terraform_command = terraform["command"]

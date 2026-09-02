@@ -110,15 +110,15 @@ chmod 0700 "${config_root}" "${runtime_root}" "${runtime_root}/rules" \
   "${state_root}/grafana" "${state_root}/alertmanager"
 cp "${root}/infrastructure/observability/prometheus.yml" "${config_root}/prometheus.yml"
 cp "${root}/infrastructure/observability/blackbox.yml" "${config_root}/blackbox.yml"
-cp "${root}/infrastructure/observability/rules/11b-alerts.yml" "${runtime_root}/rules/11b-alerts.yml"
-cp "${root}/infrastructure/observability/rules/11b-alerts.test.yml" "${runtime_root}/rules/11b-alerts.test.yml"
+cp "${root}/infrastructure/observability/rules/management-reachability-alerts.yml" "${runtime_root}/rules/management-reachability-alerts.yml"
+cp "${root}/infrastructure/observability/rules/management-reachability-alerts.test.yml" "${runtime_root}/rules/management-reachability-alerts.test.yml"
 cp "${root}/infrastructure/observability/alertmanager.yml" "${runtime_root}/alertmanager/alertmanager.yml"
 cp "${root}/infrastructure/observability/grafana/provisioning/datasources/prometheus.yml" "${runtime_root}/grafana/provisioning/datasources/prometheus.yml"
 cp "${root}/infrastructure/observability/grafana/provisioning/dashboards/dashboards.yml" "${runtime_root}/grafana/provisioning/dashboards/dashboards.yml"
 cp "${root}/infrastructure/observability/grafana/dashboards/ncdp-management-reachability.json" "${runtime_root}/grafana/dashboards/ncdp-management-reachability.json"
 cp "${root}/scripts/observability/demo_receiver.py" "${runtime_root}/receiver/demo_receiver.py"
 chmod 0600 "${config_root}/prometheus.yml" "${config_root}/blackbox.yml" \
-  "${runtime_root}/rules/11b-alerts.yml" "${runtime_root}/rules/11b-alerts.test.yml" \
+  "${runtime_root}/rules/management-reachability-alerts.yml" "${runtime_root}/rules/management-reachability-alerts.test.yml" \
   "${runtime_root}/alertmanager/alertmanager.yml" \
   "${runtime_root}/grafana/provisioning/datasources/prometheus.yml" \
   "${runtime_root}/grafana/provisioning/dashboards/dashboards.yml" \
@@ -138,13 +138,13 @@ docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "${uid}:${gid}" \
   -v "${runtime_root}/rules:/etc/ncdp/rules:ro" \
   --entrypoint /bin/promtool "${prometheus_image}" \
-  check rules /etc/ncdp/rules/11b-alerts.yml
+  check rules /etc/ncdp/rules/management-reachability-alerts.yml
 docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "${uid}:${gid}" \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
   --workdir /etc/ncdp/rules -v "${runtime_root}/rules:/etc/ncdp/rules:ro" \
   --entrypoint /bin/promtool "${prometheus_image}" \
-  test rules 11b-alerts.test.yml
+  test rules management-reachability-alerts.test.yml
 docker run --rm --platform linux/arm64 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "${uid}:${gid}" \
   -v "${runtime_root}/alertmanager/alertmanager.yml:/etc/ncdp/alertmanager.yml:ro" \

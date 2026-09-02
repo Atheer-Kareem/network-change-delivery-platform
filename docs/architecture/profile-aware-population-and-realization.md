@@ -26,11 +26,13 @@ fleet design. The target is one profiled exact-four managed-fleet architecture
 for devices 1/2/8/9, with each consumer admitting only the profiles and
 capabilities appropriate to its operation; fleet membership never grants every
 device identical router, write, or service behavior. The legacy
-`ncdp-managed` path remains only while its legitimate consumers are migrated
-or consciously retired, and it is removed only after the last such consumer is
-gone. The first migration increment moves NetBox lifecycle/readiness to the
-existing profiled population contract; it does not change other legacy
-consumers or the tag itself.
+`ncdp-managed` path remains while its legitimate consumers are migrated to the
+profiled architecture. A consumer may be retired instead only through an
+explicit decision that its capability is obsolete or outside final NCDP scope.
+The legacy path is removed only after no legitimate runtime consumer remains.
+The first migration increment moves NetBox lifecycle/readiness to the existing
+profiled population contract; it does not change other legacy consumers or the
+tag itself.
 
 The profiled tag grants no credential, device command, deployment, SNMP, fleet,
 observability, Oxidized, or protected-write capability. B3-4 accepts the

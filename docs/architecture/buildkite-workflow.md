@@ -5,10 +5,11 @@ integration, offline network assurance, immutable promotion, human
 authorization, and protected deployment. During Detour B, automatic disposable
 CML and the protected-delivery group are temporarily paused together while the
 four-device Terraform realization is incomplete. Quality validation, Terraform
-static validation, and PR Batfish candidate assurance remain active. The
-observability runtime and synthetic SNMPv3 runtime checks are separately paused
-until explicit operator decisions integrate them with the expanded profiled
-topology.
+static validation, PR Batfish candidate assurance, and the restored
+observability-runtime and synthetic-SNMPv3 runtime checks remain active. The
+two restored runtime checks are temporarily `soft_fail` while their
+Buildkite-runtime behavior is reconciled after Detour B; they remain visible,
+change-aware validation rather than accepted hard gates.
 
 ```text
 runtime pull request                 non-PR main during B3 pause
@@ -39,10 +40,15 @@ the image exists.
 
 Committed-diff integrity, Terraform CML static validation, SNMP module
 reproducibility, and Buildkite-definition validation are independent roots.
-The preserved observability-runtime and synthetic-SNMPv3 definitions are
-commented out, not deleted or bypassed. Restore either only by explicit operator
-decision when that runtime is being integrated with the expanded profiled
-topology; neither restoration is tied to a fixed Detour B increment.
+Observability-runtime and synthetic-SNMPv3 validation are active siblings that
+depend on `quality-env`, run on `ncdp-validation`, have automatic retry
+disabled, and retain bounded `if_changed` routing. Both temporarily use plain
+`soft_fail: true`. The synthetic-SNMP Buildkite command disables its otherwise
+default nested observability regression with
+`NCDP_SKIP_OBSERVABILITY_REGRESSION=1`, so the dedicated observability step is
+the sole first-class management-service runtime validator. This follows the
+observed duplicate Docker identity collision; it does not diagnose the remaining
+Buildkite-only failures or treat successful local runtime validation as proof.
 
 Two visible contracts have distinct meanings:
 

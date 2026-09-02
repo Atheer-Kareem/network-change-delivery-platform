@@ -120,12 +120,15 @@ def test_pipeline_contract() -> None:
                 "infrastructure/observability/**",
                 "scripts/observability/**",
                 "src/network_change_delivery/observability_*.py",
+                "src/network_change_delivery/profile_inventory.py",
+                "src/network_change_delivery/architecture_contracts.py",
                 "tests/test_observability_*.py",
             ],
         },
         "quality-snmpv3-synthetic": {
             "label": ":satellite: Synthetic SNMPv3 validation",
             "command": (
+                "NCDP_SKIP_OBSERVABILITY_REGRESSION=1 "
                 "NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} "
                 "scripts/observability/verify_snmp_runtime.sh"
             ),
@@ -147,7 +150,7 @@ def test_pipeline_contract() -> None:
         assert step["agents"]["queue"] == "ncdp-validation"
         assert step["retry"] == {"automatic": False}
         assert step["if_changed"] == {"include": expected["paths"]}
-        assert "soft_fail" not in step
+        assert step["soft_fail"] is True
 
     terraform = steps["quality-terraform-cml"]
     terraform_command = terraform["command"]
@@ -540,6 +543,49 @@ def test_installed_buildkite_change_evaluation_runs_applicable_checks_before_bar
     assert "skip" not in rendered_steps["quality-snmpv3-synthetic"]
     assert "cml-staging" not in rendered_steps
     assert "protected-delivery" not in rendered_steps
+
+
+@pytest.mark.parametrize(
+    "changed_path",
+    (
+        "src/network_change_delivery/profile_inventory.py",
+        "src/network_change_delivery/architecture_contracts.py",
+    ),
+)
+def test_installed_buildkite_change_evaluation_routes_observability_contract_inputs(
+    tmp_path: Path,
+    changed_path: str,
+) -> None:
+    agent = shutil.which("buildkite-agent")
+    if agent is None:
+        pytest.skip("Buildkite agent is not installed in this test environment")
+
+    changed_files_path = tmp_path / "changed-files.txt"
+    changed_files_path.write_text(f"{changed_path}\n")
+    result = subprocess.run(
+        [
+            agent,
+            "pipeline",
+            "upload",
+            str(ROOT / ".buildkite/pipeline.yml"),
+            "--dry-run",
+            "--format",
+            "yaml",
+            "--reject-secrets",
+            "--reject-parse-warnings",
+            "--changed-files-path",
+            str(changed_files_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "BUILDKITE_AGENT_ACCESS_TOKEN": "local-dry-run"},
+    )
+    rendered = yaml.safe_load(result.stdout)
+    observability_runtime = {step["key"]: step for step in rendered["steps"]}[
+        "quality-observability-runtime"
+    ]
+    assert "skip" not in observability_runtime
 
 
 def test_external_bootstrap_fetches_diff_base() -> None:

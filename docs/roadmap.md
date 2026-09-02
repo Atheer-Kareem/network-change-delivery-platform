@@ -194,10 +194,16 @@ acceptance records.
       `CHANGE_PROPOSED`; NCDP-authorized writes were zero. The persistent D0
       store remained unchanged. Disposable CML staging and protected delivery
       remain paused. The operator subsequently restored observability runtime
-      and synthetic SNMPv3 validation as hard local quality gates. The synthetic
-      two-agent fixture validates protocol behavior only; it is not completion
-      evidence for the separate live SNMP exact-four migration, whose target is
-      all four profiled devices.
+      and synthetic SNMPv3 validation as active Buildkite quality steps. Both
+      are temporarily `soft_fail` while their Buildkite-runtime behavior is
+      reconciled after Detour B; the observed duplicate management-runtime
+      Docker identity collision is avoided by disabling the synthetic step's
+      nested observability regression in Buildkite only. Successful local
+      runtime validation is not evidence of Buildkite success, and remaining
+      runtime failures are separately bounded work. The synthetic two-agent
+      fixture validates protocol behavior only; it is not completion evidence
+      for the separate live SNMP exact-four migration, whose target is all four
+      profiled devices.
       The exact-two legacy path and profiled exact-four path are transitional
       coexistence, not the target end state: final NCDP is one profiled
       exact-four managed fleet with explicit profile/capability gating. Legacy
@@ -211,7 +217,7 @@ acceptance records.
       management-service observability: its target generation, persistent CML
       realization admission, and readiness contract now bind the profiled
       exact-four population. The operator then restored its runtime validation
-      and synthetic SNMPv3 validation as hard quality gates; other legacy
-      consumers remain unchanged.
+      and synthetic SNMPv3 validation as active, temporarily soft-failing
+      quality steps; other legacy consumers remain unchanged.
     - **12F — on hold:** demonstration runbook and rehearsal.
     - **12G — planned:** final acceptance and repository closure.

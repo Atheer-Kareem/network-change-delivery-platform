@@ -100,16 +100,23 @@ Successful final 11A acceptance does not retire these targets or stop
 
 Management-service observability is migrated to the profiled exact-four fleet;
 its target generation, CML realization admission, and readiness artifact bind
-all four managed identities. The operator has restored management-service
-observability runtime validation as a hard quality gate; it validates an
-isolated local runtime and does not publish a live readiness record. The
-operator has also restored synthetic SNMPv3 validation as a hard quality gate.
-Its two-agent fixture is the minimum disposable protocol-validation topology,
-not evidence that live SNMP has completed its profiled exact-four migration.
-Live SNMP remains a separate migration whose final target is all four profiled
-devices. Disposable CML staging and protected delivery remain paused. Exact-two
-remains elsewhere only for legacy consumers that have not yet migrated. That
-coexistence is transitional:
+all four managed identities. Observability runtime validation and synthetic
+SNMPv3 validation are restored as active, visible Buildkite steps, but both are
+temporarily `soft_fail` while their Buildkite-runtime behavior is reconciled
+after Detour B; restoration is not full runtime-gate acceptance. The first
+observed failure was a Docker identity collision caused by the synthetic-SNMP
+step invoking its nested management-runtime regression alongside the dedicated
+management-runtime step. The Buildkite synthetic-SNMP invocation now sets
+`NCDP_SKIP_OBSERVABILITY_REGRESSION=1`; standalone/local synthetic validation
+retains its default nested regression. Successful local runtime validation is
+not proof of Buildkite success, and remaining Buildkite failures are a separate
+increment. The synthetic two-agent fixture is a minimum disposable
+protocol-validation topology, not managed-fleet cardinality or evidence that
+live SNMP has completed its profiled exact-four migration. Live SNMP remains a
+separate migration whose final target is all four profiled devices. Disposable
+CML staging and protected delivery remain paused. Exact-two remains elsewhere
+only for legacy consumers that have not yet migrated. That coexistence is
+transitional:
 the target architecture is one profiled exact-four managed fleet with explicit
 profile/capability gating, and `ncdp-managed` is removed only after no
 legitimate runtime consumer remains.

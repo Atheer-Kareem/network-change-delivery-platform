@@ -528,6 +528,56 @@ class JunosPyEZAdapter:
                 return
             raise
 
+    @contextmanager
+    def profiled_transaction(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        artifact: JunosConfigArtifact,
+    ) -> Any:
+        """Open one strict profiled NETCONF exclusive transaction."""
+        if self._known_hosts is None:
+            raise HostTrustError("profiled Junos write requires explicit known_hosts")
+        transaction: JunosTransaction | None = None
+        try:
+            with (
+                self._session(target, credentials, profile_bound=True) as connection,
+                JunosTransaction(
+                    connection, self._config_factory, artifact
+                ) as transaction,
+            ):
+                yield transaction
+        except ProviderError:
+            if transaction is not None and transaction.commit_attempted:
+                transaction.close_failed = True
+                return
+            raise
+
+    def confirm_profiled(
+        self, target: ReadOnlyConnectionTarget, credentials: DeviceCredentials
+    ) -> ExecutionResult:
+        """Confirm once through explicit profiled NETCONF trust."""
+        if self._known_hosts is None:
+            raise HostTrustError("profiled Junos write requires explicit known_hosts")
+        # Reuse the exact bounded confirmation classification with a profile session.
+        result: ExecutionResult | None = None
+        try:
+            with self._session(target, credentials, profile_bound=True) as connection:
+                config = self._config_factory(connection, mode="exclusive")
+                config.__enter__()
+                try:
+                    confirmed = config.commit_check()
+                    result = (
+                        _confirmation_succeeded()
+                        if confirmed is True
+                        else _confirmation_failed()
+                    )
+                finally:
+                    config.__exit__(None, None, None)
+        except Exception:
+            return _confirmation_ambiguous()
+        return result or _confirmation_failed()
+
     def discover(
         self, device: InventoryDevice, credentials: DeviceCredentials
     ) -> tuple[InterfaceState, ...]:

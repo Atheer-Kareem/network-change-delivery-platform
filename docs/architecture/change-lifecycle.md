@@ -13,6 +13,16 @@ credential or transport access for that operation. The legacy schema-v1
 planning/deployment paths remain transitional. Disposable staging and protected
 delivery remain paused.
 
+Schema-v2 now also has an offline-tested profiled execution library boundary,
+but it has no deploy CLI and no LIVE schema-v2 write acceptance. It admits only
+C8000V IOS-XE and vJunos for interface-description execution; IOSv and IOSvL2
+remain rejected for that operation. It preserves Cisco one-attempt/targeted-
+inverse and Junos commit-confirmed semantics without changing transitional v1
+execution. It does not advance B5 D0: interface descriptions are outside the
+current B5 envelopes, so a future writable B4 vertical must project fresh O′
+through `compare_postwrite_to_d1()` and `build_postwrite_validated_evidence()`
+before an accepted-state advance.
+
 Detour B5-1 adds a separate new-architecture managed-state foundation. It
 projects observation and intent into the same envelope-scoped canonical form,
 resolves D0 from a validated append-only acceptance chain, distinguishes

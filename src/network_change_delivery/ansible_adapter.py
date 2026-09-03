@@ -776,6 +776,46 @@ class AnsibleRunnerCiscoAdapter:
             message="exact approved configuration artifact completed successfully",
         )
 
+    def execute_profiled(
+        self,
+        target: ReadOnlyConnectionTarget,
+        credentials: DeviceCredentials,
+        artifact: CiscoConfigArtifact,
+    ) -> ExecutionResult:
+        """Apply one profiled artifact with explicit strict host trust only."""
+        if self._known_hosts is None:
+            raise HostTrustError("profiled Cisco write requires explicit known_hosts")
+        runner, selected = self._run(
+            target,
+            credentials,
+            "apply_interface_description.yml",
+            extravars={"ncdp_artifact": artifact.model_dump(mode="json")},
+            ssh_type="paramiko",
+            profile_bound=True,
+        )
+        status = str(getattr(runner, "status", "failed"))
+        rc = getattr(runner, "rc", None)
+        event = selected.get(EXECUTION_TASK, {}).get("_ncdp_event")
+        if (
+            status in {"timeout", "canceled"}
+            or rc in {254, 255}
+            or event in {"runner_on_failed", "runner_on_unreachable"}
+        ):
+            return ExecutionResult(
+                disposition=ExecutionDisposition.AMBIGUOUS,
+                message="profiled network write outcome is ambiguous",
+            )
+        if status != "successful" or rc != 0 or EXECUTION_TASK not in selected:
+            return ExecutionResult(
+                disposition=ExecutionDisposition.FAILED,
+                message="profiled configuration task failed before known success",
+            )
+        return ExecutionResult(
+            disposition=ExecutionDisposition.SUCCEEDED,
+            changed=bool(selected[EXECUTION_TASK].get("changed", False)),
+            message="exact profiled configuration artifact completed successfully",
+        )
+
     def snmp_preflight(
         self,
         device: InventoryDevice,

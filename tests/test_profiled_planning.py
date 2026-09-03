@@ -48,7 +48,6 @@ from network_change_delivery.secrets import (
     DeviceCredentials,
 )
 
-
 PROFILE_FACTS = {
     AutomationProfileID.CAT8000V_IOSXE: {
         "device_id": 1,

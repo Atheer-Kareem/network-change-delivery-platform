@@ -39,8 +39,8 @@ from network_change_delivery.models import (
     validate_ios_description,
 )
 from network_change_delivery.profile_inventory import (
-    ProfileReadOnlyTarget,
     ProfiledInventoryDevice,
+    ProfileReadOnlyTarget,
     admit_profiled_subject,
 )
 from network_change_delivery.secrets import CredentialReference, DeviceCredentials

@@ -88,6 +88,16 @@ from network_change_delivery.plan_assurance import (
     load_plan,
     verify_plan_assurance,
 )
+from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
+from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
+from network_change_delivery.profiled_live_host_trust import (
+    DEFAULT_PROFILED_LIVE_TRUST_ROOT,
+    validate_profiled_live_host_trust,
+)
+from network_change_delivery.profiled_live_host_trust import (
+    KNOWN_HOSTS_NAME as PROFILED_LIVE_KNOWN_HOSTS_NAME,
+)
+from network_change_delivery.profiled_planning import plan_profiled_change
 from network_change_delivery.promotion import (
     PromotionError,
     create_promotion_bundle,
@@ -151,6 +161,22 @@ def _require_unused_fleet_plan_path(path: Path) -> None:
 
 def _write_new_fleet_plan(path: Path, value: str) -> None:
     """Create one new mode-0600 fleet artifact without an overwrite race."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(value)
+    path.chmod(0o600)
+
+
+def _require_unused_profiled_plan_path(path: Path) -> None:
+    """Fail before trust or provider access for files and even broken symlinks."""
+    if path.exists() or path.is_symlink():
+        raise OSError("profiled plan output already exists")
+
+
+def _write_new_profiled_plan(path: Path, value: str) -> None:
+    """Create one new mode-0600 profiled plan without following a symlink."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags, 0o600)
@@ -771,6 +797,53 @@ def _run_plan(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_profiled_plan(arguments: argparse.Namespace) -> int:
+    """Create one schema-v2 plan through profiled read-only boundaries only."""
+    _require_unused_profiled_plan_path(arguments.output)
+    intent = _load_change(arguments.change)
+    validate_profiled_live_host_trust()
+    inventory = NetBoxProfileInventoryProvider()
+    secrets = OpenBaoSecretProvider()
+    adapter = ProfileReadOnlyAdapter(
+        known_hosts=(DEFAULT_PROFILED_LIVE_TRUST_ROOT / PROFILED_LIVE_KNOWN_HOSTS_NAME)
+    )
+    result = plan_profiled_change(intent, inventory, secrets, adapter)
+    print(f"Credential source: {result.credential.source}")
+    print(f"Credential reference: {result.credential.reference}")
+    if result.plan is None:
+        print(result.message)
+        return 0
+    plan = result.plan
+    _write_new_profiled_plan(arguments.output, plan.model_dump_json(indent=2) + "\n")
+    print(f"Target: {plan.target}")
+    print(f"Device identity: {plan.device_identity}")
+    print(f"Automation profile: {plan.automation_profile_id}")
+    print(f"Interface: {plan.interface.interface} ({plan.interface.name})")
+    print(f"Host: {plan.host}")
+    print(f"Port: {plan.port}")
+    print(f"Observed hostname: {plan.preconditions.observed_hostname}")
+    print(f"Current description: {plan.current_description!r}")
+    print(f"Desired description: {plan.desired_description!r}")
+    print(f"Transaction strategy: {plan.operation_admission.transaction_strategy}")
+    print("Execution artifact:")
+    print(plan.execution_artifact.cli_preview())
+    if plan.recovery_artifact is not None:
+        print("Recovery artifact:")
+        print(plan.recovery_artifact.cli_preview())
+    if plan.operation_admission.confirmed_timeout_minutes is not None:
+        print(
+            "Commit-confirmed timeout: "
+            f"{plan.operation_admission.confirmed_timeout_minutes} minutes"
+        )
+        print(
+            f"Confirmation operation: {plan.operation_admission.confirmation_operation}"
+        )
+    print(f"Plan schema version: {plan.schema_version}")
+    print(f"Plan digest: {plan.digest}")
+    print(f"Output: {arguments.output}")
+    return 0
+
+
 def _run_snmp_provisioning_plan(arguments: argparse.Namespace) -> int:
     """Create one secret-free SNMP plan after targeted read-only preflight."""
     _require_unused_fleet_plan_path(arguments.output)
@@ -950,6 +1023,16 @@ def build_parser() -> argparse.ArgumentParser:
     plan_secrets.add_argument("--environment-secrets", action="store_true")
     plan_parser.add_argument("--output", required=True, type=Path)
     plan_parser.set_defaults(handler=_run_plan)
+
+    profiled_plan_parser = subparsers.add_parser(
+        "profiled-plan",
+        help="read-only preflight and create one schema-v2 profiled plan",
+    )
+    profiled_plan_parser.add_argument("--change", required=True, type=Path)
+    profiled_plan_parser.add_argument("--output", required=True, type=Path)
+    profiled_plan_parser.add_argument("--netbox", required=True, action="store_true")
+    profiled_plan_parser.add_argument("--openbao", required=True, action="store_true")
+    profiled_plan_parser.set_defaults(handler=_run_profiled_plan)
 
     snmp_plan_parser = subparsers.add_parser(
         "snmp-provisioning-plan",

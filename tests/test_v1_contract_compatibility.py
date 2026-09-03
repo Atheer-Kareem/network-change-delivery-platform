@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from pathlib import Path
 
@@ -128,7 +129,6 @@ def test_existing_fleet_fixture_and_child_digests_remain_valid() -> None:
 
 def test_current_v1_execution_does_not_import_profiled_inventory_or_adapter() -> None:
     current_runtime_modules = (
-        "cli.py",
         "workflow.py",
         "vendor_adapter.py",
         "fleet.py",
@@ -141,3 +141,11 @@ def test_current_v1_execution_does_not_import_profiled_inventory_or_adapter() ->
         )
         assert "profile_inventory" not in source
         assert "profile_read_only_adapter" not in source
+
+    from network_change_delivery import cli
+
+    legacy_cli_handlers = (cli._run_plan, cli._run_deploy, cli._run_fleet_plan)
+    for handler in legacy_cli_handlers:
+        source = inspect.getsource(handler)
+        assert "Profile" not in source
+        assert "profiled" not in source

@@ -3,6 +3,16 @@
 The current protected Buildkite lifecycle binds review, execution, and evidence
 to the same immutable single-device plan.
 
+`ncdp profiled-plan` is the separate user-facing ordinary-planning entry point
+for the parallel schema-v2 profiled path. It resolves and collects through
+profile-bound LIVE read-only authority and writes one immutable local plan; it
+has zero device-write authority and no executor consumes schema-v2 plans yet.
+Only C8000V IOS-XE and vJunos admit the current interface-description write
+lifecycle. IOSv and IOSvL2 remain managed-fleet members but are rejected before
+credential or transport access for that operation. The legacy schema-v1
+planning/deployment paths remain transitional. Disposable staging and protected
+delivery remain paused.
+
 Detour B5-1 adds a separate new-architecture managed-state foundation. It
 projects observation and intent into the same envelope-scoped canonical form,
 resolves D0 from a validated append-only acceptance chain, distinguishes

@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 from test_profiled_planning import profiled_device
 
 from network_change_delivery.architecture_contracts import AutomationProfileID
@@ -18,7 +19,10 @@ from network_change_delivery.profiled_execution import execute_profiled_plan
 from network_change_delivery.profiled_planning import (
     build_profiled_plan,
 )
-from network_change_delivery.profiled_write_adapter import ProfiledWriteAdapter
+from network_change_delivery.profiled_write_adapter import (
+    ProfiledWriteAdapter,
+    ProfiledWriteTarget,
+)
 from network_change_delivery.secrets import CredentialReference, DeviceCredentials
 
 
@@ -262,3 +266,14 @@ def test_invalid_approval_blocks_before_writer():
         writer(cisco),
     )
     assert record.final_outcome.value == "BLOCKED" and not cisco.artifacts
+
+
+def test_profiled_write_target_is_immutable_and_binds_stable_identity():
+    value, device, interface, _state = plan()
+    target = ProfiledWriteTarget.from_preflight(
+        device, interface.interface, value.operation_admission.operation
+    )
+    assert target.device_identity == value.device_identity
+    assert target.interface_identity == value.interface.interface
+    with pytest.raises(AttributeError):
+        target.host = "192.0.2.1"  # type: ignore[misc]

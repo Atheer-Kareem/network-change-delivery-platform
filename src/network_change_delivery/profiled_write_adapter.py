@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -23,28 +24,50 @@ from network_change_delivery.models import (
 from network_change_delivery.profile_inventory import ProfiledInventoryDevice
 from network_change_delivery.profiled_planning import (
     ProfiledOperation,
+    ProfiledOperationAdmission,
     admit_profiled_operation,
 )
 from network_change_delivery.secrets import DeviceCredentials
 
 
+@dataclass(frozen=True)
 class ProfiledWriteTarget:
     """Operation-specific, non-secret write authority projected after preflight."""
 
-    def __init__(
-        self, device: ProfiledInventoryDevice, operation: ProfiledOperation
-    ) -> None:
+    device_identity: str
+    interface_identity: str
+    name: str
+    host: str
+    port: int
+    expected_hostname: str
+    protected_interfaces: tuple[str, ...]
+    automation_profile_id: AutomationProfileID
+    network_os: NetworkOS
+    operation: ProfiledOperation
+    admission: ProfiledOperationAdmission
+
+    @classmethod
+    def from_preflight(
+        cls,
+        device: ProfiledInventoryDevice,
+        interface_identity: str,
+        operation: ProfiledOperation,
+    ) -> ProfiledWriteTarget:
         admission = admit_profiled_operation(device, operation)
         live = device.live_read_only_target()
-        self.name = device.logical_name
-        self.host = live.host
-        self.port = live.port
-        self.expected_hostname = device.expected_hostname
-        self.protected_interfaces = live.protected_interfaces
-        self.automation_profile_id = device.automation_profile_id
-        self.network_os = device.network_os
-        self.operation = operation
-        self.admission = admission
+        return cls(
+            device.device_identity,
+            interface_identity,
+            device.logical_name,
+            live.host,
+            live.port,
+            device.expected_hostname,
+            live.protected_interfaces,
+            device.automation_profile_id,
+            device.network_os,
+            operation,
+            admission,
+        )
 
 
 class CiscoProfiledWriter(Protocol):

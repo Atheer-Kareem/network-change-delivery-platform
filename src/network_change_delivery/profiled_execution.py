@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from network_change_delivery.architecture_contracts import (
     AutomationProfileID,
     NetworkOS,
+    Sha256Digest,
     StableInterfaceIdentity,
 )
 from network_change_delivery.models import (
@@ -53,8 +54,8 @@ class ProfiledChangeRecord(BaseModel):
     record_type: Literal["profiled_change_record"] = "profiled_change_record"
     generated_at: datetime
     change_id: str
-    plan_digest: str
-    approval_digest: str
+    plan_digest: Sha256Digest
+    approval_digest: Sha256Digest
     target: str
     device_identity: str
     interface: StableInterfaceIdentity
@@ -64,6 +65,10 @@ class ProfiledChangeRecord(BaseModel):
     operation: ProfiledOperation
     host: str
     port: int
+    expected_hostname: str
+    previous_description: str | None
+    desired_description: str
+    credential_source: Literal["openbao"] = "openbao"
     credential_reference: str
     transaction_strategy: Literal["cisco_targeted_inverse", "junos_commit_confirmed"]
     preflight: StageResult
@@ -71,7 +76,7 @@ class ProfiledChangeRecord(BaseModel):
     post_validation: StageResult
     recovery: StageResult
     candidate_validation: StageResult | None = None
-    candidate_diff_digest: str | None = None
+    candidate_diff_digest: Sha256Digest | None = None
     confirmation: StageResult | None = None
     managed_state_acceptance_attempted: Literal[False] = False
     final_outcome: FinalOutcome
@@ -127,6 +132,9 @@ def _record(
         operation=ProfiledOperation.INTERFACE_DESCRIPTION,
         host=plan.host,
         port=plan.port,
+        expected_hostname=plan.expected_hostname,
+        previous_description=plan.current_description,
+        desired_description=plan.desired_description,
         credential_reference=plan.credential_reference,
         transaction_strategy=plan.operation_admission.transaction_strategy,
         preflight=preflight,
@@ -254,7 +262,9 @@ def execute_profiled_plan(
         device, _interface, credentials, state = _preflight(
             plan, inventory, secrets, collector
         )
-        target = ProfiledWriteTarget(device, ProfiledOperation.INTERFACE_DESCRIPTION)
+        target = ProfiledWriteTarget.from_preflight(
+            device, plan.interface.interface, ProfiledOperation.INTERFACE_DESCRIPTION
+        )
     except ProfiledExecutionError as error:
         return _record(
             plan,
@@ -371,6 +381,12 @@ def execute_profiled_plan(
             succeeded=recovery_result.disposition is ExecutionDisposition.SUCCEEDED,
             changed=recovery_result.changed,
         )
+        post_failed = _stage(
+            "desired state not observed",
+            attempted=True,
+            succeeded=False,
+            observed_description=observed.description,
+        )
         if recovery_result.disposition is ExecutionDisposition.AMBIGUOUS:
             return _record(
                 plan,
@@ -378,12 +394,7 @@ def execute_profiled_plan(
                 FinalOutcome.RECOVERY_AMBIGUOUS,
                 preflight=preflight,
                 execution=execution,
-                post=_stage(
-                    "desired state not observed",
-                    attempted=True,
-                    succeeded=False,
-                    observed_description=observed.description,
-                ),
+                post=post_failed,
                 recovery=recovery,
                 now=now,
             )
@@ -394,6 +405,7 @@ def execute_profiled_plan(
                 FinalOutcome.RECOVERY_FAILED,
                 preflight=preflight,
                 execution=execution,
+                post=post_failed,
                 recovery=recovery,
                 now=now,
             )
@@ -408,6 +420,7 @@ def execute_profiled_plan(
                 FinalOutcome.RECOVERY_FAILED,
                 preflight=preflight,
                 execution=execution,
+                post=post_failed,
                 recovery=recovery,
                 now=now,
             )
@@ -415,6 +428,7 @@ def execute_profiled_plan(
             FinalOutcome.RECOVERED
             if restored.description == plan.current_description
             and restored.observed_hostname == plan.expected_hostname
+            and restored.interface == plan.interface.name
             and restored.exists
             else FinalOutcome.RECOVERY_FAILED
         )
@@ -424,6 +438,7 @@ def execute_profiled_plan(
             outcome,
             preflight=preflight,
             execution=execution,
+            post=post_failed,
             recovery=recovery.model_copy(
                 update={
                     "succeeded": outcome is FinalOutcome.RECOVERED,

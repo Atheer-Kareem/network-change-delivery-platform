@@ -26,7 +26,10 @@ from network_change_delivery.models import (
     InterfaceState,
     InventoryDevice,
 )
-from network_change_delivery.read_only_target import ReadOnlyConnectionTarget
+from network_change_delivery.read_only_target import (
+    ConnectionTarget,
+    ReadOnlyConnectionTarget,
+)
 from network_change_delivery.secrets import DeviceCredentials
 from network_change_delivery.snmp_provisioning import (
     SecretRenderedArtifact,
@@ -750,6 +753,13 @@ class AnsibleRunnerCiscoAdapter:
             "apply_interface_description.yml",
             extravars={"ncdp_artifact": artifact.model_dump(mode="json")},
         )
+        return self._classify_interface_execution(runner, selected)
+
+    @staticmethod
+    def _classify_interface_execution(
+        runner: object, selected: dict[str, dict[str, Any]]
+    ) -> ExecutionResult:
+        """Keep v1 and profiled result classification identical."""
         status = str(getattr(runner, "status", "failed"))
         rc = getattr(runner, "rc", None)
         execution_event = selected.get(EXECUTION_TASK, {}).get("_ncdp_event")
@@ -778,43 +788,30 @@ class AnsibleRunnerCiscoAdapter:
 
     def execute_profiled(
         self,
-        target: ReadOnlyConnectionTarget,
+        target: ConnectionTarget,
         credentials: DeviceCredentials,
         artifact: CiscoConfigArtifact,
     ) -> ExecutionResult:
         """Apply one profiled artifact with explicit strict host trust only."""
         if self._known_hosts is None:
             raise HostTrustError("profiled Cisco write requires explicit known_hosts")
-        runner, selected = self._run(
-            target,
-            credentials,
-            "apply_interface_description.yml",
-            extravars={"ncdp_artifact": artifact.model_dump(mode="json")},
-            ssh_type="paramiko",
-            profile_bound=True,
-        )
-        status = str(getattr(runner, "status", "failed"))
-        rc = getattr(runner, "rc", None)
-        event = selected.get(EXECUTION_TASK, {}).get("_ncdp_event")
-        if (
-            status in {"timeout", "canceled"}
-            or rc in {254, 255}
-            or event in {"runner_on_failed", "runner_on_unreachable"}
-        ):
+        try:
+            runner, selected = self._run(
+                target,
+                credentials,
+                "apply_interface_description.yml",
+                extravars={"ncdp_artifact": artifact.model_dump(mode="json")},
+                ssh_type="paramiko",
+                profile_bound=True,
+            )
+        except HostTrustError:
+            raise
+        except Exception:
             return ExecutionResult(
                 disposition=ExecutionDisposition.AMBIGUOUS,
-                message="profiled network write outcome is ambiguous",
+                message="profiled write may have been attempted; outcome ambiguous",
             )
-        if status != "successful" or rc != 0 or EXECUTION_TASK not in selected:
-            return ExecutionResult(
-                disposition=ExecutionDisposition.FAILED,
-                message="profiled configuration task failed before known success",
-            )
-        return ExecutionResult(
-            disposition=ExecutionDisposition.SUCCEEDED,
-            changed=bool(selected[EXECUTION_TASK].get("changed", False)),
-            message="exact profiled configuration artifact completed successfully",
-        )
+        return self._classify_interface_execution(runner, selected)
 
     def snmp_preflight(
         self,

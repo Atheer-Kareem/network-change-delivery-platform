@@ -37,7 +37,10 @@ from network_change_delivery.models import (
     InventoryDevice,
     JunosConfigArtifact,
 )
-from network_change_delivery.read_only_target import ReadOnlyConnectionTarget
+from network_change_delivery.read_only_target import (
+    ConnectionTarget,
+    ReadOnlyConnectionTarget,
+)
 from network_change_delivery.secrets import DeviceCredentials
 from network_change_delivery.snmp_provisioning import (
     SecretRenderedArtifact,
@@ -531,7 +534,7 @@ class JunosPyEZAdapter:
     @contextmanager
     def profiled_transaction(
         self,
-        target: ReadOnlyConnectionTarget,
+        target: ConnectionTarget,
         credentials: DeviceCredentials,
         artifact: JunosConfigArtifact,
     ) -> Any:
@@ -554,29 +557,47 @@ class JunosPyEZAdapter:
             raise
 
     def confirm_profiled(
-        self, target: ReadOnlyConnectionTarget, credentials: DeviceCredentials
+        self, target: ConnectionTarget, credentials: DeviceCredentials
     ) -> ExecutionResult:
-        """Confirm once through explicit profiled NETCONF trust."""
+        """Confirm a pending commit-confirmed operation once through strict trust."""
         if self._known_hosts is None:
             raise HostTrustError("profiled Junos write requires explicit known_hosts")
-        # Reuse the exact bounded confirmation classification with a profile session.
-        result: ExecutionResult | None = None
         try:
             with self._session(target, credentials, profile_bound=True) as connection:
-                config = self._config_factory(connection, mode="exclusive")
-                config.__enter__()
                 try:
-                    confirmed = config.commit_check()
+                    config = self._config_factory(connection, mode="exclusive")
+                    config.__enter__()
+                except Exception:
+                    return _confirmation_failed()
+                try:
+                    # A plain commit confirms the pending commit-confirmed state.
+                    confirmed = config.commit()
+                except (ConnectClosedError, ConnectError, RpcTimeoutError):
+                    result = _confirmation_ambiguous()
+                except (CommitError, RpcError):
+                    result = _confirmation_failed()
+                except Exception:
+                    result = _confirmation_ambiguous()
+                else:
                     result = (
                         _confirmation_succeeded()
                         if confirmed is True
                         else _confirmation_failed()
                     )
-                finally:
+                try:
                     config.__exit__(None, None, None)
+                except Exception:
+                    if result.disposition is ExecutionDisposition.SUCCEEDED:
+                        return result.model_copy(
+                            update={
+                                "message": (
+                                    "pending commit confirmed; session cleanup warning"
+                                )
+                            }
+                        )
+                return result
         except Exception:
-            return _confirmation_ambiguous()
-        return result or _confirmation_failed()
+            return _confirmation_failed()
 
     def discover(
         self, device: InventoryDevice, credentials: DeviceCredentials

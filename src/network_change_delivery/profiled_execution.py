@@ -456,10 +456,11 @@ def execute_profiled_plan(
         return _record(
             plan, approval_digest, FinalOutcome.BLOCKED, preflight=blocked, now=now
         )
+    transaction_context = writer.junos_transaction(target, credentials, artifact)
+    entered = False
     try:
-        transaction_context = writer.junos_transaction(target, credentials, artifact)
         transaction = transaction_context.__enter__()
-        prepared = transaction.prepare()
+        entered = True
     except (ValueError, OSError, RuntimeError):
         return _record(
             plan,
@@ -469,6 +470,24 @@ def execute_profiled_plan(
             candidate=_stage(
                 "candidate preparation blocked", attempted=True, succeeded=False
             ),
+            now=now,
+        )
+    if not entered:
+        raise RuntimeError("profiled transaction entry invariant failed")
+    try:
+        prepared = transaction.prepare()
+    except (ValueError, OSError, RuntimeError):
+        cleanup_message = "candidate preparation blocked"
+        try:
+            transaction_context.__exit__(None, None, None)
+        except Exception:
+            cleanup_message = "candidate preparation blocked; cleanup or unlock failed"
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.BLOCKED,
+            preflight=preflight,
+            candidate=_stage(cleanup_message, attempted=True, succeeded=False),
             now=now,
         )
     candidate = _stage(

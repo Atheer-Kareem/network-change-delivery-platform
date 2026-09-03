@@ -277,3 +277,61 @@ def test_profiled_write_target_is_immutable_and_binds_stable_identity():
     assert target.interface == value.interface
     with pytest.raises(AttributeError):
         target.host = "192.0.2.1"  # type: ignore[misc]
+
+
+class FailingJunos(Junos):
+    def __init__(self, *, commit_raises: bool = False, cleanup_raises: bool = False):
+        super().__init__(None, None)
+        self.exits = 0
+        self.commit_raises = commit_raises
+        self.cleanup_raises = cleanup_raises
+
+    @contextmanager
+    def profiled_transaction(self, *_args):
+        outer = self
+
+        class Transaction:
+            close_failed = False
+
+            def prepare(self):
+                raise RuntimeError("candidate failed")
+
+            def commit_confirmed(self, _minutes):
+                outer.commits += 1
+                if outer.commit_raises:
+                    raise RuntimeError("commit uncertain")
+
+        try:
+            yield Transaction()
+        finally:
+            outer.exits += 1
+            if outer.cleanup_raises:
+                raise RuntimeError("unlock failed")
+
+
+def test_junos_prepare_failure_closes_context_once_without_commit_or_confirm():
+    value, device, interface, state = plan(AutomationProfileID.VJUNOS_ROUTER)
+    junos = FailingJunos()
+    record = execute_profiled_plan(
+        value,
+        value.digest,
+        Inventory(device, interface),
+        Secrets(),
+        Collector([state]),
+        writer(junos=junos),
+    )
+    assert record.final_outcome.value == "BLOCKED"
+    assert (junos.exits, junos.commits, junos.confirms) == (1, 0, 0)
+
+
+def test_malformed_approval_fails_before_external_boundaries():
+    value, device, interface, state = plan()
+    with pytest.raises(ValueError, match="approval digest"):
+        execute_profiled_plan(
+            value,
+            "not-a-digest",
+            Inventory(device, interface),
+            Secrets(),
+            Collector([state]),
+            writer(Cisco([])),
+        )

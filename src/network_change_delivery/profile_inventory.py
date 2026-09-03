@@ -553,6 +553,50 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
         _admit_profiled_device(resolved)
         return resolved
 
+    def resolve_interface(
+        self,
+        device: ProfiledInventoryDevice,
+        interface_name: str,
+    ) -> StableInterfaceIdentity:
+        """Resolve one exact stable interface identity for an admitted device."""
+        _admit_profiled_device(device)
+        requested = _required_string(interface_name, "interface name")
+        device_id = int(device.device_identity.rsplit(":", 1)[1])
+        payloads = self._get_all(
+            self._INTERFACE_PATH,
+            params={
+                "device_id": device_id,
+                "name": requested,
+                "ordering": "id",
+            },
+        )
+        exact: list[StableInterfaceIdentity] = []
+        for item in payloads:
+            if item.get("name") != requested:
+                continue
+            owner = item.get("device")
+            if (
+                not isinstance(owner, dict)
+                or owner.get("id") != device_id
+                or owner.get("name") != device.logical_name
+            ):
+                raise InventoryError(
+                    "NetBox requested interface belongs to another device"
+                )
+            interface_id = _positive_id(item.get("id"), "interface")
+            exact.append(
+                StableInterfaceIdentity(
+                    device=device.device_identity,
+                    interface=f"netbox:dcim.interface:{interface_id}",
+                    name=requested,
+                )
+            )
+        if not exact:
+            raise InventoryError("NetBox requested interface not found")
+        if len(exact) != 1:
+            raise InventoryError("NetBox requested interface is ambiguous")
+        return exact[0]
+
     def resolve_profiled_population(self) -> ProfiledInventoryPopulation:
         """Resolve only the exact four Git-approved profiled inventory members."""
         payloads = self._get_all(

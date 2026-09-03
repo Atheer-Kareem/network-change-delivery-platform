@@ -360,6 +360,33 @@ def test_per_device_resolution_accepts_exact_core_catalog_member() -> None:
     assert resolved.automation_profile_id is AutomationProfileID.CAT8000V_IOSXE
 
 
+def test_resolve_interface_returns_exact_stable_identity() -> None:
+    current = provider(fixture_payloads())
+    device = current.resolve("core-02")
+    interface = current.resolve_interface(device, "Gi0/1")
+    assert interface.device == "netbox:dcim.device:1"
+    assert interface.interface == "netbox:dcim.interface:51"
+    assert interface.name == "Gi0/1"
+
+
+def test_resolve_interface_rejects_missing_or_ambiguous_name() -> None:
+    interfaces = [
+        interface_payload(
+            50,
+            "Gi0/0",
+            tags=[tag(MANAGEMENT_ATTACHMENT_TAG), tag(PROTECTED_INTERFACE_TAG)],
+        ),
+        interface_payload(52, "Gi0/2"),
+        interface_payload(53, "Gi0/2"),
+    ]
+    current = provider(fixture_payloads(interfaces=interfaces))
+    device = current.resolve("core-02")
+    with pytest.raises(InventoryError, match="not found"):
+        current.resolve_interface(device, "Gi0/9")
+    with pytest.raises(InventoryError, match="ambiguous"):
+        current.resolve_interface(device, "Gi0/2")
+
+
 def test_profile_admission_is_closed_unique_and_has_no_fallback() -> None:
     assert len(PROFILE_ADMISSION_CATALOG) == 4
     assert {

@@ -1,4 +1,4 @@
-"""Structural target boundary shared only by read-only provider collection."""
+"""Structural non-secret connection target contracts for provider transports."""
 
 from __future__ import annotations
 

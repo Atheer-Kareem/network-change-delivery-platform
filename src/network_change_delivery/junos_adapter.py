@@ -562,42 +562,62 @@ class JunosPyEZAdapter:
         """Confirm a pending commit-confirmed operation once through strict trust."""
         if self._known_hosts is None:
             raise HostTrustError("profiled Junos write requires explicit known_hosts")
+        attempted = False
+        result: ExecutionResult | None = None
+        session = self._session(target, credentials, profile_bound=True)
         try:
-            with self._session(target, credentials, profile_bound=True) as connection:
-                try:
-                    config = self._config_factory(connection, mode="exclusive")
-                    config.__enter__()
-                except Exception:
-                    return _confirmation_failed()
-                try:
-                    # A plain commit confirms the pending commit-confirmed state.
-                    confirmed = config.commit()
-                except (ConnectClosedError, ConnectError, RpcTimeoutError):
-                    result = _confirmation_ambiguous()
-                except (CommitError, RpcError):
-                    result = _confirmation_failed()
-                except Exception:
-                    result = _confirmation_ambiguous()
-                else:
-                    result = (
-                        _confirmation_succeeded()
-                        if confirmed is True
-                        else _confirmation_failed()
+            connection = session.__enter__()
+            try:
+                config = self._config_factory(connection, mode="exclusive")
+                config.__enter__()
+            except Exception:
+                return _confirmation_failed()
+            attempted = True
+            try:
+                confirmed = config.commit()
+            except (ConnectClosedError, ConnectError, RpcTimeoutError):
+                result = _confirmation_ambiguous()
+            except (CommitError, RpcError):
+                result = _confirmation_failed()
+            except Exception:
+                result = _confirmation_ambiguous()
+            else:
+                result = (
+                    _confirmation_succeeded()
+                    if confirmed is True
+                    else _confirmation_failed()
+                )
+            try:
+                config.__exit__(None, None, None)
+            except Exception:
+                if result.disposition is ExecutionDisposition.SUCCEEDED:
+                    result = result.model_copy(
+                        update={
+                            "message": (
+                                "pending commit confirmed; config cleanup warning"
+                            )
+                        }
                     )
-                try:
-                    config.__exit__(None, None, None)
-                except Exception:
-                    if result.disposition is ExecutionDisposition.SUCCEEDED:
-                        return result.model_copy(
-                            update={
-                                "message": (
-                                    "pending commit confirmed; session cleanup warning"
-                                )
-                            }
-                        )
-                return result
         except Exception:
-            return _confirmation_failed()
+            if not attempted:
+                return _confirmation_failed()
+            result = result or _confirmation_ambiguous()
+        finally:
+            try:
+                session.__exit__(None, None, None)
+            except Exception:
+                if (
+                    result is not None
+                    and result.disposition is ExecutionDisposition.SUCCEEDED
+                ):
+                    result = result.model_copy(
+                        update={
+                            "message": (
+                                "pending commit confirmed; session cleanup warning"
+                            )
+                        }
+                    )
+        return result or _confirmation_failed()
 
     def discover(
         self, device: InventoryDevice, credentials: DeviceCredentials

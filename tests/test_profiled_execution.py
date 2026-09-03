@@ -271,9 +271,9 @@ def test_invalid_approval_blocks_before_writer():
 def test_profiled_write_target_is_immutable_and_binds_stable_identity():
     value, device, interface, _state = plan()
     target = ProfiledWriteTarget.from_preflight(
-        device, interface.interface, value.operation_admission.operation
+        device, interface, value.operation_admission.operation
     )
     assert target.device_identity == value.device_identity
-    assert target.interface_identity == value.interface.interface
+    assert target.interface == value.interface
     with pytest.raises(AttributeError):
         target.host = "192.0.2.1"  # type: ignore[misc]

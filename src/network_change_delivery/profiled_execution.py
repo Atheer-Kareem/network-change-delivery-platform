@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Literal, Protocol
 
@@ -245,6 +247,8 @@ def execute_profiled_plan(
 ) -> ProfiledChangeRecord:
     """Execute one plan; callers, not this module, grant runtime authority."""
     blocked = _stage("pre-write verification blocked", attempted=True, succeeded=False)
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", approval_digest) is None:
+        raise ValueError("approval digest is invalid")
     if not plan.verify_digest() or approval_digest != plan.digest:
         message = (
             "plan digest is invalid"
@@ -263,7 +267,7 @@ def execute_profiled_plan(
             plan, inventory, secrets, collector
         )
         target = ProfiledWriteTarget.from_preflight(
-            device, plan.interface.interface, ProfiledOperation.INTERFACE_DESCRIPTION
+            device, plan.interface, ProfiledOperation.INTERFACE_DESCRIPTION
         )
     except ProfiledExecutionError as error:
         return _record(
@@ -453,12 +457,9 @@ def execute_profiled_plan(
             plan, approval_digest, FinalOutcome.BLOCKED, preflight=blocked, now=now
         )
     try:
-        with writer.junos_transaction(target, credentials, artifact) as transaction:
-            prepared = transaction.prepare()
-            committed = transaction.commit_confirmed(5)
-        candidate = _stage(
-            "candidate validated", attempted=True, succeeded=True, changed=True
-        )
+        transaction_context = writer.junos_transaction(target, credentials, artifact)
+        transaction = transaction_context.__enter__()
+        prepared = transaction.prepare()
     except (ValueError, OSError, RuntimeError):
         return _record(
             plan,
@@ -470,6 +471,30 @@ def execute_profiled_plan(
             ),
             now=now,
         )
+    candidate = _stage(
+        "candidate validated", attempted=True, succeeded=True, changed=True
+    )
+    try:
+        committed = transaction.commit_confirmed(5)
+    except Exception:
+        with suppress(Exception):
+            transaction_context.__exit__(None, None, None)
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.AMBIGUOUS,
+            preflight=preflight,
+            candidate=candidate,
+            diff=prepared.diff_sha256,
+            execution=_stage(
+                "commit-confirmed outcome is ambiguous", attempted=True, succeeded=False
+            ),
+            now=now,
+        )
+    try:
+        transaction_context.__exit__(None, None, None)
+    except Exception:
+        transaction.close_failed = True
     execution = _stage(
         committed.message,
         attempted=True,

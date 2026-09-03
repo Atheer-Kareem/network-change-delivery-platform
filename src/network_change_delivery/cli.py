@@ -94,6 +94,9 @@ from network_change_delivery.profiled_live_host_trust import (
     DEFAULT_PROFILED_LIVE_TRUST_ROOT,
     validate_profiled_live_host_trust,
 )
+from network_change_delivery.profiled_live_host_trust import (
+    KNOWN_HOSTS_NAME as PROFILED_LIVE_KNOWN_HOSTS_NAME,
+)
 from network_change_delivery.profiled_planning import plan_profiled_change
 from network_change_delivery.promotion import (
     PromotionError,
@@ -802,7 +805,7 @@ def _run_profiled_plan(arguments: argparse.Namespace) -> int:
     inventory = NetBoxProfileInventoryProvider()
     secrets = OpenBaoSecretProvider()
     adapter = ProfileReadOnlyAdapter(
-        known_hosts=DEFAULT_PROFILED_LIVE_TRUST_ROOT / KNOWN_HOSTS_NAME
+        known_hosts=(DEFAULT_PROFILED_LIVE_TRUST_ROOT / PROFILED_LIVE_KNOWN_HOSTS_NAME)
     )
     result = plan_profiled_change(intent, inventory, secrets, adapter)
     print(f"Credential source: {result.credential.source}")

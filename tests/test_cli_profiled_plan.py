@@ -164,7 +164,7 @@ def test_profiled_plan_composes_only_profiled_read_only_boundaries(
         "trust",
         "inventory",
         "secrets",
-        cli.DEFAULT_PROFILED_LIVE_TRUST_ROOT / cli.KNOWN_HOSTS_NAME,
+        cli.DEFAULT_PROFILED_LIVE_TRUST_ROOT / cli.PROFILED_LIVE_KNOWN_HOSTS_NAME,
         "plan",
     ]
     assert stat.S_IMODE(output.stat().st_mode) == 0o600

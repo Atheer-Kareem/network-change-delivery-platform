@@ -10,6 +10,14 @@ B4-2 adds exact OSPF router-ID authority and a separate read-only OSPF vertical.
 B4-3 adds exact VLAN gateway authority and a read-only router-on-a-stick/access
 service vertical. None of these increments broadens a write path.
 
+The additive `ncdp profiled-plan` command exposes ordinary schema-v2 planning
+through this profiled boundary. It is read-only with respect to devices and
+produces an immutable local plan only; there is no schema-v2 executor. For the
+current interface-description write lifecycle, C8000V IOS-XE and vJunos are
+admitted, while IOSv and IOSvL2 remain exact managed-fleet members but are not
+admitted. Legacy schema-v1 planning/deployment remains transitional, and
+protected delivery plus disposable staging remain paused.
+
 The two inventory populations are intentionally different:
 
 | NetBox tag | Meaning | Intended membership | Authority granted |

@@ -72,9 +72,7 @@ class ProfiledOperationAdmission(BaseModel):
     recovery_family: RecoveryFamily
     management_service: ManagementService
     management_port: int = Field(ge=1, le=65535)
-    transaction_strategy: Literal[
-        "cisco_targeted_inverse", "junos_commit_confirmed"
-    ]
+    transaction_strategy: Literal["cisco_targeted_inverse", "junos_commit_confirmed"]
     confirmed_timeout_minutes: Literal[5] | None = None
     confirmation_operation: Literal["confirm_previous_commit"] | None = None
 
@@ -381,15 +379,20 @@ def _normalized_interface(name: str) -> str:
     return "".join(name.split()).casefold()
 
 
+def _assert_profiled_target_binding(
+    intent: InterfaceDescriptionIntent,
+    device: ProfiledInventoryDevice,
+) -> None:
+    if device.logical_name != intent.target:
+        raise ProfiledPlanningError("profiled planning target identity rejected")
+
+
 def _assert_profiled_interface_binding(
     intent: InterfaceDescriptionIntent,
     device: ProfiledInventoryDevice,
     interface: StableInterfaceIdentity,
 ) -> None:
-    if (
-        interface.device != device.device_identity
-        or interface.name != intent.interface
-    ):
+    if interface.device != device.device_identity or interface.name != intent.interface:
         raise ProfiledPlanningError("profiled interface identity rejected")
     requested = _normalized_interface(interface.name)
     protected_ids = {item.interface for item in device.protected_interfaces}
@@ -408,6 +411,7 @@ def _assert_profiled_safe_state(
     interface: StableInterfaceIdentity,
     state: InterfaceState,
 ) -> None:
+    _assert_profiled_target_binding(intent, device)
     admit_profiled_operation(device, ProfiledOperation.INTERFACE_DESCRIPTION)
     _assert_profiled_interface_binding(intent, device, interface)
     if (
@@ -529,6 +533,7 @@ def plan_profiled_change(
 ) -> ProfiledPlanningResult:
     """Resolve exact profile identity, then collect without write authority."""
     device = inventory.resolve(intent.target)
+    _assert_profiled_target_binding(intent, device)
 
     # Operation admission deliberately precedes interface lookup, credential routing,
     # secret retrieval, and network transport.

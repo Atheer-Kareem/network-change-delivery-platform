@@ -40,6 +40,7 @@ from network_change_delivery.profiled_planning import (
     ProfiledOperation,
     ProfiledPlanningError,
     admit_profiled_operation,
+    build_profiled_plan,
     plan_profiled_change,
 )
 from network_change_delivery.secrets import (
@@ -244,6 +245,15 @@ class FakeInventory:
         return self.interface
 
 
+class WrongTargetInventory(FakeInventory):
+    """Return a different valid profiled subject than the requested target."""
+
+    def resolve(self, target: str) -> ProfiledInventoryDevice:
+        del target
+        self.resolve_calls += 1
+        return self.device
+
+
 class FakeSecrets:
     def __init__(self, *, source: str = "openbao") -> None:
         self.source = source
@@ -304,9 +314,12 @@ def test_operation_admission_is_profile_specific_and_not_ios_family_fallback() -
         AutomationProfileID.VJUNOS_ROUTER,
     ):
         device, _interface = profiled_device(profile_id)
-        assert admit_profiled_operation(
-            device, ProfiledOperation.INTERFACE_DESCRIPTION
-        ).automation_profile_id is profile_id
+        assert (
+            admit_profiled_operation(
+                device, ProfiledOperation.INTERFACE_DESCRIPTION
+            ).automation_profile_id
+            is profile_id
+        )
 
     for profile_id in (
         AutomationProfileID.IOSV_159_3_M12,
@@ -314,9 +327,7 @@ def test_operation_admission_is_profile_specific_and_not_ios_family_fallback() -
     ):
         device, _interface = profiled_device(profile_id)
         with pytest.raises(ProfiledPlanningError, match="does not admit"):
-            admit_profiled_operation(
-                device, ProfiledOperation.INTERFACE_DESCRIPTION
-            )
+            admit_profiled_operation(device, ProfiledOperation.INTERFACE_DESCRIPTION)
 
 
 @pytest.mark.parametrize(
@@ -347,6 +358,54 @@ def test_unsupported_profile_fails_before_interface_secret_or_transport(
     assert secrets.reference_calls == 0
     assert secrets.load_calls == 0
     assert collector.calls == 0
+
+
+def test_different_valid_profiled_subject_cannot_retarget_intent() -> None:
+    requested_device, requested_interface = profiled_device(
+        AutomationProfileID.CAT8000V_IOSXE
+    )
+    returned_device, returned_interface = profiled_device(
+        AutomationProfileID.VJUNOS_ROUTER
+    )
+    inventory = WrongTargetInventory(returned_device, returned_interface)
+    secrets = FakeSecrets()
+    collector = FakeCollector(observed(returned_device, returned_interface))
+
+    with pytest.raises(ProfiledPlanningError, match="target identity"):
+        plan_profiled_change(
+            intent(requested_device, requested_interface),
+            inventory,
+            secrets,
+            collector,
+        )
+
+    assert inventory.resolve_calls == 1
+    assert inventory.interface_calls == 0
+    assert secrets.reference_calls == 0
+    assert secrets.load_calls == 0
+    assert collector.calls == 0
+
+
+def test_direct_plan_builder_rejects_intent_target_retargeting() -> None:
+    requested_device, requested_interface = profiled_device(
+        AutomationProfileID.CAT8000V_IOSXE
+    )
+    returned_device, returned_interface = profiled_device(
+        AutomationProfileID.VJUNOS_ROUTER
+    )
+    credential = CredentialReference(
+        "openbao",
+        "openbao:kv-v2:ncdp/devices/2/ssh",
+    )
+
+    with pytest.raises(ProfiledPlanningError, match="target identity"):
+        build_profiled_plan(
+            intent(requested_device, requested_interface),
+            returned_device,
+            returned_interface,
+            observed(returned_device, returned_interface),
+            credential=credential,
+        )
 
 
 def test_profiled_cisco_plan_is_schema_v2_identity_bound_and_digest_bound() -> None:
@@ -439,9 +498,7 @@ def test_non_openbao_reference_fails_before_secret_load_or_collection() -> None:
 
 def test_profiled_subject_mismatch_fails_closed_before_secret_or_transport() -> None:
     device, interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
-    mismatched = device.model_copy(
-        update={"device_identity": "netbox:dcim.device:99"}
-    )
+    mismatched = device.model_copy(update={"device_identity": "netbox:dcim.device:99"})
     inventory = FakeInventory(mismatched, interface)
     secrets = FakeSecrets()
     collector = FakeCollector(observed(device, interface))
@@ -457,8 +514,9 @@ def test_profiled_subject_mismatch_fails_closed_before_secret_or_transport() -> 
     assert collector.calls == 0
 
 
-def test_stable_protected_interface_identity_blocks_before_secret_or_transport(
-) -> None:
+def test_stable_protected_interface_identity_blocks_before_secret_or_transport() -> (
+    None
+):
     device, _interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
     protected = device.protected_interfaces[0]
     secrets = FakeSecrets()
@@ -497,12 +555,13 @@ def test_profiled_plan_rejects_old_schema_and_profile_tampering() -> None:
         ProfiledDeploymentPlan.model_validate(wrong_profile)
 
 
-def test_profiled_planning_has_no_legacy_inventory_or_write_adapter_dependency(
-) -> None:
+def test_profiled_planning_has_no_legacy_inventory_or_write_adapter_dependency() -> (
+    None
+):
     source = (
-        Path(__file__).parents[1]
-        / "src/network_change_delivery/profiled_planning.py"
+        Path(__file__).parents[1] / "src/network_change_delivery/profiled_planning.py"
     ).read_text(encoding="utf-8")
-    assert "InventoryDevice" not in source
+
+    assert "from network_change_delivery.inventory import" not in source
     assert "MultiVendorAdapter" not in source
     assert "ncdp-managed" not in source

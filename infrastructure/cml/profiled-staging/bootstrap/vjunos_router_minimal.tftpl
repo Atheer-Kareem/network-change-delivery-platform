@@ -1,0 +1,11 @@
+system {
+  host-name ${hostname};
+  login {
+    user ${username} {
+      class super-user;
+      authentication { encrypted-password "${password_hash}"; }
+    }
+  }
+  services { ssh; netconf { ssh; } }
+}
+interfaces { fxp0 { unit 0 { family inet { address ${management_cidr}; } } } }

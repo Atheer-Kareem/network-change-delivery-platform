@@ -12,6 +12,7 @@ from network_change_delivery.buildkite_staging import (
     STAGING_DEVICE_IDS,
     BuildkiteStagingContext,
     BuildkiteStagingSecretProvider,
+    reject_ambient_staging_authority,
     staging_context_from_environment,
     staging_policy_name,
     staging_role_name,
@@ -173,6 +174,22 @@ def test_staging_secret_provider_rejects_repeat_and_unknown_device() -> None:
         provider.load(device(1))
     with pytest.raises(SecretError, match="identity rejected"):
         provider.reference(profiled_target(10))
+
+
+@pytest.mark.parametrize(
+    "variable",
+    (
+        "NCDP_OPENBAO_ROLE_ID",
+        "NCDP_OPENBAO_SECRET_ID",
+        "NCDP_NETBOX_TOKEN",
+        "CML2_TOKEN",
+        "NCDP_DEVICE_USERNAME",
+        "NCDP_DEVICE_PASSWORD",
+    ),
+)
+def test_staging_rejects_broad_ambient_authority(variable: str) -> None:
+    with pytest.raises(SecretError, match="ambient authority"):
+        reject_ambient_staging_authority({variable: "present"})
 
 
 def test_state_root_requires_owned_private_external_directory(

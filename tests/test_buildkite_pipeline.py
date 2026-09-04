@@ -41,6 +41,7 @@ def test_pipeline_retains_validation_and_profiled_pr_assurance_only() -> None:
         "quality-pytest",
         "quality-ansible-lint",
         "quality-package-build",
+        "quality-terraform-profiled-staging",
         "quality-snmp-generator",
         "quality-observability-runtime",
         "quality-snmpv3-synthetic",
@@ -63,7 +64,6 @@ def test_pipeline_contains_no_retired_or_device_write_surface() -> None:
     source = PIPELINE.read_text(encoding="utf-8")
     for retired in (
         "quality-terraform-cml",
-        "cml-staging",
         "protected-delivery",
         ".buildkite/scripts/batfish_assurance.sh",
         ".buildkite/scripts/promotion.sh",
@@ -74,7 +74,8 @@ def test_pipeline_contains_no_retired_or_device_write_surface() -> None:
         "ncdp deploy",
     ):
         assert retired not in source
-    assert "ncdp-staging" not in source
+    assert "key: cml-staging" not in source
+    assert "queue: ncdp-staging" not in source
     assert "ncdp-deploy" not in source
 
 
@@ -100,6 +101,17 @@ def test_retained_quality_commands_are_fail_closed() -> None:
         assert steps[key]["depends_on"] == "quality-env"
         assert steps[key]["agents"] == {"queue": "ncdp-validation"}
         assert steps[key]["retry"] == {"automatic": False}
+
+    terraform = steps["quality-terraform-profiled-staging"]
+    assert terraform["command"] == "scripts/buildkite/profiled_terraform_validate.sh"
+    assert terraform["agents"] == {"queue": "ncdp-validation"}
+    assert terraform["if_changed"]["include"] == [
+        "infrastructure/cml/profiled-staging/**",
+        "scripts/buildkite/profiled_terraform_validate.sh",
+        "src/network_change_delivery/profiled_staging.py",
+        "src/network_change_delivery/profiled_staging_trust.py",
+        "src/network_change_delivery/profiled_realization.py",
+    ]
 
     contract = steps["ncdp-pipeline-contract"]
     assert contract["depends_on"] == "quality-env"

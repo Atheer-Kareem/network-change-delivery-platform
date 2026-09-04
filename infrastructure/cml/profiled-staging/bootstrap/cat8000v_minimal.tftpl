@@ -1,0 +1,7 @@
+hostname ${hostname}
+username ${username} privilege 15 secret 9 ${password_hash}
+interface GigabitEthernet1
+ ip address ${split("/", management_cidr)[0]} ${cidrnetmask(management_cidr)}
+ no shutdown
+ip ssh version 2
+end

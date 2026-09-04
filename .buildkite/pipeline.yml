@@ -56,6 +56,19 @@ steps:
     agents:
       queue: ncdp-validation
 
+  - label: ":terraform: Profiled staging Terraform static validation"
+    key: quality-terraform-profiled-staging
+    command: scripts/buildkite/profiled_terraform_validate.sh
+    agents:
+      queue: ncdp-validation
+    if_changed:
+      include:
+        - "infrastructure/cml/profiled-staging/**"
+        - "scripts/buildkite/profiled_terraform_validate.sh"
+        - "src/network_change_delivery/profiled_staging.py"
+        - "src/network_change_delivery/profiled_staging_trust.py"
+        - "src/network_change_delivery/profiled_realization.py"
+
   - label: ":gear: SNMP module reproducibility"
     key: quality-snmp-generator
     command: uv run --frozen python scripts/observability/check_snmp_generator.py

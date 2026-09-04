@@ -25,6 +25,16 @@ from network_change_delivery.secrets import (
 OPENBAO_STAGING_AUDIENCE = "urn:ncdp:openbao:staging"
 OPENBAO_STAGING_MAX_LEASE_SECONDS = 300
 STAGING_DEVICE_IDS = frozenset({1, 2, 8, 9})
+_REJECTED_STAGING_ENVIRONMENT = frozenset(
+    {
+        "NCDP_OPENBAO_ROLE_ID",
+        "NCDP_OPENBAO_SECRET_ID",
+        "NCDP_NETBOX_TOKEN",
+        "CML2_TOKEN",
+        "NCDP_DEVICE_USERNAME",
+        "NCDP_DEVICE_PASSWORD",
+    }
+)
 
 
 def staging_policy_name(device_id: int) -> str:
@@ -98,6 +108,15 @@ def staging_context_from_environment(
     )
 
 
+def reject_ambient_staging_authority(
+    environment: Mapping[str, str] | None = None,
+) -> None:
+    """Reject broad ambient credentials from the future staging job boundary."""
+    values = environment if environment is not None else os.environ
+    if any(values.get(name) for name in _REJECTED_STAGING_ENVIRONMENT):
+        raise SecretError("Buildkite staging ambient authority is rejected")
+
+
 def validate_staging_state_root(
     root: Path,
     checkout: Path,
@@ -136,6 +155,7 @@ class BuildkiteStagingSecretProvider:
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
+        reject_ambient_staging_authority()
         configured_url = os.environ.get("NCDP_OPENBAO_URL") if url is None else url
         if not configured_url:
             raise SecretError("OpenBao configuration missing")

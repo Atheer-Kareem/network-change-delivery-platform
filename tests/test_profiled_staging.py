@@ -317,3 +317,15 @@ def test_operator_entry_point_requires_explicit_execution_and_remains_profiled()
         "execute_profiled_plan",
     ):
         assert re.search(rf"\b{forbidden}\b", source) is None
+
+
+def test_recovery_entry_point_is_exact_destroy_only() -> None:
+    source = (ROOT / "scripts/recover_profiled_cml_staging.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'add_argument("--execute", action="store_true")' in source
+    assert "validate_destroy_only_plan" in source
+    assert "_verify_absence" in source
+    assert '"-destroy"' in source
+    assert '"create"' not in source
+    assert '"STARTED"' not in source

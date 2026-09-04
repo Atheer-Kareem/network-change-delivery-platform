@@ -25,6 +25,8 @@ from network_change_delivery.profiled_staging import (
     ProfiledStagingEvidence,
     ProfiledStagingLifecycle,
     ProfiledStagingOutcome,
+    ProfiledStagingReadinessEvidence,
+    ProfiledStagingReadinessOutcome,
     load_recovery_inputs,
     profiled_staging_topology,
     terraform_profiled_device_variables,
@@ -97,10 +99,76 @@ def test_terraform_graph_is_profiled_management_only_and_exact() -> None:
         "description ",
     ):
         assert forbidden not in templates.lower()
-    assert "netconf { ssh; }" in templates
+    assert "netconf" in templates
     assert "no switchport" in templates
     assert "secret 9" in templates
     assert "encrypted-password" in templates
+
+
+@pytest.mark.parametrize(
+    "template,management_marker",
+    [
+        ("cat8000v_minimal.tftpl", "interface GigabitEthernet1"),
+        ("iosv_minimal.tftpl", "interface GigabitEthernet0/0"),
+        ("iosvl2_routed_management.tftpl", "interface GigabitEthernet0/0"),
+    ],
+)
+def test_cisco_bootstrap_has_complete_management_only_ssh_server(
+    template: str, management_marker: str
+) -> None:
+    rendered = (TERRAFORM / "bootstrap" / template).read_text(encoding="utf-8")
+    for required in (
+        "ip domain name ncdp.local",
+        "crypto key generate rsa modulus 2048",
+        "line vty 0 4",
+        " login local",
+        " transport input ssh",
+        "ip ssh version 2",
+        management_marker,
+        " no shutdown",
+        "secret 9",
+    ):
+        assert required in rendered
+    validate_management_only_bootstrap(rendered)
+    for forbidden in (
+        "10.6.12.",
+        "router ospf",
+        "vlan ",
+        "switchport trunk",
+        "access-list",
+        "snmp-server",
+        "description ",
+        "netconf",
+    ):
+        assert forbidden not in rendered.casefold()
+    assert rendered.count("interface ") == 1
+    assert '${split("/", management_cidr)[0]}' in rendered
+    if template == "iosvl2_routed_management.tftpl":
+        assert " no switchport" in rendered
+
+
+def test_vjunos_bootstrap_restores_accepted_first_boot_guard_only() -> None:
+    rendered = (TERRAFORM / "bootstrap" / "vjunos_router_minimal.tftpl").read_text(
+        encoding="utf-8"
+    )
+    assert "root-authentication" in rendered
+    assert (
+        'ssh-ed25519 "ssh-ed25519 '
+        "AAAAC3NzaC1lZDI1NTE5AAAAIPwW8OCx1ZqSb9kBOTcmWF5csn28A+Z+5wkAaslzmXau "
+        'ncdp-personal-lab-root-commit-guard";'
+    ) in rendered
+    for required in (
+        "root-login deny",
+        "encrypted-password",
+        "services",
+        "ssh",
+        "netconf",
+        "fxp0",
+        "${management_cidr}",
+    ):
+        assert required in rendered
+    validate_management_only_bootstrap(rendered)
+    assert "ge-0/0/" not in rendered
 
 
 @pytest.mark.parametrize(
@@ -140,14 +208,30 @@ def test_management_bootstrap_rejects_legacy_or_b4_content() -> None:
 
 
 def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
+    readiness = ProfiledStagingReadinessEvidence(
+        device_identity="netbox:dcim.device:1",
+        logical_name="core-02",
+        automation_profile_id=AutomationProfileID.CAT8000V_IOSXE,
+        cml_realization_profile_id=CmlRealizationProfileID.CAT8000V_17_18_02,
+        cml_node_id="node-core",
+        management_address="192.168.4.30",
+        readiness_service="ssh",
+        readiness_port=22,
+        outcome=ProfiledStagingReadinessOutcome.TIMED_OUT,
+        elapsed_seconds=900,
+        cml_node_state="BOOTED",
+    )
     evidence = ProfiledStagingEvidence(
         staging_run_id="run-001",
         orchestrator="local",
         lab_title="NCDP Staging run-001",
+        readiness=(readiness,),
         primary_failure="bounded failure",
     )
     rendered = evidence.model_dump_json()
     assert '"schema_version":"2"' in rendered
+    assert '"outcome":"TIMED_OUT"' in rendered
+    assert '"elapsed_seconds":900.0' in rendered
     for secret in ("username", "password", "token", "RoleID", "SecretID"):
         assert secret not in rendered
 
@@ -219,6 +303,7 @@ class Operations:
         self.fail = fail
         self.calls: list[str] = []
         self.exists = False
+        self.readiness_evidence: tuple[ProfiledStagingReadinessEvidence, ...] = ()
 
     @property
     def managed_resources_exist(self) -> bool:
@@ -232,7 +317,47 @@ class Operations:
         self.exists = True
         if self.fail == "create_after_owned":
             raise ProfiledStagingError("create failed after ownership")
-        from test_profiled_realization import staging_context
+        from test_profiled_realization import (
+            evidence,
+            inventory_devices,
+            staging_context,
+        )
+
+        self.readiness_evidence = tuple(
+            ProfiledStagingReadinessEvidence(
+                device_identity=device.device_identity,
+                logical_name=device.logical_name,
+                automation_profile_id=device.automation_profile_id,
+                cml_realization_profile_id=device.cml_realization_profile_id,
+                cml_node_id=f"node-{device.logical_name}",
+                management_address=str(
+                    device.management_endpoints.staging.binding.l3_endpoint.address.ip
+                ),
+                readiness_service=(
+                    "netconf" if str(device.logical_name) == "edge-junos-01" else "ssh"
+                ),
+                readiness_port=(
+                    device.management_endpoints.staging.binding.l3_endpoint.port
+                ),
+                outcome=(
+                    ProfiledStagingReadinessOutcome.TIMED_OUT
+                    if self.fail == "readiness" and index > 0
+                    else ProfiledStagingReadinessOutcome.READY
+                ),
+                elapsed_seconds=1.25,
+                readiness_evidence=(
+                    None
+                    if self.fail == "readiness" and index > 0
+                    else evidence(f"ready-{device.logical_name}", "7")
+                ),
+                cml_node_state=(
+                    "BOOTED" if self.fail == "readiness" and index > 0 else None
+                ),
+            )
+            for index, device in enumerate(inventory_devices())
+        )
+        if self.fail == "readiness":
+            raise ProfiledStagingError("profiled staging readiness timed out")
 
         return staging_context()
 
@@ -306,6 +431,30 @@ def test_lifecycle_cleans_partial_owned_state_when_create_does_not_return_contex
         "absence",
         "retire",
     ]
+
+
+def test_lifecycle_preserves_exact_partial_readiness_after_timeout() -> None:
+    operations = Operations(fail="readiness")
+    evidence = ProfiledStagingLifecycle("run-1", "local", operations).run()
+    assert evidence.final_outcome is ProfiledStagingOutcome.FAILED
+    assert evidence.primary_failure == "profiled staging readiness timed out"
+    assert tuple(item.logical_name for item in evidence.readiness) == (
+        "core-02",
+        "edge-junos-01",
+        "transit-ios-01",
+        "access-sw-01",
+    )
+    assert evidence.readiness[0].outcome is ProfiledStagingReadinessOutcome.READY
+    assert evidence.readiness[0].readiness_evidence is not None
+    assert all(
+        item.outcome is ProfiledStagingReadinessOutcome.TIMED_OUT
+        and item.readiness_evidence is None
+        and item.cml_node_state == "BOOTED"
+        for item in evidence.readiness[1:]
+    )
+    assert evidence.destroy_outcome == "succeeded"
+    assert evidence.absence_verification == "succeeded"
+    assert evidence.state_retirement == "succeeded"
 
 
 def test_lifecycle_malformed_post_destroy_state_is_ambiguous() -> None:

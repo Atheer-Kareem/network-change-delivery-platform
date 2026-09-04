@@ -13,6 +13,8 @@ from network_change_delivery.profiled_staging import (
     PROFILED_STAGING_TERRAFORM_ADDRESSES,
     ProfiledStagingAmbiguousError,
     ProfiledStagingError,
+    ProfiledStagingReadinessOutcome,
+    retire_profiled_staging_run_directory,
     terraform_managed_state_addresses,
     terraform_profiled_device_variables,
     validate_destroy_only_plan,
@@ -38,9 +40,184 @@ def operations(tmp_path: Path):
     value._run_id = "run-001"
     value._run_directory = tmp_path
     value._state_path = tmp_path / "terraform.tfstate"
+    value._state_backup_path = tmp_path / "terraform.tfstate.backup"
     value._recovery_inputs = tmp_path / "recovery-inputs.tfvars.json"
     value._owned_lab_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     return value
+
+
+def _write_valid_recovery_inputs(run: Path, run_id: str) -> Path:
+    from test_profiled_realization import inventory_devices
+
+    devices = inventory_devices()
+    credentials = {
+        str(device.logical_name): DeviceCredentials(
+            username="operator", password="unused"
+        )
+        for device in devices
+    }
+    verifiers = {
+        "core-02": "$9$ncdpCoreSalt1$abcdefghijklmnop",
+        "edge-junos-01": "$6$ncdpJunosSalt$abcdefghijklmnop",
+        "transit-ios-01": "$9$ncdpTransitSalt$abcdefghijklmnop",
+        "access-sw-01": "$9$ncdpAccessSalt1$abcdefghijklmnop",
+    }
+    values = terraform_profiled_device_variables(devices, credentials, verifiers)
+    for name, address in {
+        "core_02": "192.168.4.30/24",
+        "edge_junos_01": "192.168.4.40/24",
+        "transit_ios_01": "192.168.4.31/24",
+        "access_sw_01": "192.168.4.32/24",
+    }.items():
+        values[name]["management_cidr"] = address
+    path = run / "recovery-inputs.tfvars.json"
+    write_recovery_inputs(
+        path,
+        {
+            "staging_run_id": run_id,
+            "lifecycle_state": "DEFINED_ON_CORE",
+            "devices": values,
+        },
+    )
+    return path
+
+
+def _readiness_operations(tmp_path: Path):
+    from test_profiled_realization import inventory_devices
+
+    module = load_script("run_profiled_cml_staging")
+    value = module.LocalTerraformOperations.__new__(module.LocalTerraformOperations)
+    value._run_id = "run-001"
+    value._run_directory = tmp_path
+    value._devices = inventory_devices()
+    value._readiness = {}
+    value._readiness_results = {}
+    value.readiness_evidence = ()
+    node_ids = {
+        str(device.logical_name).replace("-", "_"): f"node-{device.logical_name}"
+        for device in value._devices
+    }
+    return module, value, node_ids
+
+
+class _Connection:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, duration: float) -> None:
+        self.now += duration
+
+
+class _NodeReader:
+    def __init__(self, *, fail_for: str | None = None) -> None:
+        self.fail_for = fail_for
+        self.closed = False
+
+    def item(self, _lab_id: str, _kind: str, node_id: str):
+        if self.fail_for and self.fail_for in node_id:
+            raise ProfiledStagingError("bounded diagnostic failure")
+        return {"state": "BOOTED"}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_partial_readiness_timeout_retains_ready_and_timed_out_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, value, node_ids = _readiness_operations(tmp_path)
+    clock = _Clock()
+    reader = _NodeReader(fail_for="transit-ios-01")
+    monkeypatch.setattr(module, "_READINESS_TIMEOUT_SECONDS", 10)
+    monkeypatch.setattr(module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(module.time, "sleep", clock.sleep)
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlReader,
+        "from_environment",
+        staticmethod(lambda: reader),
+    )
+    core_address = str(
+        value._devices[0].management_endpoints.staging.binding.l3_endpoint.address.ip
+    )
+
+    def connect(target, **_kwargs):
+        if target[0] == core_address:
+            clock.now += 1
+            return _Connection()
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(module.socket, "create_connection", connect)
+    with pytest.raises(ProfiledStagingError, match="readiness timed out"):
+        value._wait_readiness(node_ids, "lab-001")
+
+    by_name = {item.logical_name: item for item in value.readiness_evidence}
+    assert tuple(by_name) == (
+        "core-02",
+        "edge-junos-01",
+        "transit-ios-01",
+        "access-sw-01",
+    )
+    assert by_name["core-02"].outcome is ProfiledStagingReadinessOutcome.READY
+    assert by_name["core-02"].elapsed_seconds == 1
+    assert by_name["core-02"].readiness_evidence is not None
+    for name in ("edge-junos-01", "transit-ios-01", "access-sw-01"):
+        assert by_name[name].outcome is ProfiledStagingReadinessOutcome.TIMED_OUT
+        assert by_name[name].elapsed_seconds >= 10
+        assert by_name[name].readiness_evidence is None
+    assert by_name["edge-junos-01"].readiness_port == 830
+    assert by_name["edge-junos-01"].readiness_service == "netconf"
+    assert by_name["transit-ios-01"].cml_node_state is None
+    assert by_name["access-sw-01"].cml_node_state == "BOOTED"
+    assert reader.closed is True
+
+
+def test_successful_readiness_remains_exact_four_with_real_durations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, value, node_ids = _readiness_operations(tmp_path)
+    clock = _Clock()
+    monkeypatch.setattr(module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(module.time, "sleep", clock.sleep)
+
+    def connect(_target, **_kwargs):
+        clock.now += 0.5
+        return _Connection()
+
+    monkeypatch.setattr(module.socket, "create_connection", connect)
+    observed = value._wait_readiness(node_ids, "lab-001")
+    assert set(observed) == {
+        "core-02",
+        "edge-junos-01",
+        "transit-ios-01",
+        "access-sw-01",
+    }
+    assert tuple(item.logical_name for item in value.readiness_evidence) == (
+        "core-02",
+        "edge-junos-01",
+        "transit-ios-01",
+        "access-sw-01",
+    )
+    assert all(
+        item.outcome is ProfiledStagingReadinessOutcome.READY
+        and item.elapsed_seconds > 0
+        and item.readiness_evidence is not None
+        for item in value.readiness_evidence
+    )
+
+
+def test_production_readiness_timeout_remains_900_seconds() -> None:
+    assert load_script("run_profiled_cml_staging")._READINESS_TIMEOUT_SECONDS == 900
 
 
 def test_start_uses_one_inspected_saved_plan(tmp_path: Path) -> None:
@@ -206,17 +383,26 @@ def test_uncertain_destroy_with_malformed_state_remains_ambiguous(
 def test_valid_empty_state_and_absent_lab_permit_state_retirement(
     tmp_path: Path,
 ) -> None:
-    value = operations(tmp_path)
-    value._state_backup_path = tmp_path / "terraform.tfstate.backup"
+    run = tmp_path / "run-001"
+    run.mkdir(mode=0o700)
+    run.chmod(0o700)
+    value = operations(run)
+    _write_valid_recovery_inputs(run, "run-001")
     for name in (
         "terraform.tfstate",
         "terraform.tfstate.backup",
-        "recovery-inputs.tfvars.json",
         "create.tfplan",
         "start.tfplan",
         "destroy.tfplan",
     ):
-        (tmp_path / name).write_text("retained", encoding="utf-8")
+        (run / name).write_text("retained", encoding="utf-8")
+    (run / "terraform-data/providers").mkdir(parents=True)
+    (run / "terraform-data/providers/cache").write_text("cache", encoding="utf-8")
+    (run / "trust").mkdir()
+    (run / "trust/known_hosts").write_text("public-key", encoding="utf-8")
+    acceptance = tmp_path / "acceptance/profiled-staging-evidence.json"
+    acceptance.parent.mkdir()
+    acceptance.write_text("historical evidence", encoding="utf-8")
     value._state_addresses = lambda: terraform_managed_state_addresses(
         {"format_version": "1.0"}
     )
@@ -225,17 +411,65 @@ def test_valid_empty_state_and_absent_lab_permit_state_retirement(
     value.verify_absent()
     value.retire_state()
 
-    assert not any(
-        (tmp_path / name).exists()
-        for name in (
-            "terraform.tfstate",
-            "terraform.tfstate.backup",
-            "recovery-inputs.tfvars.json",
-            "create.tfplan",
-            "start.tfplan",
-            "destroy.tfplan",
-        )
+    assert not run.exists()
+    assert tmp_path.exists()
+    assert acceptance.read_text(encoding="utf-8") == "historical evidence"
+
+
+@pytest.mark.parametrize("remaining", [True, False])
+def test_run_directory_retirement_requires_empty_state_and_cml_absence(
+    tmp_path: Path, remaining: bool
+) -> None:
+    run = tmp_path / "run-001"
+    run.mkdir(mode=0o700)
+    run.chmod(0o700)
+    value = operations(run)
+    _write_valid_recovery_inputs(run, "run-001")
+    value._state_addresses = lambda: (
+        {"cml2_lab.profiled_staging"} if remaining else set()
     )
+    value._lab_is_absent = lambda: remaining
+
+    with pytest.raises(
+        ProfiledStagingError,
+        match=("Terraform state remains" if remaining else "absence cannot be proven"),
+    ):
+        value.retire_state()
+    assert run.is_dir()
+
+
+def test_exact_run_directory_retirement_rejects_wrong_or_unsafe_identity(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    outside.chmod(0o700)
+    wrong = outside / "wrong-name"
+    wrong.mkdir(mode=0o700)
+    wrong.chmod(0o700)
+    with pytest.raises(ProfiledStagingError, match="run identity"):
+        retire_profiled_staging_run_directory(wrong, "run-001", tmp_path / "checkout")
+    assert wrong.is_dir()
+
+    target = outside / "target"
+    target.mkdir(mode=0o700)
+    target.chmod(0o700)
+    symlink = outside / "run-001"
+    symlink.symlink_to(target, target_is_directory=True)
+    with pytest.raises(ProfiledStagingError, match="run directory"):
+        retire_profiled_staging_run_directory(symlink, "run-001", tmp_path / "checkout")
+    assert target.is_dir()
+
+    checkout = tmp_path / "checkout"
+    checkout.mkdir(mode=0o700)
+    checkout.chmod(0o700)
+    inside = checkout / "run-001"
+    inside.mkdir(mode=0o700)
+    inside.chmod(0o700)
+    with pytest.raises(ProfiledStagingError, match="run directory"):
+        retire_profiled_staging_run_directory(inside, "run-001", checkout)
+    assert checkout.is_dir()
+    assert inside.is_dir()
 
 
 def test_recovery_is_variable_file_bound_and_has_no_openbao_dependency() -> None:

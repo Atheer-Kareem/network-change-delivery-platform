@@ -11,9 +11,11 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import time
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -33,7 +35,10 @@ from network_change_delivery.profiled_staging import (
     ProfiledStagingDeviceEvidence,
     ProfiledStagingError,
     ProfiledStagingLifecycle,
+    ProfiledStagingReadinessEvidence,
+    ProfiledStagingReadinessOutcome,
     load_recovery_inputs,
+    retire_profiled_staging_run_directory,
     terraform_managed_state_addresses,
     terraform_profiled_device_variables,
     validate_destroy_only_plan,
@@ -79,6 +84,8 @@ class LocalTerraformOperations:
         self._variables: dict[str, object] | None = None
         self._owned_lab_id: str | None = None
         self._readiness: dict[str, tuple[float, EvidenceReference]] = {}
+        self._readiness_results: dict[str, ProfiledStagingReadinessEvidence] = {}
+        self.readiness_evidence: tuple[ProfiledStagingReadinessEvidence, ...] = ()
         self.topology_digest: str | None = None
         self.trust_generation: EvidenceReference | None = None
         self.device_evidence: tuple[ProfiledStagingDeviceEvidence, ...] = ()
@@ -518,18 +525,93 @@ class LocalTerraformOperations:
                         )
                         observed[str(device.logical_name)] = (
                             elapsed,
-                            EvidenceReference(
+                            reference := EvidenceReference(
                                 identity=f"staging-readiness:{self._run_id}:{device.logical_name}",
                                 digest=digest,
                             ),
+                        )
+                        self._record_readiness(
+                            ProfiledStagingReadinessEvidence(
+                                device_identity=device.device_identity,
+                                logical_name=device.logical_name,
+                                automation_profile_id=device.automation_profile_id,
+                                cml_realization_profile_id=(
+                                    device.cml_realization_profile_id
+                                ),
+                                cml_node_id=node_ids[
+                                    str(device.logical_name).replace("-", "_")
+                                ],
+                                management_address=str(endpoint.address.ip),
+                                readiness_service=(
+                                    get_automation_profile(device.automation_profile_id)
+                                    .readiness_services[0]
+                                    .service.value
+                                ),
+                                readiness_port=endpoint.port,
+                                outcome=ProfiledStagingReadinessOutcome.READY,
+                                elapsed_seconds=elapsed,
+                                readiness_evidence=reference,
+                            )
                         )
                 except OSError:
                     continue
             if remaining:
                 time.sleep(5)
         if remaining:
+            reader: ProfiledStagingCmlReader | None = None
+            with suppress(ProfiledStagingError):
+                reader = ProfiledStagingCmlReader.from_environment()
+            try:
+                for device in remaining:
+                    name = str(device.logical_name)
+                    node_id = node_ids[name.replace("-", "_")]
+                    state: str | None = None
+                    if reader is not None:
+                        try:
+                            candidate = reader.item(lab_id, "nodes", node_id).get(
+                                "state"
+                            )
+                            if isinstance(candidate, str) and re.fullmatch(
+                                r"[A-Za-z0-9._-]{1,64}", candidate
+                            ):
+                                state = candidate
+                        except ProfiledStagingError:
+                            pass
+                    endpoint = device.management_endpoints.staging.binding.l3_endpoint
+                    service = get_automation_profile(
+                        device.automation_profile_id
+                    ).readiness_services[0]
+                    self._record_readiness(
+                        ProfiledStagingReadinessEvidence(
+                            device_identity=device.device_identity,
+                            logical_name=device.logical_name,
+                            automation_profile_id=device.automation_profile_id,
+                            cml_realization_profile_id=device.cml_realization_profile_id,
+                            cml_node_id=node_id,
+                            management_address=str(endpoint.address.ip),
+                            readiness_service=service.service.value,
+                            readiness_port=service.port,
+                            outcome=ProfiledStagingReadinessOutcome.TIMED_OUT,
+                            elapsed_seconds=(
+                                time.monotonic() - started[str(device.logical_name)]
+                            ),
+                            cml_node_state=state,
+                        )
+                    )
+            finally:
+                if reader is not None:
+                    reader.close()
             raise ProfiledStagingError("profiled staging readiness timed out")
         return observed
+
+    def _record_readiness(self, evidence: ProfiledStagingReadinessEvidence) -> None:
+        """Publish each bounded readiness fact immediately in exact-four order."""
+        self._readiness_results[evidence.logical_name] = evidence
+        self.readiness_evidence = tuple(
+            self._readiness_results[name]
+            for name in (str(device.logical_name) for device in self._devices)
+            if name in self._readiness_results
+        )
 
     def validate(
         self, context: StagingRealizationContext
@@ -595,16 +677,15 @@ class LocalTerraformOperations:
             raise ProfiledStagingError("profiled staging absence cannot be proven")
 
     def retire_state(self) -> None:
-        for path in (
-            self._state_path,
-            self._state_backup_path,
-            self._recovery_inputs,
-            self._run_directory / "create.tfplan",
-            self._run_directory / "start.tfplan",
-            self._run_directory / "destroy.tfplan",
-        ):
-            if path.exists() and not path.is_symlink():
-                path.unlink()
+        if self._state_addresses():
+            raise ProfiledStagingError("profiled staging Terraform state remains")
+        if not self._lab_is_absent():
+            raise ProfiledStagingError("profiled staging absence cannot be proven")
+        retire_profiled_staging_run_directory(
+            self._run_directory,
+            self._run_id,
+            ROOT,
+        )
 
 
 def main() -> int:

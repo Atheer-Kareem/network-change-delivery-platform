@@ -11,10 +11,12 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from ipaddress import IPv4Address
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -24,6 +26,9 @@ from network_change_delivery.architecture_contracts import (
     CML_REALIZATION_PROFILE_CATALOG,
     AutomationProfileID,
     CmlRealizationProfileID,
+    ManagementService,
+    NetBoxDeviceIdentity,
+    NonEmptyString,
     Sha256Digest,
     StableInterfaceIdentity,
     get_automation_profile,
@@ -84,6 +89,44 @@ class ProfiledStagingOutcome(StrEnum):
     AMBIGUOUS = "AMBIGUOUS"
 
 
+class ProfiledStagingReadinessOutcome(StrEnum):
+    """Bounded profile-service readiness result for one staged device."""
+
+    READY = "READY"
+    TIMED_OUT = "TIMED_OUT"
+
+
+class ProfiledStagingReadinessEvidence(BaseModel):
+    """One incremental, secret-free staging readiness observation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    device_identity: NetBoxDeviceIdentity
+    logical_name: NonEmptyString
+    automation_profile_id: AutomationProfileID
+    cml_realization_profile_id: CmlRealizationProfileID
+    cml_node_id: NonEmptyString
+    management_address: IPv4Address
+    readiness_service: ManagementService
+    readiness_port: int = Field(ge=1, le=65535)
+    outcome: ProfiledStagingReadinessOutcome
+    elapsed_seconds: float = Field(ge=0, le=7200)
+    readiness_evidence: EvidenceReference | None = None
+    cml_node_state: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9._-]+$",
+    )
+
+    @model_validator(mode="after")
+    def evidence_matches_outcome(self) -> ProfiledStagingReadinessEvidence:
+        if (self.outcome is ProfiledStagingReadinessOutcome.READY) != (
+            self.readiness_evidence is not None
+        ):
+            raise ValueError("profiled staging readiness evidence rejected")
+        return self
+
+
 class ProfiledStagingDeviceEvidence(BaseModel):
     """One secret-free device validation result."""
 
@@ -116,6 +159,7 @@ class ProfiledStagingEvidence(BaseModel):
     topology_digest: Sha256Digest | None = None
     context_digest: Sha256Digest | None = None
     trust_generation: EvidenceReference | None = None
+    readiness: tuple[ProfiledStagingReadinessEvidence, ...] = ()
     devices: tuple[ProfiledStagingDeviceEvidence, ...] = ()
     create_outcome: str = "not_attempted"
     start_outcome: str = "not_attempted"
@@ -137,6 +181,19 @@ class ProfiledStagingEvidence(BaseModel):
             != PROFILED_STAGING_DEVICE_NAMES
         ):
             raise ValueError("profiled staging evidence population rejected")
+        readiness_names = tuple(item.logical_name for item in self.readiness)
+        if readiness_names != tuple(
+            name for name in PROFILED_STAGING_DEVICE_NAMES if name in readiness_names
+        ) or len(set(readiness_names)) != len(readiness_names):
+            raise ValueError("profiled staging readiness population rejected")
+        if self.final_outcome is ProfiledStagingOutcome.SUCCEEDED and (
+            readiness_names != PROFILED_STAGING_DEVICE_NAMES
+            or any(
+                item.outcome is not ProfiledStagingReadinessOutcome.READY
+                for item in self.readiness
+            )
+        ):
+            raise ValueError("profiled staging successful readiness rejected")
         return self
 
 
@@ -383,6 +440,7 @@ class ProfiledStagingLifecycle:
             context_digest=(
                 _sha256(context.model_dump(mode="json")) if context else None
             ),
+            readiness=getattr(self.operations, "readiness_evidence", ()),
             devices=devices or getattr(self.operations, "device_evidence", ()),
             trust_generation=(
                 context.devices[0].trust_evidence
@@ -417,6 +475,23 @@ def validate_private_run_directory(path: Path, checkout: Path) -> Path:
     if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
         raise ProfiledStagingError("profiled staging run directory rejected")
     return resolved
+
+
+def retire_profiled_staging_run_directory(
+    path: Path,
+    run_id: str,
+    checkout: Path,
+) -> None:
+    """Remove only one exact, privately admitted staging run directory."""
+    run = validate_private_run_directory(path, checkout)
+    if (
+        run.name != run_id
+        or not re.fullmatch(r"[a-z0-9]+(?:[._-][a-z0-9]+)*", run_id)
+        or len(run_id) > 128
+    ):
+        raise ProfiledStagingError("profiled staging run identity rejected")
+    load_recovery_inputs(run / "recovery-inputs.tfvars.json", run_id)
+    shutil.rmtree(run)
 
 
 def validate_retained_state_file(path: Path) -> Path:

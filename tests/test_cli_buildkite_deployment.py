@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import stat
 import sys
-from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,13 +15,10 @@ from network_change_delivery.buildkite_deployment import (
     LiveDeploymentRequest,
     load_promoted_single_plan,
 )
-from network_change_delivery.models import FinalOutcome
 from network_change_delivery.promotion import PromotionError
 
 sys.path.insert(0, str(Path(__file__).parent))
 from test_workflow import plan as workflow_plan
-
-JWT = "secret.header.signature"
 
 
 def environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,115 +64,6 @@ def request_for(plan):
     )
 
 
-def test_deploy_command_reads_jwt_from_stdin_reuses_deploy_plan_and_writes_evidence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
-) -> None:
-    environment(monkeypatch)
-    approved = promoted_plan()
-    request = request_for(approved)
-    monkeypatch.setattr(
-        cli_module,
-        "_verified_live_request",
-        lambda _promotion, _context: (object(), approved, request),
-    )
-    observed: dict[str, object] = {}
-    monkeypatch.setattr(cli_module, "validate_host_trust", lambda _root: object())
-
-    class Inventory:
-        pass
-
-    class Secrets:
-        def __init__(self, jwt, context):
-            observed["jwt"] = jwt.value
-            observed["pipeline"] = context.pipeline_id
-
-    class Adapter:
-        def __init__(self, *, known_hosts):
-            observed["known_hosts"] = known_hosts
-
-    class Record:
-        final_outcome = FinalOutcome.SUCCEEDED
-
-        def model_dump_json(self, *, indent: int) -> str:
-            assert indent == 2
-            return '{"final_outcome":"SUCCEEDED"}'
-
-    def deploy_spy(plan, digest, inventory, secrets, collector, executor):
-        observed.update(
-            plan=plan,
-            digest=digest,
-            inventory=inventory,
-            secrets=secrets,
-            same_adapter=collector is executor,
-        )
-        return Record()
-
-    monkeypatch.setattr(cli_module, "NetBoxInventoryProvider", Inventory)
-    monkeypatch.setattr(cli_module, "BuildkiteOpenBaoDeploymentSecretProvider", Secrets)
-    monkeypatch.setattr(cli_module, "MultiVendorAdapter", Adapter)
-    monkeypatch.setattr(cli_module, "deploy_plan", deploy_spy)
-    monkeypatch.setattr(sys, "stdin", StringIO(JWT + "\n"))
-    report = tmp_path / "evidence" / "record.json"
-    assert (
-        cli_module.main(
-            [
-                "deploy-buildkite-promotion",
-                "--promotion",
-                str(tmp_path / "promotion"),
-                "--report-json",
-                str(report),
-            ]
-        )
-        == 0
-    )
-    assert observed["jwt"] == JWT
-    assert observed["pipeline"] == "pipeline-uuid"
-    assert observed["plan"] is approved
-    assert observed["digest"] == approved.digest
-    assert observed["same_adapter"] is True
-    assert observed["known_hosts"] == (
-        cli_module.DEFAULT_TRUST_ROOT / cli_module.KNOWN_HOSTS_NAME
-    )
-    assert stat.S_IMODE(report.stat().st_mode) == 0o600
-    output = capsys.readouterr()
-    assert JWT not in output.out + output.err
-    assert "sensitive-netbox-token" not in output.out + output.err
-
-
-def test_deploy_command_rejects_missing_realization_trust_before_consuming_jwt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    environment(monkeypatch)
-    approved = promoted_plan()
-    request = request_for(approved)
-    monkeypatch.setattr(
-        cli_module,
-        "_verified_live_request",
-        lambda _promotion, _context: (object(), approved, request),
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "validate_host_trust",
-        lambda _root: (_ for _ in ()).throw(ValueError("trust rejected")),
-    )
-    stream = StringIO(JWT + "\n")
-    monkeypatch.setattr(sys, "stdin", stream)
-
-    with pytest.raises(SystemExit) as error:
-        cli_module.main(
-            [
-                "deploy-buildkite-promotion",
-                "--promotion",
-                str(tmp_path / "promotion"),
-                "--report-json",
-                str(tmp_path / "record.json"),
-            ]
-        )
-
-    assert error.value.code == 2
-    assert stream.tell() == 0
-
-
 def test_verify_live_request_uses_no_inventory_secret_or_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
@@ -190,15 +76,6 @@ def test_verify_live_request_uses_no_inventory_secret_or_adapter(
         lambda _promotion, _context: (object(), approved, request),
     )
 
-    class Forbidden:
-        def __init__(self, *_args, **_kwargs):
-            raise AssertionError("provider construction is forbidden")
-
-    monkeypatch.setattr(cli_module, "NetBoxInventoryProvider", Forbidden)
-    monkeypatch.setattr(
-        cli_module, "BuildkiteOpenBaoDeploymentSecretProvider", Forbidden
-    )
-    monkeypatch.setattr(cli_module, "MultiVendorAdapter", Forbidden)
     assert (
         cli_module.main(["verify-buildkite-live-request", "--promotion", str(tmp_path)])
         == 0
@@ -214,14 +91,6 @@ def test_no_request_status_stops_without_providers(
         cli_module, "load_live_deployment_request_at_commit", lambda _commit: None
     )
 
-    class Forbidden:
-        def __init__(self, *_args, **_kwargs):
-            raise AssertionError("provider construction is forbidden")
-
-    monkeypatch.setattr(cli_module, "NetBoxInventoryProvider", Forbidden)
-    monkeypatch.setattr(
-        cli_module, "BuildkiteOpenBaoDeploymentSecretProvider", Forbidden
-    )
     assert cli_module.main(["buildkite-live-request-status"]) == 3
     output = capsys.readouterr().out
     assert "live deployment requested: NO" in output

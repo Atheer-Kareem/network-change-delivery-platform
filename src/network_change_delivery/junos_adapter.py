@@ -43,9 +43,7 @@ from network_change_delivery.read_only_target import (
 )
 from network_change_delivery.secrets import DeviceCredentials
 from network_change_delivery.snmp_provisioning import (
-    SecretRenderedArtifact,
     SnmpOwnedObjectState,
-    SnmpOwnedStateDisposition,
     SnmpPreflightSubject,
     junos_snmp_filter,
     parse_junos_snmp_state,
@@ -506,32 +504,6 @@ class JunosPyEZAdapter:
                 ) from None
 
     @contextmanager
-    def transaction(
-        self,
-        device: InventoryDevice,
-        credentials: DeviceCredentials,
-        artifact: JunosConfigArtifact,
-    ) -> Any:
-        transaction: JunosTransaction | None = None
-        try:
-            with (
-                self._session(device, credentials) as connection,
-                JunosTransaction(
-                    connection, self._config_factory, artifact
-                ) as transaction,
-            ):
-                yield transaction
-        except ProviderError:
-            if (
-                transaction is not None
-                and transaction.commit_attempted
-                and transaction.commit_result is not None
-            ):
-                transaction.close_failed = True
-                return
-            raise
-
-    @contextmanager
     def profiled_transaction(
         self,
         target: ConnectionTarget,
@@ -768,61 +740,6 @@ class JunosPyEZAdapter:
         except Exception:
             raise ProviderError("Junos OSPF read-only result was incomplete") from None
 
-    def confirm(
-        self, device: InventoryDevice, credentials: DeviceCredentials
-    ) -> ExecutionResult:
-        result: ExecutionResult | None = None
-        attempted = False
-        cleanup_failed = False
-        try:
-            with self._session(device, credentials) as connection:
-                config = None
-                entered = False
-                try:
-                    config = self._config_factory(connection, mode="exclusive")
-                    config.__enter__()
-                    entered = True
-                except Exception:
-                    result = _confirmation_failed()
-                if entered:
-                    attempted = True
-                    try:
-                        confirmed = config.commit_check()
-                    except (ConnectClosedError, ConnectError, RpcTimeoutError):
-                        result = _confirmation_ambiguous()
-                    except (CommitError, RpcError):
-                        result = _confirmation_failed()
-                    except Exception:
-                        result = _confirmation_ambiguous()
-                    else:
-                        result = (
-                            _confirmation_succeeded()
-                            if confirmed is True
-                            else _confirmation_failed()
-                        )
-                    try:
-                        config.__exit__(None, None, None)
-                    except Exception:
-                        cleanup_failed = True
-        except ProviderError:
-            cleanup_failed = True
-            if result is None:
-                result = (
-                    _confirmation_ambiguous() if attempted else _confirmation_failed()
-                )
-        if result is None:
-            return _confirmation_failed()
-        if cleanup_failed and result.disposition is ExecutionDisposition.SUCCEEDED:
-            return result.model_copy(
-                update={
-                    "message": (
-                        "pending commit confirmed with known success; "
-                        "session cleanup warning"
-                    )
-                }
-            )
-        return result
-
     def snmp_preflight(
         self,
         device: InventoryDevice,
@@ -855,104 +772,6 @@ class JunosPyEZAdapter:
             observed_hostname=hostname,
             local_engine_id_present=engine_present,
             configuration_xml=configuration_xml,
-        )
-
-    def execute_snmp_confirmed(
-        self,
-        device: InventoryDevice,
-        credentials: DeviceCredentials,
-        artifact: SecretRenderedArtifact,
-        minutes: int,
-    ) -> ExecutionResult:
-        """Load, validate, and commit one secret-bearing candidate once."""
-        if (
-            artifact.platform != "junos"
-            or not isinstance(artifact.payload, str)
-            or minutes != 5
-        ):
-            raise ProviderError("Junos SNMP artifact rejected")
-        attempted = False
-        try:
-            with self._session(device, credentials) as connection:
-                config = self._config_factory(connection, mode="exclusive")
-                with config:
-                    if config.diff() not in {None, ""}:
-                        raise ProviderError(
-                            "Junos candidate contains pre-existing changes"
-                        )
-                    config.load(artifact.payload, format="xml", merge=True)
-                    if config.commit_check() is not True:
-                        raise ProviderError("Junos SNMP commit check failed")
-                    candidate = connection.rpc.get_config(
-                        filter_xml="<configuration><snmp/></configuration>",
-                        options={"database": "candidate"},
-                    )
-                    candidate_xml = etree.tostring(candidate, encoding="unicode")
-                    # Localized keys may be present; reduce immediately and discard.
-                    state = parse_junos_snmp_state(
-                        artifact.plan,
-                        observed_hostname=str(connection.facts.get("hostname") or ""),
-                        local_engine_id_present=True,
-                        configuration_xml=candidate_xml,
-                    )
-                    del candidate_xml
-                    if not (
-                        state.view is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
-                        and state.group is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
-                        and state.user is SnmpOwnedStateDisposition.EXACT_NCDP_STATE
-                    ):
-                        raise ProviderError("Junos SNMP candidate validation failed")
-                    attempted = True
-                    committed = config.commit(confirm=5)
-        except (ConnectClosedError, ConnectError, RpcTimeoutError):
-            return ExecutionResult(
-                disposition=(
-                    ExecutionDisposition.AMBIGUOUS
-                    if attempted
-                    else ExecutionDisposition.FAILED
-                ),
-                message=(
-                    "Junos SNMP commit-confirmed result is ambiguous; no retry"
-                    if attempted
-                    else "Junos SNMP candidate preparation failed"
-                ),
-                provider="pyez/snmp-config-exclusive",
-            )
-        except (CommitError, RpcError, ProviderError):
-            return ExecutionResult(
-                disposition=(
-                    ExecutionDisposition.AMBIGUOUS
-                    if attempted
-                    else ExecutionDisposition.FAILED
-                ),
-                message=(
-                    "Junos SNMP commit-confirmed result is ambiguous; no retry"
-                    if attempted
-                    else "Junos SNMP candidate preparation failed"
-                ),
-                provider="pyez/snmp-config-exclusive",
-            )
-        except Exception:
-            return ExecutionResult(
-                disposition=(
-                    ExecutionDisposition.AMBIGUOUS
-                    if attempted
-                    else ExecutionDisposition.FAILED
-                ),
-                message="Junos SNMP provider failed without a retryable outcome",
-                provider="pyez/snmp-config-exclusive",
-            )
-        if committed is not True:
-            return ExecutionResult(
-                disposition=ExecutionDisposition.FAILED,
-                message="Junos SNMP commit-confirmed did not report known success",
-                provider="pyez/snmp-config-exclusive",
-            )
-        return ExecutionResult(
-            disposition=ExecutionDisposition.SUCCEEDED,
-            changed=True,
-            message="Junos SNMP temporary commit confirmed 5 is active",
-            provider="pyez/snmp-config-exclusive",
         )
 
 

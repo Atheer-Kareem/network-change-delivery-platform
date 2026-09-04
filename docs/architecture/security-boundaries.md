@@ -2,10 +2,10 @@
 
 ## Trust principles
 
-Privilege follows validated artifacts, not repository presence. The exact
-protected-branch commit and immutable plan digest approved by a human must be the
-artifacts executed. Identity, targets, relevant state, and remaining work are
-checked immediately before writes. Unsupported or stale inputs fail closed.
+Privilege follows validated artifacts, not repository presence. The current
+local write boundary requires an immutable schema-v2 plan, its exact digest,
+and explicit `--live`. Identity, targets, relevant state, and remaining work
+are checked immediately before writes. Unsupported or stale inputs fail closed.
 There is no silent credential, endpoint, or protocol fallback and no automatic
 retry after an ambiguous write.
 
@@ -18,10 +18,12 @@ sanitized configuration snapshots.
 
 ## Zone 2 — deployment
 
-Only the exact approved protected-branch commit may enter this zone with its
-immutable plan identity and digest. It obtains narrowly scoped, short-lived
-secrets, reaches management networks, enforces concurrency, re-verifies identity
-and state, and executes only the approved artifact.
+Only the explicit local `profiled-deploy` command may enter this zone with a
+schema-v2 plan and exact approval digest. It obtains narrowly scoped,
+short-lived credentials, uses the explicit profiled LIVE trust generation,
+re-verifies complete identity and state, and executes only the approved
+operation-specific artifact. The Buildkite pipeline has no deployment zone or
+device-write authority.
 
 ## Zone 3 — continuous operations
 
@@ -40,21 +42,11 @@ authorization; it never enables a fallback or deployment action.
 
 The personal-lab path uses bounded AppRole bootstrap credentials to obtain a
 short-lived, single-use, exact-path OpenBao token for a static device credential.
-The mature identity chain is Buildkite-issued OIDC JWT to OpenBao signature and
-role validation to mapped job identity and a short-lived OpenBao token, followed
-by stronger device authorization. The immutable Buildkite pipeline UUID is the
-JWT subject, while the JWT audience, 300-second lifetime, `main` branch, and
-`deploy-gate` step constrain its purpose and scope. NCDP binds OpenBao-verified
-pipeline, commit, branch, step, and job metadata to its validated runtime
-context. Protected-main build #26 externally validated this chain in the
-main-only deployment gate. Its 7B token has no policies or device-secret
-capability and is discarded after identity validation. That zero-capability
-claim is checked both
-in the configured role and in the actual login response's token,
-Identity-derived, and aggregate effective policies. The stable OpenBao Identity
-alias is immutable JWT `sub`, mapped to application metadata named
-`pipeline_id`; required mapped `job_id` comparison still binds every individual
-job. A separate optional JWT `pipeline_id` claim is not trusted or required.
+The historical protected-delivery identity chain used Buildkite OIDC and
+claim-bound OpenBao roles. It remains accepted historical evidence but is not a
+current credential path: its privileged CLI and pipeline entry points are
+retired. Current profiled local execution uses the bounded personal-lab AppRole
+mechanism and exact stable-device-ID KV reads.
 Secrets and secret-bearing payloads never enter Git, application models, logs,
 artifacts, or evidence. Company data of any kind is forbidden; only synthetic
 personal-lab data may be used.
@@ -62,19 +54,16 @@ personal-lab data may be used.
 The three zones may share physical hardware in the personal lab. Containers and
 services on one MacBook provide logical separation only; they are not equivalent
 to production host, network, identity, or administrative isolation.
-## Buildkite promotion boundary
+## Historical Buildkite promotion boundary
 
-Increment 7A promotion bundles bind exact commit, plan, policy, baseline, and
+Increment 7A promotion bundles bound exact commit, plan, policy, baseline, and
 PASSED assurance bytes. Environment variables are not Buildkite identity proof.
-The 7B gate requires a Buildkite-signed JWT, OpenBao signature and role
+The 7B gate required a Buildkite-signed JWT, OpenBao signature and role
 validation, mapped identity metadata, and NCDP's exact runtime comparison before
-it performs the existing offline promotion verification.
+offline promotion verification.
 
-The accepted 7C device path does not add device capability to that role. A
-commit-bound, exact-plan live request is required before a second fresh JWT may
-authenticate to one device-specific role with one exact read policy and one
-token use. Stable NetBox device identity determines both role and KV-v2 path.
-The dedicated command then reuses the full `deploy_plan()` boundary and emits
-secret-free typed evidence. An absent, unchanged, deleted, malformed, fleet, or
-mismatched request stops before privileged JWT issuance, NetBox access,
-credential retrieval, or device access.
+The accepted 7C path required a commit-bound exact-plan request and one
+device-specific token. Those contracts and artifacts remain parseable for
+history and audit. No current command or pipeline step can execute them. Future
+protected delivery requires a new profiled design rather than restoration of
+the schema-v1 gate.

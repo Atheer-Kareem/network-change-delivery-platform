@@ -1,5 +1,10 @@
 # Fleet rollout planning and sequential execution
 
+> **Retired runtime:** this document preserves the accepted schema-v1 fleet
+> design as historical architecture. The `fleet-plan` and `fleet-deploy`
+> commands are no longer exposed. No current executor consumes
+> `FleetDeploymentPlan`; future fleet rollout requires a profiled design.
+
 ## Scope and authority
 
 Increment 5A adds Python-owned fleet selection, immutable planning, deterministic

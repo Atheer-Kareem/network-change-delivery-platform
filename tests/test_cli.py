@@ -79,32 +79,3 @@ def test_verify_deployment_ansible_runtime_cli_failure_is_sanitized(
     assert "deployment Ansible runtime prerequisites unavailable" in captured.err
     assert sensitive not in captured.err
     assert sensitive not in captured.out
-
-
-@pytest.mark.parametrize("command", ["plan", "deploy"])
-def test_cli_rejects_both_inventory_sources(command: str) -> None:
-    arguments = [command, "--inventory", "inventory.yaml", "--netbox"]
-    with pytest.raises(SystemExit) as exit_info:
-        main(arguments)
-    assert exit_info.value.code == 2
-
-
-@pytest.mark.parametrize("command", ["plan", "deploy"])
-def test_cli_requires_one_inventory_source(command: str) -> None:
-    with pytest.raises(SystemExit) as exit_info:
-        main([command])
-    assert exit_info.value.code == 2
-
-
-@pytest.mark.parametrize("command", ["plan", "deploy"])
-def test_cli_rejects_both_secret_sources(command: str) -> None:
-    with pytest.raises(SystemExit) as exit_info:
-        main([command, "--openbao", "--environment-secrets"])
-    assert exit_info.value.code == 2
-
-
-@pytest.mark.parametrize("command", ["plan", "deploy"])
-def test_cli_requires_one_secret_source(command: str) -> None:
-    with pytest.raises(SystemExit) as exit_info:
-        main([command, "--inventory", "inventory.yaml"])
-    assert exit_info.value.code == 2

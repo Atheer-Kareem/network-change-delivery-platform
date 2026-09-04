@@ -11,35 +11,26 @@ protected Cisco and Junos live changes, including retained fail-closed and
 no-retry evidence, but it is a learning, portfolio, and demonstration system—not
 a production deployment template.
 
-[![NCDP reference architecture showing reviewed intent, visible validation, disposable CML staging, Batfish assurance, human authorization, protected multi-vendor execution, evidence, and observability](docs/assets/ncdp-reference-architecture.svg)](docs/architecture/overview.md)
-
 ## How the platform works
 
 1. **Review intent.** GitHub holds reviewed code, managed intent, plans, policy,
    tests, and pipeline definitions. A pull request has no protected live-write
    authority.
-2. **Validate visibly.** Buildkite exposes lint, tests, packaging, Terraform
+2. **Validate visibly.** Buildkite exposes lint, tests, packaging, runtime
    validation, and pipeline contracts as separate gates that converge at
    `validation-complete`.
-3. **Exercise integration and assurance.** The implemented disposable
-   Terraform/CML lifecycle provides create → read-only validate → destroy, and
-   Batfish independently evaluates the exact plan, policy, and frozen
-   baseline/candidate. Automatic CML staging is temporarily paused while its
-   topology remains two-device.
-4. **Create an immutable promotion.** When protected delivery is enabled,
-   promotion waits for CML staging and Batfish, downloads the exact same-build
-   assurance artifact, verifies it independently, and binds the accepted bytes
-   and digests. Protected delivery is paused with automatic CML staging.
-5. **Require a human decision.** Explicit authorization sits between immutable
-   promotion and the only Buildkite boundary allowed to request device-write
-   capability.
-6. **Execute with vendor semantics.** Python owns policy and orchestration.
+3. **Exercise assurance.** The active PR Batfish boundary evaluates the
+   profiled four-device candidate without device or credential authority.
+4. **Plan and approve explicitly.** `profiled-plan` produces an immutable
+   schema-v2 artifact; `profiled-deploy` requires its exact digest and explicit
+   `--live` authority.
+5. **Execute with vendor semantics.** Python owns policy and orchestration.
    Cisco uses Ansible Runner with `cisco.ios`; Junos uses direct PyEZ/NETCONF
    with an exclusive candidate and commit-confirmed safety.
-7. **Validate and preserve evidence.** Fresh independent post-validation decides
+6. **Validate and preserve evidence.** Fresh independent post-validation decides
    success. AuditStore retains append-only typed evidence, while Oxidized records
    observed actual-state chronology.
-8. **Observe independently.** NetBox-bound, CML-admitted Prometheus/Blackbox
+7. **Observe independently.** NetBox-bound, CML-admitted Prometheus/Blackbox
    probes feed Grafana and Alertmanager without deployment or remediation
    authority. Monitoring does not end when the pipeline does.
 
@@ -48,30 +39,30 @@ a production deployment template.
 - NetBox-authoritative device, interface, topology, and targeting identity
 - OpenBao workload identity and bounded device-credential capabilities
 - Cisco IOS XE and Junos planning, execution, validation, and recovery
-- Terraform-owned disposable CML staging distinct from the persistent live lab
-- Batfish plan/policy/baseline binding and bidirectional critical-flow assurance
-- Buildkite validation, immutable promotion, explicit approval, and queue separation
-- Frozen-fleet canary/wave engine with honest partial outcomes outside the
-  current protected single-device Buildkite path
+- Profiled exact-four inventory with explicit operation/capability projections
+- Batfish four-device candidate assurance without device-write authority
+- Exact-digest local Cisco and Junos execution with immutable schema-v2 evidence
+- Historical schema-v1 promotion, fleet, and staging artifacts remain parseable
 - Append-only AuditStore correlation and private Oxidized Git chronology
 - Persistent Prometheus, Blackbox, Grafana, and Alertmanager visibility
-- SNMPv3 synthetic integration and accepted protected device provisioning,
-  without claiming persistent live polling
+- SNMPv3 synthetic integration and historical protected provisioning evidence,
+  without claiming persistent live polling or current provisioning authority
 
 ## Safety model
 
-NCDP binds review and execution to the exact commit, plan, policy, baseline,
-assurance record, and promotion. Protected delivery requires a changed,
-commit-bound live request plus explicit human authorization. Immediately before
-a write, it re-resolves authoritative identity and checks current device state,
-support, safety, and whether work is still required.
+NCDP binds local profiled execution to an immutable schema-v2 plan and exact
+operator-approved digest. Immediately before a write, it re-resolves
+authoritative identity and checks current device state, profile/operation
+support, credential reference, safety, and whether work is still required.
 
 SSH and NETCONF trust are strict and realization-anchored. Vendor behavior is
 not flattened: Cisco uses bounded Ansible execution and targeted recovery;
 Junos preserves candidate locking and commit-confirmed semantics. If a write
-outcome is uncertain, the platform stops, never replays the historical job, and
-requires independent reconciliation plus a new commit, build, and authorization
-for any corrected attempt. No fleet-wide atomicity is claimed.
+outcome is uncertain, the platform stops and never retries automatically. The
+current local profiled path requires independent reconciliation and a new
+explicit plan/digest authorization for any corrected attempt. Historical
+protected Buildkite delivery additionally required a new commit and build. No
+fleet-wide atomicity is claimed.
 
 ## Current reference lab
 
@@ -79,14 +70,15 @@ for any corrected attempt. No fleet-wide atomicity is claimed.
 | --- | --- |
 | Purpose | Personal NetDevOps learning, portfolio, and demonstration lab |
 | Profile-aware LIVE devices | 4 |
-| Legacy v1/write population | 2 (`core-02`, `edge-junos-01`) |
+| Managed population | Exact profiled identities 1/2/8/9 |
+| Current write projection | Interface descriptions on devices 1/2 only |
 | Cisco | `core-02` · IOS XE; `transit-ios-01` · IOS; `access-sw-01` · IOS switching |
 | Junos | `edge-junos-01` · Junos |
 | Persistent lab | Manually/operator-owned `NCDP Live` in CML |
-| Disposable staging | Implemented two-router Terraform path; automatic execution paused |
+| Disposable staging | Retired exact-two historical architecture |
 | Inventory | NetBox, consumed read-only by automation |
 | Credentials | OpenBao with bounded workload/device authority |
-| CI/CD | Buildkite validation and PR assurance; CML/protected path paused |
+| CI/CD | Buildkite validation and profiled four-device PR assurance; no device writes |
 | Evidence | AuditStore + exact-four Oxidized actual-state chronology |
 | Observability | Exact-four Prometheus + Blackbox + Grafana + Alertmanager |
 | Persistent SNMP polling | Deferred |
@@ -102,9 +94,10 @@ for any corrected attempt. No fleet-wide atomicity is claimed.
   authority.
 - Persistent live SNMP exporter polling is deferred; accepted SNMPv3 provisioning
   does not imply that polling exists.
-- The accepted protected Buildkite path promotes and executes one
-  `DeploymentPlan`; it is currently paused with disposable CML staging, and
-  protected Buildkite fleet deployment remains deferred.
+- Historical schema-v1 protected delivery and disposable exact-two staging are
+  retired. Any future protected delivery requires a new profiled design.
+- IOSv and IOSvL2 are managed exact-four members but do not admit the current
+  interface-description write operation.
 
 ## Explore
 

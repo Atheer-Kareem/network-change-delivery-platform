@@ -54,9 +54,10 @@ temporary commit was confirmed, remained pending, or later rolled back.
 An ambiguous commit-confirmed execution itself is not retried, confirmed, or
 manually rolled back by the workflow.
 
-## Fleet exposure
+## Historical fleet exposure
 
-Fleet execution advances only when a child outcome is exactly `SUCCEEDED`.
+The retired schema-v1 fleet engine advanced only when a child outcome was
+exactly `SUCCEEDED`.
 Every other result stops later exposure, including `RECOVERED`, ambiguity,
 failure, staleness, and blocking outcomes. A recovered canary demonstrates that
 its device-level inverse was verified; it does not authorize the next canary or
@@ -66,15 +67,15 @@ fleet-wide atomic rollback.
 
 ## Approval and later rollback
 
-Immediate recovery remains transitively bound to the same immutable plan and
-approval that authorized the active deployment attempt. Buildkite orchestration
-does not independently broaden that recovery authority.
+Immediate recovery remains transitively bound to the same immutable schema-v2
+plan and approval that authorized the active deployment attempt. No Buildkite
+or fleet orchestrator broadens that authority.
 
 A problem discovered later is handled as a new reviewed desired-state change:
-Git review, ordinary validation and planning, assurance, ephemeral CML staging,
-promotion, human approval, deployment, and independent validation all apply
-again. `git revert` may be a convenient way to propose restoration of reviewed
-intent, but a Git operation alone never authorizes a device write.
+Git review, validation, schema-v2 profiled planning, exact digest approval,
+explicit local deployment, and independent validation apply again. `git revert`
+may propose restoration of reviewed intent, but a Git operation alone never
+authorizes a device write.
 
 Automated change ancestry, historical state reconstruction, inverse-plan
 generation, later-change conflict detection, and rollback-specific deployment
@@ -92,7 +93,6 @@ condition and is represented honestly in evidence.
 
 The Cisco targeted inverse assumes that no out-of-band actor independently
 changes the managed description between the known-successful execution and the
-immediate validation/recovery window. NCDP and Buildkite serialize
-NCDP-controlled exposure, but this reference-lab baseline has no cross-system or
-device-wide lock and no compare-and-swap ownership mechanism against arbitrary
-external writers.
+immediate validation/recovery window. This reference-lab baseline has no
+cross-system or device-wide lock and no compare-and-swap ownership mechanism
+against arbitrary external writers.

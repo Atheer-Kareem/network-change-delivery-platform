@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import httpx
 import pytest
@@ -28,7 +27,6 @@ from network_change_delivery.secrets import SecretError
 ADMIN_TOKEN = "sensitive-admin-token"
 PIPELINE_ID = "01a02ab4-2472-4726-be31-dbf4f216210f"
 DEVICE_ID = 1
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def data(value: dict[str, object]) -> dict[str, object]:
@@ -145,7 +143,7 @@ def test_device_id_requires_canonical_positive_integer(value: str) -> None:
         validate_device_id(value)
 
 
-def test_environment_only_and_script_rejects_arguments() -> None:
+def test_historical_configurator_remains_environment_only_and_secret_safe() -> None:
     requests: list[httpx.Request] = []
     configured = OpenBaoBuildkiteCMLConfigurator.from_environment(
         {
@@ -158,9 +156,6 @@ def test_environment_only_and_script_rejects_arguments() -> None:
     )
     configured.configure()
     assert ADMIN_TOKEN not in repr(configured)
-    script = (ROOT / "scripts/openbao/configure_buildkite_cml_deploy.py").read_text()
-    assert "if len(sys.argv) != 1:" in script
-    assert "command-line arguments are not accepted" in script
 
 
 def test_unowned_mount_and_changed_identity_role_fail_before_writes() -> None:

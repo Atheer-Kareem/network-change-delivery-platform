@@ -1,5 +1,9 @@
 # Buildkite ephemeral CML staging operations
 
+> **Retired operations:** the exact-two `cml-staging` job, trusted-agent hook,
+> Terraform runtime, and recovery commands are removed. The remainder records
+> the historically accepted operating model and is not a current runbook.
+
 > **Temporary Detour B pause:** the `cml-staging` pipeline step and the complete
 > protected-delivery group are commented out together. Quality validation,
 > Terraform static validation, and PR Batfish candidate assurance remain active.
@@ -85,17 +89,13 @@ remain outside staging.
 
 ## Execution and evidence
 
-The preserved pipeline block defines one `Ephemeral CML staging · create →
-validate → destroy` job and calls only
-`scripts/buildkite/ephemeral_staging.sh`. During B3-3 that block is commented
-out and creates no job. If the operator explicitly restores it, the wrapper
-verifies job/checkout identity, pipes the JWT to the existing Python driver, and
-uploads only `staging-evidence/staging-run.json`. The authoritative state machine
-remains `network_change_delivery.ephemeral_staging.run_staging_lifecycle`;
-Buildkite log presentation does not split lifecycle or cleanup ownership across
-jobs.
+The historical pipeline block defined one `Ephemeral CML staging · create →
+validate → destroy` job and called `scripts/buildkite/ephemeral_staging.sh`.
+The block, wrapper, and driver are now removed. The compatibility state model
+remains useful for reading historical evidence; it is not an executable current
+runbook.
 
-When enabled, runtime-relevant pull requests make `cml-staging` wait for both
+Historically, runtime-relevant pull requests made `cml-staging` wait for both
 `validation-complete` and successful `pr-batfish-assurance`. This orders the
 cheaper offline candidate-model check before CML resource creation. On main the
 PR-only Batfish dependency is skipped and satisfied, so CML still fans out in

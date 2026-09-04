@@ -1,0 +1,646 @@
+{
+  "schema_version": "1",
+  "generated_at": "2026-08-24T00:00:00Z",
+  "change_id": "CHG-FLEET-001",
+  "fleet_plan_digest": "sha256:e5dc68ba5216376db2eb484c984507b8f2a0ac0bbb068bde0316ec73bd12acbc",
+  "approval_digest": "sha256:e5dc68ba5216376db2eb484c984507b8f2a0ac0bbb068bde0316ec73bd12acbc",
+  "selector": {
+    "device_tag": "fleet-edge",
+    "interface_tag": "fleet-uplink"
+  },
+  "rollout": {
+    "canaries_per_platform": 1,
+    "wave_size": 2
+  },
+  "canaries": [
+    "netbox:dcim.device:10",
+    "netbox:dcim.device:11"
+  ],
+  "waves": [
+    [
+      "netbox:dcim.device:12",
+      "netbox:dcim.device:13"
+    ]
+  ],
+  "preflight": {
+    "fleet_digest": "sha256:e5dc68ba5216376db2eb484c984507b8f2a0ac0bbb068bde0316ec73bd12acbc",
+    "succeeded": true,
+    "members": [
+      {
+        "inventory_object_id": "netbox:dcim.device:10",
+        "inventory_interface_object_id": "netbox:dcim.interface:110",
+        "target": "router-10",
+        "interface": "GigabitEthernet2",
+        "classification": "DEPLOYABLE",
+        "succeeded": true,
+        "observed_description": "old",
+        "message": "approved child preconditions verified"
+      },
+      {
+        "inventory_object_id": "netbox:dcim.device:11",
+        "inventory_interface_object_id": "netbox:dcim.interface:111",
+        "target": "router-11",
+        "interface": "ge-0/0/1",
+        "classification": "DEPLOYABLE",
+        "succeeded": true,
+        "observed_description": "old",
+        "message": "approved child preconditions verified"
+      },
+      {
+        "inventory_object_id": "netbox:dcim.device:12",
+        "inventory_interface_object_id": "netbox:dcim.interface:112",
+        "target": "router-12",
+        "interface": "GigabitEthernet2",
+        "classification": "DEPLOYABLE",
+        "succeeded": true,
+        "observed_description": "old",
+        "message": "approved child preconditions verified"
+      },
+      {
+        "inventory_object_id": "netbox:dcim.device:13",
+        "inventory_interface_object_id": "netbox:dcim.interface:113",
+        "target": "router-13",
+        "interface": "ge-0/0/1",
+        "classification": "DEPLOYABLE",
+        "succeeded": true,
+        "observed_description": "old",
+        "message": "approved child preconditions verified"
+      }
+    ],
+    "message": "complete fleet read-only preflight succeeded"
+  },
+  "fleet_plan": {
+    "schema_version": "1",
+    "change_id": "CHG-FLEET-001",
+    "kind": "interface_description",
+    "selector": {
+      "device_tag": "fleet-edge",
+      "interface_tag": "fleet-uplink"
+    },
+    "desired_description": "managed-by-network-change-delivery-platform",
+    "rollout": {
+      "canaries_per_platform": 1,
+      "wave_size": 2
+    },
+    "members": [
+      {
+        "target": "router-10",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:10",
+        "inventory_interface_object_id": "netbox:dcim.interface:110",
+        "host": "192.0.2.10",
+        "port": 22,
+        "expected_hostname": "router-10",
+        "platform": "cisco_iosxe",
+        "interface": "GigabitEthernet2",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:10/ssh",
+        "classification": "DEPLOYABLE",
+        "current_description": "old",
+        "desired_description": "managed-by-network-change-delivery-platform",
+        "child_plan": {
+          "schema_version": "1",
+          "change_id": "CHG-FLEET-001",
+          "kind": "interface_description",
+          "target": "router-10",
+          "inventory_source": "netbox",
+          "inventory_object_id": "netbox:dcim.device:10",
+          "inventory_interface_object_id": "netbox:dcim.interface:110",
+          "credential_source": "openbao",
+          "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:10/ssh",
+          "host": "192.0.2.10",
+          "port": 22,
+          "expected_hostname": "router-10",
+          "platform": "cisco_iosxe",
+          "interface": "GigabitEthernet2",
+          "current_description": "old",
+          "desired_description": "managed-by-network-change-delivery-platform",
+          "transaction_strategy": "cisco_targeted_inverse",
+          "confirmed_timeout_minutes": null,
+          "confirmation_operation": null,
+          "execution_artifact": {
+            "parent": "interface GigabitEthernet2",
+            "lines": [
+              "description managed-by-network-change-delivery-platform"
+            ]
+          },
+          "recovery_artifact": {
+            "parent": "interface GigabitEthernet2",
+            "lines": [
+              "description old"
+            ]
+          },
+          "preconditions": {
+            "observed_hostname": "router-10",
+            "interface_exists": true,
+            "interface_protected": false,
+            "current_description": "old"
+          },
+          "created_at": "2026-08-23T00:00:00Z",
+          "digest": "sha256:474d52770078a2286e6fb51f136610db8cc054c55c669673f456a8f4dfd6c951"
+        }
+      },
+      {
+        "target": "router-11",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:11",
+        "inventory_interface_object_id": "netbox:dcim.interface:111",
+        "host": "192.0.2.11",
+        "port": 830,
+        "expected_hostname": "router-11",
+        "platform": "junos",
+        "interface": "ge-0/0/1",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:11/ssh",
+        "classification": "DEPLOYABLE",
+        "current_description": "old",
+        "desired_description": "managed-by-network-change-delivery-platform",
+        "child_plan": {
+          "schema_version": "1",
+          "change_id": "CHG-FLEET-001",
+          "kind": "interface_description",
+          "target": "router-11",
+          "inventory_source": "netbox",
+          "inventory_object_id": "netbox:dcim.device:11",
+          "inventory_interface_object_id": "netbox:dcim.interface:111",
+          "credential_source": "openbao",
+          "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:11/ssh",
+          "host": "192.0.2.11",
+          "port": 830,
+          "expected_hostname": "router-11",
+          "platform": "junos",
+          "interface": "ge-0/0/1",
+          "current_description": "old",
+          "desired_description": "managed-by-network-change-delivery-platform",
+          "transaction_strategy": "junos_commit_confirmed",
+          "confirmed_timeout_minutes": 5,
+          "confirmation_operation": "confirm_previous_commit",
+          "execution_artifact": {
+            "interface": "ge-0/0/1",
+            "description": "managed-by-network-change-delivery-platform",
+            "format": "xml",
+            "load_action": "merge",
+            "config_mode": "exclusive",
+            "xml": "<configuration><interfaces><interface><name>ge-0/0/1</name><description>managed-by-network-change-delivery-platform</description></interface></interfaces></configuration>"
+          },
+          "recovery_artifact": null,
+          "preconditions": {
+            "observed_hostname": "router-11",
+            "interface_exists": true,
+            "interface_protected": false,
+            "current_description": "old"
+          },
+          "created_at": "2026-08-23T00:00:00Z",
+          "digest": "sha256:25b9562c0f730568f7753da23f6de15c497d658852174e20d17a1077f01963e2"
+        }
+      },
+      {
+        "target": "router-12",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:12",
+        "inventory_interface_object_id": "netbox:dcim.interface:112",
+        "host": "192.0.2.12",
+        "port": 22,
+        "expected_hostname": "router-12",
+        "platform": "cisco_iosxe",
+        "interface": "GigabitEthernet2",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:12/ssh",
+        "classification": "DEPLOYABLE",
+        "current_description": "old",
+        "desired_description": "managed-by-network-change-delivery-platform",
+        "child_plan": {
+          "schema_version": "1",
+          "change_id": "CHG-FLEET-001",
+          "kind": "interface_description",
+          "target": "router-12",
+          "inventory_source": "netbox",
+          "inventory_object_id": "netbox:dcim.device:12",
+          "inventory_interface_object_id": "netbox:dcim.interface:112",
+          "credential_source": "openbao",
+          "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:12/ssh",
+          "host": "192.0.2.12",
+          "port": 22,
+          "expected_hostname": "router-12",
+          "platform": "cisco_iosxe",
+          "interface": "GigabitEthernet2",
+          "current_description": "old",
+          "desired_description": "managed-by-network-change-delivery-platform",
+          "transaction_strategy": "cisco_targeted_inverse",
+          "confirmed_timeout_minutes": null,
+          "confirmation_operation": null,
+          "execution_artifact": {
+            "parent": "interface GigabitEthernet2",
+            "lines": [
+              "description managed-by-network-change-delivery-platform"
+            ]
+          },
+          "recovery_artifact": {
+            "parent": "interface GigabitEthernet2",
+            "lines": [
+              "description old"
+            ]
+          },
+          "preconditions": {
+            "observed_hostname": "router-12",
+            "interface_exists": true,
+            "interface_protected": false,
+            "current_description": "old"
+          },
+          "created_at": "2026-08-23T00:00:00Z",
+          "digest": "sha256:318007fce4d8d29d00abfcfc827546a8912d90e6f5a4711176e4206993a7395a"
+        }
+      },
+      {
+        "target": "router-13",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:13",
+        "inventory_interface_object_id": "netbox:dcim.interface:113",
+        "host": "192.0.2.13",
+        "port": 830,
+        "expected_hostname": "router-13",
+        "platform": "junos",
+        "interface": "ge-0/0/1",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:13/ssh",
+        "classification": "DEPLOYABLE",
+        "current_description": "old",
+        "desired_description": "managed-by-network-change-delivery-platform",
+        "child_plan": {
+          "schema_version": "1",
+          "change_id": "CHG-FLEET-001",
+          "kind": "interface_description",
+          "target": "router-13",
+          "inventory_source": "netbox",
+          "inventory_object_id": "netbox:dcim.device:13",
+          "inventory_interface_object_id": "netbox:dcim.interface:113",
+          "credential_source": "openbao",
+          "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:13/ssh",
+          "host": "192.0.2.13",
+          "port": 830,
+          "expected_hostname": "router-13",
+          "platform": "junos",
+          "interface": "ge-0/0/1",
+          "current_description": "old",
+          "desired_description": "managed-by-network-change-delivery-platform",
+          "transaction_strategy": "junos_commit_confirmed",
+          "confirmed_timeout_minutes": 5,
+          "confirmation_operation": "confirm_previous_commit",
+          "execution_artifact": {
+            "interface": "ge-0/0/1",
+            "description": "managed-by-network-change-delivery-platform",
+            "format": "xml",
+            "load_action": "merge",
+            "config_mode": "exclusive",
+            "xml": "<configuration><interfaces><interface><name>ge-0/0/1</name><description>managed-by-network-change-delivery-platform</description></interface></interfaces></configuration>"
+          },
+          "recovery_artifact": null,
+          "preconditions": {
+            "observed_hostname": "router-13",
+            "interface_exists": true,
+            "interface_protected": false,
+            "current_description": "old"
+          },
+          "created_at": "2026-08-23T00:00:00Z",
+          "digest": "sha256:a9b36d7bbeb3309f2f15c9cf9c79391eca11767feaa8e804ebd27dea296ba8cf"
+        }
+      }
+    ],
+    "canaries": [
+      "netbox:dcim.device:10",
+      "netbox:dcim.device:11"
+    ],
+    "waves": [
+      [
+        "netbox:dcim.device:12",
+        "netbox:dcim.device:13"
+      ]
+    ],
+    "created_at": "2026-08-23T00:00:00Z",
+    "digest": "sha256:e5dc68ba5216376db2eb484c984507b8f2a0ac0bbb068bde0316ec73bd12acbc"
+  },
+  "members": [
+    {
+      "inventory_object_id": "netbox:dcim.device:10",
+      "inventory_interface_object_id": "netbox:dcim.interface:110",
+      "target": "router-10",
+      "interface": "GigabitEthernet2",
+      "platform": "cisco_iosxe",
+      "classification": "DEPLOYABLE",
+      "cohort": "CANARY",
+      "wave_index": null,
+      "child_plan_digest": "sha256:474d52770078a2286e6fb51f136610db8cc054c55c669673f456a8f4dfd6c951",
+      "attempt_sequence": 1,
+      "attempted": true,
+      "child_record": {
+        "schema_version": "1",
+        "generated_at": "2026-08-23T00:00:00Z",
+        "change_id": "CHG-FLEET-001",
+        "plan_digest": "sha256:474d52770078a2286e6fb51f136610db8cc054c55c669673f456a8f4dfd6c951",
+        "target": "router-10",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:10",
+        "inventory_interface_object_id": "netbox:dcim.interface:110",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:10/ssh",
+        "host": "192.0.2.10",
+        "port": 22,
+        "expected_hostname": "router-10",
+        "platform": "cisco_iosxe",
+        "interface": "GigabitEthernet2",
+        "previous_description": "old",
+        "desired_description": "managed-by-network-change-delivery-platform",
+        "approval_digest": "sha256:474d52770078a2286e6fb51f136610db8cc054c55c669673f456a8f4dfd6c951",
+        "preflight": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "execution": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "post_validation": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "recovery": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "transaction_strategy": "cisco_targeted_inverse",
+        "candidate_validation": null,
+        "candidate_diff_digest": null,
+        "confirmation": null,
+        "final_outcome": "SUCCEEDED",
+        "provider": "offline-test"
+      },
+      "message": "child deployment attempted"
+    },
+    {
+      "inventory_object_id": "netbox:dcim.device:11",
+      "inventory_interface_object_id": "netbox:dcim.interface:111",
+      "target": "router-11",
+      "interface": "ge-0/0/1",
+      "platform": "junos",
+      "classification": "DEPLOYABLE",
+      "cohort": "CANARY",
+      "wave_index": null,
+      "child_plan_digest": "sha256:25b9562c0f730568f7753da23f6de15c497d658852174e20d17a1077f01963e2",
+      "attempt_sequence": 2,
+      "attempted": true,
+      "child_record": {
+        "schema_version": "1",
+        "generated_at": "2026-08-23T00:00:00Z",
+        "change_id": "CHG-FLEET-001",
+        "plan_digest": "sha256:25b9562c0f730568f7753da23f6de15c497d658852174e20d17a1077f01963e2",
+        "target": "router-11",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:11",
+        "inventory_interface_object_id": "netbox:dcim.interface:111",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:11/ssh",
+        "host": "192.0.2.11",
+        "port": 830,
+        "expected_hostname": "router-11",
+        "platform": "junos",
+        "interface": "ge-0/0/1",
+        "previous_description": "old",
+        "desired_description": "managed-by-network-change-delivery-platform",
+        "approval_digest": "sha256:25b9562c0f730568f7753da23f6de15c497d658852174e20d17a1077f01963e2",
+        "preflight": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "execution": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "post_validation": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "recovery": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "transaction_strategy": "junos_commit_confirmed",
+        "candidate_validation": null,
+        "candidate_diff_digest": null,
+        "confirmation": null,
+        "final_outcome": "SUCCEEDED",
+        "provider": "offline-test"
+      },
+      "message": "child deployment attempted"
+    },
+    {
+      "inventory_object_id": "netbox:dcim.device:12",
+      "inventory_interface_object_id": "netbox:dcim.interface:112",
+      "target": "router-12",
+      "interface": "GigabitEthernet2",
+      "platform": "cisco_iosxe",
+      "classification": "DEPLOYABLE",
+      "cohort": "WAVE",
+      "wave_index": 1,
+      "child_plan_digest": "sha256:318007fce4d8d29d00abfcfc827546a8912d90e6f5a4711176e4206993a7395a",
+      "attempt_sequence": 3,
+      "attempted": true,
+      "child_record": {
+        "schema_version": "1",
+        "generated_at": "2026-08-23T00:00:00Z",
+        "change_id": "CHG-FLEET-001",
+        "plan_digest": "sha256:318007fce4d8d29d00abfcfc827546a8912d90e6f5a4711176e4206993a7395a",
+        "target": "router-12",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:12",
+        "inventory_interface_object_id": "netbox:dcim.interface:112",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:12/ssh",
+        "host": "192.0.2.12",
+        "port": 22,
+        "expected_hostname": "router-12",
+        "platform": "cisco_iosxe",
+        "interface": "GigabitEthernet2",
+        "previous_description": "old",
+        "desired_description": "managed-by-network-change-delivery-platform",
+        "approval_digest": "sha256:318007fce4d8d29d00abfcfc827546a8912d90e6f5a4711176e4206993a7395a",
+        "preflight": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "execution": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "post_validation": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "recovery": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "transaction_strategy": "cisco_targeted_inverse",
+        "candidate_validation": null,
+        "candidate_diff_digest": null,
+        "confirmation": null,
+        "final_outcome": "SUCCEEDED",
+        "provider": "offline-test"
+      },
+      "message": "child deployment attempted"
+    },
+    {
+      "inventory_object_id": "netbox:dcim.device:13",
+      "inventory_interface_object_id": "netbox:dcim.interface:113",
+      "target": "router-13",
+      "interface": "ge-0/0/1",
+      "platform": "junos",
+      "classification": "DEPLOYABLE",
+      "cohort": "WAVE",
+      "wave_index": 1,
+      "child_plan_digest": "sha256:a9b36d7bbeb3309f2f15c9cf9c79391eca11767feaa8e804ebd27dea296ba8cf",
+      "attempt_sequence": 4,
+      "attempted": true,
+      "child_record": {
+        "schema_version": "1",
+        "generated_at": "2026-08-23T00:00:00Z",
+        "change_id": "CHG-FLEET-001",
+        "plan_digest": "sha256:a9b36d7bbeb3309f2f15c9cf9c79391eca11767feaa8e804ebd27dea296ba8cf",
+        "target": "router-13",
+        "inventory_source": "netbox",
+        "inventory_object_id": "netbox:dcim.device:13",
+        "inventory_interface_object_id": "netbox:dcim.interface:113",
+        "credential_source": "openbao",
+        "credential_reference": "openbao:kv-v2:ncdp/devices/netbox:dcim.device:13/ssh",
+        "host": "192.0.2.13",
+        "port": 830,
+        "expected_hostname": "router-13",
+        "platform": "junos",
+        "interface": "ge-0/0/1",
+        "previous_description": "old",
+        "desired_description": "managed-by-network-change-delivery-platform",
+        "approval_digest": "sha256:a9b36d7bbeb3309f2f15c9cf9c79391eca11767feaa8e804ebd27dea296ba8cf",
+        "preflight": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "execution": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "post_validation": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "recovery": {
+          "attempted": false,
+          "succeeded": null,
+          "changed": null,
+          "observed_description": null,
+          "message": "bounded"
+        },
+        "transaction_strategy": "junos_commit_confirmed",
+        "candidate_validation": null,
+        "candidate_diff_digest": null,
+        "confirmation": null,
+        "final_outcome": "SUCCEEDED",
+        "provider": "offline-test"
+      },
+      "message": "child deployment attempted"
+    }
+  ],
+  "stop_member_identity": null,
+  "stop_child_outcome": null,
+  "final_validation": {
+    "attempted": true,
+    "succeeded": true,
+    "members": [
+      {
+        "inventory_object_id": "netbox:dcim.device:10",
+        "inventory_interface_object_id": "netbox:dcim.interface:110",
+        "target": "router-10",
+        "interface": "GigabitEthernet2",
+        "classification": "DEPLOYABLE",
+        "succeeded": true,
+        "observed_description": "managed-by-network-change-delivery-platform",
+        "message": "fresh member state matches fleet desired description"
+      },
+      {
+        "inventory_object_id": "netbox:dcim.device:11",
+        "inventory_interface_object_id": "netbox:dcim.interface:111",
+        "target": "router-11",
+        "interface": "ge-0/0/1",
+        "classification": "DEPLOYABLE",
+        "succeeded": true,
+        "observed_description": "managed-by-network-change-delivery-platform",
+        "message": "fresh member state matches fleet desired description"
+      },
+      {
+        "inventory_object_id": "netbox:dcim.device:12",
+        "inventory_interface_object_id": "netbox:dcim.interface:112",
+        "target": "router-12",
+        "interface": "GigabitEthernet2",
+        "classification": "DEPLOYABLE",
+        "succeeded": true,
+        "observed_description": "managed-by-network-change-delivery-platform",
+        "message": "fresh member state matches fleet desired description"
+      },
+      {
+        "inventory_object_id": "netbox:dcim.device:13",
+        "inventory_interface_object_id": "netbox:dcim.interface:113",
+        "target": "router-13",
+        "interface": "ge-0/0/1",
+        "classification": "DEPLOYABLE",
+        "succeeded": true,
+        "observed_description": "managed-by-network-change-delivery-platform",
+        "message": "fresh member state matches fleet desired description"
+      }
+    ],
+    "message": "final whole-fleet desired-state validation succeeded"
+  },
+  "final_outcome": "SUCCEEDED"
+}

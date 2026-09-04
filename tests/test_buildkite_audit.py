@@ -9,9 +9,9 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
+from snmp_test_fixtures import snmp_plan
 from test_audit_store import plan, snmp_record
 from test_promotion import _record as assurance_record
-from test_snmp_protected_deployment import snmp_plan
 
 import network_change_delivery.buildkite_audit as audit_module
 from network_change_delivery.audit import (

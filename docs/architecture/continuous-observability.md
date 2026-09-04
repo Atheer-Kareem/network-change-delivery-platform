@@ -115,15 +115,10 @@ capability-derived: `cat8000v_iosxe` and `vjunos_router` qualify, while
 `iosv_159_3_m12` and `iosvl2_2020` are intentionally excluded because they do
 not satisfy the accepted SHA256/AES128 contract. This is a telemetry subset of
 the exact-four managed fleet, not legacy `ncdp-managed` admission. Live SNMP
-remains deferred to 11C-4. Disposable CML staging and protected delivery
-remain paused. Within the SNMP story, the protected provisioning path remains
-a transitional exact-two authority; SNMP telemetry admission itself is no
-longer legacy exact-two. Elsewhere in NCDP, legacy planning/write, protected,
-and paused staging consumers retain separate exact-two retirement work. That
-coexistence is transitional:
-the target architecture is one profiled exact-four managed fleet with explicit
-profile/capability gating, and `ncdp-managed` is removed only after no
-legitimate runtime consumer remains.
+remains deferred to 11C-4. The legacy SNMP provisioning write path, disposable
+CML staging, and protected schema-v1 delivery are retired. Telemetry admission
+is the explicit capability projection of the one profiled exact-four managed
+fleet; it does not query `ncdp-managed`.
 
 ## Boundaries
 
@@ -219,12 +214,14 @@ gNMI/OpenConfig is deferred/skipped for the current reference implementation.
    SNMP generation paths for deferred host-side auth publication. Its current
    external configuration is not asserted.
 
-The protected `deploy-gate` remains the only device-write boundary. A typed
-`snmp_provisioning_plan` is promoted and approved through that same path, and a
-single plan targets one NetBox device. Cisco and Junos acceptance used separate
-commits, builds, approvals, and non-retryable attempts. The plan
-contains the controlled username and logical credential reference but no
-passphrase, localized key, encrypted secret, or secret-derived digest.
+The protected schema-v1 `deploy-gate` and SNMP provisioning command are retired
+from current runtime authority. The accepted historical 11C-3 provisioning used
+one typed `snmp_provisioning_plan` per NetBox device; Cisco and Junos acceptance
+used separate commits, builds, approvals, and non-retryable attempts. Those
+historical plans contain the controlled username and logical credential
+reference but no passphrase, localized key, encrypted secret, or secret-derived
+digest. Current SNMP is telemetry-only and projects devices 1/2 from the
+exact-four profiled population under the SHA256/AES128 capability contract.
 
 The owned device contract is the exact ADR 0026 OID closure in view
 `NCDP_IFMIB`, privacy-level read-only group `NCDP_SNMP_RO`, and a versioned

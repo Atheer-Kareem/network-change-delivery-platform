@@ -30,7 +30,7 @@ inventory is the compatibility baseline for 10B.
 | `FleetDeploymentPlan` | Fleet planner; frozen ordered targets, child plans, canaries, and waves | Canonical SHA-256 digest; embeds child plans | Process/local file or promotion bundle | Reference by digest; embed only a bounded target identity index when needed for queries |
 | `SnapshotManifest` | Assurance snapshot preparation; exact file set and source kind | Canonical manifest digest; snapshot bytes may contain modeled configuration | Temporary checkout-local preparation | Reference the manifest digest; exclude snapshot bytes |
 | `AssuranceEvidence` | Batfish assurance; frozen bounded observations, parse summaries, flow results, and invariants | Typed but has no intrinsic canonical digest field; no credentials | May be standalone local evidence in the older assurance path; embedded in `PlanAssuranceRecord` for plan assurance | When embedded, rely on the enclosing record; if persisted independently, bind its canonical/store bytes with the audit-store artifact SHA-256 |
-| `PlanAssuranceRecord` | Plan assurance; plan-, policy-, derivation-, and snapshot-bound assurance evidence | Canonical and carries its own SHA-256 digest; `verify_digest()` validates it | Local mode-0600 JSON and promotion bundle | Reference its existing digest and outcome; retain the immutable record as the assurance artifact promoted by the current deployment path |
+| `PlanAssuranceRecord` | Plan assurance; plan-, policy-, derivation-, and snapshot-bound assurance evidence | Canonical and carries its own SHA-256 digest; `verify_digest()` validates it | Local mode-0600 JSON and historical promotion bundle | Reference its existing digest and outcome; retain the immutable record for historical verification |
 | `DeploymentPromotionManifest` and bundle | Promotion step; exact approved artifact inventory | Manifest is canonical and self-digested; each `PromotedArtifact` has size and SHA-256; no separate bundle digest exists | Buildkite artifact and build metadata; checkout copy is temporary | Reference the promotion/manifest digest and immutable promoted-artifact hashes; Buildkite retention is not durable authority |
 | Buildkite deployment/staging contexts | Trusted job boundary; pipeline, build, commit, job, step, branch, queue, and retry identity | Application-validated and, for workload identity, OpenBao claim-bound; tokens are secret and excluded | Process environment only | Embed the stable non-secret identity fields |
 | `StagingEvidence` | Ephemeral staging lifecycle; sanitized realization, readiness, validation, destroy, absence, and retirement results | Versioned bounded schema; artifact digest is calculated externally, not a model field | Checkout-local JSON uploaded as a Buildkite artifact; successful Terraform state is retired | Reference sanitized evidence digest and outcome; never ingest Terraform state or Day-0 data |
@@ -188,7 +188,11 @@ deployment job identity. It must not claim or infer the approver's personal
 identity. Adding that authority is a separate reviewed decision. See the
 [Buildkite block-step contract](https://buildkite.com/docs/pipelines/configure/step-types/block-step).
 
-## Protected Buildkite assembly and failure domains
+## Historical protected Buildkite assembly and failure domains
+
+The following section preserves the accepted schema-v1 correlation design. Its
+deployment gate and staging inputs are retired; current Buildkite has no device
+write path.
 
 10B-2 assembles one `ChangeAuditRecord` only in the existing main-only,
 single-device `deploy-gate`. Its record UUID is exactly the immutable Buildkite
@@ -338,7 +342,7 @@ history, or persistent service is part of this increment. Inventory and
 credential materialization, external Git output, scheduling, forced collection,
 and reboot-persistent ownership remain later 10C work.
 
-### Authority source materialization
+### Historical 10C-3 authority source materialization
 
 Increment 10C-3 keeps both authority APIs outside the collector. The NCDP host
 materializer resolves the complete active `ncdp-managed` NetBox population and
@@ -432,8 +436,8 @@ read-only OpenBao paths. CollectionReady is schema v3 with semantic
 `configuration-collection`; the private Git history and existing device-1/2
 paths are preserved and device-8/9 paths are additive. This remains passive
 observation evidence, not write authority or causality proof. Legacy planning,
-live SNMP, and protected delivery remain separate migrations; disposable
-staging and protected delivery remain paused.
+SNMP provisioning writes, disposable staging, and protected delivery are
+retired; persistent live SNMP remains deferred.
 
 ### Strict live observation and host trust
 

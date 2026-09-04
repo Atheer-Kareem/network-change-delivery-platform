@@ -1,9 +1,9 @@
 # Batfish assurance
 
-Batfish provides offline behavioral-assurance boundaries for both the active
-profiled PR candidate and the preserved legacy protected plan. It is not a
-management-plane reachability, live SNMP polling, or unmodeled routing-protocol
-test.
+Batfish provides the active offline behavioral-assurance boundary for the
+profiled PR candidate. Historical schema-v1 plan assurance remains parseable,
+but its protected runtime is retired. Batfish is not a management-plane
+reachability, live SNMP polling, or unmodeled routing-protocol test.
 
 ## Foundation and model boundary
 
@@ -28,29 +28,24 @@ PyBatfish is pinned to `2025.7.7.2423`; the server reports
 
 ## First-class Buildkite stages
 
-Increment 12A makes `batfish-assurance` a visible protected-main stage after
-`validation-complete`. ADR 0027 adds a top-level `pr-batfish-assurance` stage
-for runtime-relevant pull requests. B4-1A separates their subjects and entry
-points. Active PR assurance now evaluates the current profiled four-device
-candidate through `profiled_pr_batfish_assurance.sh`. The preserved protected
-`batfish-assurance` path remains legacy v1 plan/policy/baseline assurance and is
-currently disabled with protected delivery. Both retain serialized concurrency
-and prohibit automatic or manual retry.
+ADR 0027 adds a top-level `pr-batfish-assurance` stage for runtime-relevant pull
+requests. Active PR assurance evaluates the current profiled four-device
+candidate through `profiled_pr_batfish_assurance.sh`, retains serialized
+concurrency, and prohibits automatic or manual retry. The former protected-main
+schema-v1 stage is retired.
 
 On a pull request, active Batfish assurance is prevention evidence for the
-reviewed profiled candidate. Disposable CML staging is currently paused. If the
-operator restores it, PR Batfish remains its cheaper prerequisite. The separate
-legacy protected assurance and CML branches also remain paused; they are not
-silently fed by the profiled PR artifact.
+reviewed profiled candidate. No disposable CML or protected-delivery branch
+follows it.
 
 The profiled PR stage verifies the checked-out commit, builds the pinned
 assurance image, starts Batfish, performs bounded readiness, evaluates the
 explicit service stack, verifies its typed record, and publishes
 `assurance/profiled-pr-assurance.json`. Its annotation shows the four-device
 architecture, service stack, exact nodes, D1/candidate digests, and invariant
-count without live or credential-bearing data. The legacy protected stage
-retains its existing `ncdp assure-plan`/`ncdp verify-assurance` record and
-artifact contract for later protected-delivery migration.
+count without live or credential-bearing data. Historical `ncdp assure-plan`/
+`ncdp verify-assurance` artifacts retain their verification meaning but are not
+promotion inputs.
 
 The preserved legacy protected policy expects `core-02` and `edge-junos-01` and
 checks both directions across their directly connected `/30`:
@@ -164,16 +159,14 @@ remains accepted, and both gateways remain reachable. Shared underlay, OSPF,
 VLAN, managed-node, assurance-host, and layer-1 invariants must also pass. See
 the [B4-4 acceptance record](../acceptance/acl-security-detour-b4-4.md).
 
-## Assurance-to-promotion handoff
+## Historical assurance-to-promotion handoff
 
-When explicitly restored, the preserved legacy immutable promotion waits for
-both CML staging and legacy Batfish assurance. It downloads
+The retired legacy immutable promotion waited for both CML staging and legacy
+Batfish assurance. It downloaded
 `assurance/assurance.json` from the exact `batfish-assurance` step in the same
 Buildkite build, rejects an unexpected filesystem shape or symlink, and
 independently verifies the exact bytes against the checked-out plan, policy,
-and baseline. Promotion then creates and verifies the immutable bundle. It no
-longer starts or contacts Batfish.
+and baseline. Promotion then created and verified the immutable bundle.
 
 The similarly named artifact produced by `pr-batfish-assurance` is pre-merge
-evidence only. Promotion cannot select it: the download is explicitly scoped to
-the protected same-main-build `batfish-assurance` step.
+evidence only. No current promotion or device-write step consumes it.

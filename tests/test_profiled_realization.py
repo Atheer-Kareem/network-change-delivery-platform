@@ -405,7 +405,6 @@ def test_current_runtime_does_not_import_b3_realization_contracts() -> None:
         "src/network_change_delivery/oxidized_host_trust.py",
         "src/network_change_delivery/ephemeral_staging.py",
         "src/network_change_delivery/buildkite_deployment.py",
-        "src/network_change_delivery/vendor_adapter.py",
         "src/network_change_delivery/fleet.py",
     )
     for path in current_paths:

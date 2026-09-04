@@ -1,6 +1,11 @@
 # Profile-bound read-only inventory
 
-## Scope and compatibility boundary
+## Current status and historical B2 boundary
+
+The profiled provider and adapter are now the current exact-four read-only
+boundary and are consumed by schema-v2 planning/execution and passive services.
+The paragraphs below preserve the sequence and constraints of the earlier
+parallel B2 introduction; references to a current v1 path are historical.
 
 Detour B2 makes the B1 profile and management contracts executable only in a
 parallel read-only path. `ProfiledInventoryDevice` and
@@ -13,9 +18,9 @@ canonical digests remain unchanged.
 current persistent LIVE truth. This document retains the historical B2 audit
 and transport admission that preceded external B3 migration.
 
-Detour B3-1 subsequently separates population semantics: the profiled provider
-uses only `ncdp-profiled-inventory`, while `ncdp-managed` retains its accepted
-legacy exact-two meaning. The exact four-member resolver and realization
+Detour B3-1 subsequently separated population semantics. The final profiled
+provider uses only `ncdp-profiled-inventory`; `ncdp-managed` has no current
+runtime meaning. The exact four-member resolver and realization
 contracts are documented in
 [profile-aware population and realization](profile-aware-population-and-realization.md).
 

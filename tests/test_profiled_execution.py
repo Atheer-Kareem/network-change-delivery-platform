@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -476,8 +477,36 @@ def test_evidence_and_cli_isolation():
         ).command
         == "profiled-plan"
     )
-    with pytest.raises(SystemExit):
-        parser.parse_args(["profiled-deploy"])
+    assert (
+        parser.parse_args(
+            [
+                "profiled-deploy",
+                "--plan",
+                "x",
+                "--approve-digest",
+                "sha256:" + "a" * 64,
+                "--report-json",
+                "y",
+                "--netbox",
+                "--openbao",
+                "--live",
+            ]
+        ).command
+        == "profiled-deploy"
+    )
+    source_root = Path(__file__).parents[1] / "src" / "network_change_delivery"
+    source = "\n".join(
+        (source_root / name).read_text(encoding="utf-8")
+        for name in ("profiled_execution.py", "profiled_write_adapter.py")
+    )
+    for forbidden in (
+        "InventoryDevice",
+        "MultiVendorAdapter",
+        "ManagedStateStore",
+        "managed_state_store",
+        "build_postwrite_validated_evidence",
+    ):
+        assert re.search(rf"\b{forbidden}\b", source) is None
 
 
 class FailingJunos(Junos):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import stat
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,13 @@ from xml.etree import ElementTree
 
 import httpx
 import pytest
-from jnpr.junos.exception import RpcError, RpcTimeoutError
+from jnpr.junos.exception import (
+    CommitError,
+    ConnectClosedError,
+    ConnectError,
+    RpcError,
+    RpcTimeoutError,
+)
 from pydantic import ValidationError
 
 import network_change_delivery.junos_adapter as junos_module
@@ -102,6 +109,116 @@ def test_profiled_junos_write_boundaries_require_explicit_trust():
         pass
     with pytest.raises(HostTrustError):
         adapter.confirm_profiled(target, credentials)
+
+
+@pytest.mark.parametrize(
+    ("result", "disposition"),
+    [
+        (True, ExecutionDisposition.SUCCEEDED),
+        (False, ExecutionDisposition.FAILED),
+        (RpcError(cmd="rejected"), ExecutionDisposition.FAILED),
+        (CommitError(None, cmd="rejected"), ExecutionDisposition.FAILED),
+        (
+            ConnectClosedError(SimpleNamespace(connected=True)),
+            ExecutionDisposition.AMBIGUOUS,
+        ),
+        (
+            ConnectError(SimpleNamespace(connected=True), "closed"),
+            ExecutionDisposition.AMBIGUOUS,
+        ),
+        (RpcTimeoutError(None, "timeout", 30), ExecutionDisposition.AMBIGUOUS),
+        (RuntimeError("after confirmation boundary"), ExecutionDisposition.AMBIGUOUS),
+    ],
+)
+def test_profiled_confirmation_uses_plain_commit_and_classifies_rpc_boundary(
+    monkeypatch, result: object, disposition: ExecutionDisposition
+) -> None:
+    connection = FakeConnection()
+    config = FakeConfig(connection, "exclusive")
+    config.commit_result = result
+    calls: list[object] = []
+
+    @contextmanager
+    def session(*args, **kwargs):
+        calls.append((args, kwargs))
+        yield connection
+
+    adapter = JunosPyEZAdapter(
+        known_hosts=Path("/tmp/profiled-known-hosts"),
+        config_factory=lambda *_args, **_kwargs: config,
+    )
+    monkeypatch.setattr(adapter, "_session", session)
+    target = SimpleNamespace(
+        name="edge-junos-01",
+        host="192.0.2.20",
+        port=830,
+        expected_hostname="edge-junos-01",
+    )
+    observed = adapter.confirm_profiled(
+        target, DeviceCredentials(username="u", password="p")
+    )
+    assert observed.disposition is disposition
+    assert calls[0][1]["profile_bound"] is True
+    assert [call for call in config.calls if isinstance(call, tuple)] == [
+        ("commit", {})
+    ]
+    assert config.check_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("commit_result", "config_cleanup", "session_cleanup", "disposition"),
+    [
+        (True, True, False, ExecutionDisposition.SUCCEEDED),
+        (True, False, True, ExecutionDisposition.SUCCEEDED),
+        (
+            RpcTimeoutError(None, "timeout", 30),
+            True,
+            False,
+            ExecutionDisposition.AMBIGUOUS,
+        ),
+        (False, True, False, ExecutionDisposition.FAILED),
+    ],
+)
+def test_profiled_confirmation_preserves_known_result_across_cleanup(
+    monkeypatch,
+    commit_result: object,
+    config_cleanup: bool,
+    session_cleanup: bool,
+    disposition: ExecutionDisposition,
+) -> None:
+    connection = FakeConnection()
+    config = FakeConfig(connection, "exclusive")
+    config.commit_result = commit_result
+    if config_cleanup:
+        config.exit_error = RuntimeError("cleanup")
+
+    @contextmanager
+    def session(*_args, **_kwargs):
+        try:
+            yield connection
+        finally:
+            if session_cleanup:
+                raise RuntimeError("session cleanup")
+
+    adapter = JunosPyEZAdapter(
+        known_hosts=Path("/tmp/profiled-known-hosts"),
+        config_factory=lambda *_args, **_kwargs: config,
+    )
+    monkeypatch.setattr(adapter, "_session", session)
+    target = SimpleNamespace(
+        name="edge-junos-01",
+        host="192.0.2.20",
+        port=830,
+        expected_hostname="edge-junos-01",
+    )
+    observed = adapter.confirm_profiled(
+        target, DeviceCredentials(username="u", password="p")
+    )
+    assert observed.disposition is disposition
+    if disposition is ExecutionDisposition.SUCCEEDED and (
+        config_cleanup or session_cleanup
+    ):
+        assert "cleanup warning" in observed.message
 
 
 def plan():

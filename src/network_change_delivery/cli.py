@@ -90,6 +90,7 @@ from network_change_delivery.plan_assurance import (
 )
 from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
+from network_change_delivery.profiled_execution import execute_profiled_plan
 from network_change_delivery.profiled_live_host_trust import (
     DEFAULT_PROFILED_LIVE_TRUST_ROOT,
     validate_profiled_live_host_trust,
@@ -97,7 +98,11 @@ from network_change_delivery.profiled_live_host_trust import (
 from network_change_delivery.profiled_live_host_trust import (
     KNOWN_HOSTS_NAME as PROFILED_LIVE_KNOWN_HOSTS_NAME,
 )
-from network_change_delivery.profiled_planning import plan_profiled_change
+from network_change_delivery.profiled_planning import (
+    ProfiledDeploymentPlan,
+    plan_profiled_change,
+)
+from network_change_delivery.profiled_write_adapter import ProfiledWriteAdapter
 from network_change_delivery.promotion import (
     PromotionError,
     create_promotion_bundle,
@@ -143,6 +148,13 @@ def _audit_commit(value: str) -> str:
 def _audit_device_id(value: str) -> str:
     if re.fullmatch(r"netbox:dcim\.device:[1-9][0-9]*", value) is None:
         raise argparse.ArgumentTypeError("audit device identity is invalid")
+    return value
+
+
+def _profiled_approval_digest(value: str) -> str:
+    """Require the exact, canonical approval value before runtime authority."""
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None:
+        raise argparse.ArgumentTypeError("profiled approval digest is invalid")
     return value
 
 
@@ -193,6 +205,14 @@ def _reserve_fleet_evidence(path: Path) -> TextIOWrapper:
     return os.fdopen(descriptor, "w", encoding="utf-8")
 
 
+def _reserve_profiled_execution_evidence(path: Path) -> TextIOWrapper:
+    """Reserve immutable schema-v2 evidence before profiled execution begins."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    return os.fdopen(descriptor, "w", encoding="utf-8")
+
+
 def _load_change(path: Path) -> InterfaceDescriptionIntent:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     return InterfaceDescriptionIntent.model_validate(payload)
@@ -209,6 +229,11 @@ def _load_fleet_change(path: Path) -> FleetInterfaceDescriptionIntent:
 
 def _load_fleet_plan(path: Path) -> FleetDeploymentPlan:
     return FleetDeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _load_profiled_plan(path: Path) -> ProfiledDeploymentPlan:
+    """Load only the immutable, digest-validated schema-v2 plan model."""
+    return ProfiledDeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def _load_snmp_provisioning_intent(path: Path) -> SnmpV3InterfaceTelemetryIntent:
@@ -844,6 +869,47 @@ def _run_profiled_plan(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_profiled_deploy(arguments: argparse.Namespace) -> int:
+    """Execute exactly one explicit schema-v2 plan through profiled boundaries."""
+    if arguments.live is not True:
+        raise ValueError("profiled deployment requires explicit --live")
+    plan = _load_profiled_plan(arguments.plan)
+    validate_profiled_live_host_trust()
+    inventory = NetBoxProfileInventoryProvider()
+    secrets = OpenBaoSecretProvider()
+    known_hosts = DEFAULT_PROFILED_LIVE_TRUST_ROOT / PROFILED_LIVE_KNOWN_HOSTS_NAME
+    collector = ProfileReadOnlyAdapter(known_hosts=known_hosts)
+    writer = ProfiledWriteAdapter(known_hosts=known_hosts)
+    with _reserve_profiled_execution_evidence(arguments.report_json) as evidence:
+        record = execute_profiled_plan(
+            plan,
+            arguments.approve_digest,
+            inventory,
+            secrets,
+            collector,
+            writer,
+        )
+        evidence.write(record.model_dump_json(indent=2) + "\n")
+        evidence.flush()
+        os.fsync(evidence.fileno())
+    print(f"Target: {record.target}")
+    print(f"Device identity: {record.device_identity}")
+    print(f"Automation profile: {record.automation_profile_id}")
+    print(f"Interface: {record.interface.interface} ({record.interface.name})")
+    print(f"Plan digest: {record.plan_digest}")
+    print(f"Final outcome: {record.final_outcome}")
+    print(
+        "Managed-state acceptance attempted: "
+        f"{record.managed_state_acceptance_attempted}"
+    )
+    print(f"Evidence: {arguments.report_json}")
+    return (
+        0
+        if record.final_outcome in {FinalOutcome.SUCCEEDED, FinalOutcome.RECOVERED}
+        else 2
+    )
+
+
 def _run_snmp_provisioning_plan(arguments: argparse.Namespace) -> int:
     """Create one secret-free SNMP plan after targeted read-only preflight."""
     _require_unused_fleet_plan_path(arguments.output)
@@ -1033,6 +1099,20 @@ def build_parser() -> argparse.ArgumentParser:
     profiled_plan_parser.add_argument("--netbox", required=True, action="store_true")
     profiled_plan_parser.add_argument("--openbao", required=True, action="store_true")
     profiled_plan_parser.set_defaults(handler=_run_profiled_plan)
+
+    profiled_deploy_parser = subparsers.add_parser(
+        "profiled-deploy",
+        help="execute one explicitly approved schema-v2 profiled plan",
+    )
+    profiled_deploy_parser.add_argument("--plan", required=True, type=Path)
+    profiled_deploy_parser.add_argument(
+        "--approve-digest", required=True, type=_profiled_approval_digest
+    )
+    profiled_deploy_parser.add_argument("--report-json", required=True, type=Path)
+    profiled_deploy_parser.add_argument("--netbox", required=True, action="store_true")
+    profiled_deploy_parser.add_argument("--openbao", required=True, action="store_true")
+    profiled_deploy_parser.add_argument("--live", required=True, action="store_true")
+    profiled_deploy_parser.set_defaults(handler=_run_profiled_deploy)
 
     snmp_plan_parser = subparsers.add_parser(
         "snmp-provisioning-plan",

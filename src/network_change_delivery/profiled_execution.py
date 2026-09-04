@@ -1,4 +1,4 @@
-"""Offline-testable schema-v2 execution lifecycle; intentionally no CLI surface."""
+"""Schema-v2 profiled execution lifecycle consumed by the explicit CLI boundary."""
 
 from __future__ import annotations
 

@@ -13,15 +13,18 @@ credential or transport access for that operation. The legacy schema-v1
 planning/deployment paths remain transitional. Disposable staging and protected
 delivery remain paused.
 
-Schema-v2 now also has an offline-tested profiled execution library boundary,
-but it has no deploy CLI and no LIVE schema-v2 write acceptance. It admits only
-C8000V IOS-XE and vJunos for interface-description execution; IOSv and IOSvL2
-remain rejected for that operation. It preserves Cisco one-attempt/targeted-
-inverse and Junos commit-confirmed semantics without changing transitional v1
-execution. It does not advance B5 D0: interface descriptions are outside the
-current B5 envelopes, so a future writable B4 vertical must project fresh O′
-through `compare_postwrite_to_d1()` and `build_postwrite_validated_evidence()`
-before an accepted-state advance.
+Schema-v2 now also has the explicit local `ncdp profiled-deploy` activation
+surface. It requires `--live`, an exact `sha256:` approval digest, profiled
+NetBox/OpenBao authority, and the accepted profiled LIVE trust generation. It
+reserves create-only mode-0600 execution evidence before preflight can reach a
+write provider. It admits only C8000V IOS-XE and vJunos for
+interface-description execution; IOSv and IOSvL2 remain rejected for that
+operation. It preserves Cisco one-attempt/targeted-inverse and Junos
+commit-confirmed semantics without changing transitional v1 execution. No LIVE
+schema-v2 write acceptance has occurred. It does not advance B5 D0: interface
+descriptions are outside the current B5 envelopes, so a future writable B4
+vertical must project fresh O′ through `compare_postwrite_to_d1()` and
+`build_postwrite_validated_evidence()` before an accepted-state advance.
 
 Detour B5-1 adds a separate new-architecture managed-state foundation. It
 projects observation and intent into the same envelope-scoped canonical form,

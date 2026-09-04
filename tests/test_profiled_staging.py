@@ -218,7 +218,7 @@ def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
         readiness_service="ssh",
         readiness_port=22,
         outcome=ProfiledStagingReadinessOutcome.TIMED_OUT,
-        elapsed_seconds=900,
+        elapsed_seconds=180,
         cml_node_state="BOOTED",
     )
     evidence = ProfiledStagingEvidence(
@@ -230,8 +230,25 @@ def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
     )
     rendered = evidence.model_dump_json()
     assert '"schema_version":"2"' in rendered
+    assert '"readiness_deadline_seconds":180' in rendered
     assert '"outcome":"TIMED_OUT"' in rendered
-    assert '"elapsed_seconds":900.0' in rendered
+    assert '"elapsed_seconds":180.0' in rendered
+    assert (
+        ProfiledStagingEvidence(
+            staging_run_id="run-extended",
+            orchestrator="local",
+            lab_title="NCDP Staging run-extended",
+            readiness_deadline_seconds=300,
+        ).readiness_deadline_seconds
+        == 300
+    )
+    with pytest.raises(ValueError):
+        ProfiledStagingEvidence(
+            staging_run_id="run-invalid",
+            orchestrator="local",
+            lab_title="NCDP Staging run-invalid",
+            readiness_deadline_seconds=301,
+        )
     for secret in ("username", "password", "token", "RoleID", "SecretID"):
         assert secret not in rendered
 
@@ -303,6 +320,7 @@ class Operations:
         self.fail = fail
         self.calls: list[str] = []
         self.exists = False
+        self.readiness_deadline_seconds = 180
         self.readiness_evidence: tuple[ProfiledStagingReadinessEvidence, ...] = ()
 
     @property
@@ -438,6 +456,7 @@ def test_lifecycle_preserves_exact_partial_readiness_after_timeout() -> None:
     evidence = ProfiledStagingLifecycle("run-1", "local", operations).run()
     assert evidence.final_outcome is ProfiledStagingOutcome.FAILED
     assert evidence.primary_failure == "profiled staging readiness timed out"
+    assert evidence.readiness_deadline_seconds == 180
     assert tuple(item.logical_name for item in evidence.readiness) == (
         "core-02",
         "edge-junos-01",
@@ -452,6 +471,17 @@ def test_lifecycle_preserves_exact_partial_readiness_after_timeout() -> None:
         and item.cml_node_state == "BOOTED"
         for item in evidence.readiness[1:]
     )
+    assert evidence.destroy_outcome == "succeeded"
+    assert evidence.absence_verification == "succeeded"
+    assert evidence.state_retirement == "succeeded"
+
+
+def test_lifecycle_preserves_extended_deadline_and_cleanup_after_timeout() -> None:
+    operations = Operations(fail="readiness")
+    operations.readiness_deadline_seconds = 300
+    evidence = ProfiledStagingLifecycle("run-1", "local", operations).run()
+    assert evidence.final_outcome is ProfiledStagingOutcome.FAILED
+    assert evidence.readiness_deadline_seconds == 300
     assert evidence.destroy_outcome == "succeeded"
     assert evidence.absence_verification == "succeeded"
     assert evidence.state_retirement == "succeeded"

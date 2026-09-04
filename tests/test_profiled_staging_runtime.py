@@ -94,6 +94,7 @@ def _readiness_operations(tmp_path: Path):
     value._readiness = {}
     value._readiness_results = {}
     value.readiness_evidence = ()
+    value.readiness_deadline_seconds = 180
     node_ids = {
         str(device.logical_name).replace("-", "_"): f"node-{device.logical_name}"
         for device in value._devices
@@ -121,14 +122,20 @@ class _Clock:
 
 
 class _NodeReader:
-    def __init__(self, *, fail_for: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fail_for: str | None = None,
+        state: str = "BOOTED",
+    ) -> None:
         self.fail_for = fail_for
+        self.state = state
         self.closed = False
 
     def item(self, _lab_id: str, _kind: str, node_id: str):
         if self.fail_for and self.fail_for in node_id:
             raise ProfiledStagingError("bounded diagnostic failure")
-        return {"state": "BOOTED"}
+        return {"state": self.state}
 
     def close(self) -> None:
         self.closed = True
@@ -140,7 +147,6 @@ def test_partial_readiness_timeout_retains_ready_and_timed_out_evidence(
     module, value, node_ids = _readiness_operations(tmp_path)
     clock = _Clock()
     reader = _NodeReader(fail_for="transit-ios-01")
-    monkeypatch.setattr(module, "_READINESS_TIMEOUT_SECONDS", 10)
     monkeypatch.setattr(module.time, "monotonic", clock.monotonic)
     monkeypatch.setattr(module.time, "sleep", clock.sleep)
     monkeypatch.setattr(
@@ -174,13 +180,145 @@ def test_partial_readiness_timeout_retains_ready_and_timed_out_evidence(
     assert by_name["core-02"].readiness_evidence is not None
     for name in ("edge-junos-01", "transit-ios-01", "access-sw-01"):
         assert by_name[name].outcome is ProfiledStagingReadinessOutcome.TIMED_OUT
-        assert by_name[name].elapsed_seconds >= 10
+        assert by_name[name].elapsed_seconds == 180
         assert by_name[name].readiness_evidence is None
     assert by_name["edge-junos-01"].readiness_port == 830
     assert by_name["edge-junos-01"].readiness_service == "netconf"
     assert by_name["transit-ios-01"].cml_node_state is None
     assert by_name["access-sw-01"].cml_node_state == "BOOTED"
+    assert value.readiness_deadline_seconds == 180
     assert reader.closed is True
+
+
+@pytest.mark.parametrize("ready_count", (1, 3))
+def test_partial_ready_population_never_extends_past_normal_deadline(
+    ready_count: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, value, node_ids = _readiness_operations(tmp_path)
+    clock = _Clock()
+    reader = _NodeReader(state="STARTED")
+    ready_addresses = {
+        str(device.management_endpoints.staging.binding.l3_endpoint.address.ip)
+        for device in value._devices[:ready_count]
+    }
+    monkeypatch.setattr(module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(module.time, "sleep", clock.sleep)
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlReader,
+        "from_environment",
+        staticmethod(lambda: reader),
+    )
+
+    def connect(target, **_kwargs):
+        if target[0] in ready_addresses:
+            clock.now += 0.25
+            return _Connection()
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(module.socket, "create_connection", connect)
+    with pytest.raises(ProfiledStagingError, match="readiness timed out"):
+        value._wait_readiness(node_ids, "lab-001")
+
+    outcomes = [item.outcome for item in value.readiness_evidence]
+    assert outcomes.count(ProfiledStagingReadinessOutcome.READY) == ready_count
+    assert outcomes.count(ProfiledStagingReadinessOutcome.TIMED_OUT) == 4 - ready_count
+    assert value.readiness_deadline_seconds == 180
+    assert clock.now == 180
+
+
+def test_all_unresolved_and_booted_stops_at_normal_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, value, node_ids = _readiness_operations(tmp_path)
+    clock = _Clock()
+    reader = _NodeReader(state="BOOTED")
+    monkeypatch.setattr(module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(module.time, "sleep", clock.sleep)
+    monkeypatch.setattr(
+        module.socket,
+        "create_connection",
+        lambda *_a, **_k: (_ for _ in ()).throw(ConnectionRefusedError()),
+    )
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlReader,
+        "from_environment",
+        staticmethod(lambda: reader),
+    )
+
+    with pytest.raises(ProfiledStagingError, match="readiness timed out"):
+        value._wait_readiness(node_ids, "lab-001")
+
+    assert value.readiness_deadline_seconds == 180
+    assert clock.now == 180
+    assert all(
+        item.outcome is ProfiledStagingReadinessOutcome.TIMED_OUT
+        and item.cml_node_state == "BOOTED"
+        for item in value.readiness_evidence
+    )
+
+
+def test_all_unresolved_transitional_population_extends_once_to_absolute_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, value, node_ids = _readiness_operations(tmp_path)
+    clock = _Clock()
+    reader = _NodeReader(state="STARTED")
+    monkeypatch.setattr(module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(module.time, "sleep", clock.sleep)
+    monkeypatch.setattr(
+        module.socket,
+        "create_connection",
+        lambda *_a, **_k: (_ for _ in ()).throw(ConnectionRefusedError()),
+    )
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlReader,
+        "from_environment",
+        staticmethod(lambda: reader),
+    )
+
+    with pytest.raises(ProfiledStagingError, match="readiness timed out"):
+        value._wait_readiness(node_ids, "lab-001")
+
+    assert value.readiness_deadline_seconds == 300
+    assert clock.now == 300
+    assert all(
+        item.outcome is ProfiledStagingReadinessOutcome.TIMED_OUT
+        and item.elapsed_seconds == 300
+        and item.cml_node_state == "STARTED"
+        for item in value.readiness_evidence
+    )
+
+
+def test_all_devices_can_become_ready_during_global_boot_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, value, node_ids = _readiness_operations(tmp_path)
+    clock = _Clock()
+    reader = _NodeReader(state="STARTED")
+    monkeypatch.setattr(module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(module.time, "sleep", clock.sleep)
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlReader,
+        "from_environment",
+        staticmethod(lambda: reader),
+    )
+
+    def connect(_target, **_kwargs):
+        if clock.now < 180:
+            raise ConnectionRefusedError
+        clock.now += 0.25
+        return _Connection()
+
+    monkeypatch.setattr(module.socket, "create_connection", connect)
+    observed = value._wait_readiness(node_ids, "lab-001")
+
+    assert len(observed) == 4
+    assert value.readiness_deadline_seconds == 300
+    assert all(
+        item.outcome is ProfiledStagingReadinessOutcome.READY
+        and 180 < item.elapsed_seconds < 300
+        for item in value.readiness_evidence
+    )
 
 
 def test_successful_readiness_remains_exact_four_with_real_durations(
@@ -215,10 +353,15 @@ def test_successful_readiness_remains_exact_four_with_real_durations(
         and item.readiness_evidence is not None
         for item in value.readiness_evidence
     )
+    assert value.readiness_deadline_seconds == 180
 
 
-def test_production_readiness_timeout_remains_900_seconds() -> None:
-    assert load_script("run_profiled_cml_staging")._READINESS_TIMEOUT_SECONDS == 900
+def test_production_readiness_deadlines_are_180_and_300_seconds() -> None:
+    module = load_script("run_profiled_cml_staging")
+    assert module._READINESS_NORMAL_TIMEOUT_SECONDS == 180
+    assert module._READINESS_MAX_TIMEOUT_SECONDS == 300
+    assert not hasattr(module, "_READINESS_TIMEOUT_SECONDS")
+    assert "900" not in (ROOT / "scripts/run_profiled_cml_staging.py").read_text()
 
 
 def test_start_uses_one_inspected_saved_plan(tmp_path: Path) -> None:

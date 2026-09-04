@@ -20,7 +20,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from network_change_delivery.architecture_contracts import get_automation_profile
-from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
+from network_change_delivery.profile_inventory import (
+    NetBoxProfileInventoryProvider,
+    ProfiledInventoryDevice,
+)
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
 from network_change_delivery.profiled_live_cml import ios_scrypt_password_hash
 from network_change_delivery.profiled_realization import (
@@ -65,7 +68,12 @@ from network_change_delivery.secrets import OpenBaoSecretProvider
 
 ROOT = Path(__file__).resolve().parents[1]
 TERRAFORM_ROOT = ROOT / "infrastructure" / "cml" / "profiled-staging"
-_READINESS_TIMEOUT_SECONDS = 900
+_READINESS_NORMAL_TIMEOUT_SECONDS = 180
+_READINESS_MAX_TIMEOUT_SECONDS = 300
+_READINESS_POLL_SECONDS = 5
+_TRANSITIONAL_CML_NODE_STATES = frozenset(
+    {"DEFINED_ON_CORE", "QUEUED", "STARTED", "STARTING", "BOOTING"}
+)
 
 
 class LocalTerraformOperations:
@@ -87,6 +95,7 @@ class LocalTerraformOperations:
         self._readiness: dict[str, tuple[float, EvidenceReference]] = {}
         self._readiness_results: dict[str, ProfiledStagingReadinessEvidence] = {}
         self.readiness_evidence: tuple[ProfiledStagingReadinessEvidence, ...] = ()
+        self.readiness_deadline_seconds = _READINESS_NORMAL_TIMEOUT_SECONDS
         self.topology_digest: str | None = None
         self.trust_generation: EvidenceReference | None = None
         self.device_evidence: tuple[ProfiledStagingDeviceEvidence, ...] = ()
@@ -481,19 +490,48 @@ class LocalTerraformOperations:
     def _wait_readiness(
         self, node_ids: dict[str, str], lab_id: str
     ) -> dict[str, tuple[float, EvidenceReference]]:
-        deadline = time.monotonic() + _READINESS_TIMEOUT_SECONDS
+        readiness_started = time.monotonic()
+        normal_deadline = readiness_started + _READINESS_NORMAL_TIMEOUT_SECONDS
+        maximum_deadline = readiness_started + _READINESS_MAX_TIMEOUT_SECONDS
+        deadline = normal_deadline
+        self.readiness_deadline_seconds = _READINESS_NORMAL_TIMEOUT_SECONDS
         started = {
-            str(device.logical_name): time.monotonic() for device in self._devices
+            str(device.logical_name): readiness_started for device in self._devices
         }
         observed: dict[str, tuple[float, EvidenceReference]] = {}
         remaining = set(self._devices)
-        while remaining and time.monotonic() < deadline:
+        while remaining:
+            if time.monotonic() >= deadline:
+                states = self._observe_readiness_node_states(
+                    remaining, node_ids, lab_id
+                )
+                if (
+                    deadline == normal_deadline
+                    and len(remaining) == len(self._devices)
+                    and any(
+                        state in _TRANSITIONAL_CML_NODE_STATES
+                        for state in states.values()
+                    )
+                ):
+                    deadline = maximum_deadline
+                    self.readiness_deadline_seconds = _READINESS_MAX_TIMEOUT_SECONDS
+                    continue
+                self._record_timed_out_readiness(
+                    remaining, node_ids, states, started, deadline
+                )
+                raise ProfiledStagingError("profiled staging readiness timed out")
             for device in tuple(remaining):
+                remaining_seconds = deadline - time.monotonic()
+                if remaining_seconds <= 0:
+                    break
                 endpoint = device.management_endpoints.staging.binding.l3_endpoint
                 try:
                     with socket.create_connection(
-                        (str(endpoint.address.ip), endpoint.port), timeout=3
+                        (str(endpoint.address.ip), endpoint.port),
+                        timeout=min(3, remaining_seconds),
                     ):
+                        if time.monotonic() > deadline:
+                            break
                         remaining.remove(device)
                         elapsed = time.monotonic() - started[str(device.logical_name)]
                         facts = {
@@ -557,53 +595,73 @@ class LocalTerraformOperations:
                 except OSError:
                     continue
             if remaining:
-                time.sleep(5)
-        if remaining:
-            reader: ProfiledStagingCmlReader | None = None
-            with suppress(ProfiledStagingError):
-                reader = ProfiledStagingCmlReader.from_environment()
-            try:
-                for device in remaining:
-                    name = str(device.logical_name)
-                    node_id = node_ids[name.replace("-", "_")]
-                    state: str | None = None
-                    if reader is not None:
-                        try:
-                            candidate = reader.item(lab_id, "nodes", node_id).get(
-                                "state"
-                            )
-                            if isinstance(candidate, str) and re.fullmatch(
-                                r"[A-Za-z0-9._-]{1,64}", candidate
-                            ):
-                                state = candidate
-                        except ProfiledStagingError:
-                            pass
-                    endpoint = device.management_endpoints.staging.binding.l3_endpoint
-                    service = get_automation_profile(
-                        device.automation_profile_id
-                    ).readiness_services[0]
-                    self._record_readiness(
-                        ProfiledStagingReadinessEvidence(
-                            device_identity=device.device_identity,
-                            logical_name=device.logical_name,
-                            automation_profile_id=device.automation_profile_id,
-                            cml_realization_profile_id=device.cml_realization_profile_id,
-                            cml_node_id=node_id,
-                            management_address=str(endpoint.address.ip),
-                            readiness_service=service.service.value,
-                            readiness_port=service.port,
-                            outcome=ProfiledStagingReadinessOutcome.TIMED_OUT,
-                            elapsed_seconds=(
-                                time.monotonic() - started[str(device.logical_name)]
-                            ),
-                            cml_node_state=state,
-                        )
-                    )
-            finally:
-                if reader is not None:
-                    reader.close()
-            raise ProfiledStagingError("profiled staging readiness timed out")
+                sleep_for = min(
+                    _READINESS_POLL_SECONDS,
+                    max(0, deadline - time.monotonic()),
+                )
+                if sleep_for:
+                    time.sleep(sleep_for)
         return observed
+
+    def _observe_readiness_node_states(
+        self,
+        devices: set[ProfiledInventoryDevice],
+        node_ids: dict[str, str],
+        lab_id: str,
+    ) -> dict[str, str | None]:
+        states = {str(device.logical_name): None for device in devices}
+        reader: ProfiledStagingCmlReader | None = None
+        with suppress(ProfiledStagingError):
+            reader = ProfiledStagingCmlReader.from_environment()
+        try:
+            if reader is None:
+                return states
+            for device in devices:
+                name = str(device.logical_name)
+                try:
+                    candidate = reader.item(
+                        lab_id, "nodes", node_ids[name.replace("-", "_")]
+                    ).get("state")
+                    if isinstance(candidate, str) and re.fullmatch(
+                        r"[A-Za-z0-9._-]{1,64}", candidate
+                    ):
+                        states[name] = candidate
+                except ProfiledStagingError:
+                    pass
+            return states
+        finally:
+            if reader is not None:
+                reader.close()
+
+    def _record_timed_out_readiness(
+        self,
+        devices: set[ProfiledInventoryDevice],
+        node_ids: dict[str, str],
+        states: dict[str, str | None],
+        started: dict[str, float],
+        timed_out_at: float,
+    ) -> None:
+        for device in devices:
+            name = str(device.logical_name)
+            endpoint = device.management_endpoints.staging.binding.l3_endpoint
+            service = get_automation_profile(
+                device.automation_profile_id
+            ).readiness_services[0]
+            self._record_readiness(
+                ProfiledStagingReadinessEvidence(
+                    device_identity=device.device_identity,
+                    logical_name=device.logical_name,
+                    automation_profile_id=device.automation_profile_id,
+                    cml_realization_profile_id=device.cml_realization_profile_id,
+                    cml_node_id=node_ids[name.replace("-", "_")],
+                    management_address=str(endpoint.address.ip),
+                    readiness_service=service.service.value,
+                    readiness_port=service.port,
+                    outcome=ProfiledStagingReadinessOutcome.TIMED_OUT,
+                    elapsed_seconds=timed_out_at - started[name],
+                    cml_node_state=states.get(name),
+                )
+            )
 
     def _record_readiness(self, evidence: ProfiledStagingReadinessEvidence) -> None:
         """Publish each bounded readiness fact immediately in exact-four order."""

@@ -159,6 +159,7 @@ class ProfiledStagingEvidence(BaseModel):
     topology_digest: Sha256Digest | None = None
     context_digest: Sha256Digest | None = None
     trust_generation: EvidenceReference | None = None
+    readiness_deadline_seconds: Literal[180, 300] = 180
     readiness: tuple[ProfiledStagingReadinessEvidence, ...] = ()
     devices: tuple[ProfiledStagingDeviceEvidence, ...] = ()
     create_outcome: str = "not_attempted"
@@ -446,6 +447,9 @@ class ProfiledStagingLifecycle:
                 context.devices[0].trust_evidence
                 if context
                 else getattr(self.operations, "trust_generation", None)
+            ),
+            readiness_deadline_seconds=getattr(
+                self.operations, "readiness_deadline_seconds", 180
             ),
             create_outcome=getattr(self.operations, "create_stage", create_outcome),
             start_outcome=getattr(

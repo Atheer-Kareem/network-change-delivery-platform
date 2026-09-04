@@ -28,9 +28,23 @@ host identity and profile-appropriate management access, including Junos
 NETCONF, but deliberately excludes underlay, OSPF, VLAN/trunk, ACL, SNMP, and
 interface-description intent. The historical 10.6.12.0/30 bootstrap is absent.
 
-The run creates an exact-four `StagingRealizationContext`, then validates only
-through its staging read-only targets and `ProfileReadOnlyAdapter`. Readiness is
-profile-derived: SSH/22 for CAT8000V, IOSv, and IOSvL2; NETCONF/830 for vJunos.
+Before Terraform can create anything, authenticated GET-only CML admission
+rejects any existing lab whose title starts with `NCDP Staging` and any active
+fixed STAGING management endpoint. After creation, Terraform outputs are only
+claims: independent CML GET observations must prove the exact lab UUID/title,
+six node UUIDs and profile definitions/images, nine link UUIDs and device-side
+slots, and the bounded management-only stored Day-0. The resulting topology
+evidence digest binds those observed run-specific UUIDs and relationships.
+
+The run first creates an exact-four PREPARING `StagingRealizationContext`, then
+establishes trust and validates a new READY context. A READY context is invalid
+if any trust reference is absent. Validation uses only its staging read-only
+targets and `ProfileReadOnlyAdapter`. Readiness is profile-derived: SSH/22 for
+CAT8000V, IOSv, and IOSvL2; NETCONF/830 for vJunos. Each readiness reference
+binds the run, lab/node UUID, stable identity, endpoint, service, result, and
+actual bounded elapsed duration. Read-only collection rechecks the exact
+hostname, management interface and STAGING address; IOSv and IOSvL2 also require
+their normalized Gi0/0..Gi0/3 physical realization.
 
 ## Credentials and trust
 
@@ -44,16 +58,39 @@ Each run creates a private, create-only staging trust root. Its exact-four host
 trust records bind the run, lab UUID, CML node UUID, stable identity, logical
 name, automation/CML profile, STAGING endpoint, and profile service. Ambient
 known-hosts, auto-add, fallback trust, and relaxed algorithms are prohibited.
+Server keys come from three bounded direct Paramiko handshakes per endpoint;
+algorithm and fingerprint must be stable across all samples and belong to the
+closed host-key algorithm contract. The trust records consume the independently
+observed CML anchors rather than self-asserted Terraform identifiers. NETCONF
+entries use the exact `[host]:830` known-hosts form.
 
 ## Failure, evidence, and recovery
 
-The one-shot lifecycle is admit → create → start → read-only validate → eligible
-destroy → independent absence proof → state retirement. It records primary and
-cleanup failure separately in secret-free schema-v2 `ProfiledStagingEvidence`.
-If cleanup cannot be proven, run-scoped owner-private Terraform state remains
-for a guarded destroy-only recovery. Recovery validates the exact run directory,
-lab/run binding, exact 17-resource state subset, and an exact-delete plan; it
-never creates or starts a lab and retires state only after absence proof.
+The one-shot lifecycle is admit → create → fenced saved START plan → read-only
+validate → fenced saved destroy plan → independent absence proof → state
+retirement. Cleanup authority derives from a nonempty known Terraform state,
+not from a returned READY context, so partial apply, start, readiness, CML
+admission, trust, context, and read-only failures remain cleanup-eligible. A
+normal successful realization requires the exact 17-address state and 17 exact
+deletes. Failed partial creation permits only a nonempty subset of those same
+addresses and an exactly matching delete-only plan; unknown or empty state is
+never destructive authority.
+
+Before create, the run stores one owner-only mode-0600
+`recovery-inputs.tfvars.json` containing the exact admitted Terraform inputs.
+It contains derived password verifiers, never plaintext passwords or OpenBao
+session material. Normal operations and guarded recovery use those same bytes.
+Recovery therefore needs no OpenBao access; it validates directory ownership,
+input/state/lab binding, the known resource subset, and a saved exact-delete
+plan. It cannot create or start, and state, backup, plans, and recovery inputs
+are retired only after independent CML absence is proven.
+
+Schema-v2 `ProfiledStagingEvidence` preserves source commit, observed lab and
+run-specific topology, final READY context digest, actual trust generation,
+per-device readiness and read-only facts, create/start/destroy/absence/state
+retirement, and separate primary/cleanup failures. An uncertain Terraform
+mutation is never replayed: known owned state may proceed only to bounded
+cleanup, while unprovable ownership is `AMBIGUOUS` and retained for review.
 
 ## Pipeline phase
 

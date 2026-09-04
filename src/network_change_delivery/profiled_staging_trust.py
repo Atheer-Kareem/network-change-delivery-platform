@@ -5,10 +5,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import socket
 import stat
-import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import paramiko
 
 from network_change_delivery.architecture_contracts import get_automation_profile
 from network_change_delivery.profile_inventory import ProfiledInventoryDevice
@@ -17,6 +19,7 @@ from network_change_delivery.profiled_realization import (
     CmlAnchoredHostTrustRecord,
     EvidenceReference,
     RealizationEnvironment,
+    RealizationLifecycleState,
     SSHHostKeyType,
     StagingRealizationContext,
 )
@@ -27,7 +30,7 @@ class ProfiledStagingTrustError(ValueError):
 
 
 KNOWN_HOSTS_NAME = "known_hosts"
-MAX_SCAN_BYTES = 16 * 1024
+HOST_KEY_SAMPLES = 3
 
 
 def _private_directory(path: Path) -> None:
@@ -53,53 +56,48 @@ def _fingerprint(encoded: str) -> str:
     return "SHA256:" + encoded
 
 
-def _scan(host: str, port: int) -> tuple[SSHHostKeyType, str, str]:
-    """Acquire one bounded key without ambient trust or enrollment fallback."""
+def _observe_server_key(host: str, port: int) -> tuple[SSHHostKeyType, str, str]:
+    """Observe the negotiated server key through one direct SSH handshake."""
+    transport: paramiko.Transport | None = None
     try:
-        result = subprocess.run(
-            ["ssh-keyscan", "-T", "10", "-p", str(port), host],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            text=True,
-            timeout=15,
-        )
-    except (OSError, subprocess.SubprocessError):
+        connection = socket.create_connection((host, port), timeout=10)
+        transport = paramiko.Transport(connection)
+        transport.start_client(timeout=10)
+        key = transport.get_remote_server_key()
+        key_type = SSHHostKeyType(key.get_name())
+        encoded = key.get_base64()
+    except (OSError, EOFError, ValueError, paramiko.SSHException):
         raise ProfiledStagingTrustError("staging host-key acquisition failed") from None
-    if (
-        result.returncode != 0
-        or not result.stdout
-        or len(result.stdout.encode()) > MAX_SCAN_BYTES
-    ):
-        raise ProfiledStagingTrustError("staging host-key acquisition failed")
-    lines = [line.split() for line in result.stdout.splitlines()]
-    accepted = [
-        line
-        for line in lines
-        if len(line) == 3 and line[0] in {host, f"[{host}]:{port}"}
-    ]
-    if len(accepted) != 1:
-        raise ProfiledStagingTrustError("staging host-key identity is ambiguous")
-    _, algorithm, encoded = accepted[0]
-    try:
-        key_type = SSHHostKeyType(algorithm)
-    except ValueError:
-        raise ProfiledStagingTrustError("staging host-key algorithm rejected") from None
-    return key_type, _fingerprint(encoded), " ".join(accepted[0]) + "\n"
+    finally:
+        if transport is not None:
+            transport.close()
+    return key_type, _fingerprint(encoded), encoded
+
+
+def _stable_server_key(host: str, port: int) -> tuple[SSHHostKeyType, str, str]:
+    samples = tuple(_observe_server_key(host, port) for _ in range(HOST_KEY_SAMPLES))
+    if len(set(samples)) != 1:
+        raise ProfiledStagingTrustError("staging host-key identity is unstable")
+    return samples[0]
 
 
 def establish_profiled_staging_trust(
     context: StagingRealizationContext,
     devices: tuple[ProfiledInventoryDevice, ...],
     root: Path,
+    cml_anchors: dict[str, EvidenceReference],
     *,
     ttl: timedelta = timedelta(hours=1),
 ) -> CmlAnchoredHostTrustGeneration:
     """Create one exact-four private known_hosts generation for a staging run."""
+    if context.lifecycle_state is not RealizationLifecycleState.PREPARING:
+        raise ProfiledStagingTrustError("staging trust requires PREPARING realization")
     _private_directory(root)
     if root.name != "trust":
         raise ProfiledStagingTrustError("staging trust root identity rejected")
+    path = root / KNOWN_HOSTS_NAME
+    if path.exists() or path.is_symlink():
+        raise ProfiledStagingTrustError("staging known_hosts already exists")
     admitted = datetime.now(UTC)
     digest = "sha256:" + "0" * 64
     generation = EvidenceReference(
@@ -108,7 +106,6 @@ def establish_profiled_staging_trust(
     records: list[CmlAnchoredHostTrustRecord] = []
     rendered: list[str] = []
     for device in devices:
-        target = context.staging_read_only_target(device)
         realized = next(
             item
             for item in context.devices
@@ -116,17 +113,17 @@ def establish_profiled_staging_trust(
         )
         profile = get_automation_profile(device.automation_profile_id)
         expected = profile.readiness_services[0]
-        if target.port != expected.port:
+        endpoint = realized.staging_endpoint.binding.l3_endpoint
+        host = str(endpoint.address.ip)
+        if endpoint.port != expected.port:
             raise ProfiledStagingTrustError("staging trust endpoint rejected")
-        key_type, fingerprint, line = _scan(target.host, target.port)
+        key_type, fingerprint, encoded = _stable_server_key(host, endpoint.port)
+        host_field = host if endpoint.port == 22 else f"[{host}]:{endpoint.port}"
+        line = f"{host_field} {key_type.value} {encoded}\n"
         rendered.append(line)
-        anchor = EvidenceReference(
-            identity=f"cml-anchor:{context.cml_lab_id}:{realized.cml_node_id}",
-            digest="sha256:"
-            + hashlib.sha256(
-                f"{context.cml_lab_id}:{realized.cml_node_id}:{device.device_identity}".encode()
-            ).hexdigest(),
-        )
+        anchor = cml_anchors.get(str(device.logical_name))
+        if anchor is None:
+            raise ProfiledStagingTrustError("staging CML anchor evidence missing")
         records.append(
             CmlAnchoredHostTrustRecord(
                 environment=RealizationEnvironment.STAGING,
@@ -135,8 +132,8 @@ def establish_profiled_staging_trust(
                 cml_node_id=realized.cml_node_id,
                 device_identity=device.device_identity,
                 logical_name=device.logical_name,
-                management_address=target.host,
-                management_port=target.port,
+                management_address=host,
+                management_port=endpoint.port,
                 automation_profile_id=device.automation_profile_id,
                 cml_realization_profile_id=device.cml_realization_profile_id,
                 host_key_type=key_type,
@@ -152,9 +149,13 @@ def establish_profiled_staging_trust(
     records = [
         record.model_copy(update={"trust_generation": generation}) for record in records
     ]
-    path = root / KNOWN_HOSTS_NAME
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags, 0o600)
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except OSError:
+        raise ProfiledStagingTrustError(
+            "staging known_hosts publication failed"
+        ) from None
     try:
         os.write(descriptor, content)
         os.fsync(descriptor)

@@ -19,12 +19,16 @@ import httpx
 
 from network_change_delivery.profiled_staging import (
     ProfiledStagingError,
+    load_recovery_inputs,
+    terraform_managed_state_addresses,
     validate_destroy_only_plan,
     validate_private_run_directory,
+    validate_retained_state_file,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 TERRAFORM_ROOT = ROOT / "infrastructure" / "cml" / "profiled-staging"
+RECOVERY_INPUTS_NAME = "recovery-inputs.tfvars.json"
 
 
 def _terraform(run: Path, arguments: list[str], *, phase: str) -> str:
@@ -42,19 +46,31 @@ def _terraform(run: Path, arguments: list[str], *, phase: str) -> str:
 
 
 def _state_addresses(run: Path) -> set[str]:
-    return {
-        line
-        for line in _terraform(
-            run, ["state", "list"], phase="state inspection"
-        ).splitlines()
-        if line
-    }
+    try:
+        payload = json.loads(
+            _terraform(run, ["show", "-json"], phase="state inspection")
+        )
+    except ValueError:
+        raise ProfiledStagingError("profiled staging recovery state rejected") from None
+    return terraform_managed_state_addresses(payload)
 
 
 def _destroy_actions(run: Path, plan: Path) -> dict[str, str]:
     _terraform(
-        run, ["plan", "-destroy", "-out", str(plan), "-input=false"], phase="plan"
+        run,
+        [
+            "plan",
+            f"-var-file={run / RECOVERY_INPUTS_NAME}",
+            "-destroy",
+            "-out",
+            str(plan),
+            "-input=false",
+        ],
+        phase="plan",
     )
+    if plan.is_symlink() or not plan.is_file():
+        raise ProfiledStagingError("profiled staging recovery plan rejected")
+    plan.chmod(0o600, follow_symlinks=False)
     try:
         payload = json.loads(
             _terraform(run, ["show", "-json", str(plan)], phase="plan inspection")
@@ -71,6 +87,10 @@ def _destroy_actions(run: Path, plan: Path) -> dict[str, str]:
         address = change.get("address")
         data = change.get("change")
         verbs = data.get("actions") if isinstance(data, dict) else None
+        if change.get("mode") == "data" and verbs in (["read"], ["no-op"]):
+            continue
+        if isinstance(address, str) and verbs == ["no-op"]:
+            continue
         if not isinstance(address, str) or verbs != ["delete"]:
             raise ProfiledStagingError("profiled staging recovery plan rejected")
         actions[address] = "delete"
@@ -82,10 +102,21 @@ def _lab_binding(run: Path) -> tuple[str, str]:
         output = json.loads(_terraform(run, ["output", "-json"], phase="output"))
         title = output["lab_title"]["value"]
         lab_id = output["lab_id"]["value"]
-    except (KeyError, TypeError, ValueError):
-        raise ProfiledStagingError(
-            "profiled staging recovery lab binding rejected"
-        ) from None
+    except (KeyError, TypeError, ValueError, ProfiledStagingError):
+        try:
+            state = json.loads(_terraform(run, ["show", "-json"], phase="state"))
+            resources = state["values"]["root_module"]["resources"]
+            lab = next(
+                item
+                for item in resources
+                if item.get("address") == "cml2_lab.profiled_staging"
+            )
+            lab_id = lab["values"]["id"]
+            title = lab["values"]["title"]
+        except (KeyError, StopIteration, TypeError, ValueError):
+            raise ProfiledStagingError(
+                "profiled staging recovery lab binding rejected"
+            ) from None
     if not isinstance(title, str) or not isinstance(lab_id, str):
         raise ProfiledStagingError("profiled staging recovery lab binding rejected")
     return lab_id, title
@@ -128,12 +159,30 @@ def main() -> int:
         run = validate_private_run_directory(arguments.run_directory, ROOT)
         if run.name != arguments.run_id or not (run / "terraform.tfstate").is_file():
             raise ProfiledStagingError("retained run identity rejected")
+        validate_retained_state_file(run / "terraform.tfstate")
+        backup = run / "terraform.tfstate.backup"
+        if backup.exists() or backup.is_symlink():
+            validate_retained_state_file(backup)
+        load_recovery_inputs(run / RECOVERY_INPUTS_NAME, arguments.run_id)
+        _terraform(
+            run,
+            [
+                "init",
+                f"-backend-config=path={run / 'terraform.tfstate'}",
+                "-reconfigure",
+                "-input=false",
+                "-lockfile=readonly",
+            ],
+            phase="init",
+        )
         lab_id, lab_title = _lab_binding(run)
         if lab_title != f"NCDP Staging {arguments.run_id}":
             raise ProfiledStagingError("retained staging lab identity rejected")
         plan = run / "destroy.tfplan"
         state = _state_addresses(run)
-        validate_destroy_only_plan(state, _destroy_actions(run, plan))
+        validate_destroy_only_plan(
+            state, _destroy_actions(run, plan), require_complete=False
+        )
         if not arguments.execute:
             print("profiled staging destroy-only recovery is admitted but not executed")
             return 2
@@ -141,7 +190,12 @@ def main() -> int:
         if _state_addresses(run):
             raise ProfiledStagingError("profiled staging recovery absence not proven")
         _verify_absence(lab_id)
-        for path in (run / "terraform.tfstate", plan):
+        for path in (
+            run / "terraform.tfstate",
+            run / "terraform.tfstate.backup",
+            run / RECOVERY_INPUTS_NAME,
+            plan,
+        ):
             if path.exists() and not path.is_symlink():
                 path.unlink()
     except (OSError, ValueError, ProfiledStagingError) as error:

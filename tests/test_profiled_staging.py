@@ -12,21 +12,28 @@ from network_change_delivery.architecture_contracts import (
     AutomationProfileID,
     CmlRealizationProfileID,
 )
+from network_change_delivery.models import InterfaceState
+from network_change_delivery.profiled_realization import EvidenceReference
 from network_change_delivery.profiled_staging import (
     PROFILED_STAGING_DEVICE_NAMES,
     PROFILED_STAGING_LINK_COUNT,
     PROFILED_STAGING_NODE_COUNT,
     PROFILED_STAGING_RESOURCE_COUNT,
     PROFILED_STAGING_TERRAFORM_ADDRESSES,
+    ProfiledStagingAmbiguousError,
     ProfiledStagingError,
     ProfiledStagingEvidence,
     ProfiledStagingLifecycle,
     ProfiledStagingOutcome,
+    load_recovery_inputs,
     profiled_staging_topology,
     terraform_profiled_device_variables,
     validate_destroy_only_plan,
     validate_management_only_bootstrap,
     validate_profiled_staging_physical_topology,
+    validate_read_only_collection,
+    validate_start_only_plan,
+    write_recovery_inputs,
 )
 from network_change_delivery.secrets import DeviceCredentials
 
@@ -223,6 +230,8 @@ class Operations:
     def create(self):
         self.calls.append("create")
         self.exists = True
+        if self.fail == "create_after_owned":
+            raise ProfiledStagingError("create failed after ownership")
         from test_profiled_realization import staging_context
 
         return staging_context()
@@ -233,12 +242,13 @@ class Operations:
             raise ProfiledStagingError("validation failed")
         return ()
 
-    def destroy(self, _context):
+    def destroy_owned(self, *, require_complete):
         self.calls.append("destroy")
+        self.calls.append(f"complete={require_complete}")
         if self.fail == "destroy":
             raise ProfiledStagingError("destroy failed")
 
-    def verify_absent(self, _context):
+    def verify_absent(self):
         self.calls.append("absence")
 
     def retire_state(self) -> None:
@@ -259,6 +269,7 @@ def test_lifecycle_cleans_up_after_primary_validation_failure() -> None:
         "create",
         "validate",
         "destroy",
+        "complete=True",
         "absence",
         "retire",
     ]
@@ -273,15 +284,123 @@ def test_lifecycle_retains_state_after_cleanup_failure() -> None:
     assert operations.exists is True
 
 
+def test_lifecycle_cleans_partial_owned_state_when_create_does_not_return_context() -> (
+    None
+):
+    operations = Operations(fail="create_after_owned")
+    evidence = ProfiledStagingLifecycle("run-1", "local", operations).run()
+    assert evidence.primary_failure == "create failed after ownership"
+    assert evidence.destroy_outcome == "succeeded"
+    assert operations.calls == [
+        "admit",
+        "create",
+        "destroy",
+        "complete=False",
+        "absence",
+        "retire",
+    ]
+
+
+def test_lifecycle_retains_ambiguous_terraform_outcome() -> None:
+    operations = Operations()
+
+    def ambiguous_create():
+        operations.calls.append("create")
+        raise ProfiledStagingAmbiguousError("create ownership cannot be proven")
+
+    operations.create = ambiguous_create
+    evidence = ProfiledStagingLifecycle("run-1", "local", operations).run()
+    assert evidence.final_outcome is ProfiledStagingOutcome.AMBIGUOUS
+    assert evidence.primary_failure == "create ownership cannot be proven"
+    assert operations.calls == ["admit", "create"]
+
+
+def test_successful_lifecycle_evidence_binds_context_topology_and_trust() -> None:
+    operations = Operations()
+    evidence = ProfiledStagingLifecycle("run-1", "local", operations).run()
+    assert evidence.final_outcome is ProfiledStagingOutcome.SUCCEEDED
+    assert evidence.lab_id is not None
+    assert evidence.topology_digest is not None
+    assert evidence.context_digest is not None
+    assert evidence.trust_generation is not None
+    assert evidence.create_outcome == "succeeded"
+    assert evidence.start_outcome == "succeeded"
+    assert evidence.read_only_outcome == "succeeded"
+
+
 def test_guarded_recovery_accepts_only_exact_deletes() -> None:
     state = set(PROFILED_STAGING_TERRAFORM_ADDRESSES)
-    validate_destroy_only_plan(state, dict.fromkeys(state, "delete"))
+    validate_destroy_only_plan(
+        state, dict.fromkeys(state, "delete"), require_complete=True
+    )
+    partial = set(tuple(state)[:3])
+    validate_destroy_only_plan(partial, dict.fromkeys(partial, "delete"))
     with pytest.raises(ProfiledStagingError):
         validate_destroy_only_plan(state, dict.fromkeys(state, "update"))
     with pytest.raises(ProfiledStagingError):
         validate_destroy_only_plan(
-            set(state) - {next(iter(state))}, dict.fromkeys(state, "delete")
+            partial | {"unknown.resource"}, dict.fromkeys(partial, "delete")
         )
+    with pytest.raises(ProfiledStagingError):
+        validate_destroy_only_plan(set(), {})
+    with pytest.raises(ProfiledStagingError):
+        validate_destroy_only_plan(
+            partial, dict.fromkeys(partial, "delete"), require_complete=True
+        )
+
+
+def test_start_plan_is_lifecycle_update_only() -> None:
+    validate_start_only_plan({"cml2_lifecycle.profiled_staging": "update"})
+    for actions in (
+        {"cml2_lifecycle.profiled_staging": "create"},
+        {
+            "cml2_lifecycle.profiled_staging": "update",
+            "cml2_node.system_bridge": "update",
+        },
+        {},
+    ):
+        with pytest.raises(ProfiledStagingError, match="START plan"):
+            validate_start_only_plan(actions)
+
+
+def test_recovery_inputs_are_private_exact_and_contain_only_verifiers(
+    tmp_path: Path,
+) -> None:
+    from test_profiled_realization import inventory_devices
+
+    path = tmp_path / "recovery-inputs.tfvars.json"
+    inventory = inventory_devices()
+    credentials = {
+        str(device.logical_name): DeviceCredentials(
+            username="operator", password="unused"
+        )
+        for device in inventory
+    }
+    verifiers = {
+        "core-02": "$9$ncdpCoreSalt1$abcdefghijklmnop",
+        "edge-junos-01": "$6$ncdpJunosSalt$abcdefghijklmnop",
+        "transit-ios-01": "$9$ncdpTransitSalt$abcdefghijklmnop",
+        "access-sw-01": "$9$ncdpAccessSalt1$abcdefghijklmnop",
+    }
+    devices = terraform_profiled_device_variables(inventory, credentials, verifiers)
+    for name, address in {
+        "core_02": "192.168.4.30/24",
+        "edge_junos_01": "192.168.4.40/24",
+        "transit_ios_01": "192.168.4.31/24",
+        "access_sw_01": "192.168.4.32/24",
+    }.items():
+        devices[name]["management_cidr"] = address
+    payload = {
+        "staging_run_id": "run-001",
+        "lifecycle_state": "DEFINED_ON_CORE",
+        "devices": devices,
+    }
+    write_recovery_inputs(path, payload)
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert load_recovery_inputs(path, "run-001") == payload
+    assert 'password"' not in path.read_text(encoding="utf-8")
+    with pytest.raises(ProfiledStagingError):
+        write_recovery_inputs(path, payload)
 
 
 def test_new_runtime_is_profiled_read_only_and_has_no_write_dependencies() -> None:
@@ -299,6 +418,94 @@ def test_new_runtime_is_profiled_read_only_and_has_no_write_dependencies() -> No
         "execute_profiled_plan",
     ):
         assert re.search(rf"\b{forbidden}\b", source) is None
+
+
+class ReadOnlyAdapter:
+    def __init__(self, devices, *, wrong: str | None = None) -> None:
+        self.devices = {str(item.logical_name): item for item in devices}
+        self.wrong = wrong
+
+    def discover(self, target, _credential):
+        device = self.devices[str(target.logical_name)]
+        names = {
+            "core-02": ("GigabitEthernet1",),
+            "edge-junos-01": ("fxp0",),
+            "transit-ios-01": tuple(f"Gi0/{index}" for index in range(4)),
+            "access-sw-01": tuple(f"GigabitEthernet0/{index}" for index in range(4)),
+        }[str(device.logical_name)]
+        management = names[0]
+        address = str(device.management_endpoints.staging.binding.l3_endpoint.address)
+        return tuple(
+            InterfaceState(
+                observed_hostname=(
+                    "wrong" if self.wrong == "hostname" else device.expected_hostname
+                ),
+                interface=name,
+                exists=True,
+                protected=False,
+                ipv4_addresses=(
+                    () if self.wrong == "address" or name != management else (address,)
+                ),
+            )
+            for name in (names[:-1] if self.wrong == "physical" else names)
+        )
+
+
+def _readiness(devices) -> dict[str, tuple[float, EvidenceReference]]:
+    from test_profiled_realization import evidence
+
+    return {
+        str(device.logical_name): (
+            1.25,
+            evidence(f"readiness-{device.logical_name}", "7"),
+        )
+        for device in devices
+    }
+
+
+def test_read_only_validation_binds_management_address_and_real_readiness() -> None:
+    from test_profiled_realization import inventory_devices, staging_context
+
+    devices = inventory_devices()
+    credentials = {
+        str(device.logical_name): DeviceCredentials(
+            username="operator", password="value"
+        )
+        for device in devices
+    }
+    result = validate_read_only_collection(
+        staging_context(),
+        devices,
+        credentials,
+        cast(object, ReadOnlyAdapter(devices)),
+        _readiness(devices),
+    )
+    assert all(item.readiness_seconds == 1.25 for item in result)
+    assert all(
+        item.readiness_evidence.digest != staging_context().topology_evidence.digest
+        for item in result
+    )
+
+
+@pytest.mark.parametrize("wrong", ["hostname", "address", "physical"])
+def test_read_only_validation_rejects_wrong_observation(wrong: str) -> None:
+    from test_profiled_realization import inventory_devices, staging_context
+
+    devices = inventory_devices()
+    credentials = {
+        str(device.logical_name): DeviceCredentials(
+            username="operator", password="value"
+        )
+        for device in devices
+    }
+    with pytest.raises(ProfiledStagingError, match="read-only validation"):
+        validate_read_only_collection(
+            staging_context(),
+            devices,
+            credentials,
+            cast(object, ReadOnlyAdapter(devices, wrong=wrong)),
+            _readiness(devices),
+        )
 
 
 def test_operator_entry_point_requires_explicit_execution_and_remains_profiled() -> (

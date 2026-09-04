@@ -12,6 +12,7 @@ import json
 import os
 import re
 import stat
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -72,6 +73,10 @@ class ProfiledStagingError(RuntimeError):
     """Sanitized failure for one disposable profiled staging run."""
 
 
+class ProfiledStagingAmbiguousError(ProfiledStagingError):
+    """A mutating Terraform boundary crossed without a provable result."""
+
+
 class ProfiledStagingOutcome(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
@@ -88,6 +93,7 @@ class ProfiledStagingDeviceEvidence(BaseModel):
     automation_profile_id: AutomationProfileID
     cml_realization_profile_id: CmlRealizationProfileID
     cml_node_id: str
+    readiness_evidence: EvidenceReference
     readiness_seconds: float = Field(ge=0, le=7200)
     readiness_service: str
     readiness_port: int = Field(ge=1, le=65535)
@@ -112,6 +118,8 @@ class ProfiledStagingEvidence(BaseModel):
     trust_generation: EvidenceReference | None = None
     devices: tuple[ProfiledStagingDeviceEvidence, ...] = ()
     create_outcome: str = "not_attempted"
+    start_outcome: str = "not_attempted"
+    read_only_outcome: str = "not_attempted"
     destroy_outcome: str = "not_attempted"
     absence_verification: str = "not_attempted"
     state_retirement: str = "not_attempted"
@@ -275,8 +283,8 @@ class StagingOperations(Protocol):
     def validate(
         self, context: StagingRealizationContext
     ) -> tuple[ProfiledStagingDeviceEvidence, ...]: ...
-    def destroy(self, context: StagingRealizationContext) -> None: ...
-    def verify_absent(self, context: StagingRealizationContext) -> None: ...
+    def destroy_owned(self, *, require_complete: bool) -> None: ...
+    def verify_absent(self) -> None: ...
     def retire_state(self) -> None: ...
 
 
@@ -299,51 +307,95 @@ class ProfiledStagingLifecycle:
     def run(self) -> ProfiledStagingEvidence:
         primary: str | None = None
         cleanup: str | None = None
+        primary_error: Exception | None = None
+        cleanup_error: Exception | None = None
         context: StagingRealizationContext | None = None
         devices: tuple[ProfiledStagingDeviceEvidence, ...] = ()
         create_outcome = "not_attempted"
         destroy_outcome = "not_attempted"
         absence = "not_attempted"
         retirement = "not_attempted"
+        read_only = "not_attempted"
         try:
             self.operations.admit()
             create_outcome = "attempted"
             context = self.operations.create()
             create_outcome = "succeeded"
             devices = self.operations.validate(context)
+            read_only = "succeeded"
         except Exception as error:
+            primary_error = error
             primary = str(error)
         finally:
-            if context is not None and self.operations.managed_resources_exist:
+            owned = False
+            try:
+                owned = self.operations.managed_resources_exist
+            except Exception as error:
+                cleanup_error = error
+                cleanup = str(error)
+            if context is not None and not owned and cleanup is None:
+                cleanup_error = ProfiledStagingAmbiguousError(
+                    "profiled staging ownership disappeared before cleanup"
+                )
+                cleanup = str(cleanup_error)
+            if owned:
                 try:
-                    self.operations.destroy(context)
+                    self.operations.destroy_owned(require_complete=context is not None)
                     destroy_outcome = "succeeded"
-                    self.operations.verify_absent(context)
+                    self.operations.verify_absent()
                     absence = "succeeded"
                     self.operations.retire_state()
                     retirement = "succeeded"
                 except Exception as error:
+                    cleanup_error = error
                     cleanup = str(error)
+        ambiguous = isinstance(
+            primary_error, ProfiledStagingAmbiguousError
+        ) or isinstance(cleanup_error, ProfiledStagingAmbiguousError)
         outcome = (
             ProfiledStagingOutcome.SUCCEEDED
             if primary is None and cleanup is None
             else (
-                ProfiledStagingOutcome.CLEANUP_FAILED
-                if cleanup
-                else ProfiledStagingOutcome.FAILED
+                ProfiledStagingOutcome.AMBIGUOUS
+                if ambiguous
+                else (
+                    ProfiledStagingOutcome.CLEANUP_FAILED
+                    if cleanup
+                    else ProfiledStagingOutcome.FAILED
+                )
             )
         )
         self.evidence = ProfiledStagingEvidence(
             staging_run_id=self.run_id,
             orchestrator=self.orchestrator,
-            lab_id=context.cml_lab_id if context else None,
+            source_commit=getattr(self.operations, "source_commit", None),
+            lab_id=(
+                context.cml_lab_id
+                if context
+                else getattr(self.operations, "owned_lab_id", None)
+            ),
             lab_title=f"NCDP Staging {self.run_id}",
-            topology_digest=topology_digest(),
+            topology_digest=(
+                context.topology_evidence.digest
+                if context
+                else getattr(self.operations, "topology_digest", None)
+            ),
             context_digest=(
                 _sha256(context.model_dump(mode="json")) if context else None
             ),
-            devices=devices,
-            create_outcome=create_outcome,
+            devices=devices or getattr(self.operations, "device_evidence", ()),
+            trust_generation=(
+                context.devices[0].trust_evidence
+                if context
+                else getattr(self.operations, "trust_generation", None)
+            ),
+            create_outcome=getattr(self.operations, "create_stage", create_outcome),
+            start_outcome=getattr(
+                self.operations,
+                "start_stage",
+                "succeeded" if context else "not_completed",
+            ),
+            read_only_outcome=read_only,
             destroy_outcome=destroy_outcome,
             absence_verification=absence,
             state_retirement=retirement,
@@ -367,16 +419,156 @@ def validate_private_run_directory(path: Path, checkout: Path) -> Path:
     return resolved
 
 
+def validate_retained_state_file(path: Path) -> Path:
+    """Require retained Terraform state to be one bounded owner-only inode."""
+    metadata = path.lstat()
+    if (
+        path.is_symlink()
+        or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_size > 16 * 1024 * 1024
+    ):
+        raise ProfiledStagingError("profiled staging retained state rejected")
+    return path
+
+
 def validate_destroy_only_plan(
-    state_addresses: set[str], planned_actions: dict[str, str]
+    state_addresses: set[str],
+    planned_actions: dict[str, str],
+    *,
+    require_complete: bool = False,
 ) -> None:
-    """Permit guarded recovery only when every retained resource is deleted once."""
-    if state_addresses != PROFILED_STAGING_TERRAFORM_ADDRESSES:
-        raise ProfiledStagingError("profiled staging retained state is not exact")
+    """Permit only exact deletion of a known nonempty full graph or subset."""
+    if not state_addresses or not state_addresses.issubset(
+        PROFILED_STAGING_TERRAFORM_ADDRESSES
+    ):
+        raise ProfiledStagingError("profiled staging retained state is not admitted")
+    if require_complete and state_addresses != PROFILED_STAGING_TERRAFORM_ADDRESSES:
+        raise ProfiledStagingError("profiled staging retained state is not complete")
     if set(planned_actions) != state_addresses or set(planned_actions.values()) != {
         "delete"
     }:
         raise ProfiledStagingError("profiled staging recovery is not destroy-only")
+
+
+def validate_start_only_plan(planned_actions: dict[str, str]) -> None:
+    """Require the saved START plan to update only the lifecycle resource."""
+    if planned_actions != {"cml2_lifecycle.profiled_staging": "update"}:
+        raise ProfiledStagingError("profiled staging START plan rejected")
+
+
+def terraform_managed_state_addresses(payload: object) -> set[str]:
+    """Extract only managed-resource addresses from bounded Terraform state JSON."""
+    try:
+        root = payload["values"]["root_module"]  # type: ignore[index]
+    except (KeyError, TypeError):
+        raise ProfiledStagingError(
+            "profiled staging Terraform state rejected"
+        ) from None
+    addresses: set[str] = set()
+    pending = [root]
+    while pending:
+        module = pending.pop()
+        if not isinstance(module, dict):
+            raise ProfiledStagingError("profiled staging Terraform state rejected")
+        resources = module.get("resources", [])
+        children = module.get("child_modules", [])
+        if not isinstance(resources, list) or not isinstance(children, list):
+            raise ProfiledStagingError("profiled staging Terraform state rejected")
+        pending.extend(children)
+        for resource in resources:
+            if not isinstance(resource, dict):
+                raise ProfiledStagingError("profiled staging Terraform state rejected")
+            if resource.get("mode") == "data":
+                continue
+            address = resource.get("address")
+            if not isinstance(address, str) or address in addresses:
+                raise ProfiledStagingError("profiled staging Terraform state rejected")
+            addresses.add(address)
+    return addresses
+
+
+def write_recovery_inputs(path: Path, payload: dict[str, object]) -> None:
+    """Persist exact destroy inputs create-only in one private regular inode."""
+    if path.exists() or path.is_symlink():
+        raise ProfiledStagingError("profiled staging recovery inputs already exist")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        encoded = (
+            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+        os.write(descriptor, encoded)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def load_recovery_inputs(path: Path, run_id: str) -> dict[str, object]:
+    """Validate one private, secret-verifier-only retained Terraform input file."""
+    metadata = path.lstat()
+    if (
+        path.is_symlink()
+        or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_size > 128 * 1024
+    ):
+        raise ProfiledStagingError("profiled staging recovery inputs rejected")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise ProfiledStagingError(
+            "profiled staging recovery inputs rejected"
+        ) from None
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"staging_run_id", "lifecycle_state", "devices"}
+        or payload["staging_run_id"] != run_id
+        or payload["lifecycle_state"] != "DEFINED_ON_CORE"
+        or not isinstance(payload["devices"], dict)
+        or set(payload["devices"])
+        != {"core_02", "edge_junos_01", "transit_ios_01", "access_sw_01"}
+    ):
+        raise ProfiledStagingError("profiled staging recovery inputs rejected")
+    forbidden = ("token", "role_id", "secret_id", "plaintext", "bao_token")
+    lowered = path.read_text(encoding="utf-8").lower()
+    if any(item in lowered for item in forbidden):
+        raise ProfiledStagingError("profiled staging recovery inputs rejected")
+    device_fields = {
+        "hostname",
+        "management_cidr",
+        "username",
+        "password_verifier",
+        "node_definition",
+        "image_definition",
+        "cpu_cores",
+        "ram_mb",
+        "management_port",
+        "bootstrap_profile",
+    }
+    expected = {
+        "core_02": ("core-02", "192.168.4.30/24", 22, "$9$"),
+        "edge_junos_01": ("edge-junos-01", "192.168.4.40/24", 830, "$6$"),
+        "transit_ios_01": ("transit-ios-01", "192.168.4.31/24", 22, "$9$"),
+        "access_sw_01": ("access-sw-01", "192.168.4.32/24", 22, "$9$"),
+    }
+    for name, item in payload["devices"].items():
+        hostname, address, port, verifier_prefix = expected[name]
+        if (
+            not isinstance(item, dict)
+            or set(item) != device_fields
+            or item.get("hostname") != hostname
+            or item.get("management_cidr") != address
+            or item.get("management_port") != port
+            or not isinstance(item.get("username"), str)
+            or not item["username"]
+            or not isinstance(item.get("password_verifier"), str)
+            or not item["password_verifier"].startswith(verifier_prefix)
+        ):
+            raise ProfiledStagingError("profiled staging recovery inputs rejected")
+    return payload
 
 
 def validate_read_only_collection(
@@ -384,24 +576,51 @@ def validate_read_only_collection(
     devices: tuple[ProfiledInventoryDevice, ...],
     credentials: dict[str, DeviceCredentials],
     adapter: ProfileReadOnlyAdapter,
+    readiness: dict[str, tuple[float, EvidenceReference]],
+    on_evidence: Callable[[tuple[ProfiledStagingDeviceEvidence, ...]], None]
+    | None = None,
 ) -> tuple[ProfiledStagingDeviceEvidence, ...]:
     """Collect exact profiled staging state without invoking any write surface."""
     outcomes: list[ProfiledStagingDeviceEvidence] = []
     for device in devices:
         target = context.staging_read_only_target(device)
         states = adapter.discover(target, credentials[str(device.logical_name)])
-        names = {state.interface for state in states}
+
+        def normalized(name: str) -> str:
+            return re.sub(r"^gi(?=\d)", "gigabitethernet", name.casefold())
+
+        names = {normalized(state.interface) for state in states}
         management = {
             "core-02": "GigabitEthernet1",
             "edge-junos-01": "fxp0",
             "transit-ios-01": "GigabitEthernet0/0",
             "access-sw-01": "GigabitEthernet0/0",
         }[str(device.logical_name)]
+        management_state = next(
+            (
+                state
+                for state in states
+                if normalized(state.interface) == normalized(management)
+            ),
+            None,
+        )
+        expected_address = str(
+            device.management_endpoints.staging.binding.l3_endpoint.address
+        )
+        required_physical = {
+            normalized(f"GigabitEthernet0/{index}") for index in range(4)
+        }
         if (
             not states
             or {state.observed_hostname for state in states}
             != {device.expected_hostname}
-            or management not in names
+            or normalized(management) not in names
+            or management_state is None
+            or expected_address not in management_state.ipv4_addresses
+            or (
+                str(device.logical_name) in {"transit-ios-01", "access-sw-01"}
+                and not required_physical.issubset(names)
+            )
         ):
             raise ProfiledStagingError("profiled staging read-only validation rejected")
         profile = get_automation_profile(device.automation_profile_id)
@@ -411,6 +630,7 @@ def validate_read_only_collection(
             for item in context.devices
             if item.device_identity == device.device_identity
         )
+        readiness_seconds, readiness_evidence = readiness[str(device.logical_name)]
         outcomes.append(
             ProfiledStagingDeviceEvidence(
                 device_identity=device.device_identity,
@@ -418,7 +638,8 @@ def validate_read_only_collection(
                 automation_profile_id=device.automation_profile_id,
                 cml_realization_profile_id=device.cml_realization_profile_id,
                 cml_node_id=realized.cml_node_id,
-                readiness_seconds=0,
+                readiness_seconds=readiness_seconds,
+                readiness_evidence=readiness_evidence,
                 readiness_service=service.service.value,
                 readiness_port=service.port,
                 read_only_collection="succeeded",
@@ -426,4 +647,6 @@ def validate_read_only_collection(
                 interface_count=len(states),
             )
         )
+        if on_evidence is not None:
+            on_evidence(tuple(outcomes))
     return tuple(outcomes)

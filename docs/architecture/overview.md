@@ -85,8 +85,10 @@ Live` lab is current.
 
 Historical models, ADRs, acceptance records, and audit parsers retain their
 original serialized meaning. No current CLI, privileged script, or pipeline
-step invokes their executors. Future profiled fleet rollout, protected delivery,
-staging, or additional write verticals require separate architecture review.
+step invokes their executors. Profiled exact-four disposable staging is
+implemented with read-only device authority and remains pending controlled
+local acceptance and later Buildkite activation. Future profiled fleet rollout,
+protected delivery, or additional write verticals require separate review.
 
 See [profile-aware population and realization](profile-aware-population-and-realization.md),
 [change lifecycle](change-lifecycle.md), [security boundaries](security-boundaries.md),

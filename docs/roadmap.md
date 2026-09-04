@@ -60,7 +60,10 @@ The replacement for retired exact-two staging is an exact-four profiled
 Terraform realization: six nodes, nine links, 17 managed resources,
 management-only Day-0, run-scoped strict trust, profile-derived readiness, and
 read-only collection through `StagingRealizationContext` and
-`ProfileReadOnlyAdapter`. Static Terraform validation is current. Controlled
+`ProfileReadOnlyAdapter`. Lifecycle hardening admits CML independently, fences
+START and destroy with saved exact-action plans, cleans known partial state
+without requiring a READY context, and retains verifier-only recovery inputs.
+Static Terraform validation is current. Controlled
 local create/validate/destroy acceptance and later PR-only Buildkite activation
 remain pending. Protected delivery remains retired.
 

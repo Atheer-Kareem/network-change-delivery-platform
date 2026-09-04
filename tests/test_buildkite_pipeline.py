@@ -109,6 +109,7 @@ def test_retained_quality_commands_are_fail_closed() -> None:
         "infrastructure/cml/profiled-staging/**",
         "scripts/buildkite/profiled_terraform_validate.sh",
         "src/network_change_delivery/profiled_staging.py",
+        "src/network_change_delivery/profiled_staging_cml.py",
         "src/network_change_delivery/profiled_staging_trust.py",
         "src/network_change_delivery/profiled_realization.py",
     ]

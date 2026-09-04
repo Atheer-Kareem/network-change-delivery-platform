@@ -124,6 +124,22 @@ def staging_context(
     )
 
 
+def test_ready_staging_context_requires_real_trust_evidence() -> None:
+    preparing_devices = tuple(
+        device.model_copy(update={"trust_evidence": None})
+        for device in staging_devices()
+    )
+    preparing = staging_context(
+        state=RealizationLifecycleState.PREPARING, devices_=preparing_devices
+    )
+    assert all(device.trust_evidence is None for device in preparing.devices)
+    with pytest.raises(ValidationError, match="requires exact trust evidence"):
+        StagingRealizationContext.model_validate(
+            preparing.model_dump(mode="python")
+            | {"lifecycle_state": RealizationLifecycleState.READY}
+        )
+
+
 def trust_records() -> tuple[CmlAnchoredHostTrustRecord, ...]:
     generation = evidence("trust-generation", "e")
     return tuple(

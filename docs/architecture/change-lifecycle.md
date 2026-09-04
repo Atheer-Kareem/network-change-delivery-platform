@@ -6,22 +6,30 @@ to the same immutable single-device plan.
 `ncdp profiled-plan` is the separate user-facing ordinary-planning entry point
 for the parallel schema-v2 profiled path. It resolves and collects through
 profile-bound LIVE read-only authority and writes one immutable local plan; it
-has zero device-write authority and no executor consumes schema-v2 plans yet.
-Only C8000V IOS-XE and vJunos admit the current interface-description write
-lifecycle. IOSv and IOSvL2 remain managed-fleet members but are rejected before
-credential or transport access for that operation. The legacy schema-v1
-planning/deployment paths remain transitional. Disposable staging and protected
-delivery remain paused.
+has zero device-write authority. Only C8000V IOS-XE and vJunos admit the
+current interface-description write lifecycle. IOSv and IOSvL2 remain
+managed-fleet members but are rejected before credential or transport access for
+that operation. The legacy schema-v1 planning/deployment paths remain
+transitional. Disposable staging and protected delivery remain paused.
 
-Schema-v2 now also has an offline-tested profiled execution library boundary,
-but it has no deploy CLI and no LIVE schema-v2 write acceptance. It admits only
-C8000V IOS-XE and vJunos for interface-description execution; IOSv and IOSvL2
-remain rejected for that operation. It preserves Cisco one-attempt/targeted-
-inverse and Junos commit-confirmed semantics without changing transitional v1
-execution. It does not advance B5 D0: interface descriptions are outside the
+Schema-v2 now also has the explicit local `ncdp profiled-deploy` activation
+surface. It requires `--live`, an exact `sha256:` approval digest, profiled
+NetBox/OpenBao authority, and the accepted profiled LIVE trust generation. It
+reserves create-only mode-0600 execution evidence before preflight can reach a
+write provider. It admits only C8000V IOS-XE and vJunos for
+interface-description execution; IOSv and IOSvL2 remain rejected for that
+operation. It preserves Cisco one-attempt/targeted-inverse and Junos
+commit-confirmed semantics without changing transitional v1 execution.
+Controlled LIVE acceptance at PR #132 proved exactly the C8000V IOS-XE and
+vJunos interface-description operations: Cisco completed a known-success write
+and independent O′ validation without recovery; Junos completed candidate
+validation, commit-confirmed, independent O′ observation, and explicit
+confirmation. It does not advance B5 D0: interface descriptions are outside the
 current B5 envelopes, so a future writable B4 vertical must project fresh O′
-through `compare_postwrite_to_d1()` and `build_postwrite_validated_evidence()`
-before an accepted-state advance.
+through `compare_postwrite_to_d1()` and
+`build_postwrite_validated_evidence()` before an accepted-state advance. No
+other B4 vertical gained write authority. See the [PR #132 acceptance
+record](../acceptance/profiled-deploy-live-acceptance-pr132.md).
 
 Detour B5-1 adds a separate new-architecture managed-state foundation. It
 projects observation and intent into the same envelope-scoped canonical form,

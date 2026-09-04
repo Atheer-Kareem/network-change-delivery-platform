@@ -54,6 +54,16 @@ readiness to exact-four. Current code and retained runtime have zero legitimate
 dependency on the legacy tag. B5 remained byte-identical and unchanged.
 The former **external tag retirement pending** milestone is therefore complete.
 
+## Profiled disposable staging — Phase 1 implemented
+
+The replacement for retired exact-two staging is an exact-four profiled
+Terraform realization: six nodes, nine links, 17 managed resources,
+management-only Day-0, run-scoped strict trust, profile-derived readiness, and
+read-only collection through `StagingRealizationContext` and
+`ProfileReadOnlyAdapter`. Static Terraform validation is current. Controlled
+local create/validate/destroy acceptance and later PR-only Buildkite activation
+remain pending. Protected delivery remains retired.
+
 ## Managed-state proposals
 
 B4 routed underlay, OSPF, VLAN/trunk, and ACL remain read-only D1 proposals with

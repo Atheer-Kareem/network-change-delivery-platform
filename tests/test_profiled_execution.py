@@ -9,6 +9,7 @@ import pytest
 from test_profiled_planning import profiled_device
 
 from network_change_delivery.architecture_contracts import AutomationProfileID
+from network_change_delivery.cli import build_parser
 from network_change_delivery.models import (
     ExecutionDisposition,
     ExecutionResult,
@@ -77,6 +78,20 @@ class Inventory:
         return self.interface
 
 
+class CountingInventory(Inventory):
+    def __init__(self, device, interface):
+        super().__init__(device, interface)
+        self.resolves = self.interfaces = 0
+
+    def resolve(self, target):
+        self.resolves += 1
+        return super().resolve(target)
+
+    def resolve_interface(self, device, name):
+        self.interfaces += 1
+        return super().resolve_interface(device, name)
+
+
 class Secrets:
     def reference(self, device):
         reference = (
@@ -93,6 +108,19 @@ class Secrets:
         return DeviceCredentials(username="secret-user", password="secret-password")
 
 
+class CountingSecrets(Secrets):
+    def __init__(self):
+        self.references = self.loads = 0
+
+    def reference(self, device):
+        self.references += 1
+        return super().reference(device)
+
+    def load(self, device):
+        self.loads += 1
+        return super().load(device)
+
+
 class Collector:
     def __init__(self, states):
         self.states = iter(states)
@@ -101,6 +129,10 @@ class Collector:
     def collect(self, _target, _credentials, _interface):
         self.calls += 1
         return next(self.states)
+
+
+class CountingCollector(Collector):
+    pass
 
 
 class Cisco:
@@ -277,6 +309,175 @@ def test_profiled_write_target_is_immutable_and_binds_stable_identity():
     assert target.interface == value.interface
     with pytest.raises(AttributeError):
         target.host = "192.0.2.1"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("logical_name", "other"),
+        ("device_identity", "netbox:dcim.device:2"),
+        ("expected_hostname", "other"),
+        ("network_os", "junos"),
+        ("automation_profile_id", "vjunos_router"),
+    ],
+)
+def test_stale_device_bindings_never_reach_writer(field, value):
+    plan_value, device, interface, state = plan()
+    if field in {"network_os", "automation_profile_id"}:
+        pytest.skip("Pydantic rejects inconsistent profiled inventory before execution")
+    changed = device.model_copy(update={field: value})
+    cisco = Cisco([])
+    inventory = CountingInventory(changed, interface)
+    secrets = CountingSecrets()
+    record = execute_profiled_plan(
+        plan_value,
+        plan_value.digest,
+        inventory,
+        secrets,
+        Collector([state]),
+        writer(cisco),
+    )
+    assert record.final_outcome.value in {"STALE_PLAN", "BLOCKED"}
+    assert not cisco.artifacts
+
+
+@pytest.mark.parametrize(
+    "mutation", ["interface", "host", "port", "description", "protected"]
+)
+def test_stale_interface_or_endpoint_preflight_never_reaches_writer(mutation):
+    value, device, interface, state = plan()
+    cisco = Cisco([])
+    resolved_interface = (
+        interface.model_copy(update={"interface": "netbox:dcim.interface:99"})
+        if mutation == "interface"
+        else interface
+    )
+    changed_device = device
+    if mutation in {"host", "port"}:
+        changed_device = device.model_copy(
+            update={"expected_hostname": device.expected_hostname}
+        )
+        # Endpoint changes are represented by the plan binding here.
+        value = value.model_copy(
+            update={mutation: "192.0.2.99" if mutation == "host" else 2222}
+        )
+    changed_state = (
+        state.model_copy(
+            update={mutation: "new" if mutation == "description" else True}
+        )
+        if mutation in {"description", "protected"}
+        else state
+    )
+    record = execute_profiled_plan(
+        value,
+        value.digest,
+        CountingInventory(changed_device, resolved_interface),
+        CountingSecrets(),
+        Collector([changed_state]),
+        writer(cisco),
+    )
+    assert (
+        record.final_outcome.value in {"STALE_PLAN", "BLOCKED"} and not cisco.artifacts
+    )
+
+
+@pytest.mark.parametrize(
+    "result,outcome",
+    [
+        (ExecutionDisposition.FAILED, "EXECUTION_FAILED"),
+        (ExecutionDisposition.AMBIGUOUS, "AMBIGUOUS"),
+    ],
+)
+def test_cisco_known_failure_and_ambiguity_have_no_recovery(result, outcome):
+    value, device, interface, state = plan()
+    cisco = Cisco([ExecutionResult(disposition=result, message="result")])
+    states = (
+        [state, state.model_copy(update={"description": "new"})]
+        if result is ExecutionDisposition.AMBIGUOUS
+        else [state]
+    )
+    record = execute_profiled_plan(
+        value,
+        value.digest,
+        Inventory(device, interface),
+        Secrets(),
+        Collector(states),
+        writer(cisco),
+    )
+    assert (
+        record.final_outcome.value == outcome
+        and len(cisco.artifacts) == 1
+        and not record.recovery.attempted
+    )
+
+
+@pytest.mark.parametrize("restored", ["hostname", "interface", "description"])
+def test_cisco_wrong_recovery_identity_or_description_fails(restored):
+    value, device, interface, state = plan()
+    cisco = Cisco(
+        [
+            ExecutionResult(
+                disposition=ExecutionDisposition.SUCCEEDED, message="write"
+            ),
+            ExecutionResult(
+                disposition=ExecutionDisposition.SUCCEEDED, message="recover"
+            ),
+        ]
+    )
+    recovered = state
+    if restored == "hostname":
+        recovered = state.model_copy(update={"observed_hostname": "wrong"})
+    elif restored == "interface":
+        recovered = state.model_copy(update={"interface": "wrong"})
+    else:
+        recovered = state.model_copy(update={"description": "wrong"})
+    record = execute_profiled_plan(
+        value,
+        value.digest,
+        Inventory(device, interface),
+        Secrets(),
+        Collector([state, state, recovered]),
+        writer(cisco),
+    )
+    assert (
+        record.final_outcome.value == "RECOVERY_FAILED"
+        and record.post_validation.attempted
+    )
+
+
+def test_evidence_and_cli_isolation():
+    value, device, interface, state = plan()
+    cisco = Cisco(
+        [ExecutionResult(disposition=ExecutionDisposition.SUCCEEDED, message="ok")]
+    )
+    record = execute_profiled_plan(
+        value,
+        value.digest,
+        Inventory(device, interface),
+        Secrets(),
+        Collector([state, state.model_copy(update={"description": "new"})]),
+        writer(cisco),
+    )
+    rendered = record.model_dump_json()
+    for present in (
+        value.device_identity,
+        value.interface.interface,
+        value.expected_hostname,
+        value.credential_reference,
+        value.digest,
+    ):
+        assert present in rendered
+    for absent in ("secret-user", "secret-password", "RoleID", "SecretID"):
+        assert absent not in rendered
+    parser = build_parser()
+    assert (
+        parser.parse_args(
+            ["profiled-plan", "--change", "x", "--output", "y", "--netbox", "--openbao"]
+        ).command
+        == "profiled-plan"
+    )
+    with pytest.raises(SystemExit):
+        parser.parse_args(["profiled-deploy"])
 
 
 class FailingJunos(Junos):

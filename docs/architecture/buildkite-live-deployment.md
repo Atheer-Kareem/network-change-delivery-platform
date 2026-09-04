@@ -1,5 +1,10 @@
 # Buildkite protected live deployment
 
+> **Retired runtime:** this schema-v1 protected-delivery design remains
+> historically accepted, but its privileged CLI, shell gate, promotion wrapper,
+> and pipeline block are removed. Future protected delivery requires a new
+> profiled architecture.
+
 The accepted 7C boundary provides fail-closed, single-device protected delivery
 without changing the vendor execution lifecycle. Every eligible protected-main
 build performs the accepted zero-policy 7B identity exchange and exact

@@ -1,5 +1,10 @@
 # Ephemeral CML staging architecture
 
+> **Retired runtime:** this exact-two staging design is historical. Its
+> Terraform graph and executable lifecycle were removed; it is not paused or a
+> current restoration path. Future disposable staging requires a new profiled
+> design.
+
 ## Scope
 
 Increment 8E-1 provides the static Terraform foundation for ADR 0014.

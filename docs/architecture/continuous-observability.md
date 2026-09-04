@@ -115,15 +115,10 @@ capability-derived: `cat8000v_iosxe` and `vjunos_router` qualify, while
 `iosv_159_3_m12` and `iosvl2_2020` are intentionally excluded because they do
 not satisfy the accepted SHA256/AES128 contract. This is a telemetry subset of
 the exact-four managed fleet, not legacy `ncdp-managed` admission. Live SNMP
-remains deferred to 11C-4. Disposable CML staging and protected delivery
-remain paused. Within the SNMP story, the protected provisioning path remains
-a transitional exact-two authority; SNMP telemetry admission itself is no
-longer legacy exact-two. Elsewhere in NCDP, legacy planning/write, protected,
-and paused staging consumers retain separate exact-two retirement work. That
-coexistence is transitional:
-the target architecture is one profiled exact-four managed fleet with explicit
-profile/capability gating, and `ncdp-managed` is removed only after no
-legitimate runtime consumer remains.
+remains deferred to 11C-4. The legacy SNMP provisioning write path, disposable
+CML staging, and protected schema-v1 delivery are retired. Telemetry admission
+is the explicit capability projection of the one profiled exact-four managed
+fleet; it does not query `ncdp-managed`.
 
 ## Boundaries
 

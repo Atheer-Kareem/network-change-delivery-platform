@@ -1,162 +1,93 @@
 # Architecture overview
 
-Architecture is organized around functions and contracts, not permanent tool
-coupling. Policy flows from reviewed intent toward increasingly privileged
-operations; observations and evidence flow back without secrets.
+NCDP's current managed architecture is one exact-four profiled population with
+explicit per-profile capability projections. Policy flows from reviewed intent
+toward narrowly admitted operations; observations and secret-free evidence flow
+back without granting write authority.
 
 ```mermaid
 flowchart LR
-  GH[Change plane\nGitHub] --> BK[Workflow plane\nBuildkite]
-  BK --> PY[Control plane\nPython]
-  NB[Source of truth\nNetBox] --> PY
-  OB[Secrets\nOpenBao] --> EX[Execution\nAnsible + vendor adapters]
-  BK --> BA[Plan assurance\nBatfish]
-  BK --> DT[Disposable staging\nTerraform + CML]
-  PY --> EX
-  EX --> LV[Independent post-validation\nCisco + Junos provider paths]
-  PY --> EV[Audit evidence\nAuditStore]
-  EX --> EV
-  LV --> EV
-  OX[Configuration history\nOxidized] --> EV
-  NB --> OBS[Continuous observability\nPrometheus ecosystem]
-  CL[Live realization admission\nCML] --> OBS
-  DK[Runtime plane\nDocker] -. isolates .-> BK
-  DK -. packages .-> PY
+  GH[Git intent and policy] --> PY[Python control plane]
+  NB[NetBox exact-four identity] --> PI[Profiled inventory]
+  PI --> PY
+  OB[OpenBao stable-ID credentials] --> PY
+  TR[Profiled LIVE trust] --> RO[Profile read-only adapter]
+  TR --> WR[Profiled write adapter]
+  PY --> RO
+  PY --> WR
+  WR --> LV[Devices 1/2 write projection]
+  RO --> EV[Independent observation and evidence]
+  WR --> EV
+  PI --> OBS[Exact-four observability]
+  PI --> OX[Exact-four Oxidized]
+  PI --> SNMP[SNMP capability projection: 1/2]
+  BK[Buildkite validation] --> BA[Profiled four-device PR assurance]
 ```
+
+## Population and capability authority
+
+`ncdp-profiled-inventory` plus `PROFILED_POPULATION_CATALOG` admits exactly:
+
+1. `core-02` — `netbox:dcim.device:1` — `cat8000v_iosxe`;
+2. `edge-junos-01` — `netbox:dcim.device:2` — `vjunos_router`;
+3. `transit-ios-01` — `netbox:dcim.device:8` — `iosv_159_3_m12`;
+4. `access-sw-01` — `netbox:dcim.device:9` — `iosvl2_2020`.
+
+Population admission grants no operation by itself. The current writable
+interface-description projection contains only devices 1 and 2. IOSv and
+IOSvL2 fail closed before credentials or transport. The SNMPv3
+SHA256/AES128 projection also currently contains devices 1 and 2 because the
+accepted IOSv/IOSvL2 software lacks that capability. Management observability
+and Oxidized read-only collection consume all four.
 
 ## Planes and responsibilities
 
-- **Change:** GitHub stores source, desired managed state, policy, tests,
-  pipeline definitions, review, and history.
-- **Workflow:** Buildkite orchestrates reviewed CI, staging, promotion,
-  protected deployment gates, approvals, queues, concurrency, and artifacts.
-- **Runtime:** Docker and Compose provide reproducible execution and
-  isolated supporting services.
-- **Control/application:** Python 3.12 owns domain policy, target resolution,
-  planning, risk, rollout, evidence, recovery decisions, and composition.
-- **Source of truth:** NetBox owns infrastructure identity, topology/IPAM
-  relationships, platform, role, tags, targeting, and inventory metadata. Git
-  owns managed device-configuration intent. A managed property has exactly one
-  authority, explicitly assigned before overlapping NetBox/native fields are
-  consumed; devices provide observed state.
-- **Secrets:** OpenBao AppRole supports bounded local-service authority, while
-  protected Buildkite jobs use claim-bound OIDC workload identities and
-  short-lived, single-use, exact-path tokens. Application models never embed
-  secret values.
-- **Assurance:** the first-class protected `batfish-assurance` step performs
-  offline multi-vendor behavioral checks and publishes typed evidence. Immutable
-  promotion independently verifies the same-build assurance artifact before any
-  deployment authorization.
-- **Digital twin:** Increment 8 uses Terraform with CiscoDevNet CML2 to own a
-  separate personal-CML twin's infrastructure lifecycle, never production
-  device configuration. See the
-  [Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).
-- **Execution:** Ansible Runner with `cisco.ios` remains the Cisco provider.
-  Direct PyEZ/NETCONF preserves one Junos exclusive candidate session across
-  pre-commit policy approval. Python decides what and why; adapters implement
-  how without flattening vendor safety semantics.
-- **Live validation:** platform-owned independent post-validation uses the
-  implemented Cisco Ansible and Junos PyEZ provider paths and normalizes results
-  into typed platform evidence. pyATS/Genie and JSNAPy are not current runtime
-  dependencies.
-- **Audit/evidence:** `ChangeRecord` and `FleetChangeRecord` hold bounded
-  execution evidence. Append-only `ChangeAuditRecord` and
-  `ConfigurationObservationRecord` objects correlate protected delivery and
-  private Oxidized chronology by stable identity and digest; see
-  [Audit and configuration history](audit-and-configuration-history.md).
-- **Continuous observability:** persistent Prometheus and credential-free
-  Blackbox TCP probes run independently of CI. Stable NetBox identity names
-  each series; private CML realization admission controls whether the
-  NetBox-derived management endpoint is scheduled. Provisioned Grafana,
-  reviewed Prometheus rules, private Alertmanager routing, and a bounded local
-  receiver provide operator visibility without remediation authority. SNMPv3
-  device credential/provisioning capability is accepted for both routers, but
-  persistent exporter materialization and live polling remain deferred.
-  gNMI/OpenConfig is deferred/skipped for this reference implementation.
-  Oxidized remains the separate configuration chronology boundary.
+- **Change:** Git owns desired intent, profile/operation catalogs, policy,
+  tests, and history.
+- **Source of truth:** NetBox owns stable device/interface and factual topology
+  identity. The normal provider is GET-only.
+- **Control:** Python owns admission, planning, approval binding, sequencing,
+  outcome classification, recovery eligibility, and evidence construction.
+- **Secrets:** OpenBao supplies ephemeral stable-device-ID credential reads.
+  Secret values never enter plans, records, output, or Git.
+- **Trust:** the CML-anchored exact-four profiled LIVE generation is explicit;
+  ambient SSH trust, auto-add, discovery, and fallback are forbidden.
+- **Execution:** `ProfiledWriteAdapter` is a closed operation/profile mapping.
+  Cisco uses strict Ansible `network_cli`; Junos uses PyEZ NETCONF with an
+  exclusive candidate and commit-confirmed.
+- **Evidence:** schema-v2 `ProfiledChangeRecord` preserves reviewed identities,
+  stages, exact plan/approval digests, and honest final outcome.
+- **Continuous operations:** observability and Oxidized are read-only,
+  exact-four, and independent of change execution.
+- **Assurance:** Buildkite runs validation plus credential-free profiled
+  four-device PR Batfish assurance. It has no device-write step.
 
-Dependencies point inward to platform-owned policy and types; integrations
-implement explicit boundary contracts. Provider details must not become domain
-policy, and external observations must be normalized before policy consumes them.
+## Current change boundary
 
-Detour B1 adds an architecture-only
-[multi-device contract](multi-device-architecture-contract.md) that separates
-NOS, role, capability, automation behavior, CML realization, management identity,
-and accepted managed-state references. Detour B2 adds a parallel
-[profile-bound read-only inventory and adapter](profile-bound-read-only-inventory.md)
-without changing the v1 planning or write path. Detour B3-1 adds separate
-[profile-aware population, realization, trust, and staging contracts](profile-aware-population-and-realization.md)
-without importing them into v1 planning or write runtimes. Detour B3-4 accepts
-the four-device persistent LIVE realization under
-[ADR 0031](../adr/0031-four-device-persistent-live-realization.md). Legacy
-delivery, Oxidized, observability targets, SNMP, and protected authority remain
-exact devices 1/2; disposable CML and protected delivery remain paused.
+`ncdp profiled-plan` is the sole ordinary planner. `ncdp profiled-deploy` is the
+sole current device-write entry point and requires a schema-v2 plan, exact
+canonical digest approval, explicit `--live`, fresh complete preflight, and
+create-only evidence. Controlled PR #132 acceptance proved one C8000V and one
+vJunos interface-description write with exact independent validation and no
+recovery.
 
-## Implemented now
+The B5 D0/O/D1 state seam is unchanged. Interface descriptions are outside the
+current B5 envelopes and schema-v2 execution never advances D0. Routed underlay,
+OSPF, VLAN/trunk, and ACL remain read-only proposed D1 verticals.
 
-Architecture Baseline 1 and the first narrow Cisco IOS XE interface-description
-vertical are implemented. Increment 3 adds the primary read-only NetBox inventory
-path while retaining local YAML for isolated and offline work. OpenBao is the
-primary credential path, with AppRole and exact KV-v2 retrieval behind the secret
-boundary. See the [NetBox inventory provider](netbox-inventory-provider.md) and
-[OpenBao secret provider](openbao-secret-provider.md).
-Increment 4 adds the first Junos planning and transaction implementation. Cisco
-configuration remains on Ansible Runner; implementation evidence required Junos
-candidate transactions to use direct PyEZ so Python can approve the same locked
-candidate before commit-confirmed. See the [Cisco](cisco-interface-description-vertical.md)
-and [Junos](junos-interface-description-vertical.md) vertical documents.
-Increment 5A adds [fleet rollout planning](fleet-rollout.md): narrow paginated
-NetBox selectors, exact frozen membership including no-ops, nested child plans,
-canonical fleet digests, deterministic representative canaries and waves, and
-complete read-only fleet preflight. Increment 5B adds digest-approved sequential
-execution of those exact cohorts through the unchanged single-device workflow,
-strict `SUCCEEDED`-only continuation, honest stopped/partial evidence, and final
-whole-fleet read-only desired-state validation. Live mixed-vendor acceptance and
-process-local overlap admission are Increment 5C: a shared in-memory controller
-atomically reserves complete stable device-identity sets, including no-ops,
-across preflight, execution, and final validation. It is deliberately not a
-distributed lock. Other named integrations remain future work.
+## Retired and historical architecture
 
-Increment 7 is complete: protected promotion, Buildkite/OpenBao workload
-identity, commit-bound least-privilege deployment, real personal-CML device
-acceptance, independent validation, and same-build deployment retry hardening
-are externally accepted. See the
-[Buildkite live-deployment boundary](buildkite-live-deployment.md).
-Increment 8 provides the accepted Terraform/CML ephemeral staging lifecycle.
-The manually owned four-device `NCDP Live` realization remains outside
-Terraform. The preserved disposable implementation still describes a separate
-two-router realization with run-scoped state, but automatic staging is paused
-until explicit operator restoration after the intended profiled Terraform
-topology is ready. See the
-[Terraform/CML digital-twin architecture](terraform-cml-digital-twin.md).
+Schema-v1 local planning/deployment, fleet execution, SNMP provisioning writes,
+protected Buildkite delivery, and disposable exact-two Terraform/CML staging
+are retired from current runtime. The old Terraform operator twin is not a
+second current realization; the persistent operator-owned exact-four `NCDP
+Live` lab is current.
 
-Increment 10 provides durable append-only audit correlation and private
-Oxidized Cisco/Junos configuration chronology, including accepted protected
-PRE/write/POST correlation with causality explicitly not proven. See
-[Audit and configuration history](audit-and-configuration-history.md).
+Historical models, ADRs, acceptance records, and audit parsers retain their
+original serialized meaning. No current CLI, privileged script, or pipeline
+step invokes their executors. Future profiled fleet rollout, protected delivery,
+staging, or additional write verticals require separate architecture review.
 
-Persistent Oxidized collection now admits the profiled exact-four fleet through
-explicit profile capability and SSH/22 transport (including Junos); its
-read-only OpenBao authority, CML-anchored trust, and readiness are exact-four,
-while the private Git chronology remains preserved and additive. This passive
-capability does not authorize configuration writes.
-
-Increments 11A and 11B provide the accepted continuous-observability plane:
-credential-free management-service probes, persistent metrics, an immutable
-Grafana dashboard, and advisory operator alerts. See
-[Continuous observability](continuous-observability.md).
-Increment 11C-2 adds a disposable synthetic SNMPv3 exporter overlay without
-changing that persistent five-service runtime. Increment 11C-3 adds accepted,
-separately authorized Cisco and Junos SNMPv3 provisioning through the protected
-delivery path. The current SNMP-capable projection of the profiled exact-four
-fleet is the C8000V IOS-XE and vJunos profiles (devices 1 and 2); IOSv and
-IOSvL2 remain excluded because their accepted software capability is legacy
-SHA/SHA-1 rather than the required SHA256. Persistent live SNMP polling remains
-deferred as 11C-4, and 11D gNMI/OpenConfig is deferred/skipped.
-
-Increment 12A makes the Buildkite engineering story explicit: individual
-validation gates join at `validation-complete`; disposable CML staging and
-first-class Batfish assurance fan out on eligible protected-main builds;
-immutable promotion joins both; and the existing human authorization and
-deployment boundaries remain downstream. Staging stays one serialized,
-non-retriable lifecycle owner with visible create, validate, and destroy phases.
+See [profile-aware population and realization](profile-aware-population-and-realization.md),
+[change lifecycle](change-lifecycle.md), [security boundaries](security-boundaries.md),
+and the [migration closure](profiled-migration-closure.md).

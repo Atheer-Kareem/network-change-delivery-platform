@@ -1,5 +1,10 @@
 # OpenBao secret provider
 
+Current profiled local execution uses the bounded personal-lab AppRole and exact
+stable-device-ID paths. Buildkite deployment/staging JWT roles described below
+are historical accepted authority records only: their privileged repository
+entry points are retired and no current pipeline can consume them.
+
 ## Boundary and authentication
 
 OpenBao is the primary personal-lab credential provider. The local/bootstrap
@@ -47,10 +52,10 @@ required `/pipeline_id` mapping therefore caused OpenBao to reject login. The
 standard subject is now the sole canonical pipeline claim; the application still
 receives and exactly verifies metadata named `pipeline_id`.
 
-The active main-only deployment gate implements this exchange after human
-authorization and before promotion verification. It rejects ambient AppRole and
-direct device credentials, and pipes the JWT without argv, a shell variable, or
-a file. A repository operator tool idempotently enables and verifies the `jwt/`
+The retired main-only deployment gate implemented this exchange after human
+authorization and before promotion verification. It rejected ambient AppRole
+and direct device credentials, and piped the JWT without argv, a shell variable,
+or a file. A historical repository operator tool idempotently enabled and verified the `jwt/`
 mount, discovery configuration, and exact role using `BAO_TOKEN` only from its
 operator environment. An existing mount must have type `jwt` and exact
 description `NCDP Buildkite workload identity`; an unmarked mount is not
@@ -83,11 +88,9 @@ rejects AppRole; deployment roles, audiences, policies, and approval remain
 unchanged. A credential belongs to the logical NetBox device, not its LIVE or
 STAGING management IP; no address-specific secrets exist.
 
-The four staging capabilities are prepared but are not currently exercised by
-Buildkite. Automatic disposable CML and protected delivery are temporarily
-paused together during Detour B. Restore both together only when the operator
-explicitly decides disposable CML staging is useful again and its Terraform
-topology is ready for the intended profiled population.
+The four historical staging capabilities may remain in external OpenBao state,
+but no repository entry point consumes them. Disposable CML and protected
+delivery are retired; a future implementation requires a new profiled design.
 
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role

@@ -13,15 +13,15 @@ integrating classic IOS into legacy planning, write adapters, protected
 delivery, Terraform, or promotion.
 
 [ADR 0031](../adr/0031-four-device-persistent-live-realization.md) is current
-truth for persistent LIVE. ADR 0024 remains historical truth for the legacy
-exact-two runtime and the currently disabled two-router Terraform staging
-implementation. No four-device STAGING or new deployment authority is claimed.
+truth for persistent LIVE. ADR 0024 remains historical truth for the retired
+exact-two runtime and two-router Terraform staging implementation. No
+four-device STAGING authority is claimed.
 
-Current `InventoryDevice`, `DeploymentPlan`, fleet-plan/member,
+Compatibility `InventoryDevice`, `DeploymentPlan`, fleet-plan/member,
 `ChangeRecord`, `FleetChangeRecord`, `ChangeAuditRecord`,
 `ConfigurationObservationRecord`, and promotion schemas remain v1. Their
-serialized fields and canonical digest inputs are unchanged. The B1 types and
-B2 profiled inventory live outside current execution paths. B2 does not expand
+serialized fields and canonical digest inputs are unchanged. Current execution
+uses the profiled types. B2 did not expand
 the v1 platform field or synthesize legacy `InventoryDevice` values for IOSv or
 IOSvL2.
 

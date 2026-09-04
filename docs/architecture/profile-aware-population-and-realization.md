@@ -1,10 +1,10 @@
 # Profile-aware population and realization contracts
 
-## Compatibility boundary
+## Final population boundary
 
 Detour B3-1 introduced repository-only authority contracts. B3-2 through B3-5
 then applied the reviewed NetBox, OpenBao, persistent CML, LIVE trust, and
-data-plane IPAM boundaries without changing v1 planning or write behavior.
+data-plane IPAM boundaries alongside the former v1 runtime.
 B4-1 adds an exact read-only routed-underlay intent/observation/assurance path.
 B4-2 adds exact OSPF router-ID authority and a separate read-only OSPF vertical.
 B4-3 adds exact VLAN gateway authority and a read-only router-on-a-stick/access
@@ -20,33 +20,21 @@ interface-description operations, including Cisco independent O′ validation
 without recovery and Junos candidate validation, commit-confirmed, independent
 O′ validation, and explicit confirmation. IOSv and IOSvL2 remain exact
 managed-fleet members but are not admitted; no other B4 vertical gained write
-authority. Legacy schema-v1 planning/deployment remains transitional, B5/D0 is
-unchanged, and protected delivery plus disposable staging remain paused.
+authority. B5/D0 is unchanged. Schema-v1 planning/deployment, protected
+delivery, and disposable staging are retired from current runtime.
 
-The two inventory populations are intentionally different:
+The final inventory authority is:
 
 | NetBox tag | Meaning | Intended membership | Authority granted |
 |---|---|---|---|
-| `ncdp-managed` | Accepted legacy/v1 population | `core-02`, `edge-junos-01` | Existing v1 behavior only |
 | `ncdp-profiled-inventory` | Eligibility for profiled inventory and realization | The exact four logical devices | None by itself |
 
-Current membership is exact: `core-02` and `edge-junos-01` carry both
-tags; `transit-ios-01` and `access-sw-01` carry only
-`ncdp-profiled-inventory`. No tag is inferred from the other.
-
-This coexistence is transitional migration architecture, not the final managed
-fleet design. The target is one profiled exact-four managed-fleet architecture
-for devices 1/2/8/9, with each consumer admitting only the profiles and
-capabilities appropriate to its operation; fleet membership never grants every
-device identical router, write, or service behavior. The legacy
-`ncdp-managed` path remains while its legitimate consumers are migrated to the
-profiled architecture. A consumer may be retired instead only through an
-explicit decision that its capability is obsolete or outside final NCDP scope.
-The legacy path is removed only after no legitimate runtime consumer remains.
-The first migration increment moves NetBox lifecycle/readiness, the second
-moves management-service observability, and the third moves persistent Oxidized
-configuration collection/chronology to the existing profiled population
-contract; they do not change the tag itself or other legacy consumers.
+The architecture has one profiled exact-four managed population for devices
+1/2/8/9. Each consumer admits only the profiles and capabilities appropriate to
+its operation; fleet membership never grants every device identical router,
+write, or service behavior. The old `ncdp-managed` tag has zero legitimate
+runtime consumers. Its external removal from devices 1/2 is a separate
+controlled acceptance step and does not affect current code authority.
 
 The profiled tag alone grants no credential, device command, deployment, SNMP,
 fleet, Oxidized, or protected-write capability. Observability consumes the
@@ -54,8 +42,8 @@ resolved profiled population through its own bounded read-only projection.
 B3-4 accepts the
 four-device persistent LIVE realization in
 [ADR 0031](../adr/0031-four-device-persistent-live-realization.md). ADR 0024
-remains the historical source for the legacy exact-two runtime and dormant
-Terraform staging contract.
+remains the historical source for the retired exact-two runtime and Terraform
+staging contract.
 
 ## Exact Git-owned population
 
@@ -132,9 +120,8 @@ duplicate identities, wrong profile pairs, cross-device management bindings,
 or STAGING endpoints fail validation. Management-service observability consumes
 the same profiled exact-four population for its target projection, deriving the
 service from each automation profile; its separate bounded readiness/admission
-artifact does not use this model directly. The local runtime quality validation
-is active; this does not change the separate operator decision to keep
-disposable CML staging and protected delivery paused.
+artifact does not use this model directly. Local runtime quality validation is
+active; disposable CML staging and protected schema-v1 delivery are retired.
 
 ## CML-anchored host trust
 
@@ -163,14 +150,13 @@ Trust policy remains:
 - no auto-add, blind `ssh-keygen -R`, disabled host checking, or fallback; and
 - atomic publication of only the exact CML-anchored generation.
 
-The canonical profiled LIVE trust authority covers all four profiled devices.
-Oxidized remains on its independent exact devices-1/2 trust projection; B3-4
-does not widen its runtime population. When the Junos CML node was replaced,
-that exact-two trust was freshly CML-anchored to the new node UUID as required
-by ADR 0020. The observed key bytes remained the same, but realization-bound
-metadata was republished.
+The canonical profiled LIVE trust authority covers all four profiled devices
+and exact-four Oxidized collection. When the Junos CML node was replaced, trust
+was freshly CML-anchored to the new node UUID as required by ADR 0020. The
+observed key bytes remained the same, but realization-bound metadata was
+republished.
 
-## Deferred authority migration
+## Historical B3-1 non-mutation boundary
 
 B3-1 does not create NetBox tags, roles, platforms, types, devices, interfaces,
 IPs, or cables. It allocates no address, provisions no OpenBao credential or
@@ -193,8 +179,8 @@ NetBox now assigns these stable identities and management relationships:
 
 | Device | NetBox ID | Status | Role | Profile tag | LIVE | STAGING |
 |---|---:|---|---|---|---|---|
-| `core-02` | 1 | active | `core` | present with legacy tags preserved | `192.168.4.14/24` | `192.168.4.30/24` |
-| `edge-junos-01` | 2 | active | `edge` | present with legacy tags preserved | `192.168.4.20/24` | `192.168.4.40/24` |
+| `core-02` | 1 | active | `core` | present; obsolete legacy marker pending external retirement | `192.168.4.14/24` | `192.168.4.30/24` |
+| `edge-junos-01` | 2 | active | `edge` | present; obsolete legacy marker pending external retirement | `192.168.4.20/24` | `192.168.4.40/24` |
 | `transit-ios-01` | 8 | active | `transit` | present; no `ncdp-managed` | `192.168.4.16/24` | `192.168.4.31/24` |
 | `access-sw-01` | 9 | active | `access` | present; no `ncdp-managed` | `192.168.4.17/24` | `192.168.4.32/24` |
 
@@ -216,8 +202,9 @@ NetBox cable IDs 1 through 4 record the approved physical topology:
 
 B3-2 deliberately left the new devices planned. B3-4 activated them only after
 the exact persistent CML realization, management readiness, credentials, and
-CML-anchored trust passed. Normal legacy inventory remains exact devices 1/2,
-while `resolve_profiled_population()` now returns exact devices 1/2/8/9.
+CML-anchored trust passed. Current runtime uses
+`resolve_profiled_population()` for exact devices 1/2/8/9; the old exact-two
+inventory model is compatibility-only.
 
 The exact mutation and independent verification evidence is recorded in the
 [B3-2 acceptance record](../acceptance/profiled-netbox-inventory-detour-b3-2.md).
@@ -308,18 +295,14 @@ accepted physical truth; two synthetic fixture edges exist only in Batfish.
 OpenBao now holds exact stable-ID SSH paths for NetBox devices 1, 2, 8, and 9.
 The existing five-minute, single-use `ncdp-personal-lab` AppRole reads those
 four paths through one exact policy with no wildcard. The provider derives the
-path from stable NetBox identity for either legacy or profiled inventory; name,
+path from stable NetBox identity. Compatibility parsing still accepts the
+legacy inventory shape, but current runtime supplies profiled subjects; name,
 hostname, role, profile, and management address cannot select a credential.
 
-Buildkite staging identity is prepared with four separate exact-path policies
-and JWT roles. Protected live deployment and SNMP authority remain their prior
-devices 1/2 only. Because the current Terraform staging realization is still
-two-device, B3-3 comments out automatic `cml-staging` and the complete protected
-delivery group together. Quality, Terraform static validation, and PR Batfish
-remain active. Restore both paused blocks together only when the operator
-explicitly decides disposable CML staging is useful again and its Terraform
-topology is ready for the intended profiled population; no CML feature or
-historical evidence is removed.
+B3-3 prepared four staging identity capabilities and paused the then-exact-two
+runtime. The final migration retires those staging and protected-delivery entry
+points; their historical OpenBao configuration is not current execution
+authority. Quality validation and profiled PR Batfish remain active.
 
 The [B3-3 acceptance record](../acceptance/profiled-openbao-onboarding-detour-b3-3.md)
 contains the secret-free applied-state evidence.
@@ -356,15 +339,15 @@ profile capability (IOS-XE/IOSv/IOSvL2 use the `ios` model; Junos uses
 `junos`; all collection uses SSH/22). Its CML-anchored trust and read-only
 OpenBao authority are exact-four, while its existing private Git chronology is
 preserved additively. Successful collection is passive observation evidence and
-does not authorize IOSv/IOSvL2 writes or imply write causality. Legacy v1
-planning/write execution and protected write authority remain exact-two. SNMP
+does not authorize IOSv/IOSvL2 writes or imply write causality. Schema-v1
+planning/write execution and protected delivery are retired. SNMP
 telemetry is separately projected from the exact-four profiled population by
 the explicit `SNMPV3_AUTHPRIV_SHA256_AES128` capability; the current projection
 is devices 1 and 2, while IOSv and IOSvL2 are excluded by the accepted
 SHA256/AES128 contract.
-Automatic disposable CML and protected delivery remain paused, and the
-Terraform staging topology is unchanged. The operator has restored local
-observability runtime and synthetic SNMPv3 quality validation. The latter keeps
-its two-agent disposable fixture because it proves protocol behavior rather
-than the LIVE fleet; live SNMP remains a separate deferred migration whose
-targets are selected by an explicit profile capability projection.
+Disposable exact-two CML staging, its Terraform topology, and protected
+delivery are retired. The operator has restored local observability runtime and
+synthetic SNMPv3 quality validation. The latter keeps its two-agent disposable
+fixture because it proves protocol behavior rather than the LIVE fleet;
+persistent live SNMP remains a separate deferred capability whose targets are
+selected by the explicit profile projection.

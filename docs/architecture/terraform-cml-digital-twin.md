@@ -1,5 +1,11 @@
 # Terraform and CML digital-twin architecture
 
+> **Retired runtime:** this document preserves the accepted exact-two
+> Terraform/operator-twin design as historical architecture. Its source,
+> executable entry points, and pipeline validation were removed at the final
+> profiled migration deletion gate. Current CML truth is the persistent,
+> operator-owned exact-four `NCDP Live` lab.
+
 ## Scope
 
 Increment 8 establishes reproducible personal-CML infrastructure lifecycle for

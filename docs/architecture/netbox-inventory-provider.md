@@ -1,5 +1,10 @@
 # NetBox inventory provider
 
+> **Current boundary:** the profiled provider and exact-four catalog are the
+> sole managed-population authority. References below to `InventoryDevice`,
+> `NetBoxInventoryProvider`, `ncdp-managed`, schema-v1 plans, or exact-two fleet
+> selection describe retained compatibility/history, not current execution.
+
 This document describes the accepted v1 provider used by planning and
 deployment. Detour B2 adds a separate
 [profile-bound read-only provider](profile-bound-read-only-inventory.md) without

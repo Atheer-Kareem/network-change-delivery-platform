@@ -4,13 +4,9 @@
 > Terraform runtime, and recovery commands are removed. The remainder records
 > the historically accepted operating model and is not a current runbook.
 
-> **Temporary Detour B pause:** the `cml-staging` pipeline step and the complete
-> protected-delivery group are commented out together. Quality validation,
-> Terraform static validation, and PR Batfish candidate assurance remain active.
-> Restore staging and protected delivery together only when the operator
-> explicitly decides disposable CML staging is useful again and its Terraform
-> topology is ready for the intended profiled population. The implementation
-> and historical acceptance below remain intact; staging has not been removed.
+> The replacement profiled exact-four staging design has static Terraform
+> validation only and no active external Buildkite job pending controlled local
+> acceptance. Protected delivery remains retired; it is not coupled to staging.
 
 ## Trusted agent boundary
 

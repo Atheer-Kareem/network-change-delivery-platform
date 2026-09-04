@@ -75,7 +75,7 @@ fleet-wide atomicity is claimed.
 | Cisco | `core-02` · IOS XE; `transit-ios-01` · IOS; `access-sw-01` · IOS switching |
 | Junos | `edge-junos-01` · Junos |
 | Persistent lab | Manually/operator-owned `NCDP Live` in CML |
-| Disposable staging | Retired exact-two historical architecture |
+| Disposable staging | Profiled exact-four implementation pending controlled local acceptance |
 | Inventory | NetBox, consumed read-only by automation |
 | Credentials | OpenBao with bounded workload/device authority |
 | CI/CD | Buildkite validation and profiled four-device PR assurance; no device writes |
@@ -95,7 +95,9 @@ fleet-wide atomicity is claimed.
 - Persistent live SNMP exporter polling is deferred; accepted SNMPv3 provisioning
   does not imply that polling exists.
 - Historical schema-v1 protected delivery and disposable exact-two staging are
-  retired. Any future protected delivery requires a new profiled design.
+  retired. The replacement profiled exact-four staging design is pending
+  controlled local acceptance; protected delivery still requires a new profiled
+  design.
 - IOSv and IOSvL2 are managed exact-four members but do not admit the current
   interface-description write operation.
 

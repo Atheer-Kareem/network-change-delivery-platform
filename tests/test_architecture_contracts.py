@@ -497,7 +497,6 @@ def test_b1_contracts_are_not_imported_by_current_execution_paths() -> None:
         "src/network_change_delivery/models.py",
         "src/network_change_delivery/inventory.py",
         "src/network_change_delivery/ansible_adapter.py",
-        "src/network_change_delivery/vendor_adapter.py",
         "src/network_change_delivery/workflow.py",
         "src/network_change_delivery/fleet.py",
         "src/network_change_delivery/buildkite_deployment.py",

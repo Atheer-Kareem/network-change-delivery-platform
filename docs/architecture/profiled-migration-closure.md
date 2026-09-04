@@ -36,9 +36,9 @@ names merely for aesthetics.
 |---|---|
 | `CURRENT_RUNTIME_MIGRATE` | Profiled LIVE verifier: removed its legacy exact-two resolver/assertion. CLI: retained only schema-v2 profiled planning/deployment. Pipeline: retained exact-four PR assurance and profiled passive-service validation. Observability, Oxidized, SNMP projection, and B5 were already profiled. |
 | `CURRENT_RUNTIME_RETIRE` | Removed legacy `plan`, `deploy`, `fleet-plan`, `fleet-deploy`, `snmp-provisioning-plan`, and `deploy-buildkite-promotion`; protected gate/promotion/legacy assurance scripts; disposable staging wrapper/hook/driver/recovery/annotation; staging and protected OpenBao operator entry scripts; exact-two Oxidized operator twin; Terraform CML root/module/ephemeral source; Terraform pipeline validation; and commented staging/protected pipeline blocks. |
-| `HISTORICAL_COMPATIBILITY` | Schema-v1 `DeploymentPlan`, `FleetDeploymentPlan`, `ChangeRecord`, `FleetChangeRecord`, inventory/workflow/fleet/vendor models, promotion/request/audit models, staging evidence types, and SNMP provisioning evidence remain importable for historical parsing, audit, and deterministic contract tests. No current entry point invokes their executors. |
+| `HISTORICAL_COMPATIBILITY` | Schema-v1 `DeploymentPlan`, `FleetDeploymentPlan`, `ChangeRecord`, `FleetChangeRecord`, inventory models, read-only planning/validation helpers, promotion/request/audit models, staging evidence types, and SNMP provisioning evidence remain importable for historical parsing, audit, and deterministic contract tests. Their execution engine is removed from the installed package. |
 | `HISTORICAL_DOCUMENTATION` | Existing ADRs and acceptance records remain byte-for-byte historical evidence. Architecture pages describing retired systems are explicitly marked historical rather than rewritten as if those systems were current. |
-| `TEST_ONLY` | Legacy provider/executor unit tests retain compatibility and safety coverage; deterministic schema-v1 fixtures remain test-only. Closure tests fence current CLI, pipeline, population, projections, unsupported profiles, and B5 isolation. |
+| `TEST_ONLY` | Deterministic schema-v1 artifact fixtures retain parsing and digest compatibility without recreating live execution. Closure tests fence the installed write surface, current CLI, pipeline, population, projections, unsupported profiles, and B5 isolation. |
 
 ## Retirement decisions
 
@@ -56,8 +56,13 @@ Live` lab. No running CML object is changed by source retirement.
 
 - No current CLI imports or constructs `NetBoxInventoryProvider` or
   `MultiVendorAdapter`.
-- No current CLI, privileged script, or pipeline step invokes `plan_change`,
-  `deploy_plan`, `plan_fleet`, or `deploy_fleet`.
+- The legacy `MultiVendorAdapter`, schema-v1 `deploy_plan`/`deploy_fleet`
+  orchestrators, SNMP provisioning workflow, and InventoryDevice-based provider
+  write methods are absent from the installed package.
+- Historical schema-v1 artifact contracts remain parseable, but their execution
+  engine has been removed from the current architecture.
+- `ProfiledWriteAdapter` is the sole device-write dispatcher; its Cisco and
+  Junos delegates expose only profile-bound current write methods.
 - No Buildkite device-write, protected-delivery, or CML-staging path remains.
 - No retained current runtime consumer queries `ncdp-managed`.
 - SNMP targets derive from the exact-four profile catalog and capability.

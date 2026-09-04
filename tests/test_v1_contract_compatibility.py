@@ -10,10 +10,9 @@ from pathlib import Path
 from test_audit_store import change_record, plan, record
 from test_configuration_observation import observation_record
 from test_fleet import make_plan
-from test_fleet_execution import execute
 
 from network_change_delivery.audit import AuditArtifactKind, AuditArtifactReference
-from network_change_delivery.models import InventoryDevice
+from network_change_delivery.models import FleetChangeRecord, InventoryDevice
 from network_change_delivery.plan_assurance import load_plan
 
 ROOT = Path(__file__).parents[1]
@@ -39,7 +38,9 @@ def test_representative_v1_models_remain_readable_and_byte_stable() -> None:
     fleet_plan = make_plan().plan
     assert fleet_plan is not None
     change_evidence = change_record()
-    fleet_evidence = execute()[1]
+    fleet_evidence = FleetChangeRecord.model_validate_json(
+        (ROOT / "fixtures/historical/fleet-change-record-v1.json").read_text()
+    )
     plan_reference = AuditArtifactReference(
         kind=AuditArtifactKind.DEPLOYMENT_PLAN,
         schema_version="1",
@@ -127,10 +128,9 @@ def test_existing_fleet_fixture_and_child_digests_remain_valid() -> None:
     )
 
 
-def test_dormant_v1_compatibility_modules_do_not_import_profiled_runtime() -> None:
+def test_v1_read_only_compatibility_modules_do_not_import_profiled_runtime() -> None:
     compatibility_modules = (
         "workflow.py",
-        "vendor_adapter.py",
         "fleet.py",
         "buildkite_deployment.py",
         "ephemeral_staging.py",
@@ -141,6 +141,11 @@ def test_dormant_v1_compatibility_modules_do_not_import_profiled_runtime() -> No
         )
         assert "profile_inventory" not in source
         assert "profile_read_only_adapter" not in source
+
+    assert not (ROOT / "src/network_change_delivery/vendor_adapter.py").exists()
+    assert not (
+        ROOT / "src/network_change_delivery/snmp_provisioning_workflow.py"
+    ).exists()
 
     from network_change_delivery import cli
 

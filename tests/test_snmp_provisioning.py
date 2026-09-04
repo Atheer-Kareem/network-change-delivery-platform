@@ -9,14 +9,12 @@ from types import SimpleNamespace
 from xml.etree import ElementTree
 
 import pytest
-import yaml
 from lxml import etree
 from pydantic import ValidationError
 
 from network_change_delivery.ansible_adapter import (
     IDENTITY_TASK,
     SNMP_ENGINE_TASK,
-    SNMP_EXECUTION_TASK,
     SNMP_GROUP_TASK,
     SNMP_USER_TASK,
     SNMP_VIEW_TASK,
@@ -24,7 +22,7 @@ from network_change_delivery.ansible_adapter import (
     ProviderError,
 )
 from network_change_delivery.junos_adapter import JunosPyEZAdapter
-from network_change_delivery.models import ExecutionDisposition, InventoryDevice
+from network_change_delivery.models import InventoryDevice
 from network_change_delivery.secrets import DeviceCredentials
 from network_change_delivery.snmp_credentials import (
     SnmpProvisioningCredentials,
@@ -385,103 +383,6 @@ def test_junos_targeted_filter_and_parser_drop_localized_secret_bytes() -> None:
     assert "localized-privacy-sentinel" not in serialized
 
 
-def test_cisco_adapter_executes_exact_artifact_once_through_no_log_playbook(
-    monkeypatch,
-) -> None:
-    value = plan()
-    artifact = render_cisco_provisioning(
-        value, SnmpProvisioningCredentials(snmp_username(1), AUTH, PRIV)
-    )
-    adapter = AnsibleRunnerCiscoAdapter()
-    calls: list[tuple[str, dict[str, object]]] = []
-
-    def run(_device, _credentials, playbook, *, extravars=None):
-        calls.append((playbook, extravars))
-        return SimpleNamespace(status="successful", rc=0), {
-            SNMP_EXECUTION_TASK: {"_ncdp_event": "runner_on_ok"}
-        }
-
-    monkeypatch.setattr(adapter, "_run", run)
-    result = adapter.execute_snmp(
-        device(), DeviceCredentials("ssh-user", "ssh-secret"), artifact
-    )
-    assert result.disposition is ExecutionDisposition.SUCCEEDED
-    assert calls == [
-        (
-            "apply_snmp_provisioning.yml",
-            {"ncdp_snmp_commands": list(artifact.payload)},
-        )
-    ]
-    playbook = Path("ansible/apply_snmp_provisioning.yml").read_text()
-    assert "no_log: true" in playbook
-    assert "save_when: never" in playbook
-
-
-def test_cisco_snmp_apply_binds_the_established_ssh_authority_only() -> None:
-    paths = (
-        Path("ansible/apply_snmp_provisioning.yml"),
-        Path("ansible/inspect_snmp_provisioning.yml"),
-        Path("ansible/apply_interface_description.yml"),
-    )
-    plays = [yaml.safe_load(path.read_text(encoding="utf-8"))[0] for path in paths]
-    expected = {
-        "ansible_user": ("{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_USERNAME') }}"),
-        "ansible_password": (
-            "{{ lookup('ansible.builtin.env', 'NCDP_DEVICE_PASSWORD') }}"
-        ),
-    }
-    assert all(
-        {name: play["vars"][name] for name in expected} == expected for play in plays
-    )
-    assert plays[0]["vars"] == expected
-
-    serialized = paths[0].read_text(encoding="utf-8")
-    assert "ssh-user" not in serialized
-    assert "ssh-password" not in serialized
-    task = plays[0]["tasks"][0]
-    assert task["no_log"] is True
-    assert task["cisco.ios.ios_config"] == {
-        "lines": "{{ ncdp_snmp_commands }}",
-        "match": "none",
-        "save_when": "never",
-    }
-
-
-@pytest.mark.parametrize(
-    ("status", "rc", "event"),
-    [
-        ("timeout", 1, None),
-        ("canceled", 1, None),
-        ("failed", 254, None),
-        ("failed", 255, None),
-        ("failed", 1, "runner_on_failed"),
-        ("failed", 1, "runner_on_unreachable"),
-    ],
-)
-def test_cisco_snmp_write_ambiguity_classification_is_unchanged(
-    monkeypatch, status: str, rc: int, event: str | None
-) -> None:
-    adapter = AnsibleRunnerCiscoAdapter()
-    selected = (
-        {SNMP_EXECUTION_TASK: {"_ncdp_event": event}} if event is not None else {}
-    )
-    monkeypatch.setattr(
-        adapter,
-        "_run",
-        lambda *_args, **_kwargs: (SimpleNamespace(status=status, rc=rc), selected),
-    )
-    artifact = render_cisco_provisioning(
-        plan(), SnmpProvisioningCredentials(snmp_username(1), AUTH, PRIV)
-    )
-    result = adapter.execute_snmp(
-        device(), DeviceCredentials("ssh-user", "ssh-secret"), artifact
-    )
-    assert result.disposition is ExecutionDisposition.AMBIGUOUS
-    assert result.message == (
-        "Cisco SNMP write outcome is ambiguous; no retry authorized"
-    )
-
-
 def test_cisco_preflight_reconstructs_four_single_command_results(monkeypatch) -> None:
     value = plan()
     adapter = AnsibleRunnerCiscoAdapter()
@@ -783,60 +684,3 @@ def test_junos_preflight_keeps_owned_state_on_committed_configuration(
     assert AUTH not in serialized
     assert PRIV not in serialized
     assert "80 00 00 00 01 02 03 04 05 06" not in serialized
-
-
-def test_junos_adapter_loads_checks_and_commits_confirmed_exactly_once(
-    monkeypatch,
-) -> None:
-    value = plan("junos", 2)
-    artifact = render_junos_provisioning(
-        value, SnmpProvisioningCredentials(snmp_username(2), AUTH, PRIV)
-    )
-    calls: list[object] = []
-
-    class Config:
-        def __enter__(self):
-            calls.append("enter-exclusive")
-            return self
-
-        def __exit__(self, *_args):
-            calls.append("exit-exclusive")
-
-        def diff(self):
-            return None
-
-        def load(self, payload, **kwargs):
-            calls.append(("load", payload, kwargs["format"], kwargs["merge"]))
-
-        def commit_check(self):
-            calls.append("commit-check")
-            return True
-
-        def commit(self, *, confirm):
-            calls.append(("commit", confirm))
-            return True
-
-    connection = SimpleNamespace(
-        facts={"hostname": "edge-junos-01"},
-        rpc=SimpleNamespace(
-            get_config=lambda **_kwargs: etree.fromstring(artifact.payload.encode())
-        ),
-    )
-    adapter = JunosPyEZAdapter(config_factory=lambda *_args, **_kwargs: Config())
-
-    @contextmanager
-    def session(_device, _credentials):
-        yield connection
-
-    monkeypatch.setattr(adapter, "_session", session)
-    result = adapter.execute_snmp_confirmed(
-        device("junos", 2),
-        DeviceCredentials("netconf-user", "netconf-secret"),
-        artifact,
-        5,
-    )
-    assert result.disposition is ExecutionDisposition.SUCCEEDED
-    assert calls.count(("commit", 5)) == 1
-    assert calls.count("commit-check") == 1
-    assert calls[0] == "enter-exclusive"
-    assert calls[-1] == "exit-exclusive"

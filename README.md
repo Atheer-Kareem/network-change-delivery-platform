@@ -58,9 +58,11 @@ support, credential reference, safety, and whether work is still required.
 SSH and NETCONF trust are strict and realization-anchored. Vendor behavior is
 not flattened: Cisco uses bounded Ansible execution and targeted recovery;
 Junos preserves candidate locking and commit-confirmed semantics. If a write
-outcome is uncertain, the platform stops, never replays the historical job, and
-requires independent reconciliation plus a new commit, build, and authorization
-for any corrected attempt. No fleet-wide atomicity is claimed.
+outcome is uncertain, the platform stops and never retries automatically. The
+current local profiled path requires independent reconciliation and a new
+explicit plan/digest authorization for any corrected attempt. Historical
+protected Buildkite delivery additionally required a new commit and build. No
+fleet-wide atomicity is claimed.
 
 ## Current reference lab
 

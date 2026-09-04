@@ -32,7 +32,6 @@ from network_change_delivery.read_only_target import (
 )
 from network_change_delivery.secrets import DeviceCredentials
 from network_change_delivery.snmp_provisioning import (
-    SecretRenderedArtifact,
     SnmpOwnedObjectState,
     SnmpPreflightSubject,
     cisco_preflight_commands,
@@ -51,7 +50,6 @@ SNMP_ENGINE_TASK = "NCDP inspect SNMP engine"
 SNMP_VIEW_TASK = "NCDP inspect SNMP view"
 SNMP_GROUP_TASK = "NCDP inspect SNMP group"
 SNMP_USER_TASK = "NCDP inspect SNMP user"
-SNMP_EXECUTION_TASK = "NCDP apply exact SNMP artifact"
 
 
 class VlanReadScope(StrEnum):
@@ -443,7 +441,6 @@ class AnsibleRunnerCiscoAdapter:
                 SNMP_VIEW_TASK,
                 SNMP_GROUP_TASK,
                 SNMP_USER_TASK,
-                SNMP_EXECUTION_TASK,
             }:
                 result = data.get("res", {})
                 if isinstance(result, dict):
@@ -740,21 +737,6 @@ class AnsibleRunnerCiscoAdapter:
             raise ProviderError("Cisco ACL read-only result was incomplete")
         return tuple(stdout)
 
-    def execute(
-        self,
-        device: InventoryDevice,
-        credentials: DeviceCredentials,
-        artifact: CiscoConfigArtifact,
-    ) -> ExecutionResult:
-        """Apply exactly one artifact once and normalize the bounded result."""
-        runner, selected = self._run(
-            device,
-            credentials,
-            "apply_interface_description.yml",
-            extravars={"ncdp_artifact": artifact.model_dump(mode="json")},
-        )
-        return self._classify_interface_execution(runner, selected)
-
     @staticmethod
     def _classify_interface_execution(
         runner: object, selected: dict[str, dict[str, Any]]
@@ -869,50 +851,6 @@ class AnsibleRunnerCiscoAdapter:
             view_output=values[1],
             group_output=values[2],
             user_output=values[3],
-        )
-
-    def execute_snmp(
-        self,
-        device: InventoryDevice,
-        credentials: DeviceCredentials,
-        artifact: SecretRenderedArtifact,
-    ) -> ExecutionResult:
-        """Apply one in-memory secret-bearing artifact with Runner no_log."""
-        if artifact.platform != "cisco_iosxe" or not isinstance(
-            artifact.payload, tuple
-        ):
-            raise ProviderError("Cisco SNMP artifact rejected")
-        runner, selected = self._run(
-            device,
-            credentials,
-            "apply_snmp_provisioning.yml",
-            extravars={"ncdp_snmp_commands": list(artifact.payload)},
-        )
-        status = str(getattr(runner, "status", "failed"))
-        rc = getattr(runner, "rc", None)
-        event = selected.get(SNMP_EXECUTION_TASK, {}).get("_ncdp_event")
-        if (
-            status in {"timeout", "canceled"}
-            or rc in {254, 255}
-            or event
-            in {
-                "runner_on_failed",
-                "runner_on_unreachable",
-            }
-        ):
-            return ExecutionResult(
-                disposition=ExecutionDisposition.AMBIGUOUS,
-                message="Cisco SNMP write outcome is ambiguous; no retry authorized",
-            )
-        if status != "successful" or rc != 0 or SNMP_EXECUTION_TASK not in selected:
-            return ExecutionResult(
-                disposition=ExecutionDisposition.FAILED,
-                message="Cisco SNMP write failed before known success",
-            )
-        return ExecutionResult(
-            disposition=ExecutionDisposition.SUCCEEDED,
-            changed=True,
-            message="exact Cisco SNMP artifact completed once",
         )
 
 

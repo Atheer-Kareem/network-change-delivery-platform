@@ -85,11 +85,11 @@ pass `compare_postwrite_to_d1()` plus
 
 The schema-v1 fleet engine, protected Buildkite delivery, and disposable
 exact-two Terraform/CML staging were successfully engineered and historically
-accepted. They are not current runtime paths. Their typed artifacts and
-historical ADR/acceptance evidence remain valid and parseable, but no current
-CLI, script, or pipeline step can execute them. Any future protected delivery,
-profiled fleet rollout, or disposable staging requires a new profiled design
-and separate review.
+accepted. Their typed artifacts and historical ADR/acceptance evidence remain
+valid and parseable, but the legacy execution engine and its current CLI,
+script, and pipeline entry points have been removed. Any future protected
+delivery, profiled fleet rollout, or disposable staging requires a new profiled
+design and separate review.
 
 The active Buildkite network assurance surface is the credential-free profiled
 four-device PR Batfish step. Buildkite has no current device-write step.

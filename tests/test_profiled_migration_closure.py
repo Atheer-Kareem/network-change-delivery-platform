@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import re
 from pathlib import Path
 
+import network_change_delivery.fleet as legacy_fleet
+import network_change_delivery.workflow as legacy_workflow
+from network_change_delivery.ansible_adapter import AnsibleRunnerCiscoAdapter
 from network_change_delivery.architecture_contracts import AutomationProfileID
 from network_change_delivery.cli import build_parser
+from network_change_delivery.junos_adapter import JunosPyEZAdapter
 from network_change_delivery.profile_inventory import PROFILED_POPULATION_IDENTITIES
 from network_change_delivery.profiled_planning import (
     PROFILED_OPERATION_ADMISSIONS,
     ProfiledOperation,
 )
+from network_change_delivery.profiled_write_adapter import ProfiledWriteAdapter
 from network_change_delivery.snmp_profile import SNMP_PROFILED_DEVICE_IDENTITIES
 
 ROOT = Path(__file__).parents[1]
@@ -75,6 +81,50 @@ def test_only_profiled_ordinary_change_commands_are_exposed() -> None:
         "deploy_fleet",
     ):
         assert re.search(rf"\b{dependency}\b", source) is None
+
+
+def test_installed_package_contains_only_profiled_device_write_engine() -> None:
+    package = ROOT / "src/network_change_delivery"
+    assert not (package / "vendor_adapter.py").exists()
+    assert not (package / "snmp_provisioning_workflow.py").exists()
+    assert not (ROOT / "ansible/apply_snmp_provisioning.yml").exists()
+
+    assert not hasattr(legacy_workflow, "deploy_plan")
+    assert not hasattr(legacy_fleet, "deploy_fleet")
+    assert not hasattr(AnsibleRunnerCiscoAdapter, "execute")
+    assert not hasattr(AnsibleRunnerCiscoAdapter, "execute_snmp")
+    assert not hasattr(JunosPyEZAdapter, "transaction")
+    assert not hasattr(JunosPyEZAdapter, "confirm")
+    assert not hasattr(JunosPyEZAdapter, "execute_snmp_confirmed")
+
+    assert callable(AnsibleRunnerCiscoAdapter.execute_profiled)
+    assert callable(JunosPyEZAdapter.profiled_transaction)
+    assert callable(JunosPyEZAdapter.confirm_profiled)
+    public_dispatch = {
+        name
+        for name, member in inspect.getmembers(ProfiledWriteAdapter, inspect.isfunction)
+        if not name.startswith("_")
+    }
+    assert public_dispatch == {"execute_cisco", "junos_transaction", "confirm_junos"}
+
+
+def test_production_and_runtime_scripts_do_not_import_legacy_write_symbols() -> None:
+    prohibited = (
+        "MultiVendorAdapter",
+        "deploy_plan",
+        "deploy_fleet",
+        "deploy_snmp_provisioning_plan",
+    )
+    sources = sorted((ROOT / "src").rglob("*.py")) + sorted(
+        (ROOT / "scripts").rglob("*.py")
+    )
+    for path in sources:
+        source = path.read_text(encoding="utf-8")
+        for name in prohibited:
+            assert (
+                re.search(rf"^\s*(?:from|import)\b[^\n]*\b{name}\b", source, re.M)
+                is None
+            )
 
 
 def test_pipeline_has_no_retired_staging_or_device_write_path() -> None:

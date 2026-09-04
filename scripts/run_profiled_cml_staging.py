@@ -44,6 +44,7 @@ from network_change_delivery.profiled_staging import (
     validate_destroy_only_plan,
     validate_management_only_bootstrap,
     validate_private_run_directory,
+    validate_profiled_staging_evidence_path,
     validate_profiled_staging_physical_topology,
     validate_profiled_staging_population,
     validate_read_only_collection,
@@ -700,10 +701,14 @@ def main() -> int:
         run = validate_private_run_directory(arguments.run_directory, ROOT)
         if run.name != arguments.run_id:
             raise ProfiledStagingError("profiled staging run identity rejected")
+        evidence_path = validate_profiled_staging_evidence_path(
+            arguments.evidence_json,
+            run,
+        )
         if not arguments.execute:
             raise ProfiledStagingError("profiled staging requires explicit --execute")
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(arguments.evidence_json, flags, 0o600)
+        descriptor = os.open(evidence_path, flags, 0o600)
         evidence = ProfiledStagingLifecycle(
             arguments.run_id,
             "local",
@@ -713,7 +718,7 @@ def main() -> int:
         if descriptor is not None:
             os.close(descriptor)
             descriptor = None
-            arguments.evidence_json.unlink(missing_ok=True)
+            evidence_path.unlink(missing_ok=True)
         print(f"profiled staging admission failed: {error}")
         return 2
     finally:

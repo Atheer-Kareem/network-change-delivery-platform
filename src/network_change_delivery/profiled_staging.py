@@ -494,6 +494,19 @@ def retire_profiled_staging_run_directory(
     shutil.rmtree(run)
 
 
+def validate_profiled_staging_evidence_path(path: Path, run: Path) -> Path:
+    """Require final lifecycle evidence to live outside its disposable run."""
+    if not path.is_absolute() or path.is_symlink():
+        raise ProfiledStagingError("profiled staging evidence path rejected")
+    try:
+        candidate = path.parent.resolve(strict=True) / path.name
+    except OSError:
+        raise ProfiledStagingError("profiled staging evidence path rejected") from None
+    if candidate == run or candidate.is_relative_to(run):
+        raise ProfiledStagingError("profiled staging evidence path rejected")
+    return candidate
+
+
 def validate_retained_state_file(path: Path) -> Path:
     """Require retained Terraform state to be one bounded owner-only inode."""
     metadata = path.lstat()

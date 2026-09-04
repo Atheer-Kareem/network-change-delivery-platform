@@ -18,6 +18,7 @@ from network_change_delivery.profiled_staging import (
     terraform_managed_state_addresses,
     terraform_profiled_device_variables,
     validate_destroy_only_plan,
+    validate_profiled_staging_evidence_path,
     write_recovery_inputs,
 )
 from network_change_delivery.secrets import DeviceCredentials
@@ -470,6 +471,21 @@ def test_exact_run_directory_retirement_rejects_wrong_or_unsafe_identity(
         retire_profiled_staging_run_directory(inside, "run-001", checkout)
     assert checkout.is_dir()
     assert inside.is_dir()
+
+
+def test_acceptance_evidence_must_remain_outside_disposable_run(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run-001"
+    run.mkdir(mode=0o700)
+    run.chmod(0o700)
+    acceptance = tmp_path / "acceptance"
+    acceptance.mkdir(mode=0o700)
+    acceptance.chmod(0o700)
+    outside = acceptance / "evidence.json"
+    assert validate_profiled_staging_evidence_path(outside, run) == outside
+    with pytest.raises(ProfiledStagingError, match="evidence path"):
+        validate_profiled_staging_evidence_path(run / "evidence.json", run)
 
 
 def test_recovery_is_variable_file_bound_and_has_no_openbao_dependency() -> None:

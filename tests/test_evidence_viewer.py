@@ -17,10 +17,10 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 import pytest
+from snmp_test_fixtures import snmp_plan
 from test_audit_store import plan, record
 from test_configuration_observation import unchanged_observation
 from test_configuration_observation_store import linked_record
-from test_snmp_protected_deployment import snmp_plan
 
 import network_change_delivery.evidence_viewer as viewer_module
 from network_change_delivery.audit import (

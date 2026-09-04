@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from test_snmp_protected_deployment import snmp_plan
+from snmp_test_fixtures import snmp_plan
 
 import network_change_delivery.audit_store as audit_store_module
 from network_change_delivery.audit import (

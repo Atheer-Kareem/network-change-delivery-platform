@@ -9,7 +9,6 @@ import sys
 from datetime import UTC, datetime
 
 from network_change_delivery.ansible_adapter import ProviderError
-from network_change_delivery.inventory import NetBoxInventoryProvider
 from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
 from network_change_delivery.profiled_live_cml import (
@@ -55,9 +54,6 @@ def verify(transit_node_id: str, access_node_id: str) -> PersistentProfiledReali
     finally:
         operator.close()
     profiled = NetBoxProfileInventoryProvider().resolve_profiled_population()
-    legacy = NetBoxInventoryProvider().resolve_managed_devices()
-    if tuple(device.name for device in legacy) != ("core-02", "edge-junos-01"):
-        raise VerificationError("legacy managed population is not exact-two")
     anchors_by_name = {anchor.logical_name: anchor for anchor in anchors}
     trust_by_name = {str(record.logical_name): record for record in trust.records}
     if len(anchors_by_name) != 4 or len(trust_by_name) != 4:
@@ -146,7 +142,6 @@ def verify(transit_node_id: str, access_node_id: str) -> PersistentProfiledReali
             f"interfaces={len(states)} version={version or 'unreported'} PASS"
         )
     print("profiled population exact-four PASS")
-    print("legacy population exact-two PASS")
     print(
         f"persistent realization digest: {_digest(realization.model_dump(mode='json'))}"
     )

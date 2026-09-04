@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import os
 import re
@@ -43,12 +42,10 @@ from network_change_delivery.buildkite_configuration_observation import (
     persist_buildkite_configuration_observation,
 )
 from network_change_delivery.buildkite_deployment import (
-    BuildkiteOpenBaoDeploymentSecretProvider,
     load_live_deployment_request_at_commit,
     load_promoted_single_plan,
 )
 from network_change_delivery.buildkite_identity import (
-    BuildkiteOIDCJWT,
     OpenBaoBuildkiteJWTAuthenticator,
     read_buildkite_oidc_jwt,
 )
@@ -60,25 +57,10 @@ from network_change_delivery.configuration_observation_store import (
     MAX_OBSERVATION_RECORD_SCAN,
     ConfigurationObservationStore,
 )
-from network_change_delivery.fleet import FleetSafetyError, deploy_fleet, plan_fleet
-from network_change_delivery.inventory import (
-    InventoryError,
-    LocalYamlInventoryProvider,
-    NetBoxInventoryProvider,
-)
+from network_change_delivery.inventory import InventoryError
 from network_change_delivery.models import (
-    DeploymentPlan,
     FinalOutcome,
-    FleetDeploymentPlan,
-    FleetFinalOutcome,
-    FleetInterfaceDescriptionIntent,
-    FleetMemberClassification,
     InterfaceDescriptionIntent,
-)
-from network_change_delivery.oxidized_host_trust import (
-    DEFAULT_TRUST_ROOT,
-    KNOWN_HOSTS_NAME,
-    validate_host_trust,
 )
 from network_change_delivery.plan_assurance import (
     BatfishAssurancePolicy,
@@ -110,25 +92,9 @@ from network_change_delivery.promotion import (
     verify_promotion_bundle,
 )
 from network_change_delivery.secrets import (
-    EnvironmentSecretProvider,
     OpenBaoSecretProvider,
     SecretError,
 )
-from network_change_delivery.snmp_credentials import (
-    BuildkiteOpenBaoSnmpProvisioningProvider,
-)
-from network_change_delivery.snmp_provisioning import (
-    SnmpProvisioningError,
-    SnmpProvisioningOutcome,
-    SnmpProvisioningPlan,
-    SnmpV3InterfaceTelemetryIntent,
-    build_snmp_provisioning_plan,
-)
-from network_change_delivery.snmp_provisioning_workflow import (
-    deploy_snmp_provisioning_plan,
-)
-from network_change_delivery.vendor_adapter import MultiVendorAdapter
-from network_change_delivery.workflow import SafetyError, deploy_plan, plan_change
 
 MAX_AUDIT_FIND_RESULTS = 100
 
@@ -165,22 +131,6 @@ def _write_json(path: Path, value: str) -> None:
     path.chmod(0o600)
 
 
-def _require_unused_fleet_plan_path(path: Path) -> None:
-    """Fail before provider construction for files and even broken symlinks."""
-    if path.exists() or path.is_symlink():
-        raise OSError("fleet plan output already exists")
-
-
-def _write_new_fleet_plan(path: Path, value: str) -> None:
-    """Create one new mode-0600 fleet artifact without an overwrite race."""
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        stream.write(value)
-    path.chmod(0o600)
-
-
 def _require_unused_profiled_plan_path(path: Path) -> None:
     """Fail before trust or provider access for files and even broken symlinks."""
     if path.exists() or path.is_symlink():
@@ -197,14 +147,6 @@ def _write_new_profiled_plan(path: Path, value: str) -> None:
     path.chmod(0o600)
 
 
-def _reserve_fleet_evidence(path: Path) -> TextIOWrapper:
-    """Exclusively reserve the final evidence inode before any device operation."""
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags, 0o600)
-    return os.fdopen(descriptor, "w", encoding="utf-8")
-
-
 def _reserve_profiled_execution_evidence(path: Path) -> TextIOWrapper:
     """Reserve immutable schema-v2 evidence before profiled execution begins."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -218,27 +160,9 @@ def _load_change(path: Path) -> InterfaceDescriptionIntent:
     return InterfaceDescriptionIntent.model_validate(payload)
 
 
-def _load_plan(path: Path) -> DeploymentPlan:
-    return DeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
-
-
-def _load_fleet_change(path: Path) -> FleetInterfaceDescriptionIntent:
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return FleetInterfaceDescriptionIntent.model_validate(payload)
-
-
-def _load_fleet_plan(path: Path) -> FleetDeploymentPlan:
-    return FleetDeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
-
-
 def _load_profiled_plan(path: Path) -> ProfiledDeploymentPlan:
     """Load only the immutable, digest-validated schema-v2 plan model."""
     return ProfiledDeploymentPlan.model_validate_json(path.read_text(encoding="utf-8"))
-
-
-def _load_snmp_provisioning_intent(path: Path) -> SnmpV3InterfaceTelemetryIntent:
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return SnmpV3InterfaceTelemetryIntent.model_validate(payload)
 
 
 def _reserve_assurance_evidence(path: Path) -> TextIOWrapper:
@@ -447,115 +371,6 @@ def _run_verify_deployment_ansible_runtime(arguments: argparse.Namespace) -> int
         + ", ".join(f"{name}={version}" for name, version in verified)
     )
     return 0
-
-
-def _run_deploy_buildkite_promotion(arguments: argparse.Namespace) -> int:
-    import sys
-
-    context = buildkite_deployment_context_from_environment(os.environ)
-    _manifest, plan, _request = _verified_live_request(arguments.promotion, context)
-    if arguments.report_json.exists() or arguments.report_json.is_symlink():
-        raise OSError("deployment evidence path already exists")
-    validate_host_trust(DEFAULT_TRUST_ROOT)
-    jwt = read_buildkite_oidc_jwt(sys.stdin)
-    inventory = NetBoxInventoryProvider()
-    secrets = BuildkiteOpenBaoDeploymentSecretProvider(jwt, context)
-    adapter = MultiVendorAdapter(known_hosts=DEFAULT_TRUST_ROOT / KNOWN_HOSTS_NAME)
-    if isinstance(plan, SnmpProvisioningPlan):
-        device = inventory.resolve(plan.target)
-        if (
-            device.inventory_object_id != plan.inventory_object_id
-            or device.platform != plan.platform
-            or device.host != plan.host
-            or device.port != plan.port
-            or device.expected_hostname != plan.expected_hostname
-            or secrets.reference(device).reference
-            != plan.connection_credential_reference
-        ):
-            raise PromotionError("SNMP live deployment inventory binding rejected")
-        connection_credentials = secrets.load(device)
-        openbao_url = os.environ.get("NCDP_OPENBAO_URL", "")
-        snmp_source = BuildkiteOpenBaoSnmpProvisioningProvider(
-            _request_buildkite_snmp_oidc_jwt,
-            context,
-            plan.snmp_credential,
-            plan.username,
-            openbao_url,
-        )
-        record = deploy_snmp_provisioning_plan(
-            plan,
-            plan.digest,
-            device,
-            connection_credentials,
-            snmp_source,
-            adapter,
-            _consume_buildkite_audit_prewrite_gate,
-        )
-        _write_new_fleet_plan(
-            arguments.report_json, record.model_dump_json(indent=2) + "\n"
-        )
-        print(f"Final outcome: {record.final_outcome}")
-        print(f"Evidence: {arguments.report_json}")
-        return (
-            0
-            if record.final_outcome
-            in {SnmpProvisioningOutcome.SUCCEEDED, SnmpProvisioningOutcome.RECOVERED}
-            else 2
-        )
-    record = deploy_plan(
-        plan,
-        plan.digest,
-        inventory,
-        secrets,
-        adapter,
-        adapter,
-    )
-    _write_new_fleet_plan(
-        arguments.report_json, record.model_dump_json(indent=2) + "\n"
-    )
-    print(f"Final outcome: {record.final_outcome}")
-    print(f"Evidence: {arguments.report_json}")
-    return (
-        0
-        if record.final_outcome
-        in {
-            FinalOutcome.SUCCEEDED,
-            FinalOutcome.RECOVERED,
-        }
-        else 2
-    )
-
-
-def _consume_buildkite_audit_prewrite_gate() -> None:
-    """Consume the outer gate's post-AuditStore marker exactly once."""
-    if os.environ.pop("NCDP_AUDIT_PREWRITE_VERIFIED", None) != "1":
-        raise SecretError("Buildkite audit pre-write gate was not verified")
-
-
-def _request_buildkite_snmp_oidc_jwt() -> BuildkiteOIDCJWT:
-    """Request the separate SNMP capability only from the protected job."""
-    try:
-        completed = subprocess.run(
-            [
-                "buildkite-agent",
-                "oidc",
-                "request-token",
-                "--audience",
-                "urn:ncdp:openbao:deploy",
-                "--lifetime",
-                "300",
-                "--subject-claim",
-                "pipeline_id",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError:
-        raise SecretError("Buildkite SNMP OIDC request failed") from None
-    if completed.returncode != 0:
-        raise SecretError("Buildkite SNMP OIDC request failed")
-    return read_buildkite_oidc_jwt(io.StringIO(completed.stdout))
 
 
 def _run_verify_buildkite_openbao_identity(arguments: argparse.Namespace) -> int:
@@ -773,55 +588,6 @@ def _run_audit_find_observations(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _inventory(arguments: argparse.Namespace):
-    if arguments.netbox:
-        return NetBoxInventoryProvider()
-    return LocalYamlInventoryProvider(arguments.inventory)
-
-
-def _secrets(arguments: argparse.Namespace):
-    if arguments.openbao:
-        return OpenBaoSecretProvider()
-    return EnvironmentSecretProvider()
-
-
-def _run_plan(arguments: argparse.Namespace) -> int:
-    intent = _load_change(arguments.change)
-    inventory = _inventory(arguments)
-    secrets = _secrets(arguments)
-    adapter = MultiVendorAdapter()
-    result = plan_change(
-        intent,
-        inventory,
-        secrets,
-        adapter,
-    )
-    print(f"Credential source: {result.credential.source}")
-    print(f"Credential reference: {result.credential.reference}")
-    if result.plan is None:
-        print(result.message)
-        return 0
-    _write_json(arguments.output, result.plan.model_dump_json(indent=2) + "\n")
-    print(f"Target: {result.plan.target}")
-    print(f"Observed hostname: {result.plan.preconditions.observed_hostname}")
-    print(f"Interface: {result.plan.interface}")
-    print(f"Current description: {result.plan.current_description!r}")
-    print(f"Desired description: {result.plan.desired_description!r}")
-    print("Execution artifact:")
-    print(result.plan.execution_artifact.cli_preview())
-    print(f"Transaction strategy: {result.plan.transaction_strategy}")
-    if result.plan.confirmed_timeout_minutes is not None:
-        print(
-            f"Commit-confirmed timeout: {result.plan.confirmed_timeout_minutes} minutes"
-        )
-        print(f"Confirmation operation: {result.plan.confirmation_operation}")
-    if result.plan.recovery_artifact is not None:
-        print("Recovery artifact:")
-        print(result.plan.recovery_artifact.cli_preview())
-    print(f"Plan digest: {result.plan.digest}")
-    return 0
-
-
 def _run_profiled_plan(arguments: argparse.Namespace) -> int:
     """Create one schema-v2 plan through profiled read-only boundaries only."""
     _require_unused_profiled_plan_path(arguments.output)
@@ -910,159 +676,6 @@ def _run_profiled_deploy(arguments: argparse.Namespace) -> int:
     )
 
 
-def _run_snmp_provisioning_plan(arguments: argparse.Namespace) -> int:
-    """Create one secret-free SNMP plan after targeted read-only preflight."""
-    _require_unused_fleet_plan_path(arguments.output)
-    intent = _load_snmp_provisioning_intent(arguments.change)
-    validate_host_trust(DEFAULT_TRUST_ROOT)
-    inventory = NetBoxInventoryProvider()
-    secrets = OpenBaoSecretProvider()
-    adapter = MultiVendorAdapter(known_hosts=DEFAULT_TRUST_ROOT / KNOWN_HOSTS_NAME)
-    device = inventory.resolve(intent.target)
-    if (
-        device.inventory_object_id != intent.device
-        or device.platform != intent.platform
-    ):
-        raise SnmpProvisioningError("SNMP plan inventory identity rejected")
-    connection_credentials = secrets.load(device)
-    preflight = adapter.preflight(device, connection_credentials, intent)
-    plan = build_snmp_provisioning_plan(intent, device, preflight)
-    _write_new_fleet_plan(arguments.output, plan.model_dump_json(indent=2) + "\n")
-    print(f"Target: {plan.target}")
-    print(f"Device identity: {plan.inventory_object_id}")
-    print(f"Credential reference: {plan.snmp_credential.reference}")
-    print(f"Owned-name preflight: {plan.preconditions.view}")
-    print(f"Plan digest: {plan.digest}")
-    return 0
-
-
-def _run_deploy(arguments: argparse.Namespace) -> int:
-    plan = _load_plan(arguments.plan)
-    inventory = _inventory(arguments)
-    secrets = _secrets(arguments)
-    adapter = MultiVendorAdapter()
-    record = deploy_plan(
-        plan,
-        arguments.approve_digest,
-        inventory,
-        secrets,
-        adapter,
-        adapter,
-    )
-    _write_json(arguments.report_json, record.model_dump_json(indent=2) + "\n")
-    print(f"Final outcome: {record.final_outcome}")
-    print(f"Evidence: {arguments.report_json}")
-    return 0 if record.final_outcome.value in {"SUCCEEDED", "RECOVERED"} else 2
-
-
-def _run_fleet_plan(arguments: argparse.Namespace) -> int:
-    _require_unused_fleet_plan_path(arguments.plan_out)
-    intent = _load_fleet_change(arguments.change)
-    inventory = NetBoxInventoryProvider()
-    secrets = OpenBaoSecretProvider()
-    result = plan_fleet(intent, inventory, secrets, MultiVendorAdapter())
-    deployable = sum(
-        member.classification is FleetMemberClassification.DEPLOYABLE
-        for member in result.members
-    )
-    compliant = len(result.members) - deployable
-    platform_counts = {
-        platform: sum(member.platform == platform for member in result.members)
-        for platform in sorted({member.platform for member in result.members})
-    }
-    print(
-        "Selector: "
-        f"device_tag={intent.selector.device_tag}, "
-        f"interface_tag={intent.selector.interface_tag}"
-    )
-    print(f"Selected members: {len(result.members)}")
-    print(f"Deployable members: {deployable}")
-    print(f"Compliant members: {compliant}")
-    print(
-        "Platform counts: "
-        + ", ".join(
-            f"{platform}={count}" for platform, count in platform_counts.items()
-        )
-    )
-    if result.plan is None:
-        print(result.message)
-        return 0
-    _write_new_fleet_plan(
-        arguments.plan_out, result.plan.model_dump_json(indent=2) + "\n"
-    )
-    by_id = {
-        member.inventory_object_id: member.target for member in result.plan.members
-    }
-    print(
-        "Canaries: "
-        + ", ".join(
-            f"{identity} ({by_id[identity]})" for identity in result.plan.canaries
-        )
-    )
-    for index, wave in enumerate(result.plan.waves, start=1):
-        print(
-            f"Wave {index}: "
-            + ", ".join(f"{identity} ({by_id[identity]})" for identity in wave)
-        )
-    for member in result.plan.members:
-        if member.child_plan is not None:
-            print(f"Child plan {member.target}: {member.child_plan.digest}")
-    print(f"Fleet plan digest: {result.plan.digest}")
-    return 0
-
-
-def _run_fleet_deploy(arguments: argparse.Namespace) -> int:
-    with _reserve_fleet_evidence(arguments.report_json) as evidence:
-        plan = _load_fleet_plan(arguments.plan)
-        inventory = NetBoxInventoryProvider()
-        secrets = OpenBaoSecretProvider()
-        adapter = MultiVendorAdapter()
-        record = deploy_fleet(
-            plan,
-            arguments.approve_digest,
-            inventory,
-            secrets,
-            adapter,
-            adapter,
-        )
-        evidence.write(record.model_dump_json(indent=2) + "\n")
-        evidence.flush()
-        os.fsync(evidence.fileno())
-    attempted = sum(member.attempted for member in record.members)
-    succeeded = sum(
-        member.child_record is not None
-        and member.child_record.final_outcome.value == "SUCCEEDED"
-        for member in record.members
-    )
-    compliant = sum(
-        member.classification is FleetMemberClassification.COMPLIANT
-        for member in record.members
-    )
-    validation = (
-        "not attempted"
-        if not record.final_validation.attempted
-        else "succeeded"
-        if record.final_validation.succeeded
-        else "failed"
-    )
-    print(f"Fleet digest: {record.fleet_plan_digest}")
-    print(f"Final outcome: {record.final_outcome}")
-    print(f"Full preflight: {'succeeded' if record.preflight.succeeded else 'failed'}")
-    print(f"Attempted members: {attempted}")
-    print(f"Succeeded members: {succeeded}")
-    print(f"Compliant no-ops: {compliant}")
-    if record.stop_member_identity is not None:
-        stopped = next(
-            member
-            for member in record.members
-            if member.inventory_object_id == record.stop_member_identity
-        )
-        print(f"Stopped at: {stopped.target} / {record.stop_child_outcome}")
-    print(f"Final fleet validation: {validation}")
-    print(f"Evidence: {arguments.report_json}")
-    return 0 if record.final_outcome is FleetFinalOutcome.SUCCEEDED else 2
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     parser = argparse.ArgumentParser(
@@ -1075,20 +688,6 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {version('network-change-delivery')}",
     )
     subparsers = parser.add_subparsers(dest="command")
-
-    plan_parser = subparsers.add_parser(
-        "plan",
-        help="collect live state and create an immutable plan",
-    )
-    plan_parser.add_argument("--change", required=True, type=Path)
-    plan_inventory = plan_parser.add_mutually_exclusive_group(required=True)
-    plan_inventory.add_argument("--inventory", type=Path)
-    plan_inventory.add_argument("--netbox", action="store_true")
-    plan_secrets = plan_parser.add_mutually_exclusive_group(required=True)
-    plan_secrets.add_argument("--openbao", action="store_true")
-    plan_secrets.add_argument("--environment-secrets", action="store_true")
-    plan_parser.add_argument("--output", required=True, type=Path)
-    plan_parser.set_defaults(handler=_run_plan)
 
     profiled_plan_parser = subparsers.add_parser(
         "profiled-plan",
@@ -1113,37 +712,6 @@ def build_parser() -> argparse.ArgumentParser:
     profiled_deploy_parser.add_argument("--openbao", required=True, action="store_true")
     profiled_deploy_parser.add_argument("--live", required=True, action="store_true")
     profiled_deploy_parser.set_defaults(handler=_run_profiled_deploy)
-
-    snmp_plan_parser = subparsers.add_parser(
-        "snmp-provisioning-plan",
-        help="read-only preflight and create one secret-free SNMPv3 plan",
-    )
-    snmp_plan_parser.add_argument("--change", required=True, type=Path)
-    snmp_plan_parser.add_argument("--output", required=True, type=Path)
-    snmp_plan_parser.add_argument("--netbox", required=True, action="store_true")
-    snmp_plan_parser.add_argument("--openbao", required=True, action="store_true")
-    snmp_plan_parser.set_defaults(handler=_run_snmp_provisioning_plan)
-
-    fleet_plan_parser = subparsers.add_parser(
-        "fleet-plan",
-        help="resolve and read-only preflight one NetBox-selected fleet",
-    )
-    fleet_plan_parser.add_argument("--change", required=True, type=Path)
-    fleet_plan_parser.add_argument("--plan-out", required=True, type=Path)
-    fleet_plan_parser.add_argument("--netbox", required=True, action="store_true")
-    fleet_plan_parser.add_argument("--openbao", required=True, action="store_true")
-    fleet_plan_parser.set_defaults(handler=_run_fleet_plan)
-
-    fleet_deploy_parser = subparsers.add_parser(
-        "fleet-deploy",
-        help="execute one explicitly digest-approved immutable fleet plan",
-    )
-    fleet_deploy_parser.add_argument("--plan", required=True, type=Path)
-    fleet_deploy_parser.add_argument("--approve-digest", required=True)
-    fleet_deploy_parser.add_argument("--netbox", required=True, action="store_true")
-    fleet_deploy_parser.add_argument("--openbao", required=True, action="store_true")
-    fleet_deploy_parser.add_argument("--report-json", required=True, type=Path)
-    fleet_deploy_parser.set_defaults(handler=_run_fleet_deploy)
 
     assure_parser = subparsers.add_parser(
         "assure",
@@ -1247,14 +815,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     identity_parser.set_defaults(handler=_run_verify_buildkite_openbao_identity)
 
-    buildkite_deploy_parser = subparsers.add_parser(
-        "deploy-buildkite-promotion",
-        help="deploy one requested protected Buildkite promotion",
-    )
-    buildkite_deploy_parser.add_argument("--promotion", required=True, type=Path)
-    buildkite_deploy_parser.add_argument("--report-json", required=True, type=Path)
-    buildkite_deploy_parser.set_defaults(handler=_run_deploy_buildkite_promotion)
-
     audit_parser = subparsers.add_parser(
         "audit", help="verify, persist, and query durable audit evidence"
     )
@@ -1355,20 +915,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audit_observation_find_parser.set_defaults(handler=_run_audit_find_observations)
 
-    deploy_parser = subparsers.add_parser(
-        "deploy",
-        help="execute one explicitly digest-approved immutable plan",
-    )
-    deploy_parser.add_argument("--plan", required=True, type=Path)
-    deploy_inventory = deploy_parser.add_mutually_exclusive_group(required=True)
-    deploy_inventory.add_argument("--inventory", type=Path)
-    deploy_inventory.add_argument("--netbox", action="store_true")
-    deploy_secrets = deploy_parser.add_mutually_exclusive_group(required=True)
-    deploy_secrets.add_argument("--openbao", action="store_true")
-    deploy_secrets.add_argument("--environment-secrets", action="store_true")
-    deploy_parser.add_argument("--approve-digest", required=True)
-    deploy_parser.add_argument("--report-json", required=True, type=Path)
-    deploy_parser.set_defaults(handler=_run_deploy)
     return parser
 
 
@@ -1393,12 +939,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(parsed.handler(parsed))
     except (
         InventoryError,
-        FleetSafetyError,
         OSError,
         ProviderError,
         PlanAssuranceError,
         PromotionError,
-        SafetyError,
         SecretError,
         ValueError,
         ValidationError,

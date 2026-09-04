@@ -65,7 +65,7 @@ def _not_called(*_args: object, **_kwargs: object) -> object:
     raise AssertionError("unexpected boundary invocation")
 
 
-def test_profiled_deploy_parser_requires_explicit_authority_and_keeps_v1() -> None:
+def test_profiled_deploy_parser_requires_explicit_authority_and_retires_v1() -> None:
     parser = cli.build_parser()
     parsed = parser.parse_args(
         _arguments(Path("plan.json"), Path("record.json"), "sha256:" + "a" * 64)
@@ -86,22 +86,10 @@ def test_profiled_deploy_parser_requires_explicit_authority_and_keeps_v1() -> No
         ).handler
         is cli._run_profiled_plan
     )
-    assert (
-        parser.parse_args(
-            [
-                "deploy",
-                "--plan",
-                "v1.json",
-                "--approve-digest",
-                "sha256:" + "a" * 64,
-                "--report-json",
-                "v1-record.json",
-                "--netbox",
-                "--openbao",
-            ]
-        ).handler
-        is cli._run_deploy
-    )
+    choices = parser._subparsers._group_actions[0].choices
+    assert "deploy" not in choices
+    assert "fleet-deploy" not in choices
+    assert "deploy-buildkite-promotion" not in choices
     with pytest.raises(SystemExit):
         parser.parse_args(
             _arguments(Path("p"), Path("r"), "sha256:" + "a" * 64, live=False)
@@ -197,9 +185,6 @@ def test_profiled_deploy_composes_exact_boundaries_and_publishes_evidence(
         return record
 
     monkeypatch.setattr(cli, "execute_profiled_plan", execute)
-    monkeypatch.setattr(cli, "NetBoxInventoryProvider", _not_called)
-    monkeypatch.setattr(cli, "MultiVendorAdapter", _not_called)
-    monkeypatch.setattr(cli, "deploy_plan", _not_called)
     assert cli.main(_arguments(plan_path, report, value.digest)) == status
     known_hosts = (
         cli.DEFAULT_PROFILED_LIVE_TRUST_ROOT / cli.PROFILED_LIVE_KNOWN_HOSTS_NAME

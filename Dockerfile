@@ -43,7 +43,6 @@ COPY fixtures/batfish ./fixtures/batfish
 COPY deployments/live/promotion ./deployments/live/promotion
 COPY scripts/assurance/verify_profiled_pr_candidate.py ./scripts/assurance/
 COPY scripts/buildkite/batfish_ready.py \
-  scripts/buildkite/render_assurance_annotation.py \
   scripts/buildkite/render_profiled_pr_assurance_annotation.py \
   ./scripts/buildkite/
 RUN chmod -R a=rX \

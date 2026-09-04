@@ -127,15 +127,15 @@ def test_existing_fleet_fixture_and_child_digests_remain_valid() -> None:
     )
 
 
-def test_current_v1_execution_does_not_import_profiled_inventory_or_adapter() -> None:
-    current_runtime_modules = (
+def test_dormant_v1_compatibility_modules_do_not_import_profiled_runtime() -> None:
+    compatibility_modules = (
         "workflow.py",
         "vendor_adapter.py",
         "fleet.py",
         "buildkite_deployment.py",
         "ephemeral_staging.py",
     )
-    for filename in current_runtime_modules:
+    for filename in compatibility_modules:
         source = (ROOT / "src/network_change_delivery" / filename).read_text(
             encoding="utf-8"
         )
@@ -144,8 +144,7 @@ def test_current_v1_execution_does_not_import_profiled_inventory_or_adapter() ->
 
     from network_change_delivery import cli
 
-    legacy_cli_handlers = (cli._run_plan, cli._run_deploy, cli._run_fleet_plan)
-    for handler in legacy_cli_handlers:
-        source = inspect.getsource(handler)
-        assert "Profile" not in source
-        assert "profiled" not in source
+    source = inspect.getsource(cli)
+    assert "MultiVendorAdapter" not in source
+    assert "NetBoxInventoryProvider" not in source
+    assert "deploy_plan" not in source

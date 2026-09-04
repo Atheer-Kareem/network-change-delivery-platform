@@ -89,7 +89,7 @@ def _not_called(*_args: object, **_kwargs: object) -> object:
     raise AssertionError("legacy boundary must not be used")
 
 
-def test_profiled_plan_parser_is_separate_and_requires_authorities() -> None:
+def test_profiled_plan_is_the_only_ordinary_planning_command() -> None:
     parser = cli.build_parser()
     parsed = parser.parse_args(
         [
@@ -103,21 +103,10 @@ def test_profiled_plan_parser_is_separate_and_requires_authorities() -> None:
         ]
     )
     assert parsed.handler is cli._run_profiled_plan
-    assert (
-        parser.parse_args(
-            [
-                "plan",
-                "--change",
-                "intent.yaml",
-                "--output",
-                "plan.json",
-                "--inventory",
-                "inventory.yaml",
-                "--environment-secrets",
-            ]
-        ).handler
-        is cli._run_plan
-    )
+    choices = parser._subparsers._group_actions[0].choices
+    assert "plan" not in choices
+    assert "fleet-plan" not in choices
+    assert "snmp-provisioning-plan" not in choices
     with pytest.raises(SystemExit):
         parser.parse_args(["profiled-plan"])
 
@@ -155,10 +144,6 @@ def test_profiled_plan_composes_only_profiled_read_only_boundaries(
         "plan_profiled_change",
         lambda *_args: calls.append("plan") or _result(),
     )
-    monkeypatch.setattr(cli, "NetBoxInventoryProvider", _not_called)
-    monkeypatch.setattr(cli, "MultiVendorAdapter", _not_called)
-    monkeypatch.setattr(cli, "deploy_plan", _not_called)
-
     assert cli.main(_arguments(change, output)) == 0
     assert calls == [
         "trust",

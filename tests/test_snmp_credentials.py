@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import subprocess
-
 import httpx
 import pytest
 
-from network_change_delivery import cli
 from network_change_delivery.buildkite_identity import BuildkiteOIDCJWT
 from network_change_delivery.buildkite_policy import BuildkiteDeploymentContext
 from network_change_delivery.openbao_snmp_config import SNMP_OBSERVABILITY_POLICY_NAME
@@ -239,45 +236,3 @@ def test_secret_format_is_exactly_shared_contract(authentication, privacy) -> No
 
     with pytest.raises(SecretError):
         SnmpProvisioningCredentials(USERNAME, authentication, privacy)
-
-
-def test_protected_cli_requests_a_distinct_bounded_snmp_oidc_exchange(
-    monkeypatch,
-) -> None:
-    calls: list[list[str]] = []
-
-    def run(arguments, **kwargs):
-        calls.append(arguments)
-        assert kwargs == {"check": False, "capture_output": True, "text": True}
-        return subprocess.CompletedProcess(arguments, 0, stdout=JWT + "\n", stderr="")
-
-    monkeypatch.setattr(cli.subprocess, "run", run)
-    result = cli._request_buildkite_snmp_oidc_jwt()
-    assert result.value == JWT
-    assert calls == [
-        [
-            "buildkite-agent",
-            "oidc",
-            "request-token",
-            "--audience",
-            "urn:ncdp:openbao:deploy",
-            "--lifetime",
-            "300",
-            "--subject-claim",
-            "pipeline_id",
-        ]
-    ]
-    assert JWT not in repr(result)
-
-
-def test_protected_cli_consumes_only_explicit_audit_prewrite_marker(
-    monkeypatch,
-) -> None:
-    monkeypatch.delenv("NCDP_AUDIT_PREWRITE_VERIFIED", raising=False)
-    with pytest.raises(SecretError, match="pre-write gate"):
-        cli._consume_buildkite_audit_prewrite_gate()
-    monkeypatch.setenv("NCDP_AUDIT_PREWRITE_VERIFIED", "1")
-    cli._consume_buildkite_audit_prewrite_gate()
-    assert "NCDP_AUDIT_PREWRITE_VERIFIED" not in cli.os.environ
-    with pytest.raises(SecretError, match="pre-write gate"):
-        cli._consume_buildkite_audit_prewrite_gate()

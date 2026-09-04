@@ -250,6 +250,10 @@ class Operations:
 
     def verify_absent(self):
         self.calls.append("absence")
+        if self.fail == "absence_malformed":
+            raise ProfiledStagingAmbiguousError(
+                "profiled staging Terraform ownership cannot be proven"
+            )
 
     def retire_state(self) -> None:
         self.calls.append("retire")
@@ -291,6 +295,9 @@ def test_lifecycle_cleans_partial_owned_state_when_create_does_not_return_contex
     evidence = ProfiledStagingLifecycle("run-1", "local", operations).run()
     assert evidence.primary_failure == "create failed after ownership"
     assert evidence.destroy_outcome == "succeeded"
+    assert evidence.absence_verification == "succeeded"
+    assert evidence.state_retirement == "succeeded"
+    assert evidence.final_outcome is ProfiledStagingOutcome.FAILED
     assert operations.calls == [
         "admit",
         "create",
@@ -299,6 +306,18 @@ def test_lifecycle_cleans_partial_owned_state_when_create_does_not_return_contex
         "absence",
         "retire",
     ]
+
+
+def test_lifecycle_malformed_post_destroy_state_is_ambiguous() -> None:
+    operations = Operations(fail="absence_malformed")
+    evidence = ProfiledStagingLifecycle("run-1", "local", operations).run()
+    assert evidence.destroy_outcome == "succeeded"
+    assert evidence.absence_verification == "not_attempted"
+    assert evidence.state_retirement == "not_attempted"
+    assert evidence.cleanup_failure == (
+        "profiled staging Terraform ownership cannot be proven"
+    )
+    assert evidence.final_outcome is ProfiledStagingOutcome.AMBIGUOUS
 
 
 def test_lifecycle_retains_ambiguous_terraform_outcome() -> None:

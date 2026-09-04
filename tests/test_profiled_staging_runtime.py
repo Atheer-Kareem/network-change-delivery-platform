@@ -75,6 +75,31 @@ def test_state_authority_excludes_data_sources_and_rejects_unknown_managed() -> 
         validate_destroy_only_plan(state | {"unknown.resource"}, {})
 
 
+def test_real_terraform_1_15_empty_state_shape_has_no_managed_resources() -> None:
+    assert terraform_managed_state_addresses({"format_version": "1.0"}) == set()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"format_version": "1.1"},
+        {"format_version": "1.0", "unexpected": None},
+        {"format_version": "1.0", "values": None},
+        {"values": {}},
+    ],
+)
+def test_malformed_empty_state_lookalike_is_rejected(payload: object) -> None:
+    with pytest.raises(ProfiledStagingError, match="Terraform state rejected"):
+        terraform_managed_state_addresses(payload)
+
+
+def test_empty_state_is_observation_not_destructive_authority() -> None:
+    state = terraform_managed_state_addresses({"format_version": "1.0"})
+    with pytest.raises(ProfiledStagingError, match="state is not admitted"):
+        validate_destroy_only_plan(state, {})
+
+
 def test_start_rejects_unexpected_change_before_apply(tmp_path: Path) -> None:
     value = operations(tmp_path)
     calls: list[tuple[str, ...]] = []
@@ -144,6 +169,73 @@ def test_uncertain_destroy_is_reconciled_without_replay(tmp_path: Path) -> None:
     value._lab_is_absent = lambda: True
     value.destroy_owned(require_complete=True)
     assert [call[0] for call in calls].count("apply") == 1
+
+
+def test_uncertain_destroy_with_malformed_state_remains_ambiguous(
+    tmp_path: Path,
+) -> None:
+    value = operations(tmp_path)
+    first = True
+
+    def state_addresses():
+        nonlocal first
+        if first:
+            first = False
+            return set(PROFILED_STAGING_TERRAFORM_ADDRESSES)
+        raise ProfiledStagingError("profiled staging Terraform state rejected")
+
+    value._state_addresses = state_addresses
+    value._var_file_arguments = lambda: ["-var-file=recovery-inputs.tfvars.json"]
+    value._planned_actions = lambda _plan: dict.fromkeys(
+        PROFILED_STAGING_TERRAFORM_ADDRESSES, "delete"
+    )
+    value._secure_file = lambda _path: None
+    calls: list[tuple[str, ...]] = []
+
+    def terraform(arguments, **_kwargs):
+        calls.append(tuple(arguments))
+        if arguments[0] == "apply":
+            raise ProfiledStagingAmbiguousError("uncertain destroy")
+
+    value._terraform = terraform
+    with pytest.raises(ProfiledStagingAmbiguousError, match="outcome is ambiguous"):
+        value.destroy_owned(require_complete=True)
+    assert [call[0] for call in calls].count("apply") == 1
+
+
+def test_valid_empty_state_and_absent_lab_permit_state_retirement(
+    tmp_path: Path,
+) -> None:
+    value = operations(tmp_path)
+    value._state_backup_path = tmp_path / "terraform.tfstate.backup"
+    for name in (
+        "terraform.tfstate",
+        "terraform.tfstate.backup",
+        "recovery-inputs.tfvars.json",
+        "create.tfplan",
+        "start.tfplan",
+        "destroy.tfplan",
+    ):
+        (tmp_path / name).write_text("retained", encoding="utf-8")
+    value._state_addresses = lambda: terraform_managed_state_addresses(
+        {"format_version": "1.0"}
+    )
+    value._lab_is_absent = lambda: True
+
+    value.verify_absent()
+    value.retire_state()
+
+    assert not any(
+        (tmp_path / name).exists()
+        for name in (
+            "terraform.tfstate",
+            "terraform.tfstate.backup",
+            "recovery-inputs.tfvars.json",
+            "create.tfplan",
+            "start.tfplan",
+            "destroy.tfplan",
+        )
+    )
 
 
 def test_recovery_is_variable_file_bound_and_has_no_openbao_dependency() -> None:

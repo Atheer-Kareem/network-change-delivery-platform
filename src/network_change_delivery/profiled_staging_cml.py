@@ -139,7 +139,14 @@ class ProfiledStagingCmlReader:
                 raise ProfiledStagingError("profiled staging CML interface rejected")
             item = self.item(lab_id, "interfaces", identity)
             slot = item.get("slot")
-            if not isinstance(slot, int) or slot in result:
+            if slot is None:
+                continue
+            if (
+                isinstance(slot, bool)
+                or not isinstance(slot, int)
+                or slot < 0
+                or slot in result
+            ):
                 raise ProfiledStagingError(
                     "profiled staging CML interface slot rejected"
                 )

@@ -460,6 +460,8 @@ def validate_start_only_plan(planned_actions: dict[str, str]) -> None:
 
 def terraform_managed_state_addresses(payload: object) -> set[str]:
     """Extract only managed-resource addresses from bounded Terraform state JSON."""
+    if payload == {"format_version": "1.0"}:
+        return set()
     try:
         root = payload["values"]["root_module"]  # type: ignore[index]
     except (KeyError, TypeError):

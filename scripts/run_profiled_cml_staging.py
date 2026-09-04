@@ -568,7 +568,13 @@ class LocalTerraformOperations:
         try:
             self._terraform(["apply", "-input=false", str(plan)], phase="destroy apply")
         except ProfiledStagingAmbiguousError:
-            if self._state_addresses() or not self._lab_is_absent():
+            try:
+                state_after = self._state_addresses()
+            except ProfiledStagingError:
+                raise ProfiledStagingAmbiguousError(
+                    "profiled staging Terraform destroy outcome is ambiguous"
+                ) from None
+            if state_after or not self._lab_is_absent():
                 raise
 
     def _lab_is_absent(self) -> bool:

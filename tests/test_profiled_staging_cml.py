@@ -41,6 +41,7 @@ class Reader:
             key: {slot: f"if-{key}-{slot}" for slot in range(5)}
             for key in self.node_ids
         }
+        self.logical_interfaces = {key: f"if-{key}-logical" for key in self.node_ids}
 
     def lab_ids(self):
         return (LAB_ID,) if self.title else ()
@@ -88,9 +89,13 @@ class Reader:
         return {
             "interface_a": self.slots[left][left_slot],
             "interface_b": (
-                "wrong-interface"
-                if self.bad == "link"
-                else self.slots[right][right_slot]
+                self.logical_interfaces[right]
+                if self.bad == "logical_link"
+                else (
+                    "wrong-interface"
+                    if self.bad == "link"
+                    else self.slots[right][right_slot]
+                )
             ),
         }
 
@@ -347,6 +352,49 @@ def test_configuration_malformed_success_requires_valid_fallback(
             reader.configuration(LAB_ID, "node-core")
 
 
+def _interface_reader(slots: list[object]) -> ProfiledStagingCmlReader:
+    identities = [f"interface-{index}" for index in range(len(slots))]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/interfaces"):
+            return httpx.Response(200, json=identities)
+        identity = request.url.path.rsplit("/", 1)[1]
+        return httpx.Response(200, json={"slot": slots[identities.index(identity)]})
+
+    return ProfiledStagingCmlReader(
+        httpx.Client(
+            base_url="https://cml.invalid",
+            transport=httpx.MockTransport(handler),
+            trust_env=False,
+        )
+    )
+
+
+def test_logical_interface_is_excluded_from_physical_slot_map() -> None:
+    reader = _interface_reader([None, 0, 1, 2, 3])
+    assert reader.interfaces(LAB_ID, "node-core") == {
+        0: "interface-1",
+        1: "interface-2",
+        2: "interface-3",
+        3: "interface-4",
+    }
+
+
+@pytest.mark.parametrize(
+    "slots",
+    [
+        [0, 0],
+        [-1],
+        [True],
+        ["0"],
+        [{"slot": 0}],
+    ],
+)
+def test_physical_slot_map_rejects_invalid_slot_semantics(slots: list[object]) -> None:
+    with pytest.raises(ProfiledStagingError, match="interface slot rejected"):
+        _interface_reader(slots).interfaces(LAB_ID, "node-core")
+
+
 def test_created_realization_is_observed_and_run_specific() -> None:
     from test_profiled_realization import inventory_devices
 
@@ -374,6 +422,7 @@ def test_created_realization_is_observed_and_run_specific() -> None:
         "definition",
         "image",
         "link",
+        "logical_link",
         "day0",
     ],
 )

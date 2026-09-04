@@ -214,12 +214,14 @@ gNMI/OpenConfig is deferred/skipped for the current reference implementation.
    SNMP generation paths for deferred host-side auth publication. Its current
    external configuration is not asserted.
 
-The protected `deploy-gate` remains the only device-write boundary. A typed
-`snmp_provisioning_plan` is promoted and approved through that same path, and a
-single plan targets one NetBox device. Cisco and Junos acceptance used separate
-commits, builds, approvals, and non-retryable attempts. The plan
-contains the controlled username and logical credential reference but no
-passphrase, localized key, encrypted secret, or secret-derived digest.
+The protected schema-v1 `deploy-gate` and SNMP provisioning command are retired
+from current runtime authority. The accepted historical 11C-3 provisioning used
+one typed `snmp_provisioning_plan` per NetBox device; Cisco and Junos acceptance
+used separate commits, builds, approvals, and non-retryable attempts. Those
+historical plans contain the controlled username and logical credential
+reference but no passphrase, localized key, encrypted secret, or secret-derived
+digest. Current SNMP is telemetry-only and projects devices 1/2 from the
+exact-four profiled population under the SHA256/AES128 capability contract.
 
 The owned device contract is the exact ADR 0026 OID closure in view
 `NCDP_IFMIB`, privacy-level read-only group `NCDP_SNMP_RO`, and a versioned

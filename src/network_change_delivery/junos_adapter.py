@@ -37,7 +37,10 @@ from network_change_delivery.models import (
     InventoryDevice,
     JunosConfigArtifact,
 )
-from network_change_delivery.read_only_target import ReadOnlyConnectionTarget
+from network_change_delivery.read_only_target import (
+    ConnectionTarget,
+    ReadOnlyConnectionTarget,
+)
 from network_change_delivery.secrets import DeviceCredentials
 from network_change_delivery.snmp_provisioning import (
     SecretRenderedArtifact,
@@ -527,6 +530,94 @@ class JunosPyEZAdapter:
                 transaction.close_failed = True
                 return
             raise
+
+    @contextmanager
+    def profiled_transaction(
+        self,
+        target: ConnectionTarget,
+        credentials: DeviceCredentials,
+        artifact: JunosConfigArtifact,
+    ) -> Any:
+        """Open one strict profiled NETCONF exclusive transaction."""
+        if self._known_hosts is None:
+            raise HostTrustError("profiled Junos write requires explicit known_hosts")
+        transaction: JunosTransaction | None = None
+        try:
+            with (
+                self._session(target, credentials, profile_bound=True) as connection,
+                JunosTransaction(
+                    connection, self._config_factory, artifact
+                ) as transaction,
+            ):
+                yield transaction
+        except ProviderError:
+            if transaction is not None and transaction.commit_attempted:
+                transaction.close_failed = True
+                return
+            raise
+
+    def confirm_profiled(
+        self, target: ConnectionTarget, credentials: DeviceCredentials
+    ) -> ExecutionResult:
+        """Confirm a pending commit-confirmed operation once through strict trust."""
+        if self._known_hosts is None:
+            raise HostTrustError("profiled Junos write requires explicit known_hosts")
+        attempted = False
+        result: ExecutionResult | None = None
+        session = self._session(target, credentials, profile_bound=True)
+        try:
+            connection = session.__enter__()
+            try:
+                config = self._config_factory(connection, mode="exclusive")
+                config.__enter__()
+            except Exception:
+                return _confirmation_failed()
+            attempted = True
+            try:
+                confirmed = config.commit()
+            except (ConnectClosedError, ConnectError, RpcTimeoutError):
+                result = _confirmation_ambiguous()
+            except (CommitError, RpcError):
+                result = _confirmation_failed()
+            except Exception:
+                result = _confirmation_ambiguous()
+            else:
+                result = (
+                    _confirmation_succeeded()
+                    if confirmed is True
+                    else _confirmation_failed()
+                )
+            try:
+                config.__exit__(None, None, None)
+            except Exception:
+                if result.disposition is ExecutionDisposition.SUCCEEDED:
+                    result = result.model_copy(
+                        update={
+                            "message": (
+                                "pending commit confirmed; config cleanup warning"
+                            )
+                        }
+                    )
+        except Exception:
+            if not attempted:
+                return _confirmation_failed()
+            result = result or _confirmation_ambiguous()
+        finally:
+            try:
+                session.__exit__(None, None, None)
+            except Exception:
+                if (
+                    result is not None
+                    and result.disposition is ExecutionDisposition.SUCCEEDED
+                ):
+                    result = result.model_copy(
+                        update={
+                            "message": (
+                                "pending commit confirmed; session cleanup warning"
+                            )
+                        }
+                    )
+        return result or _confirmation_failed()
 
     def discover(
         self, device: InventoryDevice, credentials: DeviceCredentials

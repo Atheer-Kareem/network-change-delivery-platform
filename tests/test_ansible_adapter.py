@@ -30,6 +30,103 @@ from network_change_delivery.models import (
 from network_change_delivery.secrets import DeviceCredentials
 
 
+def _profiled_target() -> SimpleNamespace:
+    return SimpleNamespace(
+        name="core-02", host="192.0.2.14", port=22, expected_hostname="core-02"
+    )
+
+
+def _artifact() -> CiscoConfigArtifact:
+    return CiscoConfigArtifact(
+        parent="interface GigabitEthernet2", lines=("description new",)
+    )
+
+
+def test_profiled_execute_requires_explicit_trust_before_runner(monkeypatch):
+    adapter = AnsibleRunnerCiscoAdapter()
+    monkeypatch.setattr(
+        adapter, "_run", lambda *_args, **_kwargs: pytest.fail("runner")
+    )
+    with pytest.raises(HostTrustError):
+        adapter.execute_profiled(
+            _profiled_target(),
+            DeviceCredentials(username="u", password="p"),
+            _artifact(),
+        )
+
+
+@pytest.mark.parametrize(
+    "runner,selected,expected",
+    [
+        (
+            SimpleNamespace(status="successful", rc=0),
+            {EXECUTION_TASK: {"changed": True}},
+            ExecutionDisposition.SUCCEEDED,
+        ),
+        (SimpleNamespace(status="timeout", rc=0), {}, ExecutionDisposition.AMBIGUOUS),
+        (SimpleNamespace(status="canceled", rc=0), {}, ExecutionDisposition.AMBIGUOUS),
+        (SimpleNamespace(status="failed", rc=1), {}, ExecutionDisposition.FAILED),
+        (
+            SimpleNamespace(status="failed", rc=0),
+            {EXECUTION_TASK: {"_ncdp_event": "runner_on_unreachable"}},
+            ExecutionDisposition.AMBIGUOUS,
+        ),
+    ],
+)
+def test_profiled_execute_uses_strict_transport_and_shared_classification(
+    monkeypatch, runner, selected, expected
+):
+    adapter = AnsibleRunnerCiscoAdapter(known_hosts=Path("/tmp/known_hosts"))
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured["args"], captured["kwargs"] = args, kwargs
+        return runner, selected
+
+    monkeypatch.setattr(adapter, "_run", fake_run)
+    result = adapter.execute_profiled(
+        _profiled_target(), DeviceCredentials(username="u", password="p"), _artifact()
+    )
+    assert result.disposition is expected
+    assert captured["args"][2] == "apply_interface_description.yml"
+    assert (
+        captured["kwargs"]["ssh_type"] == "paramiko"
+        and captured["kwargs"]["profile_bound"] is True
+    )
+
+
+def test_profiled_execute_exception_is_ambiguous_but_host_trust_propagates(monkeypatch):
+    adapter = AnsibleRunnerCiscoAdapter(known_hosts=Path("/tmp/known_hosts"))
+    calls = 0
+
+    def broken(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("after runner")
+
+    monkeypatch.setattr(adapter, "_run", broken)
+    assert (
+        adapter.execute_profiled(
+            _profiled_target(),
+            DeviceCredentials(username="u", password="p"),
+            _artifact(),
+        ).disposition
+        is ExecutionDisposition.AMBIGUOUS
+    )
+    assert calls == 1
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(HostTrustError("no trust")),
+    )
+    with pytest.raises(HostTrustError):
+        adapter.execute_profiled(
+            _profiled_target(),
+            DeviceCredentials(username="u", password="p"),
+            _artifact(),
+        )
+
+
 @pytest.mark.parametrize("scope", tuple(VlanReadScope))
 def test_vlan_read_scope_forwards_only_immutable_exact_commands(
     monkeypatch: pytest.MonkeyPatch, scope: VlanReadScope

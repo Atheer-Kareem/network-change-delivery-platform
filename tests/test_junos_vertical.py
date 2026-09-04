@@ -81,6 +81,29 @@ def credential() -> CredentialReference:
     return CredentialReference("environment", ENVIRONMENT_REFERENCE)
 
 
+def test_profiled_junos_write_boundaries_require_explicit_trust():
+    adapter = JunosPyEZAdapter()
+    target = SimpleNamespace(
+        name="edge-junos-01",
+        host="192.0.2.20",
+        port=830,
+        expected_hostname="edge-junos-01",
+    )
+    credentials = DeviceCredentials(username="u", password="p")
+    artifact = JunosConfigArtifact(
+        interface="ge-0/0/1",
+        description="x",
+        xml=render_junos_interface_description("ge-0/0/1", "x"),
+    )
+    with (
+        pytest.raises(HostTrustError),
+        adapter.profiled_transaction(target, credentials, artifact),
+    ):
+        pass
+    with pytest.raises(HostTrustError):
+        adapter.confirm_profiled(target, credentials)
+
+
 def plan():
     return build_plan(
         intent(),

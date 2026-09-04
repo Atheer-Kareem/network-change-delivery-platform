@@ -1,9 +1,8 @@
 # Profiled migration closure
 
-This document records the final Detour-B source deletion gate. The code state is
-one profiled exact-four managed architecture; external removal of the obsolete
-`ncdp-managed` tags from NetBox devices 1/2 remains a separate controlled
-acceptance action.
+This document records the completed Detour-B deletion and external acceptance
+gates. Current state is one profiled exact-four managed architecture. The
+obsolete `ncdp-managed` Tag object remains inert with zero device assignments.
 
 ## Final authority
 
@@ -71,7 +70,15 @@ Live` lab. No running CML object is changed by source retirement.
 - Profiled execution has no managed-state store dependency and cannot advance
   D0 for interface descriptions.
 
-External legacy-tag retirement is deliberately absent from this source pass.
-After review, the operator may remove only the obsolete tags and record a new
-secret-free acceptance result. Until then those tags are inert external markers,
-not runtime authority.
+Controlled external acceptance removed only the two legacy `ncdp-managed`
+assignments from devices 1/2; fresh reconciliation proved the exact-four
+profiled population was unchanged and active. A separately reviewed, one-shot
+Oxidized reconciliation then refreshed its stale private source and owned
+runtime/readiness from exact-two to exact-four. Management observability remains
+exact-four, while SNMP SHA256/AES128 remains an explicit capability projection
+of devices 1/2.
+
+The B5 store remained byte-identical with four generation-one
+`INITIAL_ADOPTION` records and no D0 advancement. B4 routed underlay, OSPF,
+VLAN/trunk, and ACL remain un-applied D1 proposals. See the
+[final PR 133 acceptance record](../acceptance/profiled-migration-closure-pr133.md).

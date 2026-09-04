@@ -25,7 +25,7 @@ history belongs in ADRs and acceptance records.
    Alertmanager, and advisory rules consume the exact-four profiled population
    without remediation authority.
 
-## Detour B — implementation complete, external tag retirement pending
+## Detour B — COMPLETE
 
 The profiled migration is complete through controlled LIVE acceptance of the
 local deploy boundary and the exact-two runtime deletion gate:
@@ -46,10 +46,13 @@ local deploy boundary and the exact-two runtime deletion gate:
   device-write step; and
 - the B5 D0/O/D1 seam and four generation-one records are unchanged.
 
-Final Detour-B closure is pending only a separately authorized, controlled
-external removal of the obsolete `ncdp-managed` tag from NetBox devices 1/2.
-Current code has zero legitimate dependency on that tag. This PR does not
-perform the external mutation.
+Controlled external acceptance removed the obsolete `ncdp-managed` assignments
+from devices 1/2 exactly once; the Tag object remains unassigned. The profiled
+population stayed exactly active devices 1/2/8/9. A separately reviewed
+Oxidized reconciliation refreshed its private source, loopback runtime, and
+readiness to exact-four. Current code and retained runtime have zero legitimate
+dependency on the legacy tag. B5 remained byte-identical and unchanged.
+The former **external tag retirement pending** milestone is therefore complete.
 
 ## Managed-state proposals
 
@@ -73,8 +76,6 @@ D0.
 
 ## Remaining work
 
-- Controlled external retirement of the obsolete NetBox legacy tags on devices
-  1/2, followed by a read-only exact-four verification.
 - Final demonstration rehearsal and repository closure.
 - Any future profiled fleet rollout, protected delivery, disposable staging, or
   new write vertical requires separate architecture review and acceptance.

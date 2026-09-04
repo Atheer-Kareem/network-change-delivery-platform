@@ -116,7 +116,8 @@ acceptance records.
       disposable CML staging, while protected main independently re-verifies
       both branches.
     - **Detour B — complete through B5-3, with profiled migration refinements
-      complete through the local deploy activation boundary:** B1 accepts the
+      complete through controlled LIVE acceptance of the local deploy activation
+      boundary:** B1 accepts the
       additive multi-device profile, management, authority, and managed-state
       contracts. B2 adds a parallel profile-aware read-only NetBox provider,
       LIVE-only target projection, and exact profile-bound Cisco/Junos

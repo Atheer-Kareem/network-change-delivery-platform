@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import ssl
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
@@ -147,10 +148,22 @@ class ProfiledStagingCmlReader:
 
     def configuration(self, lab_id: str, node_id: str) -> str:
         for suffix in ("configuration", "configurations"):
-            value = self._get(
-                f"/api/v0/labs/{lab_id}/nodes/{node_id}/{suffix}",
-                allow_missing=True,
-            )
+            try:
+                response = self._client.get(
+                    f"/api/v0/labs/{lab_id}/nodes/{node_id}/{suffix}"
+                )
+            except httpx.HTTPError:
+                raise ProfiledStagingError(
+                    "profiled staging CML observation failed"
+                ) from None
+            if response.status_code in (404, 405):
+                continue
+            if response.status_code != 200:
+                raise ProfiledStagingError("profiled staging CML observation rejected")
+            try:
+                value = response.json()
+            except ValueError:
+                continue
             if isinstance(value, str):
                 return value
             if isinstance(value, dict) and isinstance(value.get("configuration"), str):
@@ -164,6 +177,21 @@ class ProfiledStagingCmlReader:
             if len(values) == 1 and isinstance(values[0], str):
                 return values[0]
         raise ProfiledStagingError("profiled staging stored Day-0 unavailable")
+
+
+def _icmp_address_is_active(address: str, *, timeout: float) -> bool:
+    """Return only a positive bounded ICMP observation as address occupancy."""
+    try:
+        result = subprocess.run(
+            ("ping", "-n", "-c", "1", address),
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def admit_no_staging_collision(
@@ -184,6 +212,10 @@ def admit_no_staging_collision(
             str(device.logical_name)
         ):
             raise ProfiledStagingError("profiled staging management endpoint rejected")
+        if _icmp_address_is_active(str(endpoint.address.ip), timeout=probe_timeout):
+            raise ProfiledStagingError(
+                "profiled staging management endpoint is occupied"
+            )
         for port in {22, 830, endpoint.port}:
             try:
                 connection = socket.create_connection(

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import socket
+import subprocess
 from typing import cast
 
+import httpx
 import pytest
 
 import network_change_delivery.profiled_staging_cml as staging_cml
@@ -14,6 +16,7 @@ from network_change_delivery.architecture_contracts import (
 from network_change_delivery.profiled_staging import ProfiledStagingError
 from network_change_delivery.profiled_staging_cml import (
     _LINK_SLOTS,
+    ProfiledStagingCmlReader,
     admit_created_realization,
     admit_no_staging_collision,
 )
@@ -147,19 +150,50 @@ def test_precreate_rejects_existing_staging_lab(
 
     devices = inventory_devices()
     _admit_fixture_addresses(monkeypatch, devices)
+    monkeypatch.setattr(
+        staging_cml,
+        "_icmp_address_is_active",
+        lambda *_args, **_kwargs: pytest.fail("address probe must not run"),
+    )
     with pytest.raises(ProfiledStagingError, match="existing NCDP Staging"):
         admit_no_staging_collision(
             cast(object, Reader(title="NCDP Staging existing")), devices
         )
 
 
-def test_precreate_rejects_occupied_staging_endpoint(
+def test_precreate_rejects_icmp_responsive_endpoint_with_closed_tcp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from test_profiled_realization import inventory_devices
 
     devices = inventory_devices()
     _admit_fixture_addresses(monkeypatch, devices)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess((), 0),
+    )
+    monkeypatch.setattr(
+        socket,
+        "create_connection",
+        lambda *_args, **_kwargs: pytest.fail("TCP must not run after ICMP success"),
+    )
+    with pytest.raises(ProfiledStagingError, match="endpoint is occupied"):
+        admit_no_staging_collision(cast(object, Reader(title="")), devices)
+
+
+def test_precreate_rejects_tcp_responsive_staging_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from test_profiled_realization import inventory_devices
+
+    devices = inventory_devices()
+    _admit_fixture_addresses(monkeypatch, devices)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess((), 1),
+    )
 
     class Connection:
         def close(self):
@@ -172,11 +206,145 @@ def test_precreate_rejects_occupied_staging_endpoint(
         admit_no_staging_collision(cast(object, Reader(title="")), devices)
 
 
+def test_precreate_accepts_fully_inactive_staging_endpoints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from test_profiled_realization import inventory_devices
+
+    devices = inventory_devices()
+    _admit_fixture_addresses(monkeypatch, devices)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess((), 1),
+    )
+
+    def inactive(*_args, **_kwargs):
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(socket, "create_connection", inactive)
+    admit_no_staging_collision(cast(object, Reader(title="")), devices)
+
+
+def test_precreate_does_not_treat_icmp_probe_failure_as_occupancy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from test_profiled_realization import inventory_devices
+
+    devices = inventory_devices()
+    _admit_fixture_addresses(monkeypatch, devices)
+
+    def timed_out(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("ping", 0.5)
+
+    def inactive(*_args, **_kwargs):
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(subprocess, "run", timed_out)
+    monkeypatch.setattr(socket, "create_connection", inactive)
+    admit_no_staging_collision(cast(object, Reader(title="")), devices)
+
+
 def test_precreate_rejects_noncanonical_staging_endpoint() -> None:
     from test_profiled_realization import inventory_devices
 
     with pytest.raises(ProfiledStagingError, match="endpoint rejected"):
         admit_no_staging_collision(cast(object, Reader(title="")), inventory_devices())
+
+
+@pytest.mark.parametrize("first_status", [404, 405])
+def test_configuration_tries_alternative_after_unsupported_route(
+    first_status: int,
+) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path.endswith("/configuration"):
+            return httpx.Response(first_status, json={"detail": "unsupported"})
+        return httpx.Response(200, json={"configuration": "hostname staged\n"})
+
+    client = httpx.Client(
+        base_url="https://cml.invalid",
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    reader = ProfiledStagingCmlReader(client)
+    assert reader.configuration(LAB_ID, "node-core") == "hostname staged\n"
+    assert calls == [
+        f"/api/v0/labs/{LAB_ID}/nodes/node-core/configuration",
+        f"/api/v0/labs/{LAB_ID}/nodes/node-core/configurations",
+    ]
+
+
+def test_configuration_uses_node_fallback_when_routes_are_unsupported() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(("/configuration", "/configurations")):
+            return httpx.Response(405, json={"detail": "unsupported"})
+        return httpx.Response(
+            200,
+            json={"configuration": [{"content": "hostname fallback\n"}]},
+        )
+
+    client = httpx.Client(
+        base_url="https://cml.invalid",
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    assert (
+        ProfiledStagingCmlReader(client).configuration(LAB_ID, "node-core")
+        == "hostname fallback\n"
+    )
+
+
+def test_configuration_rejects_unexpected_route_status() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"detail": "failed"})
+
+    client = httpx.Client(
+        base_url="https://cml.invalid",
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    with pytest.raises(ProfiledStagingError, match="observation rejected"):
+        ProfiledStagingCmlReader(client).configuration(LAB_ID, "node-core")
+
+
+def test_ordinary_get_does_not_tolerate_method_not_allowed() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(405, json={"detail": "unsupported"})
+
+    client = httpx.Client(
+        base_url="https://cml.invalid",
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    with pytest.raises(ProfiledStagingError, match="observation rejected"):
+        ProfiledStagingCmlReader(client).lab_ids()
+
+
+@pytest.mark.parametrize("valid_fallback", [True, False])
+def test_configuration_malformed_success_requires_valid_fallback(
+    valid_fallback: bool,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(("/configuration", "/configurations")):
+            return httpx.Response(200, content=b"not-json")
+        if valid_fallback:
+            return httpx.Response(200, json={"configuration": "hostname fallback\n"})
+        return httpx.Response(200, json={"configuration": [{"content": 7}]})
+
+    client = httpx.Client(
+        base_url="https://cml.invalid",
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    reader = ProfiledStagingCmlReader(client)
+    if valid_fallback:
+        assert reader.configuration(LAB_ID, "node-core") == "hostname fallback\n"
+    else:
+        with pytest.raises(ProfiledStagingError, match="stored Day-0 unavailable"):
+            reader.configuration(LAB_ID, "node-core")
 
 
 def test_created_realization_is_observed_and_run_specific() -> None:

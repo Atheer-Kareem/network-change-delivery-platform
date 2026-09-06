@@ -159,13 +159,15 @@ def test_iosv_bootstrap_disables_dynamic_management_before_static_binding() -> N
         maxsplit=1,
     )[1]
 
+    dhcp_clear = interface.index(" no ip address dhcp\n")
     clear = interface.index(" no ip address\n")
     static = interface.index(
         ' ip address ${split("/", management_cidr)[0]} '
         "${cidrnetmask(management_cidr)}\n"
     )
 
-    assert clear < static
+    assert dhcp_clear < clear < static
+    assert "\n ip address dhcp\n" not in rendered
     validate_management_only_bootstrap(rendered)
 
 

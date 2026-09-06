@@ -3,6 +3,7 @@ no service config
 ip domain name ncdp.local
 username ${username} privilege 15 secret 9 ${password_hash}
 interface GigabitEthernet0/0
+ no ip address dhcp
  no ip address
  ip address ${split("/", management_cidr)[0]} ${cidrnetmask(management_cidr)}
  no shutdown

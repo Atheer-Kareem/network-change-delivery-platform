@@ -117,6 +117,7 @@ class ProfiledStagingReadinessEvidence(BaseModel):
         max_length=64,
         pattern=r"^[A-Za-z0-9._-]+$",
     )
+    first_booted_seconds: float | None = Field(default=None, ge=0, le=7200)
 
     @model_validator(mode="after")
     def evidence_matches_outcome(self) -> ProfiledStagingReadinessEvidence:
@@ -124,6 +125,11 @@ class ProfiledStagingReadinessEvidence(BaseModel):
             self.readiness_evidence is not None
         ):
             raise ValueError("profiled staging readiness evidence rejected")
+        if (
+            self.first_booted_seconds is not None
+            and self.first_booted_seconds > self.elapsed_seconds
+        ):
+            raise ValueError("profiled staging readiness chronology rejected")
         return self
 
 

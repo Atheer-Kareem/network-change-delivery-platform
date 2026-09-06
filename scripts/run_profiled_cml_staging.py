@@ -71,6 +71,8 @@ TERRAFORM_ROOT = ROOT / "infrastructure" / "cml" / "profiled-staging"
 _READINESS_NORMAL_TIMEOUT_SECONDS = 180
 _READINESS_MAX_TIMEOUT_SECONDS = 300
 _READINESS_POLL_SECONDS = 5
+_READINESS_STATE_POLL_SECONDS = 10
+_POST_BOOT_SERVICE_GRACE_SECONDS = 60
 _TRANSITIONAL_CML_NODE_STATES = frozenset(
     {"DEFINED_ON_CORE", "QUEUED", "STARTED", "STARTING", "BOOTING"}
 )
@@ -494,30 +496,52 @@ class LocalTerraformOperations:
         normal_deadline = readiness_started + _READINESS_NORMAL_TIMEOUT_SECONDS
         maximum_deadline = readiness_started + _READINESS_MAX_TIMEOUT_SECONDS
         deadline = normal_deadline
+        next_state_observation = readiness_started
         self.readiness_deadline_seconds = _READINESS_NORMAL_TIMEOUT_SECONDS
         started = {
             str(device.logical_name): readiness_started for device in self._devices
         }
         observed: dict[str, tuple[float, EvidenceReference]] = {}
         remaining = set(self._devices)
+        states = {str(device.logical_name): None for device in self._devices}
+        first_booted = {str(device.logical_name): None for device in self._devices}
         while remaining:
-            if time.monotonic() >= deadline:
-                states = self._observe_readiness_node_states(
+            now = time.monotonic()
+            if now >= next_state_observation:
+                candidates = self._observe_readiness_node_states(
                     remaining, node_ids, lab_id
                 )
-                if (
-                    deadline == normal_deadline
-                    and len(remaining) == len(self._devices)
-                    and any(
-                        state in _TRANSITIONAL_CML_NODE_STATES
-                        for state in states.values()
-                    )
+                observed_at = time.monotonic()
+                for name, state in candidates.items():
+                    if state is not None:
+                        states[name] = state
+                    if state == "BOOTED" and first_booted[name] is None:
+                        first_booted[name] = observed_at - readiness_started
+                while next_state_observation <= observed_at:
+                    next_state_observation += _READINESS_STATE_POLL_SECONDS
+                now = observed_at
+            if self._post_boot_grace_expired(
+                remaining,
+                states,
+                first_booted,
+                now - readiness_started,
+            ):
+                self._record_timed_out_readiness(
+                    remaining, node_ids, states, first_booted, started, now
+                )
+                raise ProfiledStagingError("profiled staging readiness timed out")
+            if now >= deadline:
+                if deadline == normal_deadline and self._extension_is_admitted(
+                    remaining,
+                    states,
+                    first_booted,
+                    now - readiness_started,
                 ):
                     deadline = maximum_deadline
                     self.readiness_deadline_seconds = _READINESS_MAX_TIMEOUT_SECONDS
                     continue
                 self._record_timed_out_readiness(
-                    remaining, node_ids, states, started, deadline
+                    remaining, node_ids, states, first_booted, started, deadline
                 )
                 raise ProfiledStagingError("profiled staging readiness timed out")
             for device in tuple(remaining):
@@ -590,18 +614,59 @@ class LocalTerraformOperations:
                                 outcome=ProfiledStagingReadinessOutcome.READY,
                                 elapsed_seconds=elapsed,
                                 readiness_evidence=reference,
+                                cml_node_state=states.get(str(device.logical_name)),
+                                first_booted_seconds=first_booted.get(
+                                    str(device.logical_name)
+                                ),
                             )
                         )
                 except OSError:
                     continue
             if remaining:
+                sleep_boundary = min(deadline, next_state_observation)
                 sleep_for = min(
                     _READINESS_POLL_SECONDS,
-                    max(0, deadline - time.monotonic()),
+                    max(0, sleep_boundary - time.monotonic()),
                 )
                 if sleep_for:
                     time.sleep(sleep_for)
         return observed
+
+    @staticmethod
+    def _post_boot_grace_expired(
+        devices: set[ProfiledInventoryDevice],
+        states: dict[str, str | None],
+        first_booted: dict[str, float | None],
+        elapsed_seconds: float,
+    ) -> bool:
+        return any(
+            states[str(device.logical_name)] == "BOOTED"
+            and first_booted[str(device.logical_name)] is not None
+            and elapsed_seconds
+            >= first_booted[str(device.logical_name)] + _POST_BOOT_SERVICE_GRACE_SECONDS
+            for device in devices
+        )
+
+    @staticmethod
+    def _extension_is_admitted(
+        devices: set[ProfiledInventoryDevice],
+        states: dict[str, str | None],
+        first_booted: dict[str, float | None],
+        elapsed_seconds: float,
+    ) -> bool:
+        if not devices:
+            return False
+        return all(
+            states[str(device.logical_name)] in _TRANSITIONAL_CML_NODE_STATES
+            or (
+                states[str(device.logical_name)] == "BOOTED"
+                and first_booted[str(device.logical_name)] is not None
+                and elapsed_seconds
+                < first_booted[str(device.logical_name)]
+                + _POST_BOOT_SERVICE_GRACE_SECONDS
+            )
+            for device in devices
+        )
 
     def _observe_readiness_node_states(
         self,
@@ -638,6 +703,7 @@ class LocalTerraformOperations:
         devices: set[ProfiledInventoryDevice],
         node_ids: dict[str, str],
         states: dict[str, str | None],
+        first_booted: dict[str, float | None],
         started: dict[str, float],
         timed_out_at: float,
     ) -> None:
@@ -660,6 +726,7 @@ class LocalTerraformOperations:
                     outcome=ProfiledStagingReadinessOutcome.TIMED_OUT,
                     elapsed_seconds=timed_out_at - started[name],
                     cml_node_state=states.get(name),
+                    first_booted_seconds=first_booted.get(name),
                 )
             )
 

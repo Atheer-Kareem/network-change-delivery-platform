@@ -220,6 +220,7 @@ def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
         outcome=ProfiledStagingReadinessOutcome.TIMED_OUT,
         elapsed_seconds=180,
         cml_node_state="BOOTED",
+        first_booted_seconds=175,
     )
     evidence = ProfiledStagingEvidence(
         staging_run_id="run-001",
@@ -233,6 +234,7 @@ def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
     assert '"readiness_deadline_seconds":180' in rendered
     assert '"outcome":"TIMED_OUT"' in rendered
     assert '"elapsed_seconds":180.0' in rendered
+    assert '"first_booted_seconds":175.0' in rendered
     assert (
         ProfiledStagingEvidence(
             staging_run_id="run-extended",
@@ -249,8 +251,30 @@ def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
             lab_title="NCDP Staging run-invalid",
             readiness_deadline_seconds=301,
         )
+    with pytest.raises(ValueError, match="chronology"):
+        ProfiledStagingReadinessEvidence.model_validate(
+            readiness.model_dump() | {"first_booted_seconds": 181}
+        )
     for secret in ("username", "password", "token", "RoleID", "SecretID"):
         assert secret not in rendered
+
+
+def test_current_staging_doc_binds_readiness_and_diagnostic_observer() -> None:
+    text = (
+        Path(__file__).parents[1]
+        / "docs/architecture/profiled-disposable-cml-staging.md"
+    ).read_text(encoding="utf-8")
+    for contract in (
+        "every 10 seconds",
+        "normal readiness deadline\nis 180 seconds",
+        "absolute maximum is 300 seconds",
+        "at most 60 seconds",
+        "first observed `BOOTED` elapsed time",
+        "attachment attempts while CML state is\n`STARTED`",
+        "waits for an EXEC prompt",
+        "must never delay, suspend, kill, or otherwise\ninterfere",
+    ):
+        assert contract in text
 
 
 def test_sensitive_bootstrap_inputs_require_profile_appropriate_verifiers() -> None:

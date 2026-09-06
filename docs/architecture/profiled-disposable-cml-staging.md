@@ -42,9 +42,27 @@ if any trust reference is absent. Validation uses only its staging read-only
 targets and `ProfileReadOnlyAdapter`. Readiness is profile-derived: SSH/22 for
 CAT8000V, IOSv, and IOSvL2; NETCONF/830 for vJunos. Each readiness reference
 binds the run, lab/node UUID, stable identity, endpoint, service, result, and
-actual bounded elapsed duration. Read-only collection rechecks the exact
-hostname, management interface and STAGING address; IOSv and IOSvL2 also require
-their normalized Gi0/0..Gi0/3 physical realization.
+actual bounded elapsed duration. Unresolved node state is sampled through
+bounded GET-only CML observation every 10 seconds. The normal readiness deadline
+is 180 seconds and the absolute maximum is 300 seconds. Extension authority is
+derived per unresolved device: explicit transitional boot/start state admits
+more time, while a first observed `BOOTED` state admits at most 60 seconds for
+the required management service to settle. Unknown state does not grant an
+extension, continuously `BOOTED` service failure stops when its grace expires,
+and no grace can cross the 300-second maximum. Evidence retains the last bounded
+CML state and first observed `BOOTED` elapsed time so a timeout distinguishes
+never-booted from post-boot service failure. Read-only collection rechecks the
+exact hostname, management interface and STAGING address; IOSv and IOSvL2 also
+require their normalized Gi0/0..Gi0/3 physical realization.
+
+A separately authorized diagnostic observer is outside the normal staging
+lifecycle and cannot confer acceptance. It discovers the transit node as soon
+as the lab exists, begins bounded console attachment attempts while CML state is
+`STARTED`, keeps the one available session open to observe boot without sending
+configuration, waits for an EXEC prompt, and then issues only reviewed read-only
+commands. It remains available until lifecycle completion or the absolute
+300-second readiness boundary, but must never delay, suspend, kill, or otherwise
+interfere with lifecycle cleanup.
 
 ## Credentials and trust
 

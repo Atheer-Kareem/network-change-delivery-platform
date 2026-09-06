@@ -47,6 +47,40 @@ and one START request. Uncertain mutation transport is independently reconciled
 and is never blindly replayed. This is CML realization lifecycle authority, not
 network-device configuration-write authority.
 
+Initial START now overlaps vendor boots with the transit workaround. The pinned
+CML2 provider `0.9.3-beta1` [lifecycle contract](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/docs/resources/lifecycle.md)
+supports `wait=false`; its [startup implementation](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/utilities.go)
+still waits for every explicit stage regardless of that flag. Its
+[configuration validator](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/meta.go)
+warns against combining staged startup with `wait=false`. The lifecycle therefore
+uses the unstaged lab START path for the already-created exact graph, without
+waiting for whole-lab convergence. The
+provider's [update implementation](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/update.go)
+retains configured `STARTED` state while actual node states are transitional;
+Terraform success is not service-readiness proof.
+
+The removed infrastructure-before-device stage was a management-transport
+availability wait, not topology or Day-0 admission. The full graph and stored
+management-only bootstrap are still independently admitted before START.
+Static management configuration and IOSv startup persistence do not require a
+working external SSH/NETCONF path during initial boot. Starting the bridge,
+management switch, and vendor nodes together does not assume that transport is
+ready: no device collection happens until the existing exact-four real service
+probes succeed, and strict trust still precedes collection. Transit still must
+reach its own `BOOTED` plus the persistence interval before STOP. Missing fabric
+or vendor services fail closed through the unchanged readiness/cleanup path.
+
+After that one fenced START apply, bounded GET observations admit the exact
+transit run/lab/node/profile on every sample until its first `BOOTED` (maximum
+300 seconds, two-second polling). The existing 60-second interval begins at
+that observation, without waiting for CAT8000V, vJunos, or IOSvL2. Identity and
+`BOOTED` are rechecked before STOP. `STARTED` alone is not evidence that IOSv
+has consumed and persisted Day-0, so neither an earlier interval nor a shorter
+one is admitted by the retained diagnosis. After the single STOP/START and
+second `BOOTED`, the unchanged exact-four SSH/NETCONF readiness path follows.
+No third boot or mutation replay exists. The first refinement PR staging run
+is the acceptance experiment; shorter runtime is not yet proven.
+
 Before Terraform can create anything, authenticated GET-only CML admission
 rejects any existing lab whose title starts with `NCDP Staging` and any active
 fixed STAGING management endpoint. After creation, Terraform outputs are only
@@ -131,6 +165,18 @@ destroy/absence/state retirement, and separate primary/cleanup failures. An
 uncertain Terraform or transit-recycle mutation is never replayed: known owned
 state may proceed only to bounded
 cleanup, while unprovable ownership is `AMBIGUOUS` and retained for review.
+
+Optional `timings_seconds` adds only closed phase names and finite nonnegative
+monotonic durations to schema-v2, including failed phase durations. The phases
+are Terraform create and START (each includes its saved plan), transit first
+boot observation, persistence interval, STOP completion, second boot,
+SSH/NETCONF readiness, read-only validation, cleanup, and
+whole lifecycle total. Total includes admission, setup, trust, and nested phases; do
+not sum it with those phases. The Buildkite sanitized summary displays these
+numbers; no provider text or secret is a timing payload. Compare total and
+per-phase durations with the former approximately 11-minute job, allowing for
+wrapper setup/publication time outside the lifecycle total. Existing evidence
+without timings remains valid; the schema-v2 success requirements are unchanged.
 
 ## Buildkite activation
 

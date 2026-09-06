@@ -43,6 +43,45 @@ ROOT = Path(__file__).parents[1]
 CANONICAL = "https://github.com/Atheer-Kareem/network-change-delivery-platform.git"
 
 
+@pytest.mark.parametrize(
+    "timing",
+    [
+        {"password": 1},
+        {"start": -1},
+        {"start": float("nan")},
+        {"start": "bearer-secret"},
+    ],
+)
+def test_timing_evidence_rejects_unknown_labels_and_non_duration_values(timing):
+    with pytest.raises(ValueError):
+        ProfiledStagingEvidence(
+            staging_run_id="run-001",
+            orchestrator="local",
+            lab_title="NCDP Staging run-001",
+            timings_seconds=timing,
+        )
+
+
+def test_staging_summary_renders_only_closed_numeric_timings(driver):
+    evidence = ProfiledStagingEvidence(
+        staging_run_id="run-001",
+        orchestrator="local",
+        lab_title="NCDP Staging run-001",
+        timings_seconds={
+            "start": 4.123,
+            "transit_first_boot": 30,
+            "transit_persistence": 60,
+            "lifecycle_total": 410,
+        },
+        primary_failure="bearer-secret",
+    )
+    rendered = driver.summary(evidence, succeeded=False)
+    assert "start: 4.1s" in rendered
+    assert "transit_first_boot: 30.0s" in rendered
+    assert "lifecycle_total: 410.0s" in rendered
+    assert "bearer-secret" not in rendered
+
+
 @pytest.fixture
 def driver(tmp_path, monkeypatch):
     path = ROOT / "scripts/buildkite/run_profiled_cml_staging.py"

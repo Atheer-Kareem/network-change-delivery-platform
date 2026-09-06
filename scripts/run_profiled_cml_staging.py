@@ -41,6 +41,7 @@ from network_change_delivery.profiled_staging import (
     ProfiledStagingReadinessEvidence,
     ProfiledStagingReadinessOutcome,
     load_recovery_inputs,
+    record_staging_duration,
     retire_profiled_staging_run_directory,
     terraform_managed_state_addresses,
     terraform_profiled_device_variables,
@@ -117,6 +118,7 @@ class LocalTerraformOperations:
         self.device_evidence: tuple[ProfiledStagingDeviceEvidence, ...] = ()
         self.create_stage = "not_attempted"
         self.start_stage = "not_attempted"
+        self.timings_seconds: dict[str, float] = {}
 
     @property
     def source_commit(self) -> str:
@@ -443,7 +445,8 @@ class LocalTerraformOperations:
         )
         for template in (TERRAFORM_ROOT / "bootstrap").glob("*.tftpl"):
             validate_management_only_bootstrap(template.read_text(encoding="utf-8"))
-        self._apply_exact_create()
+        with record_staging_duration(self.timings_seconds, "create"):
+            self._apply_exact_create()
         outputs = self._outputs()
         reader = ProfiledStagingCmlReader.from_environment(token=self._cml_token)
         try:
@@ -453,7 +456,8 @@ class LocalTerraformOperations:
             self.topology_digest = observed.topology_evidence.digest
         finally:
             reader.close()
-        self._apply_start()
+        with record_staging_duration(self.timings_seconds, "start"):
+            self._apply_start()
 
         self.transit_recycle_outcome = "attempted"
         recycler = ProfiledStagingCmlTransitRecycler.from_environment(
@@ -467,9 +471,11 @@ class LocalTerraformOperations:
             )
             self.transit_recycle_outcome = "succeeded"
         finally:
+            self.timings_seconds.update(recycler.timings_seconds)
             recycler.close()
 
-        self._readiness = self._wait_readiness(observed.node_ids, observed.lab_id)
+        with record_staging_duration(self.timings_seconds, "readiness"):
+            self._readiness = self._wait_readiness(observed.node_ids, observed.lab_id)
         now = datetime.now(UTC)
         node_ids = observed.node_ids
         if not isinstance(node_ids, dict):

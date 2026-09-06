@@ -26,6 +26,7 @@ from network_change_delivery.profiled_staging import (
     PROFILED_STAGING_NODE_COUNT,
     ProfiledStagingAmbiguousError,
     ProfiledStagingError,
+    record_staging_duration,
     validate_management_only_bootstrap,
 )
 
@@ -200,6 +201,7 @@ class ProfiledStagingCmlTransitRecycler:
 
     def __init__(self, client: httpx.Client) -> None:
         self._client = client
+        self.timings_seconds: dict[str, float] = {}
 
     @classmethod
     def from_environment(
@@ -271,7 +273,7 @@ class ProfiledStagingCmlTransitRecycler:
         lab_id: str,
         node_id: str,
         device: ProfiledInventoryDevice,
-        required_state: str,
+        required_state: str | frozenset[str],
     ) -> str:
         lab = self._lab(lab_id)
         title = lab.get("lab_title") or lab.get("title")
@@ -304,12 +306,53 @@ class ProfiledStagingCmlTransitRecycler:
 
         state = node.get("state")
 
-        if state != required_state:
+        accepted = (
+            frozenset({required_state})
+            if isinstance(required_state, str)
+            else required_state
+        )
+        if not isinstance(state, str) or state not in accepted:
             raise ProfiledStagingError(
                 "profiled staging transit recycle state rejected"
             )
 
-        return required_state
+        return state
+
+    def _wait_first_boot(
+        self,
+        *,
+        run_id: str,
+        lab_id: str,
+        node_id: str,
+        device: ProfiledInventoryDevice,
+    ) -> None:
+        # Initial Terraform START is non-blocking. Admit the exact transit
+        # on every observation; unknown/stopped states never grant a recycle.
+        deadline = time.monotonic() + self._START_TIMEOUT_SECONDS
+        while True:
+            state = self._admit_exact_transit(
+                run_id=run_id,
+                lab_id=lab_id,
+                node_id=node_id,
+                device=device,
+                required_state=frozenset(
+                    {
+                        "DEFINED_ON_CORE",
+                        "QUEUED",
+                        "STARTED",
+                        "STARTING",
+                        "BOOTING",
+                        "BOOTED",
+                    }
+                ),
+            )
+            if state == "BOOTED":
+                return
+            if time.monotonic() >= deadline:
+                raise ProfiledStagingError(
+                    "profiled staging transit first boot timed out"
+                )
+            time.sleep(self._POLL_SECONDS)
 
     def _put_state_once(
         self,
@@ -417,21 +460,24 @@ class ProfiledStagingCmlTransitRecycler:
 
         transit = by_name["transit-ios-01"]
 
-        # First START must have fully booted the exact admitted IOSv.
-        self._admit_exact_transit(
-            run_id=run_id,
-            lab_id=observed.lab_id,
-            node_id=node_id,
-            device=transit,
-            required_state="BOOTED",
-        )
+        # Observe transit independently of the other nodes' initial boot.
+        with record_staging_duration(self.timings_seconds, "transit_first_boot"):
+            self._wait_first_boot(
+                run_id=run_id,
+                lab_id=observed.lab_id,
+                node_id=node_id,
+                device=transit,
+            )
 
         # Real IOSv diagnosis established that CML Day-0 reaches
         # persistent startup configuration after first boot while
         # legacy AutoInstall/DHCP can still own the running interface.
+        # STARTED alone does not prove persistence. Start the accepted interval
+        # at this node's first observed BOOTED, not whole-lab convergence.
         # Give that first boot one bounded persistence interval before
         # recycling only this already-admitted disposable node.
-        time.sleep(self._FIRST_BOOT_PERSISTENCE_SECONDS)
+        with record_staging_duration(self.timings_seconds, "transit_persistence"):
+            time.sleep(self._FIRST_BOOT_PERSISTENCE_SECONDS)
 
         self._admit_exact_transit(
             run_id=run_id,
@@ -442,19 +488,20 @@ class ProfiledStagingCmlTransitRecycler:
         )
 
         # Exactly one STOP request. No blind retry.
-        self._put_state_once(
-            lab_id=observed.lab_id,
-            node_id=node_id,
-            action="stop",
-            reconciled_states=frozenset({"STOPPED"}),
-        )
+        with record_staging_duration(self.timings_seconds, "transit_stop"):
+            self._put_state_once(
+                lab_id=observed.lab_id,
+                node_id=node_id,
+                action="stop",
+                reconciled_states=frozenset({"STOPPED"}),
+            )
 
-        stopped = self._wait_for_state(
-            lab_id=observed.lab_id,
-            node_id=node_id,
-            expected="STOPPED",
-            timeout_seconds=self._STOP_TIMEOUT_SECONDS,
-        )
+            stopped = self._wait_for_state(
+                lab_id=observed.lab_id,
+                node_id=node_id,
+                expected="STOPPED",
+                timeout_seconds=self._STOP_TIMEOUT_SECONDS,
+            )
 
         self._admit_exact_transit(
             run_id=run_id,
@@ -465,27 +512,22 @@ class ProfiledStagingCmlTransitRecycler:
         )
 
         # Exactly one START request. No blind retry.
-        self._put_state_once(
-            lab_id=observed.lab_id,
-            node_id=node_id,
-            action="start",
-            reconciled_states=frozenset(
-                {
-                    "QUEUED",
-                    "STARTED",
-                    "STARTING",
-                    "BOOTING",
-                    "BOOTED",
-                }
-            ),
-        )
+        with record_staging_duration(self.timings_seconds, "transit_second_boot"):
+            self._put_state_once(
+                lab_id=observed.lab_id,
+                node_id=node_id,
+                action="start",
+                reconciled_states=frozenset(
+                    {"QUEUED", "STARTED", "STARTING", "BOOTING", "BOOTED"}
+                ),
+            )
 
-        booted = self._wait_for_state(
-            lab_id=observed.lab_id,
-            node_id=node_id,
-            expected="BOOTED",
-            timeout_seconds=self._START_TIMEOUT_SECONDS,
-        )
+            booted = self._wait_for_state(
+                lab_id=observed.lab_id,
+                node_id=node_id,
+                expected="BOOTED",
+                timeout_seconds=self._START_TIMEOUT_SECONDS,
+            )
 
         self._admit_exact_transit(
             run_id=run_id,
@@ -505,6 +547,7 @@ class ProfiledStagingCmlTransitRecycler:
             "first_boot_persistence_seconds": (self._FIRST_BOOT_PERSISTENCE_SECONDS),
             "stop_state": stopped,
             "start_state": booted,
+            "timings_seconds": self.timings_seconds,
         }
 
         digest = (

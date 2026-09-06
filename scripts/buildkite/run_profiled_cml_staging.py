@@ -228,6 +228,10 @@ def summary(evidence: ProfiledStagingEvidence, *, succeeded: bool) -> str:
             "- CML recycle scope: transit-ios-01 only; no device CLI writes",
         )
     )
+    if evidence.timings_seconds:
+        lines.extend(("", "Timing (seconds; total includes nested phases):"))
+        for phase, seconds in evidence.timings_seconds.items():
+            lines.append(f"- {phase}: {seconds:.1f}s")
     return "\n".join(lines) + "\n"
 
 

@@ -108,7 +108,9 @@ lifecycle subprocesses run.
 The authoritative [profiled lifecycle](profiled-disposable-cml-staging.md)
 creates exactly one lab, six nodes, nine links, and one lifecycle resource
 (17 resources). It independently admits topology and stored management-only
-Day-0, applies the fenced Terraform START, recycles only transit-ios-01, proves
+Day-0, applies the fenced Terraform START with non-blocking device launch,
+observes transit's own first boot plus its 60-second persistence interval,
+recycles only transit-ios-01 while other nodes can still be starting, and proves
 exact-four readiness and strict run-scoped trust, collects read-only device
 state, destroys its exact owned graph, proves independent CML absence, and
 retires the whole run directory. No CAT8000V, vJunos, or IOSvL2 recycle is
@@ -153,6 +155,13 @@ Buildkite artifact. JWTs, credentials, bearer tokens, Day-0, Terraform state,
 provider bodies, and device configuration are never log or artifact payloads.
 Annotation failure after success fails the step; after staging failure it
 cannot replace the primary failure.
+
+The summary also renders the schema-v2 closed `timings_seconds` phase durations
+for comparison with the former approximately 11-minute job. The lifecycle total
+includes nested phases and cleanup, not wrapper setup/publication. Early-recycle
+runtime acceptance remains PENDING until the first refinement PR run; failure
+must not cause a retry or fallback IOSv boot. See the lifecycle document for the
+pinned-provider analysis and preserved persistence/readiness waits.
 
 ## Retained-state recovery
 

@@ -6,7 +6,7 @@ import importlib.util
 import sys
 from itertools import pairwise
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -940,3 +940,71 @@ def test_transit_recycle_occurs_after_start_and_before_readiness() -> None:
     )
 
     assert start < attempted < recycle < readiness
+
+
+@pytest.mark.parametrize("recycle_fails", [False, True])
+def test_runtime_reaches_readiness_only_after_successful_recycle(
+    tmp_path, monkeypatch, recycle_fails
+):
+    from test_profiled_staging_cml import _observed_recycle_fixture
+
+    module = load_script("run_profiled_cml_staging")
+    devices, observed = _observed_recycle_fixture()
+    value = module.LocalTerraformOperations(
+        "run-001", tmp_path, inventory=SimpleNamespace(), secrets=SimpleNamespace()
+    )
+    value._devices = devices
+    value._credentials = {
+        str(device.logical_name): DeviceCredentials(
+            username="operator", password="synthetic-secret"
+        )
+        for device in devices
+    }
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "ios_scrypt_password_hash",
+        lambda *_: "$9$ncdpCoreSalt1$abcdefghijklmnop",
+    )
+    monkeypatch.setattr(
+        value, "_junos_verifier", lambda _: "$6$ncdpJunosSalt$abcdefghijklmnop"
+    )
+    monkeypatch.setattr(value, "_apply_exact_create", lambda: calls.append("create"))
+    monkeypatch.setattr(value, "_outputs", lambda: {})
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlReader,
+        "from_environment",
+        lambda **_: SimpleNamespace(close=lambda: None),
+    )
+    monkeypatch.setattr(module, "admit_created_realization", lambda *_: observed)
+    monkeypatch.setattr(
+        value, "_apply_start", lambda: calls.append("nonblocking_start")
+    )
+
+    def recycle(**_):
+        calls.append("recycle")
+        if recycle_fails:
+            raise ProfiledStagingAmbiguousError("uncertain recycle")
+        return observed.topology_evidence
+
+    def readiness(*_):
+        assert value.transit_recycle_outcome == "succeeded"
+        calls.append("readiness")
+        raise ProfiledStagingError("test stops before real readiness")
+
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlTransitRecycler,
+        "from_environment",
+        lambda **_: SimpleNamespace(
+            recycle=recycle,
+            close=lambda: None,
+            timings_seconds={"transit_first_boot": 30},
+        ),
+    )
+    monkeypatch.setattr(value, "_wait_readiness", readiness)
+    with pytest.raises(ProfiledStagingError):
+        value.create()
+    assert calls == ["create", "nonblocking_start", "recycle"] + (
+        [] if recycle_fails else ["readiness"]
+    )
+    assert value.timings_seconds["transit_first_boot"] == 30

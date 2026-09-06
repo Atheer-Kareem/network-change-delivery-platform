@@ -13,6 +13,8 @@ a production deployment template.
 
 ## How the platform works
 
+![Current NCDP architecture: GitHub and Buildkite validation feed Batfish then disposable exact-four CML read-only staging; separate human-digest-authorized local delivery writes only devices 1/2, with independent evidence and read-only operations.](docs/assets/ncdp-current-architecture.svg)
+
 1. **Review intent.** GitHub holds reviewed code, managed intent, plans, policy,
    tests, and pipeline definitions. A pull request has no protected live-write
    authority.

@@ -27,6 +27,7 @@ from network_change_delivery.profiled_pr_assurance import (
     OSPF_D1_DIGEST,
     PROFILED_ASSURANCE_FIXTURE_HOSTS,
     PROFILED_COMBINED_CANDIDATE_DIGEST,
+    PROFILED_COMBINED_INVARIANTS,
     PROFILED_MANAGED_NETWORK_NODES,
     PROFILED_MODELED_NODES,
     ROUTED_UNDERLAY_D1_DIGEST,
@@ -818,13 +819,27 @@ def test_evidence_io_and_annotation_are_typed_and_allowlisted(tmp_path: Path) ->
     annotation = _RENDERER.render_annotation(evidence)
     for value in (
         "Profiled PR Batfish assurance",
-        "profiled-four-device",
-        "routed_underlay",
-        "vlan",
-        "acl",
-        "6",
-        "40 / 40 passed",
-        *PROFILED_MANAGED_NETWORK_NODES,
+        "**Outcome:** `PASSED`",
+        "4 managed devices · 6 modeled nodes · 6 Layer-1 edges",
+        "routed underlay, OSPF, VLAN, ACL",
+        "OSPF: 3 routers / 3 adjacencies",
+        "VLAN: 2 VLANs / 2 gateways",
+        "Security: 1 ACL / 3 rules / 1 attachment",
+        "USERS → SERVERS HTTPS — `ALLOWED`",
+        "USERS → SERVERS SSH — `BLOCKED`",
+        "USERS → SERVERS ICMP — `BLOCKED`",
+        "SERVERS → USERS — `ALLOWED`",
+        "Model integrity: 4/4",
+        "Routed underlay: 5/5",
+        "OSPF: 7/7",
+        "VLAN: 10/10",
+        "ACL/security: 14/14",
+        "Total: 40/40 passed",
+        evidence.digest,
+    ):
+        assert value in annotation
+    for noisy in (
+        *PROFILED_COMBINED_INVARIANTS,
         *PROFILED_ASSURANCE_FIXTURE_HOSTS,
         ROUTED_UNDERLAY_D1_DIGEST,
         OSPF_D1_DIGEST,
@@ -833,7 +848,9 @@ def test_evidence_io_and_annotation_are_typed_and_allowlisted(tmp_path: Path) ->
         ACCEPTED_ACL_CANDIDATE_DIGEST,
         PROFILED_COMBINED_CANDIDATE_DIGEST,
     ):
-        assert value in annotation
+        assert noisy not in annotation
+    assert annotation.count("sha256:") == 1
+    assert "### Failed" not in annotation
     assert "2026.07.20.3565" not in annotation
     assert "10.60.0.1" not in annotation
 
@@ -841,6 +858,63 @@ def test_evidence_io_and_annotation_are_typed_and_allowlisted(tmp_path: Path) ->
     path.write_text(tampered.model_dump_json())
     with pytest.raises(ValueError, match="evidence file is invalid"):
         load_profiled_pr_evidence(path)
+
+
+def test_human_display_map_covers_exact_closed_invariants() -> None:
+    assert tuple(_RENDERER.INVARIANT_DISPLAY) == PROFILED_COMBINED_INVARIANTS
+    assert len(_RENDERER.INVARIANT_DISPLAY) == 40
+    assert all(
+        category and label for category, label in _RENDERER.INVARIANT_DISPLAY.values()
+    )
+
+
+@pytest.mark.parametrize("failed_name", PROFILED_COMBINED_INVARIANTS)
+def test_annotation_shows_only_failed_human_labels_by_domain(failed_name) -> None:
+    original = assure_profiled_pr_candidate(FakeBatfishProvider())
+    # Synthetic, re-digested machine evidence: renderer must not alter decisions.
+    changed = original.model_copy(
+        update={
+            "invariants": tuple(
+                item.model_copy(update={"passed": item.name != failed_name})
+                for item in original.invariants
+            ),
+            "outcome": AssuranceOutcome.FAILED,
+        }
+    )
+    changed = changed.model_copy(update={"digest": changed.calculated_digest()})
+    evidence = ProfiledPrAssuranceEvidence.model_validate(changed.model_dump())
+    before = evidence.model_dump_json()
+    annotation = _RENDERER.render_annotation(evidence)
+    category, label = _RENDERER.INVARIANT_DISPLAY[failed_name]
+    assert f"### Failed — {category}" in annotation
+    assert f"**{label}** — `{failed_name}`" in annotation
+    assert "Total: 39/40 passed" in annotation
+    assert "**Outcome:** `FAILED`" in annotation
+    for name in PROFILED_COMBINED_INVARIANTS:
+        if name != failed_name:
+            assert f"`{name}`" not in annotation
+    assert evidence.model_dump_json() == before
+
+
+def test_annotation_routing_failure_is_not_reported_as_acl_blocking() -> None:
+    # Existing fake with unexpected forwarding disposition, not an ACL denial.
+    observation = replace_security_flow(
+        acl_batfish_observation(),
+        "users_ssh",
+        (
+            VlanTrace(
+                disposition="EXITS_NETWORK",
+                nodes=("assurance-users-probe", "core-02"),
+                final_node="core-02",
+            ),
+        ),
+    )
+    evidence = assure_profiled_pr_candidate(
+        FakeBatfishProvider(observation=observation)
+    )
+    annotation = _RENDERER.render_annotation(evidence)
+    assert "USERS → SERVERS SSH — `UNEXPECTED (EXITS_NETWORK)`" in annotation
+    assert "**Outcome:** `FAILED`" in annotation
 
 
 def test_profiled_entry_point_has_no_live_authority_imports_or_surfaces() -> None:

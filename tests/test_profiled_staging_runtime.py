@@ -39,6 +39,7 @@ def load_script(name: str) -> ModuleType:
 def operations(tmp_path: Path):
     module = load_script("run_profiled_cml_staging")
     value = module.LocalTerraformOperations.__new__(module.LocalTerraformOperations)
+    value._cml_token = None
     value._run_id = "run-001"
     value._run_directory = tmp_path
     value._state_path = tmp_path / "terraform.tfstate"
@@ -89,6 +90,7 @@ def _readiness_operations(tmp_path: Path):
 
     module = load_script("run_profiled_cml_staging")
     value = module.LocalTerraformOperations.__new__(module.LocalTerraformOperations)
+    value._cml_token = None
     value._run_id = "run-001"
     value._run_directory = tmp_path
     value._devices = inventory_devices()
@@ -489,7 +491,7 @@ def test_cml_observation_failure_does_not_invent_boot_progress(
     monkeypatch.setattr(
         module.ProfiledStagingCmlReader,
         "from_environment",
-        staticmethod(lambda: reader),
+        staticmethod(lambda **_kwargs: reader),
     )
 
     states = value._observe_readiness_node_states(

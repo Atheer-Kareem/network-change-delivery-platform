@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 import pytest
@@ -217,3 +218,24 @@ def test_state_root_requires_owned_private_external_directory(
     )
     with pytest.raises(ValueError, match="owner"):
         validate_staging_state_root(root, checkout)
+
+
+@pytest.mark.parametrize("mode", [0o777, 0o750, 0o710, 0o770, 0o4700, 0o1700])
+def test_state_root_rejects_non_private_or_special_modes(tmp_path, mode):
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    state = tmp_path / "state"
+    state.mkdir()
+    state.chmod(mode)
+    with pytest.raises(ValueError, match="permissions"):
+        validate_staging_state_root(state, checkout)
+
+
+def test_state_root_rejects_files_missing_and_relative_paths(tmp_path):
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    file = tmp_path / "state-file"
+    file.touch()
+    for path in (file, tmp_path / "missing", Path("relative")):
+        with pytest.raises(ValueError, match="invalid"):
+            validate_staging_state_root(path, checkout)

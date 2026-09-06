@@ -20,7 +20,8 @@ a production deployment template.
    validation, and pipeline contracts as separate gates that converge at
    `validation-complete`.
 3. **Exercise assurance.** The active PR Batfish boundary evaluates the
-   profiled four-device candidate without device or credential authority.
+   profiled four-device candidate before disposable CML read-only integration
+   staging. Buildkite staging acceptance is pending its first successful run.
 4. **Plan and approve explicitly.** `profiled-plan` produces an immutable
    schema-v2 artifact; `profiled-deploy` requires its exact digest and explicit
    `--live` authority.
@@ -75,10 +76,10 @@ fleet-wide atomicity is claimed.
 | Cisco | `core-02` · IOS XE; `transit-ios-01` · IOS; `access-sw-01` · IOS switching |
 | Junos | `edge-junos-01` · Junos |
 | Persistent lab | Manually/operator-owned `NCDP Live` in CML |
-| Disposable staging | Profiled exact-four implementation pending controlled local acceptance |
+| Disposable staging | Locally accepted exact-four lifecycle; Buildkite gate acceptance pending |
 | Inventory | NetBox, consumed read-only by automation |
 | Credentials | OpenBao with bounded workload/device authority |
-| CI/CD | Buildkite validation and profiled four-device PR assurance; no device writes |
+| CI/CD | Buildkite validation → PR Batfish → disposable CML; no device writes |
 | Evidence | AuditStore + exact-four Oxidized actual-state chronology |
 | Observability | Exact-four Prometheus + Blackbox + Grafana + Alertmanager |
 | Persistent SNMP polling | Deferred |
@@ -95,9 +96,8 @@ fleet-wide atomicity is claimed.
 - Persistent live SNMP exporter polling is deferred; accepted SNMPv3 provisioning
   does not imply that polling exists.
 - Historical schema-v1 protected delivery and disposable exact-two staging are
-  retired. The replacement profiled exact-four staging design is pending
-  controlled local acceptance; protected delivery still requires a new profiled
-  design.
+  retired. Profiled exact-four staging reuses the locally accepted lifecycle;
+  protected delivery still requires a new profiled design.
 - IOSv and IOSvL2 are managed exact-four members but do not admit the current
   interface-description write operation.
 

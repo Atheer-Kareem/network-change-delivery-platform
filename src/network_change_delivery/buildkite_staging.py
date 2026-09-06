@@ -111,7 +111,7 @@ def staging_context_from_environment(
 def reject_ambient_staging_authority(
     environment: Mapping[str, str] | None = None,
 ) -> None:
-    """Reject broad ambient credentials from the future staging job boundary."""
+    """Reject broad ambient credentials from the staging job boundary."""
     values = environment if environment is not None else os.environ
     if any(values.get(name) for name in _REJECTED_STAGING_ENVIRONMENT):
         raise SecretError("Buildkite staging ambient authority is rejected")
@@ -137,7 +137,7 @@ def validate_staging_state_root(
     if metadata.st_uid != expected_uid:
         raise ValueError("Buildkite staging state root owner is invalid")
     mode = stat.S_IMODE(metadata.st_mode)
-    if mode & 0o077 or (mode & 0o700) != 0o700:
+    if mode != 0o700:
         raise ValueError("Buildkite staging state root permissions are invalid")
     return root_resolved
 

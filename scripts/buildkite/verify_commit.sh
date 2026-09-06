@@ -4,7 +4,11 @@ set -euo pipefail
 : "${BUILDKITE_BRANCH:?BUILDKITE_BRANCH is required}"
 : "${BUILDKITE_COMMIT:?BUILDKITE_COMMIT is required}"
 pr_assurance=0
-if [[ "${BUILDKITE_STEP_KEY:-}" == pr-batfish-assurance ]]; then
+if [[ "${BUILDKITE_STEP_KEY:-}" == cml-staging ]]; then
+  # Staging binds the exact queued PR or main commit, including an older main
+  # build serialized behind another staging run. It never grants delivery.
+  pr_assurance=1
+elif [[ "${BUILDKITE_STEP_KEY:-}" == pr-batfish-assurance ]]; then
   if [[ ! "${BUILDKITE_PULL_REQUEST:-}" =~ ^[1-9][0-9]*$ ]]; then
     echo "PR assurance requires a pull request build" >&2
     exit 2

@@ -1,9 +1,9 @@
 # OpenBao secret provider
 
 Current profiled local execution uses the bounded personal-lab AppRole and exact
-stable-device-ID paths. Buildkite deployment/staging JWT roles described below
-are historical accepted authority records only: their privileged repository
-entry points are retired and no current pipeline can consume them.
+stable-device-ID paths. Buildkite staging consumes the existing device-scoped
+JWT roles through its injected staging provider. Deployment JWT roles below
+remain historical authority records: protected delivery is retired.
 
 ## Boundary and authentication
 
@@ -88,9 +88,12 @@ rejects AppRole; deployment roles, audiences, policies, and approval remain
 unchanged. A credential belongs to the logical NetBox device, not its LIVE or
 STAGING management IP; no address-specific secrets exist.
 
-The four historical staging capabilities may remain in external OpenBao state,
-but no repository entry point consumes them. Disposable CML and protected
-delivery are retired; a future implementation requires a new profiled design.
+The existing four staging capabilities are an external prerequisite for the
+profiled exact-four Buildkite gate. The operator-only
+`scripts/openbao/configure_buildkite_staging.py` reuses the existing configurator
+and role family; activation does not automatically reconfigure OpenBao. Live
+role/policy verification requires an authorized operator and remains separate
+from static/unit proof. Protected delivery remains retired.
 
 7C-A adds a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role

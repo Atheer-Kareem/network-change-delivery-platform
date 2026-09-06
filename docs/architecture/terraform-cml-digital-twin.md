@@ -6,8 +6,8 @@
 > profiled migration deletion gate. Current CML truth is the persistent,
 > operator-owned exact-four `NCDP Live` lab. The separately designed profiled
 > exact-four disposable replacement is
-> [documented here](profiled-disposable-cml-staging.md) and pending controlled
-> local acceptance.
+> [documented here](profiled-disposable-cml-staging.md), locally accepted, and
+> wired to Buildkite with runtime gate acceptance pending.
 
 ## Scope
 

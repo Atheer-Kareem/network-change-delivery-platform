@@ -4,6 +4,12 @@ This document records the completed Detour-B deletion and external acceptance
 gates. Current state is one profiled exact-four managed architecture. The
 obsolete `ncdp-managed` Tag object remains inert with zero device assignments.
 
+The deletion-gate matrix below records PR #133. Subsequent PR #134 restored a
+new exact-four disposable lifecycle; its Buildkite activation now reuses the
+existing staging identity and reviewed command-hook boundary. The old exact-two
+runtime and protected delivery remain retired. See the current
+[staging contract](profiled-disposable-cml-staging.md).
+
 ## Final authority
 
 The managed population is exactly `netbox:dcim.device:1`, `:2`, `:8`, and `:9`

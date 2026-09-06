@@ -42,8 +42,8 @@ local deploy boundary and the exact-two runtime deletion gate:
 - IOSv and IOSvL2 are managed members but unsupported for that write operation;
 - schema-v1 local/fleet execution, SNMP provisioning writes, protected delivery,
   disposable exact-two CML staging, and the Terraform/operator twin are retired;
-- Buildkite retains validation and profiled four-device PR assurance with no
-  device-write step; and
+- Buildkite retains validation, profiled four-device PR assurance, and disposable
+  exact-four CML staging with no device-write step; and
 - the B5 D0/O/D1 seam and four generation-one records are unchanged.
 
 Controlled external acceptance removed the obsolete `ncdp-managed` assignments
@@ -54,7 +54,7 @@ readiness to exact-four. Current code and retained runtime have zero legitimate
 dependency on the legacy tag. B5 remained byte-identical and unchanged.
 The former **external tag retirement pending** milestone is therefore complete.
 
-## Profiled disposable staging — Phase 1 implemented
+## Profiled disposable staging — Buildkite activation acceptance pending
 
 The replacement for retired exact-two staging is an exact-four profiled
 Terraform realization: six nodes, nine links, 17 managed resources,
@@ -63,9 +63,14 @@ read-only collection through `StagingRealizationContext` and
 `ProfileReadOnlyAdapter`. Lifecycle hardening admits CML independently, fences
 START and destroy with saved exact-action plans, cleans known partial state
 without requiring a READY context, and retains verifier-only recovery inputs.
-Static Terraform validation is current. Controlled
-local create/validate/destroy acceptance and later PR-only Buildkite activation
-remain pending. Protected delivery remains retired.
+Static Terraform validation and controlled local create/validate/destroy
+acceptance are complete for the lifecycle merged in PR #134, including the
+bounded transit-ios-01-only recycle. One activation PR wires the shared lifecycle
+to `cml-staging`, after PR Batfish for runtime PRs and independently after
+validation on main. The agent-owned hook update and existing exact-device OpenBao
+roles are external prerequisites. Real Buildkite staging acceptance remains
+PENDING until the activation PR job succeeds; ADR 0027 remains Proposed pending
+the required PR and merged-main evidence. Protected delivery remains retired.
 
 ## Managed-state proposals
 
@@ -90,5 +95,6 @@ D0.
 ## Remaining work
 
 - Final demonstration rehearsal and repository closure.
-- Any future profiled fleet rollout, protected delivery, disposable staging, or
+- Complete Buildkite acceptance of the profiled disposable staging gate.
+- Any future profiled fleet rollout, protected delivery, or
   new write vertical requires separate architecture review and acceptance.

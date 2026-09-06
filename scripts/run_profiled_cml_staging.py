@@ -513,14 +513,13 @@ class LocalTerraformOperations:
                 )
                 observed_at = time.monotonic()
                 for name, state in candidates.items():
-                    if state is not None:
-                        states[name] = state
+                    states[name] = state
                     if state == "BOOTED" and first_booted[name] is None:
                         first_booted[name] = observed_at - readiness_started
                 while next_state_observation <= observed_at:
                     next_state_observation += _READINESS_STATE_POLL_SECONDS
                 now = observed_at
-            if self._post_boot_grace_expired(
+            if now >= normal_deadline and self._post_boot_grace_expired(
                 remaining,
                 states,
                 first_booted,

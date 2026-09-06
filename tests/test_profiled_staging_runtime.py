@@ -257,7 +257,7 @@ def test_post_boot_grace_from_175_expires_at_235(
     assert module._POST_BOOT_SERVICE_GRACE_SECONDS == 60
 
 
-def test_device_booted_since_100_fails_without_extension(
+def test_device_booted_since_100_gets_full_normal_window_without_extension(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module, value, node_ids = _readiness_operations(tmp_path)
@@ -284,9 +284,40 @@ def test_device_booted_since_100_fails_without_extension(
         "transit-ios-01"
     ]
     assert transit.first_booted_seconds == 100
-    assert transit.elapsed_seconds == 160
+    assert transit.elapsed_seconds == 180
     assert transit.cml_node_state == "BOOTED"
     assert value.readiness_deadline_seconds == 180
+
+
+def test_booted_from_start_never_shortens_normal_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, value, node_ids = _readiness_operations(tmp_path)
+    clock = _Clock()
+    _patch_readiness_observations(
+        monkeypatch,
+        module,
+        value,
+        clock,
+        state_at=lambda _name, _now: "BOOTED",
+        ready_at={
+            "core-02": 0,
+            "edge-junos-01": 0,
+            "access-sw-01": 0,
+        },
+    )
+
+    with pytest.raises(ProfiledStagingError, match="readiness timed out"):
+        value._wait_readiness(node_ids, "lab-001")
+
+    transit = {item.logical_name: item for item in value.readiness_evidence}[
+        "transit-ios-01"
+    ]
+    assert transit.first_booted_seconds == 0
+    assert transit.elapsed_seconds == 180
+    assert transit.cml_node_state == "BOOTED"
+    assert value.readiness_deadline_seconds == 180
+    assert clock.now == 180
 
 
 def test_partial_ready_device_booted_at_180_can_become_ready_at_195(
@@ -385,6 +416,39 @@ def test_device_booted_at_280_is_capped_by_absolute_deadline(
     assert transit.first_booted_seconds == 280
     assert transit.elapsed_seconds == 300
     assert value.readiness_deadline_seconds == 300
+
+
+def test_unknown_state_at_normal_deadline_does_not_reuse_stale_transition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, value, node_ids = _readiness_operations(tmp_path)
+    clock = _Clock()
+    _patch_readiness_observations(
+        monkeypatch,
+        module,
+        value,
+        clock,
+        state_at=lambda name, now: (
+            ("STARTED" if now < 180 else None) if name == "transit-ios-01" else "BOOTED"
+        ),
+        ready_at={
+            "core-02": 0,
+            "edge-junos-01": 0,
+            "access-sw-01": 0,
+        },
+    )
+
+    with pytest.raises(ProfiledStagingError, match="readiness timed out"):
+        value._wait_readiness(node_ids, "lab-001")
+
+    transit = {item.logical_name: item for item in value.readiness_evidence}[
+        "transit-ios-01"
+    ]
+    assert transit.cml_node_state is None
+    assert transit.first_booted_seconds is None
+    assert transit.elapsed_seconds == 180
+    assert value.readiness_deadline_seconds == 180
+    assert clock.now == 180
 
 
 def test_unknown_cml_state_does_not_grant_extension(

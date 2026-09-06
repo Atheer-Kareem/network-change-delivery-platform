@@ -269,6 +269,7 @@ def test_current_staging_doc_binds_readiness_and_diagnostic_observer() -> None:
         "normal readiness deadline\nis 180 seconds",
         "absolute maximum is 300 seconds",
         "at most 60 seconds",
+        "never shortens the 180-second normal window",
         "first observed `BOOTED` elapsed time",
         "attachment attempts while CML state is\n`STARTED`",
         "waits for an EXEC prompt",

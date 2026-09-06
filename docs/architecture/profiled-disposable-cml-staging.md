@@ -46,8 +46,9 @@ actual bounded elapsed duration. Unresolved node state is sampled through
 bounded GET-only CML observation every 10 seconds. The normal readiness deadline
 is 180 seconds and the absolute maximum is 300 seconds. Extension authority is
 derived per unresolved device: explicit transitional boot/start state admits
-more time, while a first observed `BOOTED` state admits at most 60 seconds for
-the required management service to settle. Unknown state does not grant an
+more time, while a first observed `BOOTED` state can admit at most 60 seconds of
+post-BOOT service-settle time beyond the normal deadline. The post-BOOT grace
+never shortens the 180-second normal window. Unknown state does not grant an
 extension, continuously `BOOTED` service failure stops when its grace expires,
 and no grace can cross the 300-second maximum. Evidence retains the last bounded
 CML state and first observed `BOOTED` elapsed time so a timeout distinguishes

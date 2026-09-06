@@ -57,6 +57,7 @@ from network_change_delivery.profiled_staging import (
 )
 from network_change_delivery.profiled_staging_cml import (
     ProfiledStagingCmlReader,
+    ProfiledStagingCmlTransitRecycler,
     admit_created_realization,
     admit_no_staging_collision,
 )
@@ -100,6 +101,8 @@ class LocalTerraformOperations:
         self.readiness_deadline_seconds = _READINESS_NORMAL_TIMEOUT_SECONDS
         self.topology_digest: str | None = None
         self.trust_generation: EvidenceReference | None = None
+        self.transit_recycle_outcome = "not_attempted"
+        self.transit_recycle_evidence: EvidenceReference | None = None
         self.device_evidence: tuple[ProfiledStagingDeviceEvidence, ...] = ()
         self.create_stage = "not_attempted"
         self.start_stage = "not_attempted"
@@ -438,6 +441,19 @@ class LocalTerraformOperations:
         finally:
             reader.close()
         self._apply_start()
+
+        self.transit_recycle_outcome = "attempted"
+        recycler = ProfiledStagingCmlTransitRecycler.from_environment()
+        try:
+            self.transit_recycle_evidence = recycler.recycle(
+                run_id=self._run_id,
+                observed=observed,
+                devices=self._devices,
+            )
+            self.transit_recycle_outcome = "succeeded"
+        finally:
+            recycler.close()
+
         self._readiness = self._wait_readiness(observed.node_ids, observed.lab_id)
         now = datetime.now(UTC)
         node_ids = observed.node_ids

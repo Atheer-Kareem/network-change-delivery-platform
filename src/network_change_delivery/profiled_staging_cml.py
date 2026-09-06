@@ -1,4 +1,4 @@
-"""GET-only CML admission for one profiled disposable staging realization."""
+"""CML admission plus one narrowly fenced transit-IOSv recycle boundary."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import os
 import socket
 import ssl
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,12 +16,15 @@ import httpx
 
 from network_change_delivery.architecture_contracts import (
     CML_REALIZATION_PROFILE_CATALOG,
+    CmlRealizationProfileID,
 )
 from network_change_delivery.profile_inventory import ProfiledInventoryDevice
 from network_change_delivery.profiled_realization import EvidenceReference
 from network_change_delivery.profiled_staging import (
+    PROFILED_STAGING_DEVICE_NAMES,
     PROFILED_STAGING_LINK_COUNT,
     PROFILED_STAGING_NODE_COUNT,
+    ProfiledStagingAmbiguousError,
     ProfiledStagingError,
     validate_management_only_bootstrap,
 )
@@ -184,6 +188,339 @@ class ProfiledStagingCmlReader:
             if len(values) == 1 and isinstance(values[0], str):
                 return values[0]
         raise ProfiledStagingError("profiled staging stored Day-0 unavailable")
+
+
+class ProfiledStagingCmlTransitRecycler:
+    """One exact run-scoped CML recycle boundary for transit IOSv only."""
+
+    _FIRST_BOOT_PERSISTENCE_SECONDS = 60
+    _STOP_TIMEOUT_SECONDS = 180
+    _START_TIMEOUT_SECONDS = 300
+    _POLL_SECONDS = 2
+
+    def __init__(self, client: httpx.Client) -> None:
+        self._client = client
+
+    @classmethod
+    def from_environment(cls) -> ProfiledStagingCmlTransitRecycler:
+        address = os.environ.get("CML2_ADDRESS")
+        token = os.environ.get("CML2_TOKEN")
+        certificate = os.environ.get("CML2_CACERT")
+
+        if not address or not token or not certificate:
+            raise ProfiledStagingError("profiled staging CML recycle authority missing")
+
+        try:
+            context = ssl.create_default_context(cadata=certificate)
+        except ssl.SSLError:
+            raise ProfiledStagingError(
+                "profiled staging CML recycle TLS authority rejected"
+            ) from None
+
+        return cls(
+            httpx.Client(
+                base_url=address.rstrip("/"),
+                headers={"Authorization": f"Bearer {token}"},
+                verify=context,
+                timeout=15,
+                trust_env=False,
+                follow_redirects=False,
+            )
+        )
+
+    def close(self) -> None:
+        self._client.close()
+
+    def _get(self, path: str) -> dict[str, object]:
+        try:
+            response = self._client.get(path)
+        except httpx.HTTPError:
+            raise ProfiledStagingError(
+                "profiled staging CML recycle observation failed"
+            ) from None
+
+        if response.status_code != 200:
+            raise ProfiledStagingError(
+                "profiled staging CML recycle observation rejected"
+            )
+
+        try:
+            value = response.json()
+        except ValueError:
+            raise ProfiledStagingError(
+                "profiled staging CML recycle response rejected"
+            ) from None
+
+        if not isinstance(value, dict):
+            raise ProfiledStagingError("profiled staging CML recycle response rejected")
+
+        return value
+
+    def _lab(self, lab_id: str) -> dict[str, object]:
+        return self._get(f"/api/v0/labs/{lab_id}")
+
+    def _node(self, lab_id: str, node_id: str) -> dict[str, object]:
+        return self._get(f"/api/v0/labs/{lab_id}/nodes/{node_id}")
+
+    def _admit_exact_transit(
+        self,
+        *,
+        run_id: str,
+        lab_id: str,
+        node_id: str,
+        device: ProfiledInventoryDevice,
+        required_state: str,
+    ) -> str:
+        lab = self._lab(lab_id)
+        title = lab.get("lab_title") or lab.get("title")
+
+        if title != f"NCDP Staging {run_id}":
+            raise ProfiledStagingError("profiled staging transit recycle lab rejected")
+
+        if (
+            str(device.logical_name) != "transit-ios-01"
+            or device.cml_realization_profile_id
+            != CmlRealizationProfileID.IOSV_159_3_M12
+        ):
+            raise ProfiledStagingError(
+                "profiled staging transit recycle profile rejected"
+            )
+
+        profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+
+        node = self._node(lab_id, node_id)
+        image = node.get("image_definition") or node.get("image_definition_id")
+
+        if (
+            node.get("label") != "transit-ios-01"
+            or node.get("node_definition") != profile.node_definition
+            or image != profile.image_definition
+        ):
+            raise ProfiledStagingError(
+                "profiled staging transit recycle identity rejected"
+            )
+
+        state = node.get("state")
+
+        if state != required_state:
+            raise ProfiledStagingError(
+                "profiled staging transit recycle state rejected"
+            )
+
+        return required_state
+
+    def _put_state_once(
+        self,
+        *,
+        lab_id: str,
+        node_id: str,
+        action: str,
+        reconciled_states: frozenset[str],
+    ) -> None:
+        path = f"/api/v0/labs/{lab_id}/nodes/{node_id}/state/{action}"
+
+        try:
+            response = self._client.put(path)
+        except httpx.HTTPError:
+            try:
+                state = self._node(lab_id, node_id).get("state")
+            except ProfiledStagingError:
+                raise ProfiledStagingAmbiguousError(
+                    f"profiled staging transit {action} outcome is ambiguous"
+                ) from None
+
+            if state not in reconciled_states:
+                raise ProfiledStagingAmbiguousError(
+                    f"profiled staging transit {action} outcome is ambiguous"
+                ) from None
+
+            return
+
+        if response.status_code in {200, 204}:
+            return
+
+        # A server-side failure or request timeout response can be returned
+        # after the mutation crossed the boundary. Reconcile once through
+        # independent GET-only observation and never replay the PUT.
+        if response.status_code >= 500 or response.status_code == 408:
+            try:
+                state = self._node(lab_id, node_id).get("state")
+            except ProfiledStagingError:
+                raise ProfiledStagingAmbiguousError(
+                    f"profiled staging transit {action} outcome is ambiguous"
+                ) from None
+
+            if state in reconciled_states:
+                return
+
+            raise ProfiledStagingAmbiguousError(
+                f"profiled staging transit {action} outcome is ambiguous"
+            )
+
+        raise ProfiledStagingError(f"profiled staging transit {action} rejected")
+
+    def _wait_for_state(
+        self,
+        *,
+        lab_id: str,
+        node_id: str,
+        expected: str,
+        timeout_seconds: int,
+    ) -> str:
+        deadline = time.monotonic() + timeout_seconds
+
+        while True:
+            try:
+                state = self._node(lab_id, node_id).get("state")
+            except ProfiledStagingError:
+                raise ProfiledStagingAmbiguousError(
+                    "profiled staging transit recycle completion is ambiguous"
+                ) from None
+
+            if state == expected:
+                return expected
+
+            if time.monotonic() >= deadline:
+                raise ProfiledStagingAmbiguousError(
+                    "profiled staging transit recycle completion is ambiguous"
+                )
+
+            time.sleep(self._POLL_SECONDS)
+
+    def recycle(
+        self,
+        *,
+        run_id: str,
+        observed: ObservedStagingRealization,
+        devices: tuple[ProfiledInventoryDevice, ...],
+    ) -> EvidenceReference:
+        """Recycle only the admitted IOSv transit node exactly once."""
+
+        by_name = {str(device.logical_name): device for device in devices}
+
+        if tuple(by_name) != PROFILED_STAGING_DEVICE_NAMES:
+            raise ProfiledStagingError(
+                "profiled staging transit recycle population rejected"
+            )
+
+        if observed.lab_title != f"NCDP Staging {run_id}":
+            raise ProfiledStagingError(
+                "profiled staging transit recycle realization rejected"
+            )
+
+        node_id = observed.node_ids.get("transit_ios_01")
+
+        if not isinstance(node_id, str) or not node_id:
+            raise ProfiledStagingError("profiled staging transit recycle node rejected")
+
+        transit = by_name["transit-ios-01"]
+
+        # First START must have fully booted the exact admitted IOSv.
+        self._admit_exact_transit(
+            run_id=run_id,
+            lab_id=observed.lab_id,
+            node_id=node_id,
+            device=transit,
+            required_state="BOOTED",
+        )
+
+        # Real IOSv diagnosis established that CML Day-0 reaches
+        # persistent startup configuration after first boot while
+        # legacy AutoInstall/DHCP can still own the running interface.
+        # Give that first boot one bounded persistence interval before
+        # recycling only this already-admitted disposable node.
+        time.sleep(self._FIRST_BOOT_PERSISTENCE_SECONDS)
+
+        self._admit_exact_transit(
+            run_id=run_id,
+            lab_id=observed.lab_id,
+            node_id=node_id,
+            device=transit,
+            required_state="BOOTED",
+        )
+
+        # Exactly one STOP request. No blind retry.
+        self._put_state_once(
+            lab_id=observed.lab_id,
+            node_id=node_id,
+            action="stop",
+            reconciled_states=frozenset({"STOPPED"}),
+        )
+
+        stopped = self._wait_for_state(
+            lab_id=observed.lab_id,
+            node_id=node_id,
+            expected="STOPPED",
+            timeout_seconds=self._STOP_TIMEOUT_SECONDS,
+        )
+
+        self._admit_exact_transit(
+            run_id=run_id,
+            lab_id=observed.lab_id,
+            node_id=node_id,
+            device=transit,
+            required_state="STOPPED",
+        )
+
+        # Exactly one START request. No blind retry.
+        self._put_state_once(
+            lab_id=observed.lab_id,
+            node_id=node_id,
+            action="start",
+            reconciled_states=frozenset(
+                {
+                    "QUEUED",
+                    "STARTED",
+                    "STARTING",
+                    "BOOTING",
+                    "BOOTED",
+                }
+            ),
+        )
+
+        booted = self._wait_for_state(
+            lab_id=observed.lab_id,
+            node_id=node_id,
+            expected="BOOTED",
+            timeout_seconds=self._START_TIMEOUT_SECONDS,
+        )
+
+        self._admit_exact_transit(
+            run_id=run_id,
+            lab_id=observed.lab_id,
+            node_id=node_id,
+            device=transit,
+            required_state="BOOTED",
+        )
+
+        facts = {
+            "run_id": run_id,
+            "lab_id": observed.lab_id,
+            "node_id": node_id,
+            "device_identity": transit.device_identity,
+            "logical_name": str(transit.logical_name),
+            "cml_realization_profile_id": (transit.cml_realization_profile_id),
+            "first_boot_persistence_seconds": (self._FIRST_BOOT_PERSISTENCE_SECONDS),
+            "stop_state": stopped,
+            "start_state": booted,
+        }
+
+        digest = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    facts,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode()
+            ).hexdigest()
+        )
+
+        return EvidenceReference(
+            identity=(f"staging-transit-recycle:{run_id}:transit-ios-01"),
+            digest=digest,
+        )
 
 
 def _icmp_address_is_active(address: str, *, timeout: float) -> bool:

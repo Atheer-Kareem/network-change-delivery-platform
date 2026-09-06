@@ -31,6 +31,21 @@ applying the exact static STAGING binding. Day-0 deliberately excludes underlay,
 OSPF, VLAN/trunk, ACL, SNMP, and
 interface-description intent. The historical 10.6.12.0/30 bootstrap is absent.
 
+Controlled real-platform diagnosis established one IOSv-specific first-boot
+behavior: CML correctly persists the exact static STAGING binding into IOSv
+startup configuration, while legacy AutoInstall/DHCP can still retain the
+running management interface on a DHCP lease during that first boot. A second
+boot from the persisted startup configuration consistently restores the exact
+static STAGING binding. The lifecycle therefore gives the first IOSv boot a
+bounded 60-second persistence interval and then recycles only the independently
+admitted `transit-ios-01` CML node. CAT8000V, vJunos, and IOSvL2 are not
+recycled. The existing CML reader remains GET-only; a separate run-scoped
+recycle boundary admits the exact lab UUID, transit node UUID, logical identity,
+IOSv realization profile, and current CML state before issuing exactly one STOP
+and one START request. Uncertain mutation transport is independently reconciled
+and is never blindly replayed. This is CML realization lifecycle authority, not
+network-device configuration-write authority.
+
 Before Terraform can create anything, authenticated GET-only CML admission
 rejects any existing lab whose title starts with `NCDP Staging` and any active
 fixed STAGING management endpoint. After creation, Terraform outputs are only
@@ -88,9 +103,10 @@ entries use the exact `[host]:830` known-hosts form.
 
 ## Failure, evidence, and recovery
 
-The one-shot lifecycle is admit → create → fenced saved START plan → read-only
-validate → fenced saved destroy plan → independent absence proof → state
-retirement. Cleanup authority derives from a nonempty known Terraform state,
+The one-shot lifecycle is admit → create → fenced saved START plan → exact
+transit-IOSv CML recycle → readiness/trust/read-only validate → fenced saved
+destroy plan → independent absence proof → state retirement. Cleanup authority
+derives from a nonempty known Terraform state,
 not from a returned READY context, so partial apply, start, readiness, CML
 admission, trust, context, and read-only failures remain cleanup-eligible. A
 normal successful realization requires the exact 17-address state and 17 exact
@@ -109,9 +125,10 @@ are retired only after independent CML absence is proven.
 
 Schema-v2 `ProfiledStagingEvidence` preserves source commit, observed lab and
 run-specific topology, final READY context digest, actual trust generation,
-per-device readiness and read-only facts, create/start/destroy/absence/state
-retirement, and separate primary/cleanup failures. An uncertain Terraform
-mutation is never replayed: known owned state may proceed only to bounded
+per-device readiness and read-only facts, create/start/transit-recycle/
+destroy/absence/state retirement, and separate primary/cleanup failures. An
+uncertain Terraform or transit-recycle mutation is never replayed: known owned
+state may proceed only to bounded
 cleanup, while unprovable ownership is `AMBIGUOUS` and retained for review.
 
 ## Pipeline phase

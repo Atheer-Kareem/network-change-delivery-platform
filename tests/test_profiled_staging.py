@@ -326,6 +326,42 @@ def test_current_staging_doc_binds_readiness_and_diagnostic_observer() -> None:
         assert contract in text
 
 
+def test_transit_recycle_evidence_is_exact_run_bound() -> None:
+    good = EvidenceReference(
+        identity="staging-transit-recycle:run-001:transit-ios-01",
+        digest="sha256:" + ("1" * 64),
+    )
+
+    accepted = ProfiledStagingEvidence(
+        staging_run_id="run-001",
+        orchestrator="local",
+        lab_title="NCDP Staging run-001",
+        transit_recycle_outcome="succeeded",
+        transit_recycle_evidence=good,
+    )
+    assert accepted.transit_recycle_evidence == good
+
+    with pytest.raises(ValueError, match="identity rejected"):
+        ProfiledStagingEvidence(
+            staging_run_id="run-001",
+            orchestrator="local",
+            lab_title="NCDP Staging run-001",
+            transit_recycle_outcome="succeeded",
+            transit_recycle_evidence=EvidenceReference(
+                identity="staging-transit-recycle:wrong:transit-ios-01",
+                digest="sha256:" + ("2" * 64),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="outcome rejected"):
+        ProfiledStagingEvidence(
+            staging_run_id="run-001",
+            orchestrator="local",
+            lab_title="NCDP Staging run-001",
+            transit_recycle_outcome="succeeded",
+        )
+
+
 def test_sensitive_bootstrap_inputs_require_profile_appropriate_verifiers() -> None:
     from test_profiled_realization import inventory_devices
 
@@ -395,6 +431,8 @@ class Operations:
         self.exists = False
         self.readiness_deadline_seconds = 180
         self.readiness_evidence: tuple[ProfiledStagingReadinessEvidence, ...] = ()
+        self.transit_recycle_outcome = "not_attempted"
+        self.transit_recycle_evidence: EvidenceReference | None = None
 
     @property
     def managed_resources_exist(self) -> bool:
@@ -412,6 +450,12 @@ class Operations:
             evidence,
             inventory_devices,
             staging_context,
+        )
+
+        self.transit_recycle_outcome = "succeeded"
+        self.transit_recycle_evidence = EvidenceReference(
+            identity="staging-transit-recycle:run-1:transit-ios-01",
+            digest="sha256:" + ("8" * 64),
         )
 
         self.readiness_evidence = tuple(
@@ -596,6 +640,8 @@ def test_successful_lifecycle_evidence_binds_context_topology_and_trust() -> Non
     assert evidence.trust_generation is not None
     assert evidence.create_outcome == "succeeded"
     assert evidence.start_outcome == "succeeded"
+    assert evidence.transit_recycle_outcome == "succeeded"
+    assert evidence.transit_recycle_evidence is not None
     assert evidence.read_only_outcome == "succeeded"
 
 

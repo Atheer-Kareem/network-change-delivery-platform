@@ -918,3 +918,23 @@ def test_runtime_has_no_write_adapter_or_unfenced_terraform_mutation() -> None:
         assert forbidden not in source
     assert "validate_start_only_plan" in source
     assert "validate_destroy_only_plan" in source
+
+
+def test_transit_recycle_occurs_after_start_and_before_readiness() -> None:
+    source = (ROOT / "scripts/run_profiled_cml_staging.py").read_text(encoding="utf-8")
+
+    start = source.index("self._apply_start()")
+    attempted = source.index(
+        'self.transit_recycle_outcome = "attempted"',
+        start,
+    )
+    recycle = source.index(
+        "self.transit_recycle_evidence = recycler.recycle(",
+        attempted,
+    )
+    readiness = source.index(
+        "self._readiness = self._wait_readiness",
+        recycle,
+    )
+
+    assert start < attempted < recycle < readiness

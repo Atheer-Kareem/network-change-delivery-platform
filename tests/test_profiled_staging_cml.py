@@ -13,10 +13,14 @@ import network_change_delivery.profiled_staging_cml as staging_cml
 from network_change_delivery.architecture_contracts import (
     CML_REALIZATION_PROFILE_CATALOG,
 )
-from network_change_delivery.profiled_staging import ProfiledStagingError
+from network_change_delivery.profiled_staging import (
+    ProfiledStagingAmbiguousError,
+    ProfiledStagingError,
+)
 from network_change_delivery.profiled_staging_cml import (
     _LINK_SLOTS,
     ProfiledStagingCmlReader,
+    ProfiledStagingCmlTransitRecycler,
     admit_created_realization,
     admit_no_staging_collision,
 )
@@ -434,3 +438,354 @@ def test_created_realization_rejects_observed_mismatch(bad: str) -> None:
         admit_created_realization(
             cast(object, reader), "run-001", outputs(reader), inventory_devices()
         )
+
+
+class _RecycleClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def _observed_recycle_fixture():
+    from test_profiled_realization import inventory_devices
+
+    devices = inventory_devices()
+    reader = Reader(title="NCDP Staging run-001")
+    observed = admit_created_realization(
+        cast(object, reader),
+        "run-001",
+        outputs(reader),
+        devices,
+    )
+    return devices, observed
+
+
+def test_transit_recycler_mutates_only_exact_iosv_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    devices, observed = _observed_recycle_fixture()
+    transit = next(
+        item for item in devices if str(item.logical_name) == "transit-ios-01"
+    )
+    profile = CML_REALIZATION_PROFILE_CATALOG[transit.cml_realization_profile_id]
+
+    state = {"value": "BOOTED"}
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+
+        if request.method == "GET" and request.url.path == (f"/api/v0/labs/{LAB_ID}"):
+            return httpx.Response(
+                200,
+                json={"lab_title": "NCDP Staging run-001"},
+            )
+
+        if request.method == "GET" and request.url.path == (
+            f"/api/v0/labs/{LAB_ID}/nodes/node-transit"
+        ):
+            return httpx.Response(
+                200,
+                json={
+                    "label": "transit-ios-01",
+                    "node_definition": profile.node_definition,
+                    "image_definition": profile.image_definition,
+                    "state": state["value"],
+                },
+            )
+
+        if request.method == "PUT" and request.url.path.endswith(
+            "/node-transit/state/stop"
+        ):
+            state["value"] = "STOPPED"
+            return httpx.Response(204)
+
+        if request.method == "PUT" and request.url.path.endswith(
+            "/node-transit/state/start"
+        ):
+            state["value"] = "BOOTED"
+            return httpx.Response(204)
+
+        return httpx.Response(500)
+
+    clock = _RecycleClock()
+    monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
+
+    client = httpx.Client(
+        base_url="https://cml.invalid",
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    recycler = ProfiledStagingCmlTransitRecycler(client)
+
+    evidence = recycler.recycle(
+        run_id="run-001",
+        observed=observed,
+        devices=devices,
+    )
+
+    put_paths = [path for method, path in calls if method == "PUT"]
+
+    assert put_paths == [
+        f"/api/v0/labs/{LAB_ID}/nodes/node-transit/state/stop",
+        f"/api/v0/labs/{LAB_ID}/nodes/node-transit/state/start",
+    ]
+    assert clock.now == 60
+    assert evidence.identity == ("staging-transit-recycle:run-001:transit-ios-01")
+    assert evidence.digest.startswith("sha256:")
+
+
+def test_transit_recycler_rejects_profile_mismatch_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    devices, observed = _observed_recycle_fixture()
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+
+        if request.url.path == f"/api/v0/labs/{LAB_ID}":
+            return httpx.Response(
+                200,
+                json={"lab_title": "NCDP Staging run-001"},
+            )
+
+        return httpx.Response(
+            200,
+            json={
+                "label": "transit-ios-01",
+                "node_definition": "wrong",
+                "image_definition": "wrong",
+                "state": "BOOTED",
+            },
+        )
+
+    clock = _RecycleClock()
+    monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
+
+    recycler = ProfiledStagingCmlTransitRecycler(
+        httpx.Client(
+            base_url="https://cml.invalid",
+            transport=httpx.MockTransport(handler),
+            trust_env=False,
+        )
+    )
+
+    with pytest.raises(
+        ProfiledStagingError,
+        match="identity rejected",
+    ):
+        recycler.recycle(
+            run_id="run-001",
+            observed=observed,
+            devices=devices,
+        )
+
+    assert "PUT" not in calls
+
+
+def test_transit_recycler_uncertain_stop_is_not_replayed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    devices, observed = _observed_recycle_fixture()
+    transit = next(
+        item for item in devices if str(item.logical_name) == "transit-ios-01"
+    )
+    profile = CML_REALIZATION_PROFILE_CATALOG[transit.cml_realization_profile_id]
+
+    stop_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal stop_calls
+
+        if request.method == "GET" and request.url.path == (f"/api/v0/labs/{LAB_ID}"):
+            return httpx.Response(
+                200,
+                json={"lab_title": "NCDP Staging run-001"},
+            )
+
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "label": "transit-ios-01",
+                    "node_definition": profile.node_definition,
+                    "image_definition": profile.image_definition,
+                    "state": "BOOTED",
+                },
+            )
+
+        if request.url.path.endswith("/state/stop"):
+            stop_calls += 1
+            raise httpx.ReadTimeout(
+                "uncertain stop",
+                request=request,
+            )
+
+        return httpx.Response(500)
+
+    clock = _RecycleClock()
+    monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
+
+    recycler = ProfiledStagingCmlTransitRecycler(
+        httpx.Client(
+            base_url="https://cml.invalid",
+            transport=httpx.MockTransport(handler),
+            trust_env=False,
+        )
+    )
+
+    with pytest.raises(
+        ProfiledStagingAmbiguousError,
+        match="stop outcome is ambiguous",
+    ):
+        recycler.recycle(
+            run_id="run-001",
+            observed=observed,
+            devices=devices,
+        )
+
+    assert stop_calls == 1
+
+
+def test_transit_recycler_uncertain_start_is_reconciled_without_replay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    devices, observed = _observed_recycle_fixture()
+    transit = next(
+        item for item in devices if str(item.logical_name) == "transit-ios-01"
+    )
+    profile = CML_REALIZATION_PROFILE_CATALOG[transit.cml_realization_profile_id]
+
+    state = {"value": "BOOTED"}
+    start_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal start_calls
+
+        if request.method == "GET" and request.url.path == (f"/api/v0/labs/{LAB_ID}"):
+            return httpx.Response(
+                200,
+                json={"lab_title": "NCDP Staging run-001"},
+            )
+
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "label": "transit-ios-01",
+                    "node_definition": profile.node_definition,
+                    "image_definition": profile.image_definition,
+                    "state": state["value"],
+                },
+            )
+
+        if request.url.path.endswith("/state/stop"):
+            state["value"] = "STOPPED"
+            return httpx.Response(204)
+
+        if request.url.path.endswith("/state/start"):
+            start_calls += 1
+            state["value"] = "BOOTED"
+            raise httpx.ReadTimeout(
+                "uncertain start",
+                request=request,
+            )
+
+        return httpx.Response(500)
+
+    clock = _RecycleClock()
+    monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
+
+    recycler = ProfiledStagingCmlTransitRecycler(
+        httpx.Client(
+            base_url="https://cml.invalid",
+            transport=httpx.MockTransport(handler),
+            trust_env=False,
+        )
+    )
+
+    evidence = recycler.recycle(
+        run_id="run-001",
+        observed=observed,
+        devices=devices,
+    )
+
+    assert start_calls == 1
+    assert evidence.identity == ("staging-transit-recycle:run-001:transit-ios-01")
+
+
+def test_transit_recycler_http_500_is_ambiguous_and_not_replayed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    devices, observed = _observed_recycle_fixture()
+    transit = next(
+        item for item in devices if str(item.logical_name) == "transit-ios-01"
+    )
+    profile = CML_REALIZATION_PROFILE_CATALOG[transit.cml_realization_profile_id]
+
+    stop_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal stop_calls
+
+        if request.method == "GET" and request.url.path == (f"/api/v0/labs/{LAB_ID}"):
+            return httpx.Response(
+                200,
+                json={"lab_title": "NCDP Staging run-001"},
+            )
+
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "label": "transit-ios-01",
+                    "node_definition": profile.node_definition,
+                    "image_definition": profile.image_definition,
+                    "state": "BOOTED",
+                },
+            )
+
+        if request.url.path.endswith("/state/stop"):
+            stop_calls += 1
+            return httpx.Response(500)
+
+        return httpx.Response(500)
+
+    clock = _RecycleClock()
+    monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
+
+    recycler = ProfiledStagingCmlTransitRecycler(
+        httpx.Client(
+            base_url="https://cml.invalid",
+            transport=httpx.MockTransport(handler),
+            trust_env=False,
+        )
+    )
+
+    with pytest.raises(
+        ProfiledStagingAmbiguousError,
+        match="stop outcome is ambiguous",
+    ):
+        recycler.recycle(
+            run_id="run-001",
+            observed=observed,
+            devices=devices,
+        )
+
+    assert stop_calls == 1
+
+
+def test_get_only_reader_remains_without_mutation_surface() -> None:
+    assert not hasattr(ProfiledStagingCmlReader, "_put_state_once")
+    assert not hasattr(ProfiledStagingCmlReader, "recycle")

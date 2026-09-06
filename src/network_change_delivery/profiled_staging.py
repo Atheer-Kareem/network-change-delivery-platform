@@ -165,6 +165,12 @@ class ProfiledStagingEvidence(BaseModel):
     topology_digest: Sha256Digest | None = None
     context_digest: Sha256Digest | None = None
     trust_generation: EvidenceReference | None = None
+    transit_recycle_outcome: Literal[
+        "not_attempted",
+        "attempted",
+        "succeeded",
+    ] = "not_attempted"
+    transit_recycle_evidence: EvidenceReference | None = None
     readiness_deadline_seconds: Literal[180, 300] = 180
     readiness: tuple[ProfiledStagingReadinessEvidence, ...] = ()
     devices: tuple[ProfiledStagingDeviceEvidence, ...] = ()
@@ -193,14 +199,33 @@ class ProfiledStagingEvidence(BaseModel):
             name for name in PROFILED_STAGING_DEVICE_NAMES if name in readiness_names
         ) or len(set(readiness_names)) != len(readiness_names):
             raise ValueError("profiled staging readiness population rejected")
-        if self.final_outcome is ProfiledStagingOutcome.SUCCEEDED and (
-            readiness_names != PROFILED_STAGING_DEVICE_NAMES
-            or any(
+        expected_recycle_identity = (
+            f"staging-transit-recycle:{self.staging_run_id}:transit-ios-01"
+        )
+        if self.transit_recycle_evidence is not None and (
+            self.transit_recycle_evidence.identity != expected_recycle_identity
+        ):
+            raise ValueError(
+                "profiled staging transit recycle evidence identity rejected"
+            )
+        if (self.transit_recycle_outcome == "succeeded") != (
+            self.transit_recycle_evidence is not None
+        ):
+            raise ValueError(
+                "profiled staging transit recycle evidence outcome rejected"
+            )
+
+        if self.final_outcome is ProfiledStagingOutcome.SUCCEEDED:
+            if readiness_names != PROFILED_STAGING_DEVICE_NAMES or any(
                 item.outcome is not ProfiledStagingReadinessOutcome.READY
                 for item in self.readiness
-            )
-        ):
-            raise ValueError("profiled staging successful readiness rejected")
+            ):
+                raise ValueError("profiled staging successful readiness rejected")
+            if (
+                self.transit_recycle_outcome != "succeeded"
+                or self.transit_recycle_evidence is None
+            ):
+                raise ValueError("profiled staging successful transit recycle rejected")
         return self
 
 
@@ -453,6 +478,16 @@ class ProfiledStagingLifecycle:
                 context.devices[0].trust_evidence
                 if context
                 else getattr(self.operations, "trust_generation", None)
+            ),
+            transit_recycle_outcome=getattr(
+                self.operations,
+                "transit_recycle_outcome",
+                "not_attempted",
+            ),
+            transit_recycle_evidence=getattr(
+                self.operations,
+                "transit_recycle_evidence",
+                None,
             ),
             readiness_deadline_seconds=getattr(
                 self.operations, "readiness_deadline_seconds", 180

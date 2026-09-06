@@ -1,3 +1,12 @@
+locals {
+  profiled_staging_positions = {
+    core_02        = { x = 100, y = -400 }
+    edge_junos_01  = { x = 400, y = -200 }
+    transit_ios_01 = { x = 150, y = 100 }
+    access_sw_01   = { x = 450, y = 100 }
+  }
+}
+
 resource "cml2_lab" "profiled_staging" {
   title       = "NCDP Staging ${var.staging_run_id}"
   description = "Disposable profiled exact-four read-only integration realization."
@@ -48,8 +57,8 @@ resource "cml2_node" "device" {
   cpus = var.devices[each.key].cpu_cores
   ram  = var.devices[each.key].ram_mb
   tags = ["profiled-staging-device"]
-  x    = each.key == "core_02" ? 100 : each.key == "edge_junos_01" ? 400 : 250
-  y    = each.key == "core_02" ? -400 : each.key == "edge_junos_01" ? -200 : 100
+  x    = local.profiled_staging_positions[each.key].x
+  y    = local.profiled_staging_positions[each.key].y
 }
 
 resource "cml2_link" "system_bridge_management" {

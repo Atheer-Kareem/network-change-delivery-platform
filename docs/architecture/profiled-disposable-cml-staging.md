@@ -25,7 +25,9 @@ One run creates `NCDP Staging <run-id>` with exactly six nodes, nine links, and
 switch, four profiled device nodes, nine links, and one lifecycle resource.
 Day-0 is management-only and derives each STAGING endpoint from NetBox. It sets
 host identity and profile-appropriate management access, including Junos
-NETCONF, but deliberately excludes underlay, OSPF, VLAN/trunk, ACL, SNMP, and
+NETCONF. IOSv explicitly disables network service autoconfiguration and clears
+any inherited management address before applying the exact static STAGING
+binding. Day-0 deliberately excludes underlay, OSPF, VLAN/trunk, ACL, SNMP, and
 interface-description intent. The historical 10.6.12.0/30 bootstrap is absent.
 
 Before Terraform can create anything, authenticated GET-only CML admission

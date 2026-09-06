@@ -147,6 +147,52 @@ def test_cisco_bootstrap_has_complete_management_only_ssh_server(
         assert " no switchport" in rendered
 
 
+def test_iosv_bootstrap_disables_dynamic_management_before_static_binding() -> None:
+    rendered = (TERRAFORM / "bootstrap" / "iosv_minimal.tftpl").read_text(
+        encoding="utf-8"
+    )
+
+    assert "no service config" in rendered
+
+    interface = rendered.split(
+        "interface GigabitEthernet0/0\n",
+        maxsplit=1,
+    )[1]
+
+    clear = interface.index(" no ip address\n")
+    static = interface.index(
+        ' ip address ${split("/", management_cidr)[0]} '
+        "${cidrnetmask(management_cidr)}\n"
+    )
+
+    assert clear < static
+    validate_management_only_bootstrap(rendered)
+
+
+def test_profiled_staging_device_positions_are_unique() -> None:
+    source = (TERRAFORM / "topology.tf").read_text(encoding="utf-8")
+
+    matches = re.findall(
+        r"^\s*(core_02|edge_junos_01|transit_ios_01|access_sw_01)"
+        r"\s*=\s*\{\s*x\s*=\s*(-?\d+),\s*y\s*=\s*(-?\d+)\s*\}",
+        source,
+        re.MULTILINE,
+    )
+
+    positions = {name: (int(x), int(y)) for name, x, y in matches}
+
+    assert positions == {
+        "core_02": (100, -400),
+        "edge_junos_01": (400, -200),
+        "transit_ios_01": (150, 100),
+        "access_sw_01": (450, 100),
+    }
+
+    assert len(set(positions.values())) == 4
+    assert "x    = local.profiled_staging_positions[each.key].x" in source
+    assert "y    = local.profiled_staging_positions[each.key].y" in source
+
+
 def test_vjunos_bootstrap_restores_accepted_first_boot_guard_only() -> None:
     rendered = (TERRAFORM / "bootstrap" / "vjunos_router_minimal.tftpl").read_text(
         encoding="utf-8"

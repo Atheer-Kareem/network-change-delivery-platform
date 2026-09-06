@@ -20,8 +20,10 @@ interface-description operations, including Cisco independent O′ validation
 without recovery and Junos candidate validation, commit-confirmed, independent
 O′ validation, and explicit confirmation. IOSv and IOSvL2 remain exact
 managed-fleet members but are not admitted; no other B4 vertical gained write
-authority. B5/D0 is unchanged. Schema-v1 planning/deployment, protected
-delivery, and disposable staging are retired from current runtime.
+authority. B5/D0 is unchanged. Schema-v1 planning/deployment and protected
+delivery are retired from current runtime. The historical exact-two disposable
+staging runtime is retired; its profiled exact-four replacement is implemented
+and pending controlled local acceptance.
 
 The final inventory authority is:
 
@@ -121,7 +123,8 @@ or STAGING endpoints fail validation. Management-service observability consumes
 the same profiled exact-four population for its target projection, deriving the
 service from each automation profile; its separate bounded readiness/admission
 artifact does not use this model directly. Local runtime quality validation is
-active; disposable CML staging and protected schema-v1 delivery are retired.
+active; protected schema-v1 delivery is retired. The profiled exact-four
+disposable staging implementation is pending controlled local acceptance.
 
 ## CML-anchored host trust
 
@@ -302,7 +305,9 @@ hostname, role, profile, and management address cannot select a credential.
 B3-3 prepared four staging identity capabilities and paused the then-exact-two
 runtime. The final migration retires those staging and protected-delivery entry
 points; their historical OpenBao configuration is not current execution
-authority. Quality validation and profiled PR Batfish remain active.
+authority. The source-complete profiled exact-four staging replacement uses
+new device-scoped Buildkite JWT authority and is pending controlled local
+acceptance. Quality validation and profiled PR Batfish remain active.
 
 The [B3-3 acceptance record](../acceptance/profiled-openbao-onboarding-detour-b3-3.md)
 contains the secret-free applied-state evidence.
@@ -346,7 +351,9 @@ the explicit `SNMPV3_AUTHPRIV_SHA256_AES128` capability; the current projection
 is devices 1 and 2, while IOSv and IOSvL2 are excluded by the accepted
 SHA256/AES128 contract.
 Disposable exact-two CML staging, its Terraform topology, and protected
-delivery are retired. The operator has restored local observability runtime and
+delivery are retired. The profiled exact-four staging replacement is documented
+in [profiled disposable CML staging](profiled-disposable-cml-staging.md) and is
+pending controlled local acceptance. The operator has restored local observability runtime and
 synthetic SNMPv3 quality validation. The latter keeps its two-agent disposable
 fixture because it proves protocol behavior rather than the LIVE fleet;
 persistent live SNMP remains a separate deferred capability whose targets are

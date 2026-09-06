@@ -1,9 +1,10 @@
 # Ephemeral CML staging architecture
 
-> **Retired runtime:** this exact-two staging design is historical. Its
+> **Historical reference:** this exact-two staging design is retired. Its
 > Terraform graph and executable lifecycle were removed; it is not paused or a
-> current restoration path. Future disposable staging requires a new profiled
-> design.
+> current restoration path. The current profiled exact-four replacement is
+> [documented separately](profiled-disposable-cml-staging.md) and is pending
+> controlled local acceptance.
 
 ## Scope
 

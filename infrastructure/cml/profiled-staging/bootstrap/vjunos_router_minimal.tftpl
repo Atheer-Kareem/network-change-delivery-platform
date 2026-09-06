@@ -1,0 +1,17 @@
+system {
+  host-name ${hostname};
+  root-authentication {
+    ssh-ed25519 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPwW8OCx1ZqSb9kBOTcmWF5csn28A+Z+5wkAaslzmXau ncdp-personal-lab-root-commit-guard";
+  }
+  login {
+    user ${username} {
+      class super-user;
+      authentication { encrypted-password "${password_hash}"; }
+    }
+  }
+  services {
+    ssh { root-login deny; }
+    netconf { ssh; }
+  }
+}
+interfaces { fxp0 { unit 0 { family inet { address ${management_cidr}; } } } }

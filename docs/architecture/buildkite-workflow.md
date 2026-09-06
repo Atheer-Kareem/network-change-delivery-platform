@@ -50,9 +50,11 @@ longer validated or represented as current infrastructure.
 
 Historical ADRs, acceptance reports, promotion models, and audit evidence keep
 their original meaning. They do not grant current runtime authority. A future
-protected-delivery or disposable-staging capability must be designed against
-the profiled architecture and reviewed as a new boundary; restoration of the
-old blocks is not an accepted path.
+protected-delivery capability must be designed against the profiled architecture
+and reviewed as a new boundary; restoration of the old block is not an accepted
+path. Profiled exact-four disposable staging now has static Terraform validation
+only; its external `cml-staging` job remains absent pending controlled local
+acceptance.
 
 ## Runtime change classification
 

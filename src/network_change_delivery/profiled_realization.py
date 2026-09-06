@@ -313,7 +313,7 @@ class StagingRealizedDevice(BaseModel):
     cml_node_id: CmlUUID
     staging_endpoint: ManagementEndpoint
     readiness_evidence: EvidenceReference
-    trust_evidence: EvidenceReference
+    trust_evidence: EvidenceReference | None = None
 
     @model_validator(mode="after")
     def exact_staging_binding(self) -> StagingRealizedDevice:
@@ -360,6 +360,10 @@ class StagingRealizationContext(BaseModel):
         _validate_exact_four(self.devices)
         if self.cml_lab_title != f"NCDP Staging {self.staging_run_id}":
             raise ValueError("staging lab title is not bound to its run identity")
+        if self.lifecycle_state is RealizationLifecycleState.READY and any(
+            device.trust_evidence is None for device in self.devices
+        ):
+            raise ValueError("READY staging realization requires exact trust evidence")
         return self
 
     def staging_read_only_target(

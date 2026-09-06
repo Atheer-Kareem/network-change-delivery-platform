@@ -2,8 +2,8 @@
 
 This module does not replace or feed the v1 inventory/deployment path. It binds
 reviewed B1 profiles to factual NetBox metadata and exposes only a LIVE
-read-only target. STAGING projection remains unavailable until B3 supplies an
-explicit realization authority.
+read-only target. A STAGING target can be projected only by an explicit,
+run-scoped realization authority.
 """
 
 from __future__ import annotations
@@ -596,6 +596,35 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
         if len(exact) != 1:
             raise InventoryError("NetBox requested interface is ambiguous")
         return exact[0]
+
+    def resolve_cabled_peer(
+        self, interface: StableInterfaceIdentity
+    ) -> StableInterfaceIdentity:
+        """Resolve one directly cabled peer through the GET-only NetBox API."""
+        interface_id = int(interface.interface.rsplit(":", 1)[1])
+        payload = self._get(
+            f"{self._INTERFACE_PATH}{interface_id}/",
+            params={},
+        )
+        peers = payload.get("connected_endpoints")
+        if (
+            not isinstance(peers, list)
+            or len(peers) != 1
+            or not isinstance(peers[0], dict)
+        ):
+            raise InventoryError("NetBox cabled interface peer is missing or ambiguous")
+        peer = peers[0]
+        device = peer.get("device")
+        if not isinstance(device, dict):
+            raise InventoryError("NetBox cabled interface peer is invalid")
+        peer_device_id = _positive_id(device.get("id"), "peer device")
+        peer_interface_id = _positive_id(peer.get("id"), "peer interface")
+        peer_name = _required_string(peer.get("name"), "peer interface name")
+        return StableInterfaceIdentity(
+            device=f"netbox:dcim.device:{peer_device_id}",
+            interface=f"netbox:dcim.interface:{peer_interface_id}",
+            name=peer_name,
+        )
 
     def resolve_profiled_population(self) -> ProfiledInventoryPopulation:
         """Resolve only the exact four Git-approved profiled inventory members."""

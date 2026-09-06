@@ -6,7 +6,7 @@ import importlib.util
 import sys
 from itertools import pairwise
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -653,6 +653,50 @@ def test_complete_destroy_rejects_partial_state(tmp_path: Path) -> None:
     assert [call[0] for call in calls] == ["plan"]
 
 
+@pytest.mark.parametrize("extra_update", [False, True])
+def test_direct_started_runtime_drift_still_requires_exact_delete_only_plan(
+    tmp_path, extra_update
+):
+    value = operations(tmp_path)
+    payload = {
+        "values": {
+            "root_module": {
+                "resources": [
+                    {
+                        "mode": "managed",
+                        "address": address,
+                        "values": {"state": "STARTED"},
+                    }
+                    for address in PROFILED_STAGING_TERRAFORM_ADDRESSES
+                ]
+            }
+        }
+    }
+    # Refresh can observe authorized STARTED drift; ownership is still all 17
+    # addresses, never inferred from the runtime lifecycle.state string.
+    state = terraform_managed_state_addresses(payload)
+    value._state_addresses = lambda: state
+    actions = dict.fromkeys(state, "delete")
+    if extra_update:
+        actions["cml2_lifecycle.profiled_staging"] = "update"
+    value._planned_actions = lambda _: actions
+    value._var_file_arguments = lambda: ["-var-file=recovery-inputs.tfvars.json"]
+    value._secure_file = lambda _: None
+    calls = []
+    value._terraform = lambda arguments, **_: calls.append(arguments)
+    if extra_update:
+        with pytest.raises(ProfiledStagingError):
+            value.destroy_owned(require_complete=True)
+    else:
+        value.destroy_owned(require_complete=True)
+    assert [call[0] for call in calls] == (
+        ["plan"] if extra_update else ["plan", "apply"]
+    )
+    assert "-destroy" in calls[0]
+    assert all("lifecycle_state=STARTED" not in call for call in calls)
+    assert all(call[0] != "destroy" for call in calls)
+
+
 def test_uncertain_destroy_is_reconciled_without_replay(tmp_path: Path) -> None:
     value = operations(tmp_path)
     state_reads = iter((set(PROFILED_STAGING_TERRAFORM_ADDRESSES), set()))
@@ -925,7 +969,9 @@ def test_runtime_has_no_write_adapter_or_unfenced_terraform_mutation() -> None:
 def test_transit_recycle_occurs_after_start_and_before_readiness() -> None:
     source = (ROOT / "scripts/run_profiled_cml_staging.py").read_text(encoding="utf-8")
 
-    start = source.index("self._apply_start()")
+    assert "self._apply_start()" not in source
+    admission = source.index("observed = admit_created_realization(")
+    start = source.index("self.lab_start_evidence = starter.start(")
     attempted = source.index(
         'self.transit_recycle_outcome = "attempted"',
         start,
@@ -939,4 +985,94 @@ def test_transit_recycle_occurs_after_start_and_before_readiness() -> None:
         recycle,
     )
 
-    assert start < attempted < recycle < readiness
+    assert admission < start < attempted < recycle < readiness
+
+
+@pytest.mark.parametrize("recycle_fails", [False, True])
+@pytest.mark.parametrize("start_fails", [False, True])
+def test_runtime_reaches_readiness_only_after_successful_recycle(
+    tmp_path, monkeypatch, recycle_fails, start_fails
+):
+    from test_profiled_staging_cml import _observed_recycle_fixture
+
+    module = load_script("run_profiled_cml_staging")
+    devices, observed = _observed_recycle_fixture()
+    value = module.LocalTerraformOperations(
+        "run-001", tmp_path, inventory=SimpleNamespace(), secrets=SimpleNamespace()
+    )
+    value._devices = devices
+    value._credentials = {
+        str(device.logical_name): DeviceCredentials(
+            username="operator", password="synthetic-secret"
+        )
+        for device in devices
+    }
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "ios_scrypt_password_hash",
+        lambda *_: "$9$ncdpCoreSalt1$abcdefghijklmnop",
+    )
+    monkeypatch.setattr(
+        value, "_junos_verifier", lambda _: "$6$ncdpJunosSalt$abcdefghijklmnop"
+    )
+    monkeypatch.setattr(value, "_apply_exact_create", lambda: calls.append("create"))
+    monkeypatch.setattr(value, "_outputs", lambda: {})
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlReader,
+        "from_environment",
+        lambda **_: SimpleNamespace(close=lambda: None),
+    )
+
+    def admit(*_):
+        calls.append("admit_realization")
+        return observed
+
+    monkeypatch.setattr(module, "admit_created_realization", admit)
+    monkeypatch.setattr(
+        value, "_apply_start", lambda: pytest.fail("Terraform START forbidden")
+    )
+
+    def start(**_):
+        assert calls[-1] == "admit_realization"
+        calls.append("lab_start")
+        if start_fails:
+            raise ProfiledStagingAmbiguousError("uncertain lab start")
+        return observed.topology_evidence
+
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlLabStarter,
+        "from_environment",
+        lambda **_: SimpleNamespace(start=start, close=lambda: None),
+    )
+
+    def recycle(**_):
+        assert value.start_stage == "succeeded"
+        calls.append("recycle")
+        if recycle_fails:
+            raise ProfiledStagingAmbiguousError("uncertain recycle")
+        return observed.topology_evidence
+
+    def readiness(*_):
+        assert value.transit_recycle_outcome == "succeeded"
+        calls.append("readiness")
+        raise ProfiledStagingError("test stops before real readiness")
+
+    monkeypatch.setattr(
+        module.ProfiledStagingCmlTransitRecycler,
+        "from_environment",
+        lambda **_: SimpleNamespace(
+            recycle=recycle,
+            close=lambda: None,
+            timings_seconds={"transit_first_boot": 30},
+        ),
+    )
+    monkeypatch.setattr(value, "_wait_readiness", readiness)
+    with pytest.raises(ProfiledStagingError):
+        value.create()
+    assert calls == ["create", "admit_realization", "lab_start"] + (
+        [] if start_fails else ["recycle"] + ([] if recycle_fails else ["readiness"])
+    )
+    if not start_fails:
+        assert value.timings_seconds["transit_first_boot"] == 30
+    assert value.start_stage == ("attempted" if start_fails else "succeeded")

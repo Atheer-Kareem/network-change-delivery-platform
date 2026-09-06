@@ -35,15 +35,20 @@ concurrency, and prohibits automatic or manual retry. The former protected-main
 schema-v1 stage is retired.
 
 On a pull request, active Batfish assurance is prevention evidence for the
-reviewed profiled candidate. No disposable CML or protected-delivery branch
-follows it.
+reviewed profiled candidate. Disposable exact-four CML read-only integration
+follows successful PR Batfish; no protected-delivery branch follows it.
 
 The profiled PR stage verifies the checked-out commit, builds the pinned
 assurance image, starts Batfish, performs bounded readiness, evaluates the
 explicit service stack, verifies its typed record, and publishes
-`assurance/profiled-pr-assurance.json`. Its annotation shows the four-device
-architecture, service stack, exact nodes, D1/candidate digests, and invariant
-count without live or credential-bearing data. Historical `ncdp assure-plan`/
+`assurance/profiled-pr-assurance.json`. Its human annotation shows topology and
+network-state totals, observed security behavior, five domain passed/total
+counts (4 model, 5 underlay, 7 OSPF, 10 VLAN, 14 ACL), and one evidence digest.
+Only failed invariants are expanded, grouped by domain with a concise network
+label and secondary internal ID. A closed display map must cover exactly all
+40 invariants. Unknown forwarding dispositions are not presented as ACL blocks.
+Schema-v4 machine evidence retains every invariant, digest, service subject,
+flow, and node; the renderer changes no assurance decision. Historical `ncdp assure-plan`/
 `ncdp verify-assurance` artifacts retain their verification meaning but are not
 promotion inputs.
 

@@ -127,17 +127,17 @@ def test_production_and_runtime_scripts_do_not_import_legacy_write_symbols() -> 
             )
 
 
-def test_pipeline_has_no_retired_staging_or_device_write_path() -> None:
+def test_pipeline_has_no_retired_staging_or_legacy_device_write_path() -> None:
     source = (ROOT / ".buildkite/pipeline.yml").read_text(encoding="utf-8")
     for retired in (
         "scripts/buildkite/ephemeral_staging.sh",
         "protected-delivery",
         "deployment_gate.sh",
         "deploy-buildkite-promotion",
-        "profiled-deploy",
-        "ncdp-deploy",
     ):
         assert retired not in source
+    assert "profiled-deploy" in source and "ncdp-deploy" in source
+    assert 'if: build.branch == "main" && build.pull_request.id == null' in source
     assert not (ROOT / "scripts/buildkite/deployment_gate.sh").exists()
     assert not (ROOT / "scripts/buildkite/ephemeral_staging.sh").exists()
     assert not (ROOT / "infrastructure/cml").joinpath("topology.tf").exists()
@@ -184,6 +184,8 @@ def test_current_docs_record_retirement_and_pending_external_tag_acceptance() ->
     assert "external tag retirement pending" in roadmap
     assert "schema-v1 fleet engine" in lifecycle
     assert "historically" in lifecycle and "accepted" in lifecycle
-    assert "device-write" in workflow and "validation and assurance only" in workflow
+    assert "schema-v2 delivery tail" in workflow
+    assert "Canonical PRs end after CML" in workflow
+    assert "not restored schema-v1" in workflow
     assert "not paused" not in workflow
     assert "temporarily paused" not in roadmap + lifecycle + workflow

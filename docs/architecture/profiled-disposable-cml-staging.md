@@ -47,6 +47,52 @@ and one START request. Uncertain mutation transport is independently reconciled
 and is never blindly replayed. This is CML realization lifecycle authority, not
 network-device configuration-write authority.
 
+The first PR #136 experiment failed safely during Terraform START, before any
+transit recycle. User-supplied evidence records create 5.7s, start 3.7s, cleanup
+5.4s, total 23.3s, with successful destroy, absence, and retirement and no cleanup
+failure. It is not retried. The pinned CML2 provider `0.9.3-beta1`
+[startup implementation](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/utilities.go)
+calls lab START without convergence when unstaged and `wait=false`; its
+[update implementation](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/update.go)
+then starts links using the pre-START snapshot while the lab is transitioning.
+That lifecycle update is unsuitable for this linked topology and is no longer
+in the active runtime path. Terraform's lifecycle configuration is restored to
+PR #135's `wait=true` and reviewed infrastructure/device stages. It remains one
+of the exact 17 owned resources, but only Terraform CREATE and saved delete-only
+DESTROY plans are used by the active lifecycle.
+
+`ProfiledStagingCmlLabStarter` is a separate, one-shot non-blocking lab mutation
+boundary with the same TLS/process-memory bearer model as the recycler. It
+re-admits the exact run, lab UUID/title, six-node and nine-link membership,
+node IDs/definitions/images, catalog device identities 1/2/8/9 and profile
+bindings. Lab and all six nodes must be `DEFINED_ON_CORE` before first START.
+It follows pinned [gocmlclient v0.2.5 Lab.Start](https://github.com/rschmied/gocmlclient/blob/v0.2.5/internal/services/lab.go):
+one `PUT /api/v0/labs/<id>/start`; only a definitive 404 permits the legacy
+`/api/v0/labs/<id>/state/start` form. Transport failure, 408, or 5xx permits only
+one bounded GET readback of the same lab and membership/profile/state bindings.
+At least the lab or one node must show an admitted starting/started state, with
+no stopped/unknown node states; otherwise the outcome is ambiguous. There is no
+mutation retry, initial per-node START loop, or link START. Reader stays GET-only.
+
+The full graph and management-only Day-0 are independently admitted before this
+boundary. CML starts the graph together; no device collection occurs until real
+SSH/NETCONF readiness and strict trust. Direct-started runtime state is expected
+drift from Terraform's stored defined lifecycle. It grants no state surgery or
+additional Terraform update: cleanup refreshes the exact owned resource set and
+accepts only its matching saved delete-only plan. Any update/replacement in that
+plan fails closed and retains state.
+
+After that one admitted CML LAB START, bounded GET observations admit the exact
+transit run/lab/node/profile on every sample until its first `BOOTED` (maximum
+300 seconds, two-second polling). The existing 60-second interval begins at
+that observation, without waiting for CAT8000V, vJunos, or IOSvL2. Identity and
+`BOOTED` are rechecked before STOP. `STARTED` alone is not evidence that IOSv
+has consumed and persisted Day-0, so neither an earlier interval nor a shorter
+one is admitted by the retained diagnosis. After the single STOP/START and
+second `BOOTED`, the unchanged exact-four SSH/NETCONF readiness path follows.
+No third boot or mutation replay exists. The next commit's PR staging run is the
+acceptance experiment; shorter runtime is not yet proven.
+
 Before Terraform can create anything, authenticated GET-only CML admission
 rejects any existing lab whose title starts with `NCDP Staging` and any active
 fixed STAGING management endpoint. After creation, Terraform outputs are only
@@ -104,7 +150,7 @@ entries use the exact `[host]:830` known-hosts form.
 
 ## Failure, evidence, and recovery
 
-The one-shot lifecycle is admit → create → fenced saved START plan → exact
+The one-shot lifecycle is admit → fenced create → admitted CML LAB START → exact
 transit-IOSv CML recycle → readiness/trust/read-only validate → fenced saved
 destroy plan → independent absence proof → state retirement. Cleanup authority
 derives from a nonempty known Terraform state,
@@ -128,9 +174,26 @@ Schema-v2 `ProfiledStagingEvidence` preserves source commit, observed lab and
 run-specific topology, final READY context digest, actual trust generation,
 per-device readiness and read-only facts, create/start/transit-recycle/
 destroy/absence/state retirement, and separate primary/cleanup failures. An
-uncertain Terraform or transit-recycle mutation is never replayed: known owned
+uncertain Terraform, lab-start, or transit-recycle mutation is never replayed: known owned
 state may proceed only to bounded
 cleanup, while unprovable ownership is `AMBIGUOUS` and retained for review.
+
+Optional `lab_start_evidence` binds `staging-lab-start:<run-id>` to the observed
+lab, nodes, topology digest and acknowledged/reconciled start facts. It is
+present only after start success. Historical schema-v2 success without this
+reference remains parseable; new Buildkite success additionally requires it.
+
+Optional `timings_seconds` adds only closed phase names and finite nonnegative
+monotonic durations to schema-v2, including failed phase durations. The phases
+are Terraform create (including its saved plan), admitted CML LAB START, transit first
+boot observation, persistence interval, STOP completion, second boot,
+SSH/NETCONF readiness, read-only validation, cleanup, and
+whole lifecycle total. Total includes admission, setup, trust, and nested phases; do
+not sum it with those phases. The Buildkite sanitized summary displays these
+numbers; no provider text or secret is a timing payload. Compare total and
+per-phase durations with the former approximately 11-minute job, allowing for
+wrapper setup/publication time outside the lifecycle total. Existing evidence
+without timings remains valid; the schema-v2 success requirements are unchanged.
 
 ## Buildkite activation
 
@@ -144,10 +207,12 @@ and recycler accept the process-memory bearer directly; only bounded Terraform
 subprocesses receive it as `CML2_TOKEN`. Their mutation and GET-only contracts
 are unchanged.
 
-Runtime PRs run validation → PR Batfish → CML staging. Main independently runs
-CML after validation through the satisfied, skipped PR-only dependency. The
-same broad runtime-path classifier governs both assurance jobs. Staging failure
-fails the aggregate Buildkite build and the existing required GitHub status;
-no new status or protected delivery is introduced. See the current
+Canonical PR and main builds run validation → Batfish → CML without path
+filtering. Repository commands soft-fail for continuation; staging retains its
+real nonzero exit and truthful evidence, but no longer guarantees aggregate
+Buildkite failure or merge blocking. Verified staging success publishes a
+same-build evidence hash required by the separate schema-v2 main promotion.
+Failure publishes no success authority. The staging lifecycle itself gains no
+device-write authority. See the current
 [operations runbook](buildkite-ephemeral-cml-staging-operations.md) for the
 external trusted-agent prerequisite, evidence, and retained-state handling.

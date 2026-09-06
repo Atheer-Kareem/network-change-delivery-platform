@@ -33,12 +33,24 @@ STOP/START recycle. It cannot apply device CLI configuration or touch NCDP Live.
 
 ## Zone 2 — deployment
 
-Only the explicit local `profiled-deploy` command may enter this zone with a
+Only the current `profiled-deploy` command may enter this zone with a
 schema-v2 plan and exact approval digest. It obtains narrowly scoped,
 short-lived credentials, uses the explicit profiled LIVE trust generation,
 re-verifies complete identity and state, and executes only the approved
-operation-specific artifact. The Buildkite pipeline has no deployment zone or
-device-write authority.
+operation-specific artifact. The personal-lab Buildkite main tail may invoke
+that same CLI only after same-build schema-v2 promotion, all validation and
+assurance receipts, exact human-block authorization, and fresh LIVE trust.
+Its agent-owned command hook releases existing operator AppRole/NetBox authority
+only to the exact main plan/deploy steps. This is not the retired deployment JWT
+role family. PRs cannot schedule the write tail. See the
+[current boundary](buildkite-profiled-delivery-operations.md).
+
+All repository commands soft-fail for presentation; the aggregate Buildkite
+status is no longer a reliable merge-safety gate. Missing/invalid prerequisites
+still prevent deployment, even after human unblock. Same-build receipts and
+unblocker metadata trust the Buildkite scheduler, canonical reviewed main and
+agent owner; they do not provide independent cryptographic proof against a
+compromised administrator, trusted checkout or shared single-user host.
 
 ## Zone 3 — continuous operations
 

@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1000" role="img" aria-labelledby="title description">
+  <title id="title">NCDP · current exact-four architecture</title>
+  <desc id="description">Three separate lanes: GitHub intent flows through Buildkite validation and Batfish before disposable exact-four CML read-only integration. NetBox identity and OpenBao credentials feed Python-owned profiled-plan, immutable promotion, human authorization and profiled-deploy. The operator-owned NCDP Live contains core-02, edge-junos-01, transit-ios-01 and access-sw-01; current writes are limited to devices 1 and 2. Independent validation, AuditStore, Oxidized and read-only monitoring retain evidence and operational visibility. An uncertain write stops without retry and requires independent reconciliation.</desc>
+  <defs>
+    <linearGradient id="canvas" x2="1" y2="1">
+      <stop stop-color="#08111f"/><stop offset="1" stop-color="#142139"/>
+    </linearGradient>
+    <linearGradient id="approval" x2="1" y2="1">
+      <stop stop-color="#382719"/><stop offset="1" stop-color="#48371d"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10Z" fill="#a8b9d2"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+      .heading { fill: #f8fafc; font-size: 34px; font-weight: 700; }
+      .sub { fill: #b7c6dc; font-size: 21px; }
+      .lane { fill: #a8b9d2; font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+      .title { fill: #f1f5f9; font-size: 23px; font-weight: 650; }
+      .detail { fill: #bdcce0; font-size: 20px; }
+      .panel { fill: #0d192a; stroke: #2b3e58; }
+      .review { fill: #201d37; stroke: #a78bfa; }
+      .read { fill: #102b3e; stroke: #38bdf8; }
+      .control { fill: #1b273e; stroke: #8195b6; }
+      .evidence { fill: #102d2c; stroke: #34d399; }
+      .flow { fill: none; stroke: #a8b9d2; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="1000" rx="22" fill="url(#canvas)"/>
+  <text x="40" y="57" class="heading">Network Change Delivery Platform</text>
+  <text x="40" y="91" class="sub">Reviewed intent. Bounded authority. Independent evidence.</text>
+
+  <!-- Review is an assurance lane, never a device-write gate. -->
+  <rect x="24" y="124" width="1152" height="203" rx="18" class="panel"/>
+  <text x="44" y="161" class="lane">01 / REVIEW &amp; ASSURANCE</text>
+  <text x="1152" y="161" text-anchor="end" class="detail" fill="#c4b5fd">PR / no live write</text>
+  <g stroke-width="1.5">
+    <rect x="44" y="185" width="245" height="100" rx="12" class="review"/>
+    <rect x="329" y="185" width="245" height="100" rx="12" class="review"/>
+    <rect x="614" y="185" width="245" height="100" rx="12" class="review"/>
+    <rect x="899" y="185" width="253" height="100" rx="12" class="read"/>
+  </g>
+  <text x="64" y="225" class="title">GitHub</text>
+  <text x="64" y="257" class="detail">Reviewed intent</text>
+  <text x="349" y="225" class="title">Buildkite</text>
+  <text x="349" y="257" class="detail">Validation gates</text>
+  <text x="634" y="225" class="title">Batfish assurance</text>
+  <text x="634" y="257" class="detail">Candidate behavior</text>
+  <text x="919" y="225" class="title">Disposable CML</text>
+  <text x="919" y="257" class="detail">Exact-four · read-only</text>
+  <path d="M289 235H324" class="flow"/>
+  <path d="M574 235H609" class="flow"/>
+  <path d="M859 235H894" class="flow"/>
+  <text x="1152" y="310" text-anchor="end" class="detail">Batfish first → real device integration → destroy</text>
+
+  <!-- Current main delivery requires promotion and explicit human authorization. -->
+  <rect x="24" y="350" width="1152" height="364" rx="18" class="panel"/>
+  <text x="44" y="387" class="lane">02 / DELIVERY CONTROL</text>
+  <text x="1152" y="387" text-anchor="end" class="detail">Main · human-authorized</text>
+  <rect x="44" y="410" width="245" height="98" rx="12" class="read"/>
+  <text x="64" y="449" class="title">NetBox + OpenBao</text>
+  <text x="64" y="480" class="detail">Identity + credentials</text>
+  <rect x="329" y="410" width="245" height="98" rx="12" class="control"/>
+  <text x="349" y="449" class="title">profiled-plan</text>
+  <text x="349" y="480" class="detail">Policy &amp; fresh checks</text>
+  <rect x="614" y="410" width="245" height="98" rx="12" class="control"/>
+  <text x="634" y="449" class="title">Promotion</text>
+  <text x="634" y="480" class="detail">Same-build plan</text>
+  <rect x="899" y="410" width="253" height="98" rx="12" fill="url(#approval)" stroke="#fbbf24" stroke-width="2"/>
+  <text x="919" y="449" class="title">Human approval</text>
+  <text x="919" y="480" class="detail">Exact promotion</text>
+  <path d="M289 459H324" class="flow"/>
+  <path d="M574 459H609" class="flow"/>
+  <path d="M859 459H894" class="flow"/>
+  <path d="M1025 508V548" class="flow"/>
+  <rect x="899" y="553" width="253" height="132" rx="12" class="control"/>
+  <text x="919" y="603" class="title">profiled-deploy</text>
+  <text x="919" y="636" class="detail">Cisco / Junos · --live</text>
+  <path d="M899 619H864" class="flow"/>
+  <!-- The population card is deliberately larger than an ordinary two-line box. -->
+  <rect x="44" y="553" width="815" height="132" rx="12" class="read"/>
+  <text x="64" y="589" class="title">NCDP Live · exact-four</text>
+  <text x="64" y="622" class="detail">core-02 · edge-junos-01 · transit-ios-01 · access-sw-01</text>
+  <text x="64" y="660" class="title" style="fill:#7dd3fc">Current write projection: devices 1/2 only</text>
+
+  <rect x="24" y="738" width="1152" height="152" rx="18" class="panel"/>
+  <text x="44" y="775" class="lane">03 / EVIDENCE &amp; OPERATIONS</text>
+  <text x="1152" y="775" text-anchor="end" class="detail">Read-only · independent of CI</text>
+  <rect x="44" y="797" width="267" height="70" rx="12" class="evidence"/>
+  <text x="60" y="825" class="title" style="font-size:20px">Independent validation</text>
+  <text x="60" y="851" class="detail">Fresh observation</text>
+  <path d="M311 832H339" class="flow"/>
+  <rect x="344" y="797" width="194" height="70" rx="12" class="evidence"/>
+  <text x="360" y="825" class="title">AuditStore</text>
+  <text x="360" y="851" class="detail">Typed evidence</text>
+  <rect x="558" y="797" width="187" height="70" rx="12" class="evidence"/>
+  <text x="574" y="825" class="title">Oxidized</text>
+  <text x="574" y="851" class="detail">Config history</text>
+  <rect x="765" y="797" width="387" height="70" rx="12" class="evidence"/>
+  <text x="781" y="825" class="title">Prometheus / Blackbox</text>
+  <text x="781" y="851" class="detail">→ Grafana / Alertmanager</text>
+
+  <rect x="24" y="916" width="1152" height="60" rx="12" fill="#2c2030" stroke="#fb7185"/>
+  <text x="600" y="954" text-anchor="middle" class="title" style="fill:#fecdd3">Uncertain write → stop → no retry → independent reconciliation</text>
+</svg>

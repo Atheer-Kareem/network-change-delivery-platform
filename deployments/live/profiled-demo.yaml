@@ -1,0 +1,6 @@
+change_id: CHG-PROFILED-LAB-DEMO
+kind: interface_description
+target: core-02
+interface: GigabitEthernet2
+desired:
+  description: managed-by-ncdp-profiled-demo

@@ -19,7 +19,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--verify-only", action="store_true")
+    parser.add_argument("--digest-only", action="store_true")
     arguments = parser.parse_args()
+    if arguments.digest_only and not arguments.verify_only:
+        parser.error("digest-only requires verification")
     try:
         if arguments.verify_only:
             evidence = load_profiled_pr_evidence(arguments.evidence)
@@ -29,6 +32,11 @@ def main() -> int:
     except (AssuranceProviderError, ValueError) as error:
         print(f"profiled PR assurance failed: {error}", file=sys.stderr)
         return 2
+    if arguments.digest_only:
+        if evidence.outcome is not AssuranceOutcome.PASSED:
+            return 2
+        print(evidence.digest)
+        return 0
     print(
         "profiled PR assurance: "
         f"{evidence.outcome.value}; managed_nodes="

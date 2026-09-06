@@ -16,8 +16,8 @@ history belongs in ADRs and acceptance records.
 3. **NetBox and OpenBao — complete.** NetBox is the GET-only identity/source-of-
    truth boundary and OpenBao supplies bounded stable-device-ID credentials.
 4. **Batfish assurance — complete for the profiled PR boundary.** The active
-   step evaluates the exact four-device candidate without LIVE or credential
-   authority.
+   step on canonical PR and main evaluates the exact four-device candidate
+   without LIVE or credential authority.
 5. **Audit and configuration history — complete for accepted scope.** Historical
    schema-v1 protected evidence remains parseable; current Oxidized chronology
    is exact-four and profile-derived.
@@ -42,8 +42,9 @@ local deploy boundary and the exact-two runtime deletion gate:
 - IOSv and IOSvL2 are managed members but unsupported for that write operation;
 - schema-v1 local/fleet execution, SNMP provisioning writes, protected delivery,
   disposable exact-two CML staging, and the Terraform/operator twin are retired;
-- Buildkite retains validation, profiled four-device PR assurance, and disposable
-  exact-four CML staging with no device-write step; and
+- Buildkite's current continuation-oriented refinement adds a main-only schema-v2
+  plan/promotion/human authorization/deploy/evidence tail; PRs remain read-only;
+  schema-v1 delivery is not restored; and
 - the B5 D0/O/D1 seam and four generation-one records are unchanged.
 
 Controlled external acceptance removed the obsolete `ncdp-managed` assignments
@@ -61,16 +62,21 @@ Terraform realization: six nodes, nine links, 17 managed resources,
 management-only Day-0, run-scoped strict trust, profile-derived readiness, and
 read-only collection through `StagingRealizationContext` and
 `ProfileReadOnlyAdapter`. Lifecycle hardening admits CML independently, fences
-START and destroy with saved exact-action plans, cleans known partial state
+create/destroy with saved exact-action plans and initial START with an exact
+one-shot CML lab admission boundary, cleans known partial state
 without requiring a READY context, and retains verifier-only recovery inputs.
 Static Terraform validation and controlled local create/validate/destroy
 acceptance are complete for the lifecycle merged in PR #134, including the
 bounded transit-ios-01-only recycle. One activation PR wires the shared lifecycle
-to `cml-staging`, after PR Batfish for runtime PRs and independently after
-validation on main. The agent-owned hook update and existing exact-device OpenBao
-roles are external prerequisites. Real Buildkite staging acceptance remains
-PENDING until the activation PR job succeeds; ADR 0027 remains Proposed pending
-the required PR and merged-main evidence. Protected delivery remains retired.
+to `cml-staging`, after Batfish on canonical PR and main. The current personal-lab
+pipeline shows all paths and soft-fails commands for scheduling; deployment
+instead requires validation and assurance success receipts. The agent-owned hook
+update and existing exact-device OpenBao roles are external prerequisites.
+Real Buildkite staging acceptance remains
+PENDING for the corrected start/performance path and the new main delivery tail.
+ADR 0027's historical hard-gate proposal is superseded by the current
+[workflow](architecture/buildkite-workflow.md); no merged-main acceptance is
+claimed. Schema-v1 protected delivery remains retired.
 
 ## Managed-state proposals
 

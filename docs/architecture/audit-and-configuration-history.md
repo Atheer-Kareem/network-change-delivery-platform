@@ -191,8 +191,9 @@ identity. Adding that authority is a separate reviewed decision. See the
 ## Historical protected Buildkite assembly and failure domains
 
 The following section preserves the accepted schema-v1 correlation design. Its
-deployment gate and staging inputs are retired; current Buildkite has no device
-write path.
+deployment gate and staging inputs are retired. The separate current schema-v2
+personal-lab tail uses typed same-build artifacts, not this historical assembly;
+see [current workflow](buildkite-workflow.md).
 
 10B-2 assembles one `ChangeAuditRecord` only in the existing main-only,
 single-device `deploy-gate`. Its record UUID is exactly the immutable Buildkite

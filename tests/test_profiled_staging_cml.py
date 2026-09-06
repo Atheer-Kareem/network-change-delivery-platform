@@ -789,3 +789,100 @@ def test_transit_recycler_http_500_is_ambiguous_and_not_replayed(
 def test_get_only_reader_remains_without_mutation_surface() -> None:
     assert not hasattr(ProfiledStagingCmlReader, "_put_state_once")
     assert not hasattr(ProfiledStagingCmlReader, "recycle")
+
+
+@pytest.mark.parametrize("first_boot_seconds", [0, 30, 120])
+def test_early_recycle_waits_for_transit_not_slow_lab(monkeypatch, first_boot_seconds):
+    devices, observed = _observed_recycle_fixture()
+    clock = _RecycleClock()
+    monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
+    puts = []
+    phase = "initial"
+
+    def handler(request):
+        nonlocal phase
+        if request.method == "PUT":
+            puts.append((request.url.path, clock.now))
+            if request.url.path.endswith("/stop"):
+                phase = "stopped"
+            elif request.url.path.endswith("/start"):
+                phase = "second"
+            else:
+                pytest.fail("unexpected mutation")
+            return httpx.Response(204)
+        if request.url.path == f"/api/v0/labs/{LAB_ID}":
+            # The slowest first boot would only finish at t=240. This fact
+            # must not delay transit STOP (60 seconds after transit BOOTED).
+            return httpx.Response(
+                200,
+                json={
+                    "lab_title": "NCDP Staging run-001",
+                    "state": "STARTED",
+                    "booted": clock.now >= 240,
+                },
+            )
+        assert request.url.path == f"/api/v0/labs/{LAB_ID}/nodes/node-transit"
+        state = "STOPPED" if phase == "stopped" else "BOOTED"
+        if phase == "initial" and clock.now < first_boot_seconds:
+            state = "QUEUED" if clock.now < 4 else "STARTED"
+        return httpx.Response(
+            200,
+            json={
+                "label": "transit-ios-01",
+                "node_definition": "iosv",
+                "image_definition": "iosv-159-3-m12",
+                "state": state,
+            },
+        )
+
+    recycler = ProfiledStagingCmlTransitRecycler(
+        httpx.Client(
+            base_url="https://cml.invalid", transport=httpx.MockTransport(handler)
+        )
+    )
+    recycler.recycle(run_id="run-001", observed=observed, devices=devices)
+    assert puts == [
+        (
+            f"/api/v0/labs/{LAB_ID}/nodes/node-transit/state/stop",
+            first_boot_seconds + 60,
+        ),
+        (
+            f"/api/v0/labs/{LAB_ID}/nodes/node-transit/state/start",
+            first_boot_seconds + 60,
+        ),
+    ]
+    assert recycler.timings_seconds["transit_first_boot"] == first_boot_seconds
+    assert recycler.timings_seconds["transit_persistence"] == 60
+
+
+@pytest.mark.parametrize("state", ["STARTED", "STOPPED", "UNKNOWN", None])
+def test_unready_initial_transit_never_gets_recycled(monkeypatch, state):
+    devices, observed = _observed_recycle_fixture()
+    clock = _RecycleClock()
+    monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
+
+    def handler(request):
+        assert request.method == "GET"
+        if request.url.path == f"/api/v0/labs/{LAB_ID}":
+            return httpx.Response(200, json={"lab_title": "NCDP Staging run-001"})
+        return httpx.Response(
+            200,
+            json={
+                "label": "transit-ios-01",
+                "node_definition": "iosv",
+                "image_definition": "iosv-159-3-m12",
+                "state": state,
+            },
+        )
+
+    recycler = ProfiledStagingCmlTransitRecycler(
+        httpx.Client(
+            base_url="https://cml.invalid", transport=httpx.MockTransport(handler)
+        )
+    )
+    with pytest.raises(ProfiledStagingError):
+        recycler.recycle(run_id="run-001", observed=observed, devices=devices)
+    assert clock.now == (300 if state == "STARTED" else 0)
+    assert set(recycler.timings_seconds) == {"transit_first_boot"}

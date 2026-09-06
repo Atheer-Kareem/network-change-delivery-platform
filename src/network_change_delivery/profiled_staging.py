@@ -13,12 +13,14 @@ import os
 import re
 import shutil
 import stat
+import time
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
 from ipaddress import IPv4Address
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Annotated, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -151,6 +153,30 @@ class ProfiledStagingDeviceEvidence(BaseModel):
     interface_count: int | None = Field(default=None, ge=1, le=4096)
 
 
+StagingTimingPhase = Literal[
+    "lifecycle_total",
+    "create",
+    "start",
+    "transit_first_boot",
+    "transit_persistence",
+    "transit_stop",
+    "transit_second_boot",
+    "readiness",
+    "read_only",
+    "cleanup",
+]
+
+
+@contextmanager
+def record_staging_duration(timings: dict[str, float], phase: StagingTimingPhase):
+    """Record only a closed phase and monotonic duration, including failures."""
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        timings[phase] = round(time.monotonic() - started, 3)
+
+
 class ProfiledStagingEvidence(BaseModel):
     """Schema-v2, secret-free evidence for one profiled staging lifecycle."""
 
@@ -171,9 +197,15 @@ class ProfiledStagingEvidence(BaseModel):
         "succeeded",
     ] = "not_attempted"
     transit_recycle_evidence: EvidenceReference | None = None
+    lab_start_evidence: EvidenceReference | None = None
     readiness_deadline_seconds: Literal[180, 300] = 180
     readiness: tuple[ProfiledStagingReadinessEvidence, ...] = ()
     devices: tuple[ProfiledStagingDeviceEvidence, ...] = ()
+    # Optional diagnostic durations retain compatibility with existing v2 bytes.
+    # lifecycle_total includes admission and cleanup; nested phases overlap it.
+    timings_seconds: dict[
+        StagingTimingPhase, Annotated[float, Field(ge=0, allow_inf_nan=False)]
+    ] = Field(default_factory=dict)
     create_outcome: str = "not_attempted"
     start_outcome: str = "not_attempted"
     read_only_outcome: str = "not_attempted"
@@ -186,6 +218,13 @@ class ProfiledStagingEvidence(BaseModel):
 
     @model_validator(mode="after")
     def exact_four_when_ready(self) -> ProfiledStagingEvidence:
+        # Optional for historical v2 bytes; present references must be exact.
+        if self.lab_start_evidence is not None and (
+            self.lab_start_evidence.identity
+            != f"staging-lab-start:{self.staging_run_id}"
+            or self.start_outcome != "succeeded"
+        ):
+            raise ValueError("profiled staging lab start evidence rejected")
         if self.schema_version != "2" or not self.lab_title.startswith("NCDP Staging "):
             raise ValueError("profiled staging evidence identity rejected")
         if (
@@ -394,6 +433,8 @@ class ProfiledStagingLifecycle:
         )
 
     def run(self) -> ProfiledStagingEvidence:
+        started = time.monotonic()
+        timings: dict[str, float] = {}
         primary: str | None = None
         cleanup: str | None = None
         primary_error: Exception | None = None
@@ -410,12 +451,14 @@ class ProfiledStagingLifecycle:
             create_outcome = "attempted"
             context = self.operations.create()
             create_outcome = "succeeded"
-            devices = self.operations.validate(context)
+            with record_staging_duration(timings, "read_only"):
+                devices = self.operations.validate(context)
             read_only = "succeeded"
         except Exception as error:
             primary_error = error
             primary = str(error)
         finally:
+            cleanup_started = time.monotonic()
             owned = False
             try:
                 owned = self.operations.managed_resources_exist
@@ -438,6 +481,8 @@ class ProfiledStagingLifecycle:
                 except Exception as error:
                     cleanup_error = error
                     cleanup = str(error)
+            timings["cleanup"] = round(time.monotonic() - cleanup_started, 3)
+        timings["lifecycle_total"] = round(time.monotonic() - started, 3)
         ambiguous = isinstance(
             primary_error, ProfiledStagingAmbiguousError
         ) or isinstance(cleanup_error, ProfiledStagingAmbiguousError)
@@ -473,6 +518,8 @@ class ProfiledStagingLifecycle:
                 _sha256(context.model_dump(mode="json")) if context else None
             ),
             readiness=getattr(self.operations, "readiness_evidence", ()),
+            lab_start_evidence=getattr(self.operations, "lab_start_evidence", None),
+            timings_seconds=getattr(self.operations, "timings_seconds", {}) | timings,
             devices=devices or getattr(self.operations, "device_evidence", ()),
             trust_generation=(
                 context.devices[0].trust_evidence

@@ -9,8 +9,20 @@ if [[ "${BUILDKITE_STEP_KEY:-}" == cml-staging ]]; then
   # build serialized behind another staging run. It never grants delivery.
   pr_assurance=1
 elif [[ "${BUILDKITE_STEP_KEY:-}" == pr-batfish-assurance ]]; then
-  if [[ ! "${BUILDKITE_PULL_REQUEST:-}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "PR assurance requires a pull request build" >&2
+  case "${BUILDKITE_REPO:-}" in
+    https://github.com/Atheer-Kareem/network-change-delivery-platform.git|git@github.com:Atheer-Kareem/network-change-delivery-platform.git) ;;
+    *) echo "non-canonical Batfish repository rejected" >&2; exit 2 ;;
+  esac
+  if [[ "${BUILDKITE_PULL_REQUEST:-}" =~ ^[1-9][0-9]*$ ]]; then
+    if [[ "${BUILDKITE_PULL_REQUEST_REPO:-}" != "${BUILDKITE_REPO}" ]]; then
+      echo "fork-origin or ambiguous Batfish PR rejected" >&2
+      exit 2
+    fi
+  elif [[ "${BUILDKITE_BRANCH}" != main || \
+    "${BUILDKITE_PULL_REQUEST:-}" != false || \
+    -n "${BUILDKITE_PULL_REQUEST_REPO:-}" || \
+    -n "${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-}" ]]; then
+    echo "Batfish requires a canonical PR or non-PR main build" >&2
     exit 2
   fi
   pr_assurance=1

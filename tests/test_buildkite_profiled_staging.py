@@ -43,6 +43,123 @@ ROOT = Path(__file__).parents[1]
 CANONICAL = "https://github.com/Atheer-Kareem/network-change-delivery-platform.git"
 
 
+@pytest.mark.parametrize(
+    "timing",
+    [
+        {"password": 1},
+        {"start": -1},
+        {"start": float("nan")},
+        {"start": "bearer-secret"},
+    ],
+)
+def test_timing_evidence_rejects_unknown_labels_and_non_duration_values(timing):
+    with pytest.raises(ValueError):
+        ProfiledStagingEvidence(
+            staging_run_id="run-001",
+            orchestrator="local",
+            lab_title="NCDP Staging run-001",
+            timings_seconds=timing,
+        )
+
+
+def test_staging_summary_renders_only_closed_numeric_timings(driver):
+    evidence = ProfiledStagingEvidence(
+        staging_run_id="run-001",
+        orchestrator="local",
+        lab_title="NCDP Staging run-001",
+        timings_seconds={
+            "start": 4.123,
+            "transit_first_boot": 30,
+            "transit_persistence": 60,
+            "lifecycle_total": 410,
+        },
+        primary_failure="bearer-secret",
+    )
+    rendered = driver.summary(evidence, succeeded=False)
+    assert "CML lab start: 4.1s" in rendered
+    assert "Transit first boot: 30.0s" in rendered
+    assert "Total lifecycle: 410.0s" in rendered
+    assert "bearer-secret" not in rendered
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "admission",
+        "infrastructure create",
+        "CML lab start",
+        "transit recycle",
+        "service readiness",
+        "strict trust",
+        "read-only validation",
+        "cleanup",
+    ],
+)
+def test_failed_phase_is_closed_state_derived_and_secret_safe(driver, phase):
+    from test_profiled_staging import Operations
+
+    phases = [
+        "admission",
+        "infrastructure create",
+        "CML lab start",
+        "transit recycle",
+        "service readiness",
+        "strict trust",
+        "read-only validation",
+        "cleanup",
+    ]
+    index = phases.index(phase)
+    operation = Operations()
+    operation.create()
+    evidence = ProfiledStagingEvidence(
+        staging_run_id="run-001",
+        orchestrator="local",
+        lab_title="NCDP Staging run-001",
+        create_outcome="not_attempted"
+        if index == 0
+        else "attempted"
+        if index == 1
+        else "succeeded",
+        start_outcome="attempted" if index <= 2 else "succeeded",
+        transit_recycle_outcome="attempted" if index <= 3 else "succeeded",
+        transit_recycle_evidence=None
+        if index <= 3
+        else EvidenceReference(
+            identity="staging-transit-recycle:run-001:transit-ios-01",
+            digest="sha256:" + "d" * 64,
+        ),
+        readiness=operation.readiness_evidence if index > 4 else (),
+        trust_generation=None
+        if index <= 5
+        else EvidenceReference(
+            identity="staging-trust:run-001", digest="sha256:" + "e" * 64
+        ),
+        primary_failure="synthetic-secret-provider-body" if index < 7 else None,
+        cleanup_failure="synthetic-secret-provider-body" if index == 7 else None,
+    )
+    rendered = driver.summary(evidence, succeeded=False)
+    assert f"Failed phase: {phase}" in rendered
+    assert "synthetic-secret" not in rendered
+    assert rendered.count("Failed phase:") == 1
+
+
+def test_start_reference_must_be_exact_and_only_with_success():
+    for identity, outcome in (
+        ("staging-lab-start:wrong", "succeeded"),
+        ("staging-lab-start:run-001", "attempted"),
+    ):
+        with pytest.raises(ValueError, match="lab start evidence rejected"):
+            ProfiledStagingEvidence(
+                staging_run_id="run-001",
+                orchestrator="local",
+                lab_title="NCDP Staging run-001",
+                start_outcome=outcome,
+                lab_start_evidence=EvidenceReference(
+                    identity=identity, digest="sha256:" + "f" * 64
+                ),
+            )
+
+
 @pytest.fixture
 def driver(tmp_path, monkeypatch):
     path = ROOT / "scripts/buildkite/run_profiled_cml_staging.py"
@@ -259,6 +376,10 @@ def fake_lifecycle_operations(driver, monkeypatch, *, cleanup_fails):
         def create():
             calls.append("create")
             operation.create_stage = operation.start_stage = "succeeded"
+            operation.lab_start_evidence = EvidenceReference(
+                identity=f"staging-lab-start:{run_id}",
+                digest="sha256:" + "c" * 64,
+            )
             operation.transit_recycle_outcome = "succeeded"
             operation.transit_recycle_evidence = EvidenceReference(
                 identity=f"staging-transit-recycle:{run_id}:transit-ios-01",
@@ -365,7 +486,27 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
         "--claim",
         "build_id",
     ]
-    assert len(commands) == 2
+    assert len(commands) == (4 if expected == 0 else 2)
+    metadata_commands = [args for args, _ in commands if args[1] == "meta-data"]
+    if expected == 0:
+        from network_change_delivery.profiled_promotion import digest_bytes
+
+        assert metadata_commands == [
+            [
+                "buildkite-agent",
+                "meta-data",
+                "set",
+                "profiled-cml-success",
+                digest_bytes(
+                    (tmp_path / "evidence" / f"bk-{BUILD_ID}.json").read_bytes()
+                ),
+                "--job",
+                JOB_ID,
+            ]
+        ]
+        assert commands[-2][0][1:3] == ["artifact", "upload"]
+    else:
+        assert metadata_commands == []
     run = tmp_path / "ephemeral" / f"bk-{BUILD_ID}"
     assert run.exists() is cleanup_fails
     evidence_path = tmp_path / "evidence" / f"bk-{BUILD_ID}.json"
@@ -384,10 +525,16 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
             "context_digest",
             "trust_generation",
             "transit_recycle_evidence",
+            "lab_start_evidence",
         ):
             assert not driver.evidence_succeeded(
                 evidence.model_copy(update={field: None}), context()
             )
+        historical = ProfiledStagingEvidence.model_validate(
+            evidence.model_dump(exclude={"lab_start_evidence"})
+        )
+        assert historical.final_outcome.value == "SUCCEEDED"
+        assert not driver.evidence_succeeded(historical, context())
         for field, value in (
             ("source_commit", "b" * 40),
             ("build_id", JOB_ID),
@@ -408,7 +555,7 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
     assert "CML2_TOKEN" not in os.environ
     with pytest.raises(FileExistsError):
         driver.run(context(), tmp_path)
-    assert len(commands) == 2
+    assert len(commands) == (4 if expected == 0 else 2)
 
 
 @pytest.mark.parametrize(

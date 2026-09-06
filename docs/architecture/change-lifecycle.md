@@ -94,5 +94,8 @@ acceptance and is wired to the Buildkite `cml-staging` gate. Its first real
 Buildkite acceptance remains pending. It has no device-write authority.
 
 The active Buildkite network assurance surface is the credential-free profiled
-four-device PR Batfish step followed by disposable CML read-only integration.
-Buildkite has no current device-write step.
+four-device PR/main Batfish step followed by disposable CML read-only integration.
+The current main-only Buildkite tail wraps the same schema-v2 plan/deploy
+boundary with immutable same-build promotion and a real human block. Commands
+soft-fail only for presentation; missing validation/assurance/promotion still
+prevents execution. PRs have no write tail. See [workflow](buildkite-workflow.md).

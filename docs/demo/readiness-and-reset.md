@@ -94,6 +94,40 @@ make the demo look active. An uncertain or corrected attempt requires a new
 commit, build, and authorization. Buildkite browser history is presentation;
 AuditStore remains durable evidence authority.
 
+### Continuation-oriented personal lab
+
+The normal reviewed pipeline is now the demonstration graph. Bootstrap with:
+
+```sh
+buildkite-agent pipeline upload .buildkite/pipeline.yml
+```
+
+Do not configure a demo renderer or special environment flag. If an operator
+previously selected that retired renderer in Settings → Steps, restore ordinary
+upload only after the replacement source is merged. Implementation does not
+change live Buildkite settings.
+
+For a main walkthrough: **New build → branch main → Start build**, with no PR
+context. Every command reports its real result but soft-fails for scheduling;
+validation wait continues. All steps appear without path filtering.
+PRs run validation/Batfish/CML only. Main also shows plan, promotion, human
+authorization, current profiled deploy, and final evidence.
+
+A green aggregate is not merge or deployment acceptance. Review the exact
+promoted plan/digest before unblocking. Unblock may permit a real, narrowly
+admitted interface-description write when every prerequisite is valid.
+Otherwise deployment says NO WRITE and fails visibly; approval cannot override
+missing validation, assurance, promotion or trust. Never unblock merely to
+manufacture success. An already-compliant target truthfully has no plan; do not
+reset its description to create work.
+
+The current path uses schema-v2 only. See the
+[workflow](../architecture/buildkite-workflow.md) and
+[deployment operations](../architecture/buildkite-profiled-delivery-operations.md).
+Staging never writes device configuration or touches NCDP Live. Only the
+separate authorized main deployment boundary may execute the reviewed intent.
+No automatic mutation retry, third IOSv boot, or broad cleanup is permitted.
+
 ## Docker
 
 Starting Docker Desktop manually is safe presentation recovery. Volume pruning,

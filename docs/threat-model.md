@@ -63,3 +63,16 @@ compromised eligible deployment job remains a high-impact boundary; short
 leases, exact runtime identity, fresh preflight, and vendor-aware recovery
 reduce but do not eliminate that risk. Promotion artifacts contain no
 credentials. No fleet-wide atomicity is claimed.
+
+## Current continuation-oriented personal-lab boundary
+
+Command soft failure deliberately stops being merge-blocking evidence. A green
+aggregate may contain failed validation, Batfish, CML or deployment. The current
+schema-v2 main promotion requires same-build success receipts, immutable plan
+bytes and digests, followed by a real block and fresh CLI preflight. Unblock does
+not override invalid prerequisites. Metadata and unblocker UUIDs trust the
+Buildkite scheduler, reviewed main and agent owner; they are not signed workload
+attestations against an administrator or compromised trusted host. The dedicated
+agent-owned command hook prevents PR/pre-command access to deployment credentials.
+Existing operator AppRole authority is a personal-lab exception, not the retired
+cryptographic deployment JWT boundary. See [current workflow](architecture/buildkite-workflow.md).

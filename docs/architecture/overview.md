@@ -21,8 +21,12 @@ flowchart LR
   PI --> OBS[Exact-four observability]
   PI --> OX[Exact-four Oxidized]
   PI --> SNMP[SNMP capability projection: 1/2]
-  BK[Buildkite validation] --> BA[Profiled four-device PR assurance]
+  BK[Buildkite validation · continuation] --> BA[Profiled four-device assurance]
   BA --> CS[Disposable exact-four CML read-only staging]
+  CS -->|main only| PL[Profiled live plan]
+  PL --> PM[Same-build schema-v2 promotion]
+  PM --> HB[Human authorization]
+  HB -->|verified prerequisites| WR
 ```
 
 ## Population and capability authority
@@ -61,8 +65,10 @@ and Oxidized read-only collection consume all four.
 - **Continuous operations:** observability and Oxidized are read-only,
   exact-four, and independent of change execution.
 - **Assurance:** Buildkite runs validation plus credential-free profiled
-  four-device PR Batfish assurance followed by disposable CML read-only staging.
-  Real Buildkite staging acceptance is pending. It has no device-write step.
+  four-device PR/main Batfish assurance followed by disposable CML read-only staging.
+  Real Buildkite staging acceptance is pending. Commands continue on failure;
+  the separate main-only schema-v2 plan/promotion/human/deploy tail independently
+  requires successful prerequisites. PRs have no write tail.
 
 ## Current change boundary
 

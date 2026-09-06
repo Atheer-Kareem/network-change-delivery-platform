@@ -2,7 +2,10 @@
 
 The current gate reuses the exact-four lifecycle locally accepted in PR #134.
 Buildkite runtime acceptance is PENDING until the activation PR staging job
-succeeds. Protected delivery remains retired.
+succeeds. Schema-v1 protected delivery remains retired; the separate current
+schema-v2 main delivery tail is described in [workflow](buildkite-workflow.md).
+Staging commands now soft-fail for presentation while retaining truthful exit
+codes; their failure no longer necessarily blocks merge via aggregate status.
 
 ## Trusted agent boundary
 
@@ -31,7 +34,7 @@ and command `.buildkite/scripts/profiled_cml_staging.sh`. PR builds additionally
 require an explicit canonical/non-fork source repository; non-PR runs require
 main. Fork or ambiguous origins fail before credentials are sourced. A
 maintainer must adopt a runtime-affecting fork change in the canonical repository
-and obtain a fresh canonical run to satisfy the required gate.
+and obtain a fresh canonical run to obtain trusted staging evidence.
 
 Only after those checks and file-security validation does the command hook
 source the protected `staging.env` beside its installed location. It immediately
@@ -108,7 +111,9 @@ lifecycle subprocesses run.
 The authoritative [profiled lifecycle](profiled-disposable-cml-staging.md)
 creates exactly one lab, six nodes, nine links, and one lifecycle resource
 (17 resources). It independently admits topology and stored management-only
-Day-0, applies the fenced Terraform START, recycles only transit-ios-01, proves
+Day-0, performs the separately admitted one-shot CML LAB START,
+observes transit's own first boot plus its 60-second persistence interval,
+recycles only transit-ios-01 while other nodes can still be starting, and proves
 exact-four readiness and strict run-scoped trust, collects read-only device
 state, destroys its exact owned graph, proves independent CML absence, and
 retires the whole run directory. No CAT8000V, vJunos, or IOSvL2 recycle is
@@ -141,18 +146,38 @@ Early admission/setup failure can leave an empty reserved evidence file and
 private run; neither is success or authority to delete CML resources.
 
 Successful exit requires exact source commit/build/run identity, create and
-START success, exact run-bound transit recycle, all four READY, strict trust
+START success with an exact run-bound lab-start reference, exact run-bound
+transit recycle, all four READY, strict trust
 generation, all four read-only validations, destroy, absence, retirement, and no
 primary or cleanup failure. An incomplete success label is insufficient.
 
 Ordinary logs and the required `cml-staging` annotation contain only closed
 lifecycle labels, outcome counts, and failure presence. Raw exception text is
 replaced with fixed failure categories in stored evidence. Full schema-v2
-evidence stays under the external protected root; it is not uploaded as a
-Buildkite artifact. JWTs, credentials, bearer tokens, Day-0, Terraform state,
+evidence stays under the external protected root. On VERIFIED SUCCESS only,
+the secret-free schema-v2 bytes are also uploaded as a same-build artifact and
+its SHA-256 hash is published as `profiled-cml-success` metadata. Annotation or
+artifact failure prevents that success receipt; failed staging never publishes
+one. Promotion requires the receipt, not the soft-failed step's scheduling state. JWTs, credentials, bearer tokens, Day-0, Terraform state,
 provider bodies, and device configuration are never log or artifact payloads.
 Annotation failure after success fails the step; after staging failure it
 cannot replace the primary failure.
+
+The summary also renders the schema-v2 closed `timings_seconds` phase durations
+for comparison with the former approximately 11-minute job. The lifecycle total
+includes nested phases and cleanup, not wrapper setup/publication. Early-recycle
+runtime acceptance remains PENDING until the corrected refinement PR run; failure
+must not cause a retry or fallback IOSv boot. See the lifecycle document for the
+pinned-provider analysis and preserved persistence/readiness waits.
+
+The failed-phase line uses only lifecycle state to select admission,
+infrastructure create, CML lab start, transit recycle, service readiness,
+strict trust, read-only validation, or cleanup. A primary and cleanup failure
+can each be shown without replacing the primary failure. Timing keys remain
+unchanged in evidence; human labels replace identifiers only in the summary.
+Raw exception/provider bodies never contribute to these labels. The original
+PR #136 Terraform START attempt failed before recycle and cleaned up completely;
+it is not retried. A new commit/build tests the direct CML lab-start boundary.
 
 ## Retained-state recovery
 

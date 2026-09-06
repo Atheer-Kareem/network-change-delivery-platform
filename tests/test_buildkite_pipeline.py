@@ -1,6 +1,4 @@
-"""Static contract for profiled validation, PR Batfish, and disposable CML."""
-
-from __future__ import annotations
+"""Continuation is presentation; same-build promotion owns write admission."""
 
 import os
 import shutil
@@ -10,175 +8,139 @@ from pathlib import Path
 import pytest
 import yaml
 
+from network_change_delivery.profiled_promotion import MAIN_KEYS, VALIDATION_KEYS
+
 ROOT = Path(__file__).parents[1]
 PIPELINE = ROOT / ".buildkite/pipeline.yml"
-RUNTIME_CHANGE_CONDITION = {
-    "include": "**",
-    "exclude": [
-        "docs/**",
-        "README.md",
-        "AGENTS.md",
-        ".github/CODEOWNERS",
-        ".github/pull_request_template.md",
-        "tests/**",
-        ".gitignore",
-    ],
-}
 
 
-def _steps() -> dict[str, dict[str, object]]:
-    pipeline = yaml.safe_load(PIPELINE.read_text(encoding="utf-8"))
-    return {step["key"]: step for step in pipeline["steps"]}
+def steps():
+    return yaml.safe_load(PIPELINE.read_text())["steps"]
 
 
-def test_pipeline_retains_validation_profiled_pr_assurance_and_staging() -> None:
-    steps = _steps()
-    assert set(steps) == {
-        "quality-env",
-        "quality-committed-diff",
-        "quality-ruff-lint",
-        "quality-ruff-format",
-        "quality-pytest",
-        "quality-ansible-lint",
-        "quality-package-build",
-        "quality-terraform-profiled-staging",
-        "quality-snmp-generator",
-        "quality-observability-runtime",
-        "quality-snmpv3-synthetic",
-        "buildkite-definition",
-        "ncdp-pipeline-contract",
+def test_exact_order_and_unconditional_command_continuation():
+    graph = steps()
+    assert [step["key"] for step in graph] == [
+        *VALIDATION_KEYS,
         "validation-complete",
         "pr-batfish-assurance",
         "cml-staging",
+        *MAIN_KEYS,
+    ]
+    assert len({step["key"] for step in graph}) == len(graph)
+    assert sum("command" in step for step in graph) == 19
+    for step in graph:
+        assert "if_changed" not in step
+        assert "allow_dependency_failure" not in step
+        if "command" in step:
+            assert step["soft_fail"] is True
+            assert step["retry"]["automatic"] is False
+            assert step["retry"]["manual"]["allowed"] is False
+        else:
+            assert "soft_fail" not in step
+    assert graph[13] == {
+        "key": "validation-complete",
+        "wait": None,
+        "continue_on_failure": True,
     }
-    assert steps["validation-complete"] == {"wait": None, "key": "validation-complete"}
-    assurance = steps["pr-batfish-assurance"]
-    assert assurance["command"] == ".buildkite/scripts/profiled_pr_batfish_assurance.sh"
-    assert assurance["depends_on"] == "validation-complete"
-    assert assurance["if"] == "build.pull_request.id != null"
-    assert assurance["agents"] == {"queue": "ncdp-validation"}
-    assert assurance["retry"]["automatic"] is False
-    assert assurance["if_changed"] == RUNTIME_CHANGE_CONDITION
 
 
-def test_pipeline_contains_no_retired_or_device_write_surface() -> None:
-    source = PIPELINE.read_text(encoding="utf-8")
-    for retired in (
-        "quality-terraform-cml",
+def test_pr_vs_main_graph_and_real_human_block():
+    indexed = {step["key"]: step for step in steps()}
+    batfish = indexed["pr-batfish-assurance"]
+    assert batfish["if"] == 'build.pull_request.id != null || build.branch == "main"'
+    assert batfish["depends_on"] == "validation-complete"
+    assert batfish["command"] == ".buildkite/scripts/profiled_pr_batfish_assurance.sh"
+    assert batfish["agents"] == {"queue": "ncdp-validation"}
+    assert batfish["concurrency"] == 1
+    assert batfish["concurrency_group"] == "ncdp/batfish-assurance"
+    cml = indexed["cml-staging"]
+    assert cml["depends_on"] == ["validation-complete", "pr-batfish-assurance"]
+    assert cml["command"] == ".buildkite/scripts/profiled_cml_staging.sh"
+    assert cml["agents"] == {"queue": "ncdp-staging"}
+    assert cml["concurrency"] == 1
+    assert cml["concurrency_group"] == "ncdp/cml-ephemeral-staging"
+    previous = "cml-staging"
+    for key in MAIN_KEYS:
+        step = indexed[key]
+        assert step["if"] == 'build.branch == "main" && build.pull_request.id == null'
+        assert step["depends_on"] == previous
+        previous = key
+        if key != "profiled-human-authorization":
+            assert step["command"] == ".buildkite/scripts/profiled_delivery.sh"
+            queue = (
+                "ncdp-deploy"
+                if key in {MAIN_KEYS[0], MAIN_KEYS[3]}
+                else "ncdp-validation"
+            )
+            assert step["agents"] == {"queue": queue}
+    block = indexed[MAIN_KEYS[2]]
+    assert block["block"] == "Human authorization · exact promoted plan"
+    assert "fields" not in block and "command" not in block
+    assert "does not override failed prerequisites" in block["prompt"]
+    for key in (MAIN_KEYS[0], MAIN_KEYS[3]):
+        assert indexed[key]["concurrency"] == 1
+        assert indexed[key]["concurrency_group"] == "ncdp/profiled-live-delivery"
+
+
+def test_no_legacy_or_separate_demo_projection():
+    source = PIPELINE.read_text()
+    for forbidden in (
+        "NCDP_DEMO_CONTINUE_ON_FAILURE",
+        "render_demo_pipeline",
         "protected-delivery",
-        ".buildkite/scripts/batfish_assurance.sh",
-        ".buildkite/scripts/promotion.sh",
-        "scripts/buildkite/deployment_gate.sh",
         "deploy-buildkite-promotion",
-        "profiled-deploy",
         "fleet-deploy",
         "ncdp deploy",
+        "deployment_gate.sh",
+        ".buildkite/scripts/promotion.sh",
     ):
-        assert retired not in source
-    assert "ncdp-deploy" not in source
+        assert forbidden not in source
+    assert not (ROOT / "scripts/buildkite/render_demo_pipeline.py").exists()
 
 
-def test_profiled_staging_exact_activation_contract() -> None:
-    pipeline = yaml.safe_load(PIPELINE.read_text(encoding="utf-8"))
-    matches = [step for step in pipeline["steps"] if step.get("key") == "cml-staging"]
-    assert len(matches) == 1
-    step = matches[0]
-    assert step["label"] == (
-        "Ephemeral/Profiled CML staging · create → read-only validate → destroy"
-    )
-    assert step["agents"] == {"queue": "ncdp-staging"}
-    assert step["command"] == ".buildkite/scripts/profiled_cml_staging.sh"
-    assert step["depends_on"] == ["validation-complete", "pr-batfish-assurance"]
-    assert step["if_changed"] == _steps()["pr-batfish-assurance"]["if_changed"]
-    assert step["if_changed"] == RUNTIME_CHANGE_CONDITION
-    assert step["concurrency"] == 1
-    assert step["concurrency_group"] == "ncdp/cml-ephemeral-staging"
-    assert step["retry"]["automatic"] is False
-    assert step["retry"]["manual"]["allowed"] is False
-    assert "if" not in step and "branches" not in step and "skip" not in step
-    for item in pipeline["steps"]:
-        assert "soft_fail" not in item
-        assert "allow_dependency_failure" not in item
-
-
-@pytest.mark.parametrize("branch", ["main", "feature/activation"])
-def test_staging_dag_preserves_historical_skipped_pr_dependency(branch: str) -> None:
-    # ADR 0027 and accepted ab55c30 used this same DAG: Buildkite satisfies
-    # the skipped PR-only dependency on main. CML itself has no PR condition.
-    steps = _steps()
-    assert steps["pr-batfish-assurance"]["if"] == "build.pull_request.id != null"
-    dependencies = set(steps["cml-staging"]["depends_on"])
-    skipped = {"pr-batfish-assurance"} if branch == "main" else set()
-    assert dependencies - skipped == (
-        {"validation-complete"}
-        if branch == "main"
-        else {"validation-complete", "pr-batfish-assurance"}
-    )
-
-
-def test_retained_quality_commands_are_fail_closed() -> None:
-    steps = _steps()
-    image = "ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER}"
-    assert steps["quality-env"]["command"] == (
-        f"docker build --target quality-base --tag {image} ."
-    )
+def test_engineering_commands_keep_truthful_exit_and_receipt_last():
+    indexed = {step["key"]: step for step in steps()}
     expected = {
+        "quality-env": "docker build --target quality-base",
         "quality-ruff-lint": "uv run ruff check .",
         "quality-ruff-format": "uv run ruff format --check .",
         "quality-pytest": "uv run pytest --ignore=tests/test_buildkite_pipeline.py",
         "quality-ansible-lint": "uv run ansible-lint",
         "quality-package-build": "uv build",
+        "quality-terraform-profiled-staging": (
+            "scripts/buildkite/profiled_terraform_validate.sh"
+        ),
+        "ncdp-pipeline-contract": "test_installed_buildkite_change_evaluation",
     }
-    for key, command in expected.items():
-        assert steps[key]["depends_on"] == "quality-env"
-        assert steps[key]["command"] == f"docker run --rm {image} {command}"
-        assert steps[key]["agents"] == {"queue": "ncdp-validation"}
-
-    for key in ("quality-observability-runtime", "quality-snmpv3-synthetic"):
-        assert steps[key]["depends_on"] == "quality-env"
-        assert steps[key]["agents"] == {"queue": "ncdp-validation"}
-        assert steps[key]["retry"] == {"automatic": False}
-
-    terraform = steps["quality-terraform-profiled-staging"]
-    assert terraform["command"] == "scripts/buildkite/profiled_terraform_validate.sh"
-    assert terraform["agents"] == {"queue": "ncdp-validation"}
-    assert terraform["if_changed"]["include"] == [
-        "infrastructure/cml/profiled-staging/**",
-        "scripts/buildkite/profiled_terraform_validate.sh",
-        "src/network_change_delivery/profiled_staging.py",
-        "src/network_change_delivery/profiled_staging_cml.py",
-        "src/network_change_delivery/profiled_staging_trust.py",
-        "src/network_change_delivery/profiled_realization.py",
-    ]
-
-    contract = steps["ncdp-pipeline-contract"]
-    assert contract["depends_on"] == "quality-env"
-    assert "test_installed_buildkite_change_evaluation" in contract["commands"][1]
+    for key in VALIDATION_KEYS:
+        source = indexed[key]["command"]
+        assert source.startswith("set -euo pipefail\n")
+        assert source.rstrip().endswith(
+            "uv run --frozen python scripts/buildkite/publish_validation_receipt.py"
+        )
+        assert "|| true" not in source
+        assert indexed[key]["agents"] == {"queue": "ncdp-validation"}
+        if key in expected:
+            assert expected[key] in source
 
 
-def test_profiled_assurance_wrapper_has_no_runtime_authority() -> None:
-    source = (ROOT / ".buildkite/scripts/profiled_pr_batfish_assurance.sh").read_text(
-        encoding="utf-8"
-    )
-    assert '"${BUILDKITE_STEP_KEY:-}" != pr-batfish-assurance' in source
-    assert '"${BUILDKITE_AGENT_META_DATA_QUEUE:-}" != ncdp-validation' in source
-    assert '"${BUILDKITE_RETRY_COUNT:-}" != 0' in source
-    assert "scripts/buildkite/verify_commit.sh" in source
-    assert "scripts/assurance/verify_profiled_pr_candidate.py" in source
+def test_batfish_remains_credential_free():
+    source = (ROOT / ".buildkite/scripts/profiled_pr_batfish_assurance.sh").read_text()
     for forbidden in (
         "NCDP_OPENBAO",
         "NCDP_NETBOX",
         "oidc request-token",
         "ansible-playbook",
         "profiled-deploy",
-        "deployment_gate.sh",
         "terraform",
     ):
         assert forbidden not in source
+    assert "scripts/buildkite/verify_commit.sh" in source
+    assert "scripts/assurance/verify_profiled_pr_candidate.py" in source
 
 
-def test_installed_buildkite_change_evaluation() -> None:
-    """The installed parser accepts the final source without contacting Buildkite."""
+def test_installed_buildkite_change_evaluation():
     agent = shutil.which("buildkite-agent")
     if agent is None:
         pytest.skip("Buildkite agent is not installed")

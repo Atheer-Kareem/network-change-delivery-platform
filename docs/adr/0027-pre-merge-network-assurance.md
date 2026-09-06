@@ -2,7 +2,18 @@
 
 ## Status
 
-Proposed
+Historical proposal — superseded for the current personal-lab workflow.
+
+The PR #136 continuation refinement intentionally replaces this proposed
+hard-merge-gate policy: all repository commands soft-fail, all paths run, and
+Batfish runs on canonical PR and main. The current schema-v2 main promotion
+requires validation/assurance success independently of aggregate status, followed
+by explicit human authorization and fresh deployment admission. The original
+proposal below is retained as historical rationale, not current CI policy.
+See [current workflow](../architecture/buildkite-workflow.md). This status does
+not claim runtime or merged-main acceptance; those remain PENDING.
+
+## Historical proposal (not current policy)
 
 ## Context
 

@@ -82,6 +82,12 @@ def test_terraform_graph_is_profiled_management_only_and_exact() -> None:
     assert source.count('resource "cml2_node"') == 3
     assert source.count('resource "cml2_link"') == 9
     assert source.count('resource "cml2_lifecycle"') == 1
+    assert "wait   = true" in source
+    assert (
+        'stages          = ["profiled-staging-infrastructure", '
+        '"profiled-staging-device"]' in source
+    )
+    assert "start_remaining = false" in source
     for value in (
         "cat8000v-17-18-02",
         "vjunos-router-23-2r1-15",

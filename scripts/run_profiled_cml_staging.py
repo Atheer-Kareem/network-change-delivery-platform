@@ -57,6 +57,7 @@ from network_change_delivery.profiled_staging import (
     write_recovery_inputs,
 )
 from network_change_delivery.profiled_staging_cml import (
+    ProfiledStagingCmlLabStarter,
     ProfiledStagingCmlReader,
     ProfiledStagingCmlTransitRecycler,
     admit_created_realization,
@@ -118,6 +119,7 @@ class LocalTerraformOperations:
         self.device_evidence: tuple[ProfiledStagingDeviceEvidence, ...] = ()
         self.create_stage = "not_attempted"
         self.start_stage = "not_attempted"
+        self.lab_start_evidence: EvidenceReference | None = None
         self.timings_seconds: dict[str, float] = {}
 
     @property
@@ -457,7 +459,19 @@ class LocalTerraformOperations:
         finally:
             reader.close()
         with record_staging_duration(self.timings_seconds, "start"):
-            self._apply_start()
+            self.start_stage = "attempted"
+            starter = ProfiledStagingCmlLabStarter.from_environment(
+                token=self._cml_token
+            )
+            try:
+                self.lab_start_evidence = starter.start(
+                    run_id=self._run_id,
+                    observed=observed,
+                    devices=self._devices,
+                )
+                self.start_stage = "succeeded"
+            finally:
+                starter.close()
 
         self.transit_recycle_outcome = "attempted"
         recycler = ProfiledStagingCmlTransitRecycler.from_environment(

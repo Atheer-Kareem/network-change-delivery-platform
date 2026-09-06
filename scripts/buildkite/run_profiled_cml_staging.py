@@ -158,6 +158,9 @@ def evidence_succeeded(
         and evidence.orchestrator == "buildkite"
         and evidence.lab_title == f"NCDP Staging {context.staging_run_id}"
         and evidence.lab_id is not None
+        and evidence.lab_start_evidence is not None
+        and evidence.lab_start_evidence.identity
+        == f"staging-lab-start:{context.staging_run_id}"
         and evidence.topology_digest is not None
         and evidence.context_digest is not None
         and evidence.trust_generation is not None
@@ -188,12 +191,52 @@ def evidence_succeeded(
     )
 
 
+_TIMING_LABELS = {
+    "create": "Infrastructure create",
+    "start": "CML lab start",
+    "transit_first_boot": "Transit first boot",
+    "transit_persistence": "Day-0 persistence hold",
+    "transit_stop": "Transit stop",
+    "transit_second_boot": "Transit second boot",
+    "readiness": "Service readiness",
+    "read_only": "Read-only validation",
+    "cleanup": "Cleanup",
+    "lifecycle_total": "Total lifecycle",
+}
+
+
+def failed_phase(evidence: ProfiledStagingEvidence) -> str:
+    """Infer a closed primary-phase label, never parse exception/provider text."""
+    if evidence.create_outcome == "not_attempted":
+        return "admission"
+    if (
+        evidence.create_outcome != "succeeded"
+        or evidence.start_outcome == "not_attempted"
+    ):
+        return "infrastructure create"
+    if evidence.start_outcome != "succeeded":
+        return "CML lab start"
+    if evidence.transit_recycle_outcome != "succeeded":
+        return "transit recycle"
+    if len(evidence.readiness) != 4 or any(
+        item.outcome.value != "READY" for item in evidence.readiness
+    ):
+        return "service readiness"
+    if evidence.trust_generation is None:
+        return "strict trust"
+    return "read-only validation"
+
+
 def summary(evidence: ProfiledStagingEvidence, *, succeeded: bool) -> str:
     """Render only closed labels and counts; never render raw failure/provider text."""
     lines = [
         "Profiled exact-four CML staging: " + ("SUCCEEDED" if succeeded else "FAILED"),
         "",
     ]
+    if evidence.primary_failure:
+        lines.append(f"Failed phase: {failed_phase(evidence)}")
+    if evidence.cleanup_failure:
+        lines.append("Failed phase: cleanup")
     for phase in _PHASES:
         state = getattr(evidence, phase)
         safe = (
@@ -230,8 +273,9 @@ def summary(evidence: ProfiledStagingEvidence, *, succeeded: bool) -> str:
     )
     if evidence.timings_seconds:
         lines.extend(("", "Timing (seconds; total includes nested phases):"))
-        for phase, seconds in evidence.timings_seconds.items():
-            lines.append(f"- {phase}: {seconds:.1f}s")
+        for phase, label in _TIMING_LABELS.items():
+            if phase in evidence.timings_seconds:
+                lines.append(f"- {label}: {evidence.timings_seconds[phase]:.1f}s")
     return "\n".join(lines) + "\n"
 
 

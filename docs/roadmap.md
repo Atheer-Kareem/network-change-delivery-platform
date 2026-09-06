@@ -61,7 +61,8 @@ Terraform realization: six nodes, nine links, 17 managed resources,
 management-only Day-0, run-scoped strict trust, profile-derived readiness, and
 read-only collection through `StagingRealizationContext` and
 `ProfileReadOnlyAdapter`. Lifecycle hardening admits CML independently, fences
-START and destroy with saved exact-action plans, cleans known partial state
+create/destroy with saved exact-action plans and initial START with an exact
+one-shot CML lab admission boundary, cleans known partial state
 without requiring a READY context, and retains verifier-only recovery inputs.
 Static Terraform validation and controlled local create/validate/destroy
 acceptance are complete for the lifecycle merged in PR #134, including the

@@ -47,30 +47,42 @@ and one START request. Uncertain mutation transport is independently reconciled
 and is never blindly replayed. This is CML realization lifecycle authority, not
 network-device configuration-write authority.
 
-Initial START now overlaps vendor boots with the transit workaround. The pinned
-CML2 provider `0.9.3-beta1` [lifecycle contract](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/docs/resources/lifecycle.md)
-supports `wait=false`; its [startup implementation](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/utilities.go)
-still waits for every explicit stage regardless of that flag. Its
-[configuration validator](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/meta.go)
-warns against combining staged startup with `wait=false`. The lifecycle therefore
-uses the unstaged lab START path for the already-created exact graph, without
-waiting for whole-lab convergence. The
-provider's [update implementation](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/update.go)
-retains configured `STARTED` state while actual node states are transitional;
-Terraform success is not service-readiness proof.
+The first PR #136 experiment failed safely during Terraform START, before any
+transit recycle. User-supplied evidence records create 5.7s, start 3.7s, cleanup
+5.4s, total 23.3s, with successful destroy, absence, and retirement and no cleanup
+failure. It is not retried. The pinned CML2 provider `0.9.3-beta1`
+[startup implementation](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/utilities.go)
+calls lab START without convergence when unstaged and `wait=false`; its
+[update implementation](https://github.com/CiscoDevNet/terraform-provider-cml2/blob/v0.9.3-beta1/internal/provider/resource/lifecycle/update.go)
+then starts links using the pre-START snapshot while the lab is transitioning.
+That lifecycle update is unsuitable for this linked topology and is no longer
+in the active runtime path. Terraform's lifecycle configuration is restored to
+PR #135's `wait=true` and reviewed infrastructure/device stages. It remains one
+of the exact 17 owned resources, but only Terraform CREATE and saved delete-only
+DESTROY plans are used by the active lifecycle.
 
-The removed infrastructure-before-device stage was a management-transport
-availability wait, not topology or Day-0 admission. The full graph and stored
-management-only bootstrap are still independently admitted before START.
-Static management configuration and IOSv startup persistence do not require a
-working external SSH/NETCONF path during initial boot. Starting the bridge,
-management switch, and vendor nodes together does not assume that transport is
-ready: no device collection happens until the existing exact-four real service
-probes succeed, and strict trust still precedes collection. Transit still must
-reach its own `BOOTED` plus the persistence interval before STOP. Missing fabric
-or vendor services fail closed through the unchanged readiness/cleanup path.
+`ProfiledStagingCmlLabStarter` is a separate, one-shot non-blocking lab mutation
+boundary with the same TLS/process-memory bearer model as the recycler. It
+re-admits the exact run, lab UUID/title, six-node and nine-link membership,
+node IDs/definitions/images, catalog device identities 1/2/8/9 and profile
+bindings. Lab and all six nodes must be `DEFINED_ON_CORE` before first START.
+It follows pinned [gocmlclient v0.2.5 Lab.Start](https://github.com/rschmied/gocmlclient/blob/v0.2.5/internal/services/lab.go):
+one `PUT /api/v0/labs/<id>/start`; only a definitive 404 permits the legacy
+`/api/v0/labs/<id>/state/start` form. Transport failure, 408, or 5xx permits only
+one bounded GET readback of the same lab and membership/profile/state bindings.
+At least the lab or one node must show an admitted starting/started state, with
+no stopped/unknown node states; otherwise the outcome is ambiguous. There is no
+mutation retry, initial per-node START loop, or link START. Reader stays GET-only.
 
-After that one fenced START apply, bounded GET observations admit the exact
+The full graph and management-only Day-0 are independently admitted before this
+boundary. CML starts the graph together; no device collection occurs until real
+SSH/NETCONF readiness and strict trust. Direct-started runtime state is expected
+drift from Terraform's stored defined lifecycle. It grants no state surgery or
+additional Terraform update: cleanup refreshes the exact owned resource set and
+accepts only its matching saved delete-only plan. Any update/replacement in that
+plan fails closed and retains state.
+
+After that one admitted CML LAB START, bounded GET observations admit the exact
 transit run/lab/node/profile on every sample until its first `BOOTED` (maximum
 300 seconds, two-second polling). The existing 60-second interval begins at
 that observation, without waiting for CAT8000V, vJunos, or IOSvL2. Identity and
@@ -78,8 +90,8 @@ that observation, without waiting for CAT8000V, vJunos, or IOSvL2. Identity and
 has consumed and persisted Day-0, so neither an earlier interval nor a shorter
 one is admitted by the retained diagnosis. After the single STOP/START and
 second `BOOTED`, the unchanged exact-four SSH/NETCONF readiness path follows.
-No third boot or mutation replay exists. The first refinement PR staging run
-is the acceptance experiment; shorter runtime is not yet proven.
+No third boot or mutation replay exists. The next commit's PR staging run is the
+acceptance experiment; shorter runtime is not yet proven.
 
 Before Terraform can create anything, authenticated GET-only CML admission
 rejects any existing lab whose title starts with `NCDP Staging` and any active
@@ -138,7 +150,7 @@ entries use the exact `[host]:830` known-hosts form.
 
 ## Failure, evidence, and recovery
 
-The one-shot lifecycle is admit → create → fenced saved START plan → exact
+The one-shot lifecycle is admit → fenced create → admitted CML LAB START → exact
 transit-IOSv CML recycle → readiness/trust/read-only validate → fenced saved
 destroy plan → independent absence proof → state retirement. Cleanup authority
 derives from a nonempty known Terraform state,
@@ -162,13 +174,18 @@ Schema-v2 `ProfiledStagingEvidence` preserves source commit, observed lab and
 run-specific topology, final READY context digest, actual trust generation,
 per-device readiness and read-only facts, create/start/transit-recycle/
 destroy/absence/state retirement, and separate primary/cleanup failures. An
-uncertain Terraform or transit-recycle mutation is never replayed: known owned
+uncertain Terraform, lab-start, or transit-recycle mutation is never replayed: known owned
 state may proceed only to bounded
 cleanup, while unprovable ownership is `AMBIGUOUS` and retained for review.
 
+Optional `lab_start_evidence` binds `staging-lab-start:<run-id>` to the observed
+lab, nodes, topology digest and acknowledged/reconciled start facts. It is
+present only after start success. Historical schema-v2 success without this
+reference remains parseable; new Buildkite success additionally requires it.
+
 Optional `timings_seconds` adds only closed phase names and finite nonnegative
 monotonic durations to schema-v2, including failed phase durations. The phases
-are Terraform create and START (each includes its saved plan), transit first
+are Terraform create (including its saved plan), admitted CML LAB START, transit first
 boot observation, persistence interval, STOP completion, second boot,
 SSH/NETCONF readiness, read-only validation, cleanup, and
 whole lifecycle total. Total includes admission, setup, trust, and nested phases; do

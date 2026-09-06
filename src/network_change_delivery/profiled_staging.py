@@ -197,6 +197,7 @@ class ProfiledStagingEvidence(BaseModel):
         "succeeded",
     ] = "not_attempted"
     transit_recycle_evidence: EvidenceReference | None = None
+    lab_start_evidence: EvidenceReference | None = None
     readiness_deadline_seconds: Literal[180, 300] = 180
     readiness: tuple[ProfiledStagingReadinessEvidence, ...] = ()
     devices: tuple[ProfiledStagingDeviceEvidence, ...] = ()
@@ -217,6 +218,13 @@ class ProfiledStagingEvidence(BaseModel):
 
     @model_validator(mode="after")
     def exact_four_when_ready(self) -> ProfiledStagingEvidence:
+        # Optional for historical v2 bytes; present references must be exact.
+        if self.lab_start_evidence is not None and (
+            self.lab_start_evidence.identity
+            != f"staging-lab-start:{self.staging_run_id}"
+            or self.start_outcome != "succeeded"
+        ):
+            raise ValueError("profiled staging lab start evidence rejected")
         if self.schema_version != "2" or not self.lab_title.startswith("NCDP Staging "):
             raise ValueError("profiled staging evidence identity rejected")
         if (
@@ -510,6 +518,7 @@ class ProfiledStagingLifecycle:
                 _sha256(context.model_dump(mode="json")) if context else None
             ),
             readiness=getattr(self.operations, "readiness_evidence", ()),
+            lab_start_evidence=getattr(self.operations, "lab_start_evidence", None),
             timings_seconds=getattr(self.operations, "timings_seconds", {}) | timings,
             devices=devices or getattr(self.operations, "device_evidence", ()),
             trust_generation=(

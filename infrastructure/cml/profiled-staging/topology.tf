@@ -136,15 +136,16 @@ resource "cml2_link" "core_access" {
 resource "cml2_lifecycle" "profiled_staging" {
   lab_id = cml2_lab.profiled_staging.id
   state  = var.lifecycle_state
-  wait   = false
+  wait   = true
 
   update_triggers = {
     for name, node in cml2_node.device : name => "${node.id}:${node.generation}"
   }
 
-  # No staged-start block: explicit stages always converge and the provider
-  # warns against combining them with wait=false. Start the admitted graph
-  # together; Python independently observes transit and real service readiness.
+  staging = {
+    stages          = ["profiled-staging-infrastructure", "profiled-staging-device"]
+    start_remaining = false
+  }
 
   depends_on = [
     cml2_link.system_bridge_management,

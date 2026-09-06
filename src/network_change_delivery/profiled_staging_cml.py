@@ -11,15 +11,20 @@ import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 import httpx
+from pydantic import TypeAdapter
 
 from network_change_delivery.architecture_contracts import (
     CML_REALIZATION_PROFILE_CATALOG,
     CmlRealizationProfileID,
 )
-from network_change_delivery.profile_inventory import ProfiledInventoryDevice
-from network_change_delivery.profiled_realization import EvidenceReference
+from network_change_delivery.profile_inventory import (
+    PROFILED_POPULATION_CATALOG,
+    ProfiledInventoryDevice,
+)
+from network_change_delivery.profiled_realization import EvidenceReference, StagingRunID
 from network_change_delivery.profiled_staging import (
     PROFILED_STAGING_DEVICE_NAMES,
     PROFILED_STAGING_LINK_COUNT,
@@ -189,6 +194,216 @@ class ProfiledStagingCmlReader:
             if len(values) == 1 and isinstance(values[0], str):
                 return values[0]
         raise ProfiledStagingError("profiled staging stored Day-0 unavailable")
+
+
+class ProfiledStagingCmlLabStarter:
+    """One admitted initial LAB START; never node/link START or mutation retry."""
+
+    _ACTIVE = frozenset({"QUEUED", "STARTED", "STARTING", "BOOTING", "BOOTED"})
+
+    def __init__(self, client: httpx.Client) -> None:
+        self._client = client
+        self._reader = ProfiledStagingCmlReader(client)
+        self._attempted = False
+
+    @classmethod
+    def from_environment(
+        cls, *, token: str | None = None
+    ) -> ProfiledStagingCmlLabStarter:
+        address = os.environ.get("CML2_ADDRESS")
+        token = os.environ.get("CML2_TOKEN") if token is None else token
+        certificate = os.environ.get("CML2_CACERT")
+        if not address or not token or not certificate:
+            raise ProfiledStagingError(
+                "profiled staging CML lab start authority missing"
+            )
+        try:
+            context = ssl.create_default_context(cadata=certificate)
+        except ssl.SSLError:
+            raise ProfiledStagingError(
+                "profiled staging CML lab start TLS rejected"
+            ) from None
+        return cls(
+            httpx.Client(
+                base_url=address.rstrip("/"),
+                headers={"Authorization": f"Bearer {token}"},
+                verify=context,
+                timeout=15,
+                trust_env=False,
+                follow_redirects=False,
+            )
+        )
+
+    def close(self) -> None:
+        self._client.close()
+
+    def _observe(
+        self,
+        run_id: str,
+        observed: ObservedStagingRealization,
+        devices: tuple[ProfiledInventoryDevice, ...],
+        *,
+        initial: bool,
+    ) -> dict[str, object]:
+        """One bounded exact identity/state readback; no discovery or polling."""
+        lab = self._reader.lab(observed.lab_id)
+        if (
+            not lab
+            or lab.get("id") != observed.lab_id
+            or (lab.get("lab_title") or lab.get("title")) != f"NCDP Staging {run_id}"
+        ):
+            raise ProfiledStagingError("profiled staging lab start lab rejected")
+        node_ids = self._reader.ids(observed.lab_id, "nodes")
+        link_ids = self._reader.ids(observed.lab_id, "links")
+        if (
+            len(node_ids) != 6
+            or set(node_ids) != set(observed.node_ids.values())
+            or len(link_ids) != 9
+            or set(link_ids) != set(observed.link_ids.values())
+        ):
+            raise ProfiledStagingError(
+                "profiled staging lab start realization rejected"
+            )
+        expected = {
+            "system_bridge": ("system-bridge", "external_connector", None),
+            "management_switch": ("management-switch", "unmanaged_switch", None),
+        }
+        for device in devices:
+            profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+            expected[str(device.logical_name).replace("-", "_")] = (
+                str(device.logical_name),
+                profile.node_definition,
+                profile.image_definition,
+            )
+        states = {}
+        for key, (label, definition, image) in expected.items():
+            node = self._reader.item(observed.lab_id, "nodes", observed.node_ids[key])
+            if (
+                node.get("id") != observed.node_ids[key]
+                or node.get("label") != label
+                or node.get("node_definition") != definition
+                or (
+                    image is not None
+                    and (
+                        node.get("image_definition") or node.get("image_definition_id")
+                    )
+                    != image
+                )
+            ):
+                raise ProfiledStagingError("profiled staging lab start node rejected")
+            states[key] = node.get("state")
+        allowed = {"DEFINED_ON_CORE"} if initial else {"DEFINED_ON_CORE"} | self._ACTIVE
+        if (
+            not isinstance(lab.get("state"), str)
+            or lab["state"] not in allowed
+            or any(
+                not isinstance(state, str) or state not in allowed
+                for state in states.values()
+            )
+        ):
+            raise ProfiledStagingError("profiled staging lab start state rejected")
+        if not initial and not (
+            lab.get("state") in self._ACTIVE
+            or any(state in self._ACTIVE for state in states.values())
+        ):
+            raise ProfiledStagingError("profiled staging lab start not observed")
+        return {"lab_state": lab["state"], "node_states": states}
+
+    def start(
+        self,
+        *,
+        run_id: str,
+        observed: ObservedStagingRealization,
+        devices: tuple[ProfiledInventoryDevice, ...],
+    ) -> EvidenceReference:
+        if self._attempted:
+            raise ProfiledStagingError("profiled staging lab START cannot be replayed")
+        self._attempted = True
+        try:
+            TypeAdapter(StagingRunID).validate_python(run_id)
+            if str(UUID(observed.lab_id)) != observed.lab_id:
+                raise ValueError
+        except ValueError:
+            raise ProfiledStagingError(
+                "profiled staging lab start identity rejected"
+            ) from None
+        fields = (
+            "device_identity",
+            "logical_name",
+            "automation_profile_id",
+            "cml_realization_profile_id",
+        )
+        if tuple(
+            tuple(getattr(device, field) for field in fields) for device in devices
+        ) != tuple(
+            tuple(getattr(member, field) for field in fields)
+            for member in PROFILED_POPULATION_CATALOG
+        ):
+            raise ProfiledStagingError("profiled staging lab start population rejected")
+        if (
+            observed.lab_title != f"NCDP Staging {run_id}"
+            or observed.topology_evidence.identity != f"staging-topology:{run_id}"
+            or set(observed.node_ids)
+            != {
+                "system_bridge",
+                "management_switch",
+                *(str(device.logical_name).replace("-", "_") for device in devices),
+            }
+            or len(set(observed.node_ids.values())) != 6
+            or set(observed.link_ids) != set(_LINK_SLOTS)
+            or len(set(observed.link_ids.values())) != 9
+            or any(
+                observed.cml_anchors.get(str(device.logical_name))
+                != EvidenceReference(
+                    identity=f"cml-anchor:{observed.lab_id}:"
+                    + observed.node_ids[str(device.logical_name).replace("-", "_")],
+                    digest=observed.topology_evidence.digest,
+                )
+                for device in devices
+            )
+        ):
+            raise ProfiledStagingError(
+                "profiled staging lab start realization rejected"
+            )
+        self._observe(run_id, observed, devices, initial=True)
+        # gocmlclient v0.2.5 Lab.Start: current endpoint, legacy only on 404.
+        # No alternative after transport/408/5xx uncertainty; no node/link loop.
+        response = None
+        try:
+            response = self._client.put(f"/api/v0/labs/{observed.lab_id}/start")
+            if response.status_code == 404:
+                response = self._client.put(
+                    f"/api/v0/labs/{observed.lab_id}/state/start"
+                )
+        except httpx.HTTPError:
+            response = None
+        facts: dict[str, object] = {"outcome": "acknowledged"}
+        if (
+            response is None
+            or response.status_code == 408
+            or response.status_code >= 500
+        ):
+            try:
+                facts = self._observe(run_id, observed, devices, initial=False)
+            except ProfiledStagingError:
+                raise ProfiledStagingAmbiguousError(
+                    "profiled staging CML lab start outcome is ambiguous"
+                ) from None
+        elif response.status_code not in {200, 204}:
+            raise ProfiledStagingError("profiled staging CML lab start rejected")
+        facts.update(
+            run_id=run_id,
+            lab_id=observed.lab_id,
+            nodes=observed.node_ids,
+            topology_digest=observed.topology_evidence.digest,
+        )
+        digest = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(facts, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+        )
+        return EvidenceReference(identity=f"staging-lab-start:{run_id}", digest=digest)
 
 
 class ProfiledStagingCmlTransitRecycler:

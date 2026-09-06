@@ -108,7 +108,7 @@ lifecycle subprocesses run.
 The authoritative [profiled lifecycle](profiled-disposable-cml-staging.md)
 creates exactly one lab, six nodes, nine links, and one lifecycle resource
 (17 resources). It independently admits topology and stored management-only
-Day-0, applies the fenced Terraform START with non-blocking device launch,
+Day-0, performs the separately admitted one-shot CML LAB START,
 observes transit's own first boot plus its 60-second persistence interval,
 recycles only transit-ios-01 while other nodes can still be starting, and proves
 exact-four readiness and strict run-scoped trust, collects read-only device
@@ -143,7 +143,8 @@ Early admission/setup failure can leave an empty reserved evidence file and
 private run; neither is success or authority to delete CML resources.
 
 Successful exit requires exact source commit/build/run identity, create and
-START success, exact run-bound transit recycle, all four READY, strict trust
+START success with an exact run-bound lab-start reference, exact run-bound
+transit recycle, all four READY, strict trust
 generation, all four read-only validations, destroy, absence, retirement, and no
 primary or cleanup failure. An incomplete success label is insufficient.
 
@@ -159,9 +160,18 @@ cannot replace the primary failure.
 The summary also renders the schema-v2 closed `timings_seconds` phase durations
 for comparison with the former approximately 11-minute job. The lifecycle total
 includes nested phases and cleanup, not wrapper setup/publication. Early-recycle
-runtime acceptance remains PENDING until the first refinement PR run; failure
+runtime acceptance remains PENDING until the corrected refinement PR run; failure
 must not cause a retry or fallback IOSv boot. See the lifecycle document for the
 pinned-provider analysis and preserved persistence/readiness waits.
+
+The failed-phase line uses only lifecycle state to select admission,
+infrastructure create, CML lab start, transit recycle, service readiness,
+strict trust, read-only validation, or cleanup. A primary and cleanup failure
+can each be shown without replacing the primary failure. Timing keys remain
+unchanged in evidence; human labels replace identifiers only in the summary.
+Raw exception/provider bodies never contribute to these labels. The original
+PR #136 Terraform START attempt failed before recycle and cleaned up completely;
+it is not retried. A new commit/build tests the direct CML lab-start boundary.
 
 ## Retained-state recovery
 

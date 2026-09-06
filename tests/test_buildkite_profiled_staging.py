@@ -76,10 +76,88 @@ def test_staging_summary_renders_only_closed_numeric_timings(driver):
         primary_failure="bearer-secret",
     )
     rendered = driver.summary(evidence, succeeded=False)
-    assert "start: 4.1s" in rendered
-    assert "transit_first_boot: 30.0s" in rendered
-    assert "lifecycle_total: 410.0s" in rendered
+    assert "CML lab start: 4.1s" in rendered
+    assert "Transit first boot: 30.0s" in rendered
+    assert "Total lifecycle: 410.0s" in rendered
     assert "bearer-secret" not in rendered
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "admission",
+        "infrastructure create",
+        "CML lab start",
+        "transit recycle",
+        "service readiness",
+        "strict trust",
+        "read-only validation",
+        "cleanup",
+    ],
+)
+def test_failed_phase_is_closed_state_derived_and_secret_safe(driver, phase):
+    from test_profiled_staging import Operations
+
+    phases = [
+        "admission",
+        "infrastructure create",
+        "CML lab start",
+        "transit recycle",
+        "service readiness",
+        "strict trust",
+        "read-only validation",
+        "cleanup",
+    ]
+    index = phases.index(phase)
+    operation = Operations()
+    operation.create()
+    evidence = ProfiledStagingEvidence(
+        staging_run_id="run-001",
+        orchestrator="local",
+        lab_title="NCDP Staging run-001",
+        create_outcome="not_attempted"
+        if index == 0
+        else "attempted"
+        if index == 1
+        else "succeeded",
+        start_outcome="attempted" if index <= 2 else "succeeded",
+        transit_recycle_outcome="attempted" if index <= 3 else "succeeded",
+        transit_recycle_evidence=None
+        if index <= 3
+        else EvidenceReference(
+            identity="staging-transit-recycle:run-001:transit-ios-01",
+            digest="sha256:" + "d" * 64,
+        ),
+        readiness=operation.readiness_evidence if index > 4 else (),
+        trust_generation=None
+        if index <= 5
+        else EvidenceReference(
+            identity="staging-trust:run-001", digest="sha256:" + "e" * 64
+        ),
+        primary_failure="synthetic-secret-provider-body" if index < 7 else None,
+        cleanup_failure="synthetic-secret-provider-body" if index == 7 else None,
+    )
+    rendered = driver.summary(evidence, succeeded=False)
+    assert f"Failed phase: {phase}" in rendered
+    assert "synthetic-secret" not in rendered
+    assert rendered.count("Failed phase:") == 1
+
+
+def test_start_reference_must_be_exact_and_only_with_success():
+    for identity, outcome in (
+        ("staging-lab-start:wrong", "succeeded"),
+        ("staging-lab-start:run-001", "attempted"),
+    ):
+        with pytest.raises(ValueError, match="lab start evidence rejected"):
+            ProfiledStagingEvidence(
+                staging_run_id="run-001",
+                orchestrator="local",
+                lab_title="NCDP Staging run-001",
+                start_outcome=outcome,
+                lab_start_evidence=EvidenceReference(
+                    identity=identity, digest="sha256:" + "f" * 64
+                ),
+            )
 
 
 @pytest.fixture
@@ -298,6 +376,10 @@ def fake_lifecycle_operations(driver, monkeypatch, *, cleanup_fails):
         def create():
             calls.append("create")
             operation.create_stage = operation.start_stage = "succeeded"
+            operation.lab_start_evidence = EvidenceReference(
+                identity=f"staging-lab-start:{run_id}",
+                digest="sha256:" + "c" * 64,
+            )
             operation.transit_recycle_outcome = "succeeded"
             operation.transit_recycle_evidence = EvidenceReference(
                 identity=f"staging-transit-recycle:{run_id}:transit-ios-01",
@@ -423,10 +505,16 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
             "context_digest",
             "trust_generation",
             "transit_recycle_evidence",
+            "lab_start_evidence",
         ):
             assert not driver.evidence_succeeded(
                 evidence.model_copy(update={field: None}), context()
             )
+        historical = ProfiledStagingEvidence.model_validate(
+            evidence.model_dump(exclude={"lab_start_evidence"})
+        )
+        assert historical.final_outcome.value == "SUCCEEDED"
+        assert not driver.evidence_succeeded(historical, context())
         for field, value in (
             ("source_commit", "b" * 40),
             ("build_id", JOB_ID),

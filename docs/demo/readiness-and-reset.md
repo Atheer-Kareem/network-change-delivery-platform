@@ -94,6 +94,81 @@ make the demo look active. An uncertain or corrected attempt requires a new
 commit, build, and authorization. Buildkite browser history is presentation;
 AuditStore remains durable evidence authority.
 
+### Explicit DEMO CONTINUE mode
+
+**Normal CI remains hard-fail. Demo mode is presentation-only, not acceptance
+evidence for merging or delivery.** Do not treat a green demo aggregate as
+proof that validation, Batfish, or CML passed; inspect their truthful evidence.
+
+One-time operator prerequisite, after this source is reviewed and available on
+`main`: in Buildkite **Settings → Steps**, use the YAML steps editor and change
+the existing pipeline-upload command to:
+
+```sh
+uv run --frozen python scripts/buildkite/render_demo_pipeline.py --upload
+```
+
+Keep that bootstrap on `ncdp-validation`, hard-fail, with automatic and manual
+retries disabled. Do not install a repository hook or touch the staging-agent
+hook/environment. This is a pipeline bootstrap setting, not a GitHub ruleset or
+required-status change. The implementation does not update live settings.
+Until the operator changes that bootstrap, the existing direct upload continues
+to run the normal hard-fail graph even when the demo variable is supplied.
+Do not change the bootstrap before the script is on main; older checkouts lack it.
+
+Then start each demonstration from the Buildkite UI:
+
+1. **New build**.
+2. Branch: **main**, using the reviewed main commit, without PR context.
+3. Set **`NCDP_DEMO_CONTINUE_ON_FAILURE=1`** in this build's environment.
+4. **Start build**. Do not retry an earlier build or step.
+
+Never set the flag globally on the pipeline or agent. Only exact value `1`,
+source `ui`, branch `main`, and no pull request are admitted. The renderer also
+requires canonical repository, validation queue and retry zero, and rejects
+contradictory PR metadata, tags and triggered-build metadata. API, webhook,
+schedule, trigger-job, other branches, and missing/invalid explicit values
+cannot render a demo. A nonempty invalid demo request fails the bootstrap
+before annotation/upload. An unset/empty flag uploads `.buildkite/pipeline.yml`
+directly with the existing `--fetch-diff-base` change detection; no production
+graph transformation or banner occurs.
+
+The renderer derives the current 15 command steps plus validation wait from
+the reviewed normal graph; it rejects new/unknown shapes rather than silently
+softening them. Demo commands carry a server-side `build.source == "ui"`,
+`build.branch == "main"`, no-PR and exact-flag conditional as well. They preserve
+commands, keys, queues, dependencies, concurrency, explicit retry prohibitions,
+and credential boundaries. Missing retry defaults are closed to disabled for
+demo only. Demo suppresses all `if_changed` filters, and replaces the PR-only
+Batfish conditional only with the strict demo conditional. Batfish independently
+admits canonical PR or manual-main demo before Docker/commit work; its decision
+and full evidence are unchanged.
+
+One warning annotation, **DEMO MODE — CONTINUE ON FAILURE**, is published before
+the demo upload. Command labels have a short `DEMO ·` prefix. Every generated
+command has `soft_fail: true`; the validation wait has
+`continue_on_failure: true`. Soft-failed dependencies already permit downstream
+execution, so there is no `allow_dependency_failure` override. See Buildkite's
+[soft-fail semantics](https://buildkite.com/docs/pipelines/configure/soft-fail)
+and [wait semantics](https://buildkite.com/docs/pipelines/configure/step-types/wait-step).
+The installed agent `3.137.0` accepts both graphs with `--dry-run --format yaml
+--reject-secrets --reject-parse-warnings`; this is static validation, not runtime
+acceptance.
+
+An application failure stays FAILED with its real nonzero exit code and evidence;
+Buildkite presents it as SOFT FAILED and continues validation → Batfish → CML.
+Bootstrap admission, annotation and upload errors remain hard failures: an
+unlabeled or incomplete demo is not silently accepted. Cancellation, unavailable
+agents and infrastructure outages are not converted into successful execution.
+
+The trusted CML hook, pipeline binding, staging.env permissions, exact devices
+1/2/8/9, OpenBao roles, one-shot lab START, transit-only recycle, cleanup and
+no-device-write rules are unchanged. Failed cleanup still retains state, and
+the existing recovery runbook applies before any new run. No protected delivery
+or NCDP Live write is added. Normal webhook PR/main builds retain their hard-fail
+graph and existing aggregate required-status merge gate. Demo success must not
+be cited as normal CI, merged-main staging, or delivery acceptance.
+
 ## Docker
 
 Starting Docker Desktop manually is safe presentation recovery. Volume pruning,

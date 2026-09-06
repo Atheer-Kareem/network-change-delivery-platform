@@ -15,6 +15,8 @@ if [[ "${BUILDKITE_RETRY_COUNT:-}" != 0 ]]; then
   exit 2
 fi
 
+# Independently admit canonical PR or explicit UI/main/non-PR demo before Docker.
+# This verifier also binds the checkout; neither path gains runtime credentials.
 scripts/buildkite/verify_commit.sh
 tmpdir="$(mktemp -d)"
 chmod 700 "$tmpdir"

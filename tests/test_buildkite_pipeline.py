@@ -78,6 +78,16 @@ def test_pipeline_contains_no_retired_or_device_write_surface() -> None:
     assert "ncdp-deploy" not in source
 
 
+def test_normal_pipeline_never_opts_into_demo_continuation() -> None:
+    source = PIPELINE.read_text(encoding="utf-8")
+    assert "NCDP_DEMO_CONTINUE_ON_FAILURE" not in source
+    for step in _steps().values():
+        assert "soft_fail" not in step
+        assert "continue_on_failure" not in step
+        assert "allow_dependency_failure" not in step
+    assert _steps()["pr-batfish-assurance"]["if"] == "build.pull_request.id != null"
+
+
 def test_profiled_staging_exact_activation_contract() -> None:
     pipeline = yaml.safe_load(PIPELINE.read_text(encoding="utf-8"))
     matches = [step for step in pipeline["steps"] if step.get("key") == "cml-staging"]

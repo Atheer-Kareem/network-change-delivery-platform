@@ -1,7 +1,8 @@
 # Profiled exact-four disposable CML staging
 
-Status: implemented in source; pending one separately authorized controlled local
-create, validate, and destroy acceptance. It is not yet an active Buildkite job.
+Status: the exact-four lifecycle merged in PR #134 has successful controlled
+local acceptance. The `cml-staging` Buildkite gate is wired in source; real
+Buildkite acceptance remains pending its first successful PR run.
 
 ## Purpose and authority
 
@@ -85,7 +86,7 @@ interfere with lifecycle cleanup.
 
 ## Credentials and trust
 
-The future Buildkite execution boundary uses `BuildkiteStagingSecretProvider`:
+The Buildkite execution boundary uses `BuildkiteStagingSecretProvider`:
 one device-scoped OpenBao JWT login/read for each of stable device IDs 1, 2, 8,
 and 9. Broad ambient AppRole, NetBox, CML, or device credentials are rejected.
 Terraform bootstrap inputs are sensitive; Cisco Day-0 uses an IOS verifier and
@@ -131,9 +132,22 @@ uncertain Terraform or transit-recycle mutation is never replayed: known owned
 state may proceed only to bounded
 cleanup, while unprovable ownership is `AMBIGUOUS` and retained for review.
 
-## Pipeline phase
+## Buildkite activation
 
-Phase 1 restores only static Terraform format/init/validate in the quality
-pipeline. The external `cml-staging` job remains absent pending controlled local
-acceptance. Protected delivery remains retired; any future protected profiled
-delivery requires a new design.
+`LocalTerraformOperations` accepts injected inventory and secret providers;
+local defaults remain `NetBoxProfileInventoryProvider` and
+`OpenBaoSecretProvider`. The Buildkite driver explicitly supplies the profiled
+NetBox provider with the dedicated staging token and the existing
+`BuildkiteStagingSecretProvider` with one OIDC JWT and validated context. Both
+entry points call the same `ProfiledStagingLifecycle` exactly once. CML reader
+and recycler accept the process-memory bearer directly; only bounded Terraform
+subprocesses receive it as `CML2_TOKEN`. Their mutation and GET-only contracts
+are unchanged.
+
+Runtime PRs run validation → PR Batfish → CML staging. Main independently runs
+CML after validation through the satisfied, skipped PR-only dependency. The
+same broad runtime-path classifier governs both assurance jobs. Staging failure
+fails the aggregate Buildkite build and the existing required GitHub status;
+no new status or protected delivery is introduced. See the current
+[operations runbook](buildkite-ephemeral-cml-staging-operations.md) for the
+external trusted-agent prerequisite, evidence, and retained-state handling.

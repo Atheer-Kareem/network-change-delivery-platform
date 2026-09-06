@@ -130,13 +130,12 @@ def test_production_and_runtime_scripts_do_not_import_legacy_write_symbols() -> 
 def test_pipeline_has_no_retired_staging_or_device_write_path() -> None:
     source = (ROOT / ".buildkite/pipeline.yml").read_text(encoding="utf-8")
     for retired in (
-        "cml-staging",
+        "scripts/buildkite/ephemeral_staging.sh",
         "protected-delivery",
         "deployment_gate.sh",
         "deploy-buildkite-promotion",
         "profiled-deploy",
         "ncdp-deploy",
-        "ncdp-staging",
     ):
         assert retired not in source
     assert not (ROOT / "scripts/buildkite/deployment_gate.sh").exists()

@@ -57,9 +57,9 @@ class ProfiledStagingCmlReader:
         self._client = client
 
     @classmethod
-    def from_environment(cls) -> ProfiledStagingCmlReader:
+    def from_environment(cls, *, token: str | None = None) -> ProfiledStagingCmlReader:
         address = os.environ.get("CML2_ADDRESS")
-        token = os.environ.get("CML2_TOKEN")
+        token = os.environ.get("CML2_TOKEN") if token is None else token
         certificate = os.environ.get("CML2_CACERT")
         if not address or not token or not certificate:
             raise ProfiledStagingError("profiled staging CML read authority missing")
@@ -202,9 +202,11 @@ class ProfiledStagingCmlTransitRecycler:
         self._client = client
 
     @classmethod
-    def from_environment(cls) -> ProfiledStagingCmlTransitRecycler:
+    def from_environment(
+        cls, *, token: str | None = None
+    ) -> ProfiledStagingCmlTransitRecycler:
         address = os.environ.get("CML2_ADDRESS")
-        token = os.environ.get("CML2_TOKEN")
+        token = os.environ.get("CML2_TOKEN") if token is None else token
         certificate = os.environ.get("CML2_CACERT")
 
         if not address or not token or not certificate:

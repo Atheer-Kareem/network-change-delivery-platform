@@ -1,12 +1,14 @@
 # Buildkite workflow
 
-The current Buildkite pipeline is validation and assurance only. It contains no
-device-write, disposable CML, promotion, approval, or deployment-gate step.
+The current Buildkite pipeline is validation and assurance only. Profiled
+exact-four disposable CML staging follows PR Batfish. It contains no device-write,
+promotion, approval, or deployment-gate step. Real Buildkite staging acceptance
+is pending the activation PR run.
 
 ```text
 quality environment ----> lint / format / pytest / ansible-lint / build
 committed diff ----------\
-SNMP reproducibility -----+--> validation-complete --> profiled PR Batfish
+SNMP reproducibility -----+--> validation-complete --> profiled PR Batfish --> CML
 observability runtime ----+
 synthetic SNMPv3 ---------+
 pipeline definition ------+
@@ -40,6 +42,30 @@ The wrapper verifies exact commit and PR context, runs on `ncdp-validation`, is
 non-retriable, uses one serialized assurance concurrency group, publishes
 typed secret-free evidence, and independently verifies it before success.
 
+## Profiled CML integration gate
+
+Exactly one top-level `cml-staging` job runs the reviewed
+`.buildkite/scripts/profiled_cml_staging.sh` wrapper on `ncdp-staging`, serialized
+at concurrency one in `ncdp/cml-ephemeral-staging`. Automatic and manual retries
+are disabled; failures require a new commit/build and review of retained state.
+It depends on both `validation-complete` and `pr-batfish-assurance` and has no
+soft-fail or dependency-failure override. On main, the PR-only Batfish dependency
+is skipped and satisfied, preserving the historical ADR 0027 independent CML
+assurance branch after validation. Protected-main Batfish and delivery remain
+retired.
+
+The merge-control chain is runtime PR → validation → PR Batfish → CML →
+aggregate Buildkite result → existing required GitHub status
+`buildkite/network-change-delivery-platform` → merge allowed/blocked. A staging
+failure makes that status unsuccessful. GitHub required-status configuration
+remains an external operator-owned control, verified read-only through the main
+ruleset during activation work; repository code does not modify it.
+
+Staging reuses the accepted exact-four lifecycle and schema-v2 evidence. Its
+agent-owned command hook admits canonical origin before sourcing protected
+credentials; PR-controlled pipeline YAML alone cannot release them. See the
+[operations runbook](buildkite-ephemeral-cml-staging-operations.md).
+
 ## Retired paths
 
 The schema-v1 protected delivery group and exact-two disposable Terraform/CML
@@ -52,13 +78,12 @@ Historical ADRs, acceptance reports, promotion models, and audit evidence keep
 their original meaning. They do not grant current runtime authority. A future
 protected-delivery capability must be designed against the profiled architecture
 and reviewed as a new boundary; restoration of the old block is not an accepted
-path. Profiled exact-four disposable staging now has static Terraform validation
-only; its external `cml-staging` job remains absent pending controlled local
-acceptance.
+path. The replacement exact-four staging gate is separate from those retired
+executors and retains the accepted transit-ios-01-only CML recycle.
 
 ## Runtime change classification
 
-The PR assurance condition remains fail closed: all paths are runtime-relevant
-except the explicitly reviewed documentation, repository-policy, and test-only
+The identical PR Batfish and CML condition remains fail closed: all paths are
+runtime-relevant except the reviewed documentation, repository-policy, and test-only
 exclusions. A new top-level path defaults to runtime-relevant until its
 classification is reviewed and covered by pipeline-contract tests.

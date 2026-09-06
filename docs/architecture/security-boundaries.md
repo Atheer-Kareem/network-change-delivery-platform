@@ -16,6 +16,16 @@ write access. Work is limited to schema, policy, lint, unit, rendering, and
 assurance checks, using only read-only source-of-truth access where required and
 sanitized configuration snapshots.
 
+Disposable exact-four CML integration is a separate credentialed assurance
+boundary on `ncdp-staging`. An agent-owned command hook checks the exact command,
+step, queue, canonical repository/PR origin, and retry zero before sourcing its
+protected environment, after repository pre-command hooks. It injects dedicated
+read-only NetBox authority and the existing four device-scoped staging JWT
+roles. The personal CML license requires operator authentication to mint one
+process-memory bearer; this is explicitly not least-privilege CML authority.
+The accepted lifecycle owns only its disposable graph and transit-ios-01
+STOP/START recycle. It cannot apply device CLI configuration or touch NCDP Live.
+
 ## Zone 2 — deployment
 
 Only the explicit local `profiled-deploy` command may enter this zone with a

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run one explicitly authorized profiled exact-four CML staging lifecycle.
 
-The entry point is intentionally not wired into Buildkite in Phase 1. It does
-nothing unless an operator supplies ``--execute`` for a private run directory.
+The local entry point requires ``--execute`` for a private run directory.
+Buildkite injects its own providers into these same lifecycle operations.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ from network_change_delivery.profiled_staging_trust import (
     KNOWN_HOSTS_NAME,
     establish_profiled_staging_trust,
 )
-from network_change_delivery.secrets import OpenBaoSecretProvider
+from network_change_delivery.secrets import OpenBaoSecretProvider, SecretProvider
 
 ROOT = Path(__file__).resolve().parents[1]
 TERRAFORM_ROOT = ROOT / "infrastructure" / "cml" / "profiled-staging"
@@ -82,15 +82,26 @@ _TRANSITIONAL_CML_NODE_STATES = frozenset(
 class LocalTerraformOperations:
     """Explicit local Terraform/CML lifecycle with no device write operation."""
 
-    def __init__(self, run_id: str, run_directory: Path) -> None:
+    def __init__(
+        self,
+        run_id: str,
+        run_directory: Path,
+        *,
+        inventory: NetBoxProfileInventoryProvider | None = None,
+        secrets: SecretProvider | None = None,
+        cml_token: str | None = None,
+    ) -> None:
         self._run_id = run_id
         self._run_directory = run_directory
         self._state_path = run_directory / "terraform.tfstate"
         self._state_backup_path = run_directory / "terraform.tfstate.backup"
         self._data_directory = run_directory / "terraform-data"
         self._recovery_inputs = run_directory / "recovery-inputs.tfvars.json"
-        self._inventory = NetBoxProfileInventoryProvider()
-        self._secrets = OpenBaoSecretProvider()
+        self._inventory = (
+            NetBoxProfileInventoryProvider() if inventory is None else inventory
+        )
+        self._secrets = OpenBaoSecretProvider() if secrets is None else secrets
+        self._cml_token = cml_token
         self._devices = ()
         self._credentials: dict[str, object] = {}
         self._variables: dict[str, object] | None = None
@@ -136,6 +147,8 @@ class LocalTerraformOperations:
     def _environment(self) -> dict[str, str]:
         values = dict(os.environ)
         values["TF_DATA_DIR"] = str(self._data_directory)
+        if self._cml_token is not None:
+            values["CML2_TOKEN"] = self._cml_token
         return values
 
     def _var_file_arguments(self) -> list[str]:
@@ -380,7 +393,7 @@ class LocalTerraformOperations:
     def admit(self) -> None:
         self._devices = validate_profiled_staging_population(self._inventory)
         validate_profiled_staging_physical_topology(self._inventory, self._devices)
-        reader = ProfiledStagingCmlReader.from_environment()
+        reader = ProfiledStagingCmlReader.from_environment(token=self._cml_token)
         try:
             admit_no_staging_collision(reader, self._devices)
         finally:
@@ -432,7 +445,7 @@ class LocalTerraformOperations:
             validate_management_only_bootstrap(template.read_text(encoding="utf-8"))
         self._apply_exact_create()
         outputs = self._outputs()
-        reader = ProfiledStagingCmlReader.from_environment()
+        reader = ProfiledStagingCmlReader.from_environment(token=self._cml_token)
         try:
             observed = admit_created_realization(
                 reader, self._run_id, outputs, self._devices
@@ -443,7 +456,9 @@ class LocalTerraformOperations:
         self._apply_start()
 
         self.transit_recycle_outcome = "attempted"
-        recycler = ProfiledStagingCmlTransitRecycler.from_environment()
+        recycler = ProfiledStagingCmlTransitRecycler.from_environment(
+            token=self._cml_token
+        )
         try:
             self.transit_recycle_evidence = recycler.recycle(
                 run_id=self._run_id,
@@ -692,7 +707,7 @@ class LocalTerraformOperations:
         states = {str(device.logical_name): None for device in devices}
         reader: ProfiledStagingCmlReader | None = None
         with suppress(ProfiledStagingError):
-            reader = ProfiledStagingCmlReader.from_environment()
+            reader = ProfiledStagingCmlReader.from_environment(token=self._cml_token)
         try:
             if reader is None:
                 return states
@@ -803,7 +818,7 @@ class LocalTerraformOperations:
     def _lab_is_absent(self) -> bool:
         if self._owned_lab_id is None:
             return False
-        reader = ProfiledStagingCmlReader.from_environment()
+        reader = ProfiledStagingCmlReader.from_environment(token=self._cml_token)
         try:
             return reader.lab(self._owned_lab_id, allow_missing=True) is None
         finally:

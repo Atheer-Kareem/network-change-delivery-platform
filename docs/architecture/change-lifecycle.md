@@ -89,9 +89,10 @@ accepted. Their typed artifacts and historical ADR/acceptance evidence remain
 valid and parseable, but the legacy execution engine and its current CLI,
 script, and pipeline entry points have been removed. Protected delivery and
 profiled fleet rollout still require new designs and separate review. A new
-profiled exact-four disposable staging implementation is source-complete and
-pending its separately authorized controlled local acceptance; it has no active
-external Buildkite execution job and no device-write authority.
+profiled exact-four disposable staging implementation has successful local
+acceptance and is wired to the Buildkite `cml-staging` gate. Its first real
+Buildkite acceptance remains pending. It has no device-write authority.
 
 The active Buildkite network assurance surface is the credential-free profiled
-four-device PR Batfish step. Buildkite has no current device-write step.
+four-device PR Batfish step followed by disposable CML read-only integration.
+Buildkite has no current device-write step.

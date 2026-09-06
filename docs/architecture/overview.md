@@ -22,6 +22,7 @@ flowchart LR
   PI --> OX[Exact-four Oxidized]
   PI --> SNMP[SNMP capability projection: 1/2]
   BK[Buildkite validation] --> BA[Profiled four-device PR assurance]
+  BA --> CS[Disposable exact-four CML read-only staging]
 ```
 
 ## Population and capability authority
@@ -60,7 +61,8 @@ and Oxidized read-only collection consume all four.
 - **Continuous operations:** observability and Oxidized are read-only,
   exact-four, and independent of change execution.
 - **Assurance:** Buildkite runs validation plus credential-free profiled
-  four-device PR Batfish assurance. It has no device-write step.
+  four-device PR Batfish assurance followed by disposable CML read-only staging.
+  Real Buildkite staging acceptance is pending. It has no device-write step.
 
 ## Current change boundary
 
@@ -86,8 +88,8 @@ Live` lab is current.
 Historical models, ADRs, acceptance records, and audit parsers retain their
 original serialized meaning. No current CLI, privileged script, or pipeline
 step invokes their executors. Profiled exact-four disposable staging is
-implemented with read-only device authority and remains pending controlled
-local acceptance and later Buildkite activation. Future profiled fleet rollout,
+locally accepted with read-only device authority and now wired to Buildkite,
+with real Buildkite staging acceptance pending. Future profiled fleet rollout,
 protected delivery, or additional write verticals require separate review.
 
 See [profile-aware population and realization](profile-aware-population-and-realization.md),

@@ -1,4 +1,4 @@
-"""Static contract for the final profiled validation-only Buildkite pipeline."""
+"""Static contract for profiled validation, PR Batfish, and disposable CML."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _steps() -> dict[str, dict[str, object]]:
     return {step["key"]: step for step in pipeline["steps"]}
 
 
-def test_pipeline_retains_validation_and_profiled_pr_assurance_only() -> None:
+def test_pipeline_retains_validation_profiled_pr_assurance_and_staging() -> None:
     steps = _steps()
     assert set(steps) == {
         "quality-env",
@@ -49,6 +49,7 @@ def test_pipeline_retains_validation_and_profiled_pr_assurance_only() -> None:
         "ncdp-pipeline-contract",
         "validation-complete",
         "pr-batfish-assurance",
+        "cml-staging",
     }
     assert steps["validation-complete"] == {"wait": None, "key": "validation-complete"}
     assurance = steps["pr-batfish-assurance"]
@@ -74,9 +75,45 @@ def test_pipeline_contains_no_retired_or_device_write_surface() -> None:
         "ncdp deploy",
     ):
         assert retired not in source
-    assert "key: cml-staging" not in source
-    assert "queue: ncdp-staging" not in source
     assert "ncdp-deploy" not in source
+
+
+def test_profiled_staging_exact_activation_contract() -> None:
+    pipeline = yaml.safe_load(PIPELINE.read_text(encoding="utf-8"))
+    matches = [step for step in pipeline["steps"] if step.get("key") == "cml-staging"]
+    assert len(matches) == 1
+    step = matches[0]
+    assert step["label"] == (
+        "Ephemeral/Profiled CML staging · create → read-only validate → destroy"
+    )
+    assert step["agents"] == {"queue": "ncdp-staging"}
+    assert step["command"] == ".buildkite/scripts/profiled_cml_staging.sh"
+    assert step["depends_on"] == ["validation-complete", "pr-batfish-assurance"]
+    assert step["if_changed"] == _steps()["pr-batfish-assurance"]["if_changed"]
+    assert step["if_changed"] == RUNTIME_CHANGE_CONDITION
+    assert step["concurrency"] == 1
+    assert step["concurrency_group"] == "ncdp/cml-ephemeral-staging"
+    assert step["retry"]["automatic"] is False
+    assert step["retry"]["manual"]["allowed"] is False
+    assert "if" not in step and "branches" not in step and "skip" not in step
+    for item in pipeline["steps"]:
+        assert "soft_fail" not in item
+        assert "allow_dependency_failure" not in item
+
+
+@pytest.mark.parametrize("branch", ["main", "feature/activation"])
+def test_staging_dag_preserves_historical_skipped_pr_dependency(branch: str) -> None:
+    # ADR 0027 and accepted ab55c30 used this same DAG: Buildkite satisfies
+    # the skipped PR-only dependency on main. CML itself has no PR condition.
+    steps = _steps()
+    assert steps["pr-batfish-assurance"]["if"] == "build.pull_request.id != null"
+    dependencies = set(steps["cml-staging"]["depends_on"])
+    skipped = {"pr-batfish-assurance"} if branch == "main" else set()
+    assert dependencies - skipped == (
+        {"validation-complete"}
+        if branch == "main"
+        else {"validation-complete", "pr-batfish-assurance"}
+    )
 
 
 def test_retained_quality_commands_are_fail_closed() -> None:

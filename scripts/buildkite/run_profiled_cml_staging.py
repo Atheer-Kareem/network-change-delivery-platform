@@ -45,6 +45,7 @@ _PROTECTED_NAMES = (
     "NCDP_CML_STAGING_PASSWORD",
 )
 _REQUIRED_NAMES = (
+    "NCDP_BUILDKITE_PIPELINE_ID",
     "NCDP_STAGING_STATE_ROOT",
     "NCDP_NETBOX_URL",
     "NCDP_OPENBAO_URL",
@@ -94,6 +95,8 @@ def admit() -> tuple[BuildkiteStagingContext, Path]:
     reject_ambient_staging_authority()
     if any(not os.environ.get(name) for name in _REQUIRED_NAMES):
         raise ProfiledStagingError("Buildkite staging protected configuration missing")
+    if context.pipeline_id != os.environ["NCDP_BUILDKITE_PIPELINE_ID"]:
+        raise ProfiledStagingError("Buildkite staging pipeline identity rejected")
     root = validate_staging_state_root(
         Path(os.environ["NCDP_STAGING_STATE_ROOT"]), ROOT
     )

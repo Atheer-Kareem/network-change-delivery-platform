@@ -22,11 +22,9 @@ Install the reviewed
 The staging agent configuration must retain queue `ncdp-staging` and
 `hooks-path="/Users/netdevops/.config/buildkite/ncdp-lab/hooks/ncdp-staging"`.
 The installed hook must be owned by the agent user, mode `0700`, and sourced
-from the reviewed activation commit before the first PR run. At initial
-activation inspection the installed hook still admitted the retired wrapper;
-pushing activation is blocked until the operator installs the reviewed new
-hook. This installation is an external prerequisite for this same PR, not a
-separate preparation PR. Do not modify or replace secret files as part of it.
+from the reviewed commit before its PR run. Hook updates are an external
+prerequisite for this same PR, not a separate preparation PR. Hook installation
+does not change credential values.
 
 The hook admits only the exact step, queue, canonical repository, retry zero,
 and command `.buildkite/scripts/profiled_cml_staging.sh`. PR builds additionally
@@ -35,15 +33,25 @@ main. Fork or ambiguous origins fail before credentials are sourced. A
 maintainer must adopt a runtime-affecting fork change in the canonical repository
 and obtain a fresh canonical run to satisfy the required gate.
 
-Only after admission does the command hook source the protected `staging.env`
-beside its installed location and execute the exact wrapper. It is deliberately
+Only after those checks and file-security validation does the command hook
+source the protected `staging.env` beside its installed location. It immediately
+requires the job's `BUILDKITE_PIPELINE_ID` to equal the protected
+`NCDP_BUILDKITE_PIPELINE_ID` before executing the exact checkout wrapper.
+Missing or mismatched identity rejects checkout execution. The expected value
+must be declared in the protected file; an inherited job value cannot supply it.
+The UUID is the existing immutable subject bound into the OpenBao staging roles,
+not a new or rotated identity. The hook is deliberately
 not an environment or pre-command hook: repository pre-command hooks finish
 before credentials are introduced. Canonical contributors and the agent host
 remain trusted personal-lab boundaries; OIDC alone does not make PR code safe.
 
-The protected file is external, regular, non-symlink, agent-owned, and owner-only.
-It supplies these names; never print their values or commit the file:
+Before sourcing, the hook requires the protected file to be regular,
+non-symlink, agent-owned, and exactly mode `0600`. Its portable mode check
+supports GNU/Linux and macOS stat. The containing hook directory must remain
+agent-owned and private (mode `0700`). The file supplies these nine names;
+never print credential values or commit the file:
 
+- `NCDP_BUILDKITE_PIPELINE_ID` (existing immutable pipeline identifier)
 - `NCDP_STAGING_STATE_ROOT`
 - `NCDP_NETBOX_URL` and dedicated read-only `NCDP_STAGING_NETBOX_TOKEN`
 - `NCDP_OPENBAO_URL`
@@ -53,7 +61,10 @@ It supplies these names; never print their values or commit the file:
 Ambient AppRole IDs, `NCDP_NETBOX_TOKEN`, `CML2_TOKEN`, and direct device
 username/password authority are rejected. The driver validates pipeline/build/job
 UUIDs, exact SHA-1 and checked-out bytes through `verify_commit.sh`, branch,
-step, queue, and retry before OIDC or CML authentication.
+step, queue, and retry before OIDC or CML authentication. During admission the
+driver independently compares the pipeline UUID with the required protected
+expected value before the commit-verification helper, OIDC request, OpenBao
+provider use, or CML authentication.
 
 ## Workload identities and prerequisites
 

@@ -19,7 +19,12 @@ sanitized configuration snapshots.
 Disposable exact-four CML integration is a separate credentialed assurance
 boundary on `ncdp-staging`. An agent-owned command hook checks the exact command,
 step, queue, canonical repository/PR origin, and retry zero before sourcing its
-protected environment, after repository pre-command hooks. It injects dedicated
+protected environment, after repository pre-command hooks. Before sourcing it
+requires an agent-owned, regular, non-symlink file with exact mode `0600`. Before
+checkout wrapper execution it binds the job pipeline UUID to the existing
+OpenBao pipeline subject supplied as protected `NCDP_BUILDKITE_PIPELINE_ID`.
+The driver repeats that equality check before any helper or external authority
+use. Missing or mismatched identity fails closed. It injects dedicated
 read-only NetBox authority and the existing four device-scoped staging JWT
 roles. The personal CML license requires operator authentication to mint one
 process-memory bearer; this is explicitly not least-privilege CML authority.

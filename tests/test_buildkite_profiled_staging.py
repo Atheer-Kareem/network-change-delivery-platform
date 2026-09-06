@@ -51,6 +51,7 @@ def driver(tmp_path, monkeypatch):
     spec.loader.exec_module(module)
     environment = {
         "BUILDKITE_PIPELINE_ID": PIPELINE_ID,
+        "NCDP_BUILDKITE_PIPELINE_ID": PIPELINE_ID,
         "BUILDKITE_BUILD_ID": BUILD_ID,
         "BUILDKITE_JOB_ID": JOB_ID,
         "BUILDKITE_COMMIT": COMMIT,
@@ -90,6 +91,9 @@ def driver(tmp_path, monkeypatch):
         ("BUILDKITE_RETRY_COUNT", "1"),
         ("BUILDKITE_RETRY_COUNT", ""),
         ("BUILDKITE_PIPELINE_ID", "wrong"),
+        ("BUILDKITE_PIPELINE_ID", JOB_ID),
+        ("NCDP_BUILDKITE_PIPELINE_ID", ""),
+        ("NCDP_BUILDKITE_PIPELINE_ID", JOB_ID),
         ("BUILDKITE_BUILD_ID", "wrong"),
         ("BUILDKITE_JOB_ID", "wrong"),
         ("BUILDKITE_COMMIT", "HEAD"),
@@ -107,6 +111,10 @@ def test_admission_fails_before_authority(driver, monkeypatch, key, value):
     monkeypatch.setenv(key, value)
     calls = []
     monkeypatch.setattr(driver, "command", lambda *a, **_kw: calls.append(a))
+    monkeypatch.setattr(driver, "authenticate_cml", lambda: calls.append("CML"))
+    monkeypatch.setattr(
+        driver, "BuildkiteStagingSecretProvider", lambda *a, **_kw: calls.append(a)
+    )
     with pytest.raises((ValueError, SecretError, ProfiledStagingError)):
         driver.admit()
     assert calls == []
@@ -119,6 +127,16 @@ def test_exact_commit_verifier_runs_before_oidc_or_cml(driver, monkeypatch):
     assert admitted == context()
     assert root.name
     assert calls == [["scripts/buildkite/verify_commit.sh"]]
+
+
+def test_missing_expected_pipeline_fails_before_helpers(driver, monkeypatch):
+    monkeypatch.delenv("NCDP_BUILDKITE_PIPELINE_ID")
+    calls = []
+    monkeypatch.setattr(driver, "command", lambda *a, **_kw: calls.append(a))
+    monkeypatch.setattr(driver, "authenticate_cml", lambda: calls.append("CML"))
+    with pytest.raises(ProfiledStagingError, match="configuration missing"):
+        driver.admit()
+    assert calls == []
 
 
 @pytest.mark.parametrize(
@@ -412,7 +430,9 @@ def test_agent_hook_rejects_before_sourcing_credentials(tmp_path, changes):
         (ROOT / "scripts/buildkite/staging_agent_command_hook.sh").read_text()
     )
     marker = tmp_path / "sourced"
-    (tmp_path / "staging.env").write_text(f'touch "{marker}"\n')
+    protected = tmp_path / "staging.env"
+    protected.write_text(f'touch "{marker}"\n')
+    protected.chmod(0o600)
     env = {
         "PATH": os.environ["PATH"],
         "BUILDKITE_STEP_KEY": "cml-staging",
@@ -441,7 +461,11 @@ def test_agent_hook_sources_only_installed_environment_then_exact_wrapper(
     hook.write_text(
         (ROOT / "scripts/buildkite/staging_agent_command_hook.sh").read_text()
     )
-    (tmp_path / "staging.env").write_text("NCDP_STAGING_TEST_ONLY=admitted\n")
+    protected = tmp_path / "staging.env"
+    protected.write_text(
+        f"NCDP_BUILDKITE_PIPELINE_ID={PIPELINE_ID}\nNCDP_STAGING_TEST_ONLY=admitted\n"
+    )
+    protected.chmod(0o600)
     scripts = tmp_path / ".buildkite/scripts"
     scripts.mkdir(parents=True)
     wrapper = scripts / "profiled_cml_staging.sh"
@@ -454,6 +478,7 @@ def test_agent_hook_sources_only_installed_environment_then_exact_wrapper(
         env={
             "PATH": os.environ["PATH"],
             "BUILDKITE_STEP_KEY": "cml-staging",
+            "BUILDKITE_PIPELINE_ID": PIPELINE_ID,
             "BUILDKITE_AGENT_META_DATA_QUEUE": "ncdp-staging",
             "BUILDKITE_RETRY_COUNT": "0",
             "BUILDKITE_COMMAND": ".buildkite/scripts/profiled_cml_staging.sh",
@@ -465,6 +490,66 @@ def test_agent_hook_sources_only_installed_environment_then_exact_wrapper(
     )
     assert result.returncode == 0
     assert result.stdout == b""
+
+
+@pytest.mark.parametrize(
+    "mode,actual,expected",
+    [
+        (0o600, JOB_ID, PIPELINE_ID),
+        (0o600, PIPELINE_ID, None),
+        (0o600, "", PIPELINE_ID),
+        (0o644, PIPELINE_ID, PIPELINE_ID),
+        (0o700, PIPELINE_ID, PIPELINE_ID),
+        (0o600, PIPELINE_ID, PIPELINE_ID),
+    ],
+)
+def test_hook_environment_mode_and_pipeline_before_checkout(
+    tmp_path, mode, actual, expected
+):
+    hook = tmp_path / "command"
+    hook.write_text(
+        (ROOT / "scripts/buildkite/staging_agent_command_hook.sh").read_text()
+    )
+    sourced = tmp_path / "sourced"
+    executed = tmp_path / "executed"
+    protected = tmp_path / "staging.env"
+    protected.write_text(
+        f'touch "{sourced}"\n'
+        "NCDP_CML_STAGING_PASSWORD=synthetic-secret-do-not-print\n"
+        + (f"NCDP_BUILDKITE_PIPELINE_ID={expected}\n" if expected else "")
+    )
+    protected.chmod(mode)
+    scripts = tmp_path / ".buildkite/scripts"
+    scripts.mkdir(parents=True)
+    wrapper = scripts / "profiled_cml_staging.sh"
+    wrapper.write_text(f'#!/bin/bash\ntouch "{executed}"\n')
+    wrapper.chmod(0o700)
+    result = subprocess.run(
+        ["bash", str(hook)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "BUILDKITE_STEP_KEY": "cml-staging",
+            "BUILDKITE_AGENT_META_DATA_QUEUE": "ncdp-staging",
+            "BUILDKITE_RETRY_COUNT": "0",
+            "BUILDKITE_COMMAND": ".buildkite/scripts/profiled_cml_staging.sh",
+            "BUILDKITE_REPO": CANONICAL,
+            "BUILDKITE_PULL_REQUEST": "135",
+            "BUILDKITE_PULL_REQUEST_REPO": CANONICAL,
+            "BUILDKITE_PIPELINE_ID": actual,
+            # Even an inherited matching expected ID cannot replace a missing
+            # declaration in the protected file.
+            "NCDP_BUILDKITE_PIPELINE_ID": PIPELINE_ID,
+        },
+    )
+    admitted = mode == 0o600 and actual == expected
+    assert result.returncode == (0 if admitted else 2)
+    assert sourced.exists() is (mode == 0o600)
+    assert executed.exists() is admitted
+    assert "synthetic-secret-do-not-print" not in result.stdout + result.stderr
+    assert PIPELINE_ID not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(

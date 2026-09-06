@@ -44,7 +44,24 @@ if [[ ! -f "$staging_environment" || -L "$staging_environment" || \
   echo "protected staging environment is unavailable" >&2
   exit 2
 fi
+staging_environment_mode="$(
+  stat -c '%a' "$staging_environment" 2>/dev/null ||
+    stat -f '%Lp' "$staging_environment" 2>/dev/null
+)" || { echo "protected staging environment mode unavailable" >&2; exit 2; }
+if [[ "$staging_environment_mode" != 600 ]]; then
+  echo "protected staging environment must have mode 0600" >&2
+  exit 2
+fi
+# The expected identity must come from the protected file, never an inherited
+# checkout/job environment value. Preserve the actual job identity across source.
+readonly staging_pipeline_id="${BUILDKITE_PIPELINE_ID:-}"
+unset NCDP_BUILDKITE_PIPELINE_ID
 set -a
 source "$staging_environment"
 set +a
+if [[ -z "$staging_pipeline_id" || -z "${NCDP_BUILDKITE_PIPELINE_ID:-}" || \
+  "$staging_pipeline_id" != "$NCDP_BUILDKITE_PIPELINE_ID" ]]; then
+  echo "Buildkite staging pipeline identity rejected" >&2
+  exit 2
+fi
 exec .buildkite/scripts/profiled_cml_staging.sh

@@ -15,7 +15,7 @@ if [[ "${BUILDKITE_RETRY_COUNT:-}" != 0 ]]; then
   exit 2
 fi
 
-# Independently admit canonical PR or explicit UI/main/non-PR demo before Docker.
+# Independently admit canonical PR or non-PR main before Docker.
 # This verifier also binds the checkout; neither path gains runtime credentials.
 scripts/buildkite/verify_commit.sh
 tmpdir="$(mktemp -d)"
@@ -27,6 +27,7 @@ compose=(
   -f compose.assurance.yaml
 )
 export NCDP_PROMOTION_IMAGE_TAG="$BUILDKITE_BUILD_NUMBER"
+success_digest=""
 cleanup() {
   cleanup_primary_status=$?
   trap - EXIT
@@ -41,6 +42,13 @@ cleanup() {
   fi
   if (( cleanup_primary_status != 0 )); then
     exit "$cleanup_primary_status"
+  fi
+  if (( cleanup_status == 0 )) && [[ "$success_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    if ! buildkite-agent meta-data set profiled-batfish-success "$success_digest" \
+      --job "$BUILDKITE_JOB_ID" >/dev/null 2>&1; then
+      echo "Batfish success receipt publication failed" >&2
+      cleanup_status=3
+    fi
   fi
   exit "$cleanup_status"
 }
@@ -113,4 +121,11 @@ fi
   --evidence "/output/$evidence_relative" \
   --verify-only
 publish_evidence success
+success_digest="$("${assurance_run[@]}" python \
+  scripts/assurance/verify_profiled_pr_candidate.py \
+  --evidence "/output/$evidence_relative" --verify-only --digest-only)"
+if [[ ! "$success_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "Verified Batfish success digest is missing or invalid" >&2
+  exit 2
+fi
 echo "Profiled PR Batfish artifact published: $evidence_relative"

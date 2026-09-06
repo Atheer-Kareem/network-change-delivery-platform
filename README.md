@@ -13,15 +13,15 @@ a production deployment template.
 
 ## How the platform works
 
-![Current NCDP architecture: GitHub and Buildkite validation feed Batfish then disposable exact-four CML read-only staging; separate human-digest-authorized local delivery writes only devices 1/2, with independent evidence and read-only operations.](docs/assets/ncdp-current-architecture.svg)
+![Current NCDP architecture: GitHub and Buildkite validation feed Batfish then disposable exact-four CML read-only staging; main delivery requires immutable profiled promotion and human approval, with writes limited to devices 1/2 and independent evidence and read-only operations.](docs/assets/ncdp-current-architecture.svg)
 
 1. **Review intent.** GitHub holds reviewed code, managed intent, plans, policy,
    tests, and pipeline definitions. A pull request has no protected live-write
    authority.
 2. **Validate visibly.** Buildkite exposes lint, tests, packaging, runtime
-   validation, and pipeline contracts as separate gates that converge at
-   `validation-complete`.
-3. **Exercise assurance.** The active PR Batfish boundary evaluates the
+   validation, and pipeline contracts as separate continuing checks at
+   `validation-complete`; a green aggregate is not proof that every check passed.
+3. **Exercise assurance.** The canonical PR/main Batfish boundary evaluates the
    profiled four-device candidate before disposable CML read-only integration
    staging. Buildkite staging acceptance is pending its first successful run.
 4. **Plan and approve explicitly.** `profiled-plan` produces an immutable
@@ -78,10 +78,10 @@ fleet-wide atomicity is claimed.
 | Cisco | `core-02` · IOS XE; `transit-ios-01` · IOS; `access-sw-01` · IOS switching |
 | Junos | `edge-junos-01` · Junos |
 | Persistent lab | Manually/operator-owned `NCDP Live` in CML |
-| Disposable staging | Locally accepted exact-four lifecycle; Buildkite gate acceptance pending |
+| Disposable staging | Locally accepted exact-four lifecycle; Buildkite runtime acceptance pending |
 | Inventory | NetBox, consumed read-only by automation |
 | Credentials | OpenBao with bounded workload/device authority |
-| CI/CD | Buildkite validation → PR Batfish → disposable CML; no device writes |
+| CI/CD | Continuing validation → Batfish → CML; main-only profiled plan/promotion/approval/deploy |
 | Evidence | AuditStore + exact-four Oxidized actual-state chronology |
 | Observability | Exact-four Prometheus + Blackbox + Grafana + Alertmanager |
 | Persistent SNMP polling | Deferred |
@@ -99,7 +99,8 @@ fleet-wide atomicity is claimed.
   does not imply that polling exists.
 - Historical schema-v1 protected delivery and disposable exact-two staging are
   retired. Profiled exact-four staging reuses the locally accepted lifecycle;
-  protected delivery still requires a new profiled design.
+  the current schema-v2 main delivery tail requires verified promotion and
+  human approval.
 - IOSv and IOSvL2 are managed exact-four members but do not admit the current
   interface-description write operation.
 

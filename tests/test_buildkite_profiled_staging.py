@@ -486,7 +486,27 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
         "--claim",
         "build_id",
     ]
-    assert len(commands) == 2
+    assert len(commands) == (4 if expected == 0 else 2)
+    metadata_commands = [args for args, _ in commands if args[1] == "meta-data"]
+    if expected == 0:
+        from network_change_delivery.profiled_promotion import digest_bytes
+
+        assert metadata_commands == [
+            [
+                "buildkite-agent",
+                "meta-data",
+                "set",
+                "profiled-cml-success",
+                digest_bytes(
+                    (tmp_path / "evidence" / f"bk-{BUILD_ID}.json").read_bytes()
+                ),
+                "--job",
+                JOB_ID,
+            ]
+        ]
+        assert commands[-2][0][1:3] == ["artifact", "upload"]
+    else:
+        assert metadata_commands == []
     run = tmp_path / "ephemeral" / f"bk-{BUILD_ID}"
     assert run.exists() is cleanup_fails
     evidence_path = tmp_path / "evidence" / f"bk-{BUILD_ID}.json"
@@ -535,7 +555,7 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
     assert "CML2_TOKEN" not in os.environ
     with pytest.raises(FileExistsError):
         driver.run(context(), tmp_path)
-    assert len(commands) == 2
+    assert len(commands) == (4 if expected == 0 else 2)
 
 
 @pytest.mark.parametrize(

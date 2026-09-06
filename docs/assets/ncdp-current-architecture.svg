@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1000" role="img" aria-labelledby="title description">
   <title id="title">NCDP · current exact-four architecture</title>
-  <desc id="description">Three separate lanes: GitHub intent flows through Buildkite validation and Batfish before disposable exact-four CML read-only integration. NetBox identity and OpenBao credentials feed Python control, profiled-plan, human digest authorization and local profiled-deploy. The operator-owned NCDP Live contains core-02, edge-junos-01, transit-ios-01 and access-sw-01; current writes are limited to devices 1 and 2. Independent validation, AuditStore, Oxidized and read-only monitoring retain evidence and operational visibility. An uncertain write stops without retry and requires independent reconciliation.</desc>
+  <desc id="description">Three separate lanes: GitHub intent flows through Buildkite validation and Batfish before disposable exact-four CML read-only integration. NetBox identity and OpenBao credentials feed Python-owned profiled-plan, immutable promotion, human authorization and profiled-deploy. The operator-owned NCDP Live contains core-02, edge-junos-01, transit-ios-01 and access-sw-01; current writes are limited to devices 1 and 2. Independent validation, AuditStore, Oxidized and read-only monitoring retain evidence and operational visibility. An uncertain write stops without retry and requires independent reconciliation.</desc>
   <defs>
     <linearGradient id="canvas" x2="1" y2="1">
       <stop stop-color="#08111f"/><stop offset="1" stop-color="#142139"/>
@@ -54,22 +54,22 @@
   <path d="M859 235H894" class="flow"/>
   <text x="1152" y="310" text-anchor="end" class="detail">Batfish first → real device integration → destroy</text>
 
-  <!-- Human-authorized local delivery is separate from Buildkite. -->
+  <!-- Current main delivery requires promotion and explicit human authorization. -->
   <rect x="24" y="350" width="1152" height="364" rx="18" class="panel"/>
   <text x="44" y="387" class="lane">02 / DELIVERY CONTROL</text>
-  <text x="1152" y="387" text-anchor="end" class="detail">Explicit local execution</text>
+  <text x="1152" y="387" text-anchor="end" class="detail">Main · human-authorized</text>
   <rect x="44" y="410" width="245" height="98" rx="12" class="read"/>
   <text x="64" y="449" class="title">NetBox + OpenBao</text>
   <text x="64" y="480" class="detail">Identity + credentials</text>
   <rect x="329" y="410" width="245" height="98" rx="12" class="control"/>
-  <text x="349" y="449" class="title">Python control</text>
+  <text x="349" y="449" class="title">profiled-plan</text>
   <text x="349" y="480" class="detail">Policy &amp; fresh checks</text>
   <rect x="614" y="410" width="245" height="98" rx="12" class="control"/>
-  <text x="634" y="449" class="title">profiled-plan</text>
-  <text x="634" y="480" class="detail">Immutable plan</text>
+  <text x="634" y="449" class="title">Promotion</text>
+  <text x="634" y="480" class="detail">Same-build plan</text>
   <rect x="899" y="410" width="253" height="98" rx="12" fill="url(#approval)" stroke="#fbbf24" stroke-width="2"/>
   <text x="919" y="449" class="title">Human approval</text>
-  <text x="919" y="480" class="detail">Exact plan digest</text>
+  <text x="919" y="480" class="detail">Exact promotion</text>
   <path d="M289 459H324" class="flow"/>
   <path d="M574 459H609" class="flow"/>
   <path d="M859 459H894" class="flow"/>

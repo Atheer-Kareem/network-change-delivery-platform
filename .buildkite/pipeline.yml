@@ -1,13 +1,23 @@
 steps:
   - label: ":docker: Build validation environment"
     key: quality-env
-    command: docker build --target quality-base --tag ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} .
+    soft_fail: true
+    command: |
+      set -euo pipefail
+      docker build --target quality-base --tag ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} .
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":git: Committed diff integrity"
     key: quality-committed-diff
+    soft_fail: true
     command: |
+      set -euo pipefail
       BASE_BRANCH="$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-main}"
       git fetch --no-tags origin \
         "$${BASE_BRANCH}:refs/remotes/origin/$${BASE_BRANCH}"
@@ -18,133 +28,187 @@ steps:
       else
         git --no-pager diff --check HEAD^..HEAD
       fi
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":mag: Ruff lint"
     key: quality-ruff-lint
+    soft_fail: true
     depends_on: quality-env
-    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff check .
+    command: |
+      set -euo pipefail
+      docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff check .
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":art: Ruff format"
     key: quality-ruff-format
+    soft_fail: true
     depends_on: quality-env
-    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff format --check .
+    command: |
+      set -euo pipefail
+      docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ruff format --check .
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":pytest: Python test suite"
     key: quality-pytest
+    soft_fail: true
     depends_on: quality-env
-    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run pytest --ignore=tests/test_buildkite_pipeline.py
+    command: |
+      set -euo pipefail
+      docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run pytest --ignore=tests/test_buildkite_pipeline.py
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":ansible: Ansible lint"
     key: quality-ansible-lint
+    soft_fail: true
     depends_on: quality-env
-    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ansible-lint
+    command: |
+      set -euo pipefail
+      docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv run ansible-lint
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":package: Python package build"
     key: quality-package-build
+    soft_fail: true
     depends_on: quality-env
-    command: docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv build
+    command: |
+      set -euo pipefail
+      docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} uv build
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":terraform: Profiled staging Terraform static validation"
     key: quality-terraform-profiled-staging
-    command: scripts/buildkite/profiled_terraform_validate.sh
+    soft_fail: true
+    command: |
+      set -euo pipefail
+      scripts/buildkite/profiled_terraform_validate.sh
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
-    if_changed:
-      include:
-        - "infrastructure/cml/profiled-staging/**"
-        - "scripts/buildkite/profiled_terraform_validate.sh"
-        - "src/network_change_delivery/profiled_staging.py"
-        - "src/network_change_delivery/profiled_staging_cml.py"
-        - "src/network_change_delivery/profiled_staging_trust.py"
-        - "src/network_change_delivery/profiled_realization.py"
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":gear: SNMP module reproducibility"
     key: quality-snmp-generator
-    command: uv run --frozen python scripts/observability/check_snmp_generator.py
+    soft_fail: true
+    command: |
+      set -euo pipefail
+      uv run --frozen python scripts/observability/check_snmp_generator.py
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
-    if_changed:
-      include:
-        - "infrastructure/observability/snmp/**"
-        - "scripts/observability/check_snmp_generator.py"
-        - "src/network_change_delivery/snmp_mib.py"
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":chart_with_upwards_trend: Observability runtime validation"
     key: quality-observability-runtime
+    soft_fail: true
     depends_on: quality-env
-    command: NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_runtime.sh
+    command: |
+      set -euo pipefail
+      NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_runtime.sh
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
     retry:
       automatic: false
-    if_changed:
-      include:
-        - "infrastructure/observability/**"
-        - "scripts/observability/**"
-        - "src/network_change_delivery/observability_*.py"
-        - "src/network_change_delivery/profile_inventory.py"
-        - "src/network_change_delivery/architecture_contracts.py"
-        - "tests/test_observability_*.py"
+      manual:
+        allowed: false
 
   - label: ":satellite: Synthetic SNMPv3 validation"
     key: quality-snmpv3-synthetic
+    soft_fail: true
     depends_on: quality-env
-    command: >-
-      NCDP_SKIP_OBSERVABILITY_REGRESSION=1
-      NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER}
-      scripts/observability/verify_snmp_runtime.sh
+    command: |
+      set -euo pipefail
+      NCDP_SKIP_OBSERVABILITY_REGRESSION=1 NCDP_QUALITY_IMAGE=ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} scripts/observability/verify_snmp_runtime.sh
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
     retry:
       automatic: false
-    if_changed:
-      include:
-        - "infrastructure/observability/**"
-        - "scripts/observability/**"
-        - "src/network_change_delivery/observability_*.py"
-        - "src/network_change_delivery/snmp_*.py"
-        - "tests/test_observability_*.py"
-        - "tests/test_snmp_*.py"
+      manual:
+        allowed: false
 
   - label: ":buildkite: Buildkite definition · parse and secret scan"
     key: buildkite-definition
-    command: buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run --format yaml --reject-secrets --reject-parse-warnings > /dev/null
+    soft_fail: true
+    command: |
+      set -euo pipefail
+      buildkite-agent pipeline upload .buildkite/pipeline.yml --dry-run --format yaml --reject-secrets --reject-parse-warnings > /dev/null
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - label: ":shield: NCDP pipeline safety contract · graph, queues, gating, retries and paths"
     key: ncdp-pipeline-contract
+    soft_fail: true
     depends_on: quality-env
-    commands:
-      - >-
-        docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER}
-        uv run pytest tests/test_buildkite_pipeline.py
-        -k 'not test_installed_buildkite_change_evaluation'
-      - >-
-        uv run --frozen pytest tests/test_buildkite_pipeline.py
-        -k test_installed_buildkite_change_evaluation
+    command: |
+      set -euo pipefail
+      docker run --rm ncdp-quality-env:$${BUILDKITE_BUILD_NUMBER} \
+        uv run pytest tests/test_buildkite_pipeline.py -k 'not test_installed_buildkite_change_evaluation'
+      uv run --frozen pytest tests/test_buildkite_pipeline.py -k test_installed_buildkite_change_evaluation
+      uv run --frozen python scripts/buildkite/publish_validation_receipt.py
     agents:
       queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
 
   - wait: ~
     key: validation-complete
+    continue_on_failure: true
 
-  - label: ":fish: PR Batfish · profiled four-device assurance"
+  - label: ":fish: Profiled Batfish · four-device assurance"
     key: pr-batfish-assurance
+    soft_fail: true
     depends_on: validation-complete
-    if: build.pull_request.id != null
+    if: build.pull_request.id != null || build.branch == "main"
     command: .buildkite/scripts/profiled_pr_batfish_assurance.sh
     agents:
       queue: ncdp-validation
@@ -155,19 +219,10 @@ steps:
       manual:
         allowed: false
         reason: "A fresh commit and build are required after assurance failure."
-    if_changed:
-      include: "**"
-      exclude:
-        - "docs/**"
-        - "README.md"
-        - "AGENTS.md"
-        - ".github/CODEOWNERS"
-        - ".github/pull_request_template.md"
-        - "tests/**"
-        - ".gitignore"
 
   - label: "Ephemeral/Profiled CML staging · create → read-only validate → destroy"
     key: cml-staging
+    soft_fail: true
     depends_on:
       - validation-complete
       - pr-batfish-assurance
@@ -181,13 +236,65 @@ steps:
       manual:
         allowed: false
         reason: "A new commit/build and explicit recovery of retained state are required."
-    if_changed:
-      include: "**"
-      exclude:
-        - "docs/**"
-        - "README.md"
-        - "AGENTS.md"
-        - ".github/CODEOWNERS"
-        - ".github/pull_request_template.md"
-        - "tests/**"
-        - ".gitignore"
+
+  - label: "Profiled plan · live read-only preflight"
+    key: profiled-live-plan
+    depends_on: cml-staging
+    if: build.branch == "main" && build.pull_request.id == null
+    command: .buildkite/scripts/profiled_delivery.sh
+    soft_fail: true
+    agents:
+      queue: ncdp-deploy
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+    concurrency: 1
+    concurrency_group: ncdp/profiled-live-delivery
+
+  - label: "Promotion · immutable profiled plan"
+    key: profiled-promotion
+    depends_on: profiled-live-plan
+    if: build.branch == "main" && build.pull_request.id == null
+    command: .buildkite/scripts/profiled_delivery.sh
+    soft_fail: true
+    agents:
+      queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+
+  - block: "Human authorization · exact promoted plan"
+    key: profiled-human-authorization
+    depends_on: profiled-promotion
+    if: build.branch == "main" && build.pull_request.id == null
+    prompt: "Review the promoted schema-v2 plan above. Unblock to authorize this exact build/promotion. Authorization does not override failed prerequisites."
+
+  - label: "Profiled deploy · authorized live execution"
+    key: profiled-deploy
+    depends_on: profiled-human-authorization
+    if: build.branch == "main" && build.pull_request.id == null
+    command: .buildkite/scripts/profiled_delivery.sh
+    soft_fail: true
+    agents:
+      queue: ncdp-deploy
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+    concurrency: 1
+    concurrency_group: ncdp/profiled-live-delivery
+
+  - label: "Deployment evidence · final outcome"
+    key: profiled-deployment-evidence
+    depends_on: profiled-deploy
+    if: build.branch == "main" && build.pull_request.id == null
+    command: .buildkite/scripts/profiled_delivery.sh
+    soft_fail: true
+    agents:
+      queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false

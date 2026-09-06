@@ -378,6 +378,29 @@ def run(context: BuildkiteStagingContext, root: Path) -> int:
     except Exception:
         print("Staging summary publication failed", file=sys.stderr)
         return 3 if succeeded else 2
+    if succeeded:
+        from network_change_delivery.profiled_promotion import digest_bytes
+
+        try:
+            # Successful schema-v2 bytes only; never Terraform state/Day-0.
+            command(
+                ["buildkite-agent", "artifact", "upload", evidence_path.name],
+                cwd=evidence_path.parent,
+            )
+            command(
+                [
+                    "buildkite-agent",
+                    "meta-data",
+                    "set",
+                    "profiled-cml-success",
+                    digest_bytes(evidence_path.read_bytes()),
+                    "--job",
+                    context.job_id,
+                ]
+            )
+        except Exception:
+            print("Staging success receipt publication failed", file=sys.stderr)
+            return 3
     return 0 if succeeded else 2
 
 

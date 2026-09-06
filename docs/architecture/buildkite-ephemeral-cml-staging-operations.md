@@ -2,7 +2,10 @@
 
 The current gate reuses the exact-four lifecycle locally accepted in PR #134.
 Buildkite runtime acceptance is PENDING until the activation PR staging job
-succeeds. Protected delivery remains retired.
+succeeds. Schema-v1 protected delivery remains retired; the separate current
+schema-v2 main delivery tail is described in [workflow](buildkite-workflow.md).
+Staging commands now soft-fail for presentation while retaining truthful exit
+codes; their failure no longer necessarily blocks merge via aggregate status.
 
 ## Trusted agent boundary
 
@@ -31,7 +34,7 @@ and command `.buildkite/scripts/profiled_cml_staging.sh`. PR builds additionally
 require an explicit canonical/non-fork source repository; non-PR runs require
 main. Fork or ambiguous origins fail before credentials are sourced. A
 maintainer must adopt a runtime-affecting fork change in the canonical repository
-and obtain a fresh canonical run to satisfy the required gate.
+and obtain a fresh canonical run to obtain trusted staging evidence.
 
 Only after those checks and file-security validation does the command hook
 source the protected `staging.env` beside its installed location. It immediately
@@ -151,8 +154,11 @@ primary or cleanup failure. An incomplete success label is insufficient.
 Ordinary logs and the required `cml-staging` annotation contain only closed
 lifecycle labels, outcome counts, and failure presence. Raw exception text is
 replaced with fixed failure categories in stored evidence. Full schema-v2
-evidence stays under the external protected root; it is not uploaded as a
-Buildkite artifact. JWTs, credentials, bearer tokens, Day-0, Terraform state,
+evidence stays under the external protected root. On VERIFIED SUCCESS only,
+the secret-free schema-v2 bytes are also uploaded as a same-build artifact and
+its SHA-256 hash is published as `profiled-cml-success` metadata. Annotation or
+artifact failure prevents that success receipt; failed staging never publishes
+one. Promotion requires the receipt, not the soft-failed step's scheduling state. JWTs, credentials, bearer tokens, Day-0, Terraform state,
 provider bodies, and device configuration are never log or artifact payloads.
 Annotation failure after success fails the step; after staging failure it
 cannot replace the primary failure.

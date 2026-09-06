@@ -207,10 +207,12 @@ and recycler accept the process-memory bearer directly; only bounded Terraform
 subprocesses receive it as `CML2_TOKEN`. Their mutation and GET-only contracts
 are unchanged.
 
-Runtime PRs run validation → PR Batfish → CML staging. Main independently runs
-CML after validation through the satisfied, skipped PR-only dependency. The
-same broad runtime-path classifier governs both assurance jobs. Staging failure
-fails the aggregate Buildkite build and the existing required GitHub status;
-no new status or protected delivery is introduced. See the current
+Canonical PR and main builds run validation → Batfish → CML without path
+filtering. Repository commands soft-fail for continuation; staging retains its
+real nonzero exit and truthful evidence, but no longer guarantees aggregate
+Buildkite failure or merge blocking. Verified staging success publishes a
+same-build evidence hash required by the separate schema-v2 main promotion.
+Failure publishes no success authority. The staging lifecycle itself gains no
+device-write authority. See the current
 [operations runbook](buildkite-ephemeral-cml-staging-operations.md) for the
 external trusted-agent prerequisite, evidence, and retained-state handling.

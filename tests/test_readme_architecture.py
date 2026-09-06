@@ -23,10 +23,10 @@ def test_readme_embeds_accessible_current_architecture():
         "Batfish first",
         "Exact-four · read-only",
         "NetBox + OpenBao",
-        "Python control",
+        "Promotion",
         "profiled-plan",
         "Human approval",
-        "Exact plan digest",
+        "Exact promotion",
         "profiled-deploy",
         "NCDP Live",
         "core-02",
@@ -42,7 +42,12 @@ def test_readme_embeds_accessible_current_architecture():
         "Uncertain write → stop → no retry → independent reconciliation",
     ):
         assert phrase in texts
-    for retired in ("deploy-gate", "promotion", "protected main", "PROTECTED MAIN"):
+    for retired in (
+        "deploy-gate",
+        "schema-v1 promotion",
+        "protected main",
+        "PROTECTED MAIN",
+    ):
         assert retired not in texts
     assert len(root.findall("s:rect", NS)) < 20
     assert root.find(".//s:script", NS) is None

@@ -158,10 +158,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   no-plan presentation remain CAP-OUTCOME-TRUTH; readiness still checks selected
   historical audit records, while current delivery/viewer integration awaits
   CAP-DURABLE-EVIDENCE. Fixed catalog/scope constraints and the fixed main target
-  remain CAP-POPULATION-SCOPES and CAP-INTENT-DELIVERY respectively. Historical
-  B2 wording in source module docstrings (for example `profile_inventory.py`)
-  remains a documentation follow-up within CAP-DOCS-TRUTH; this increment changes
-  application code only for readiness presentation.
+  remain CAP-POPULATION-SCOPES and CAP-INTENT-DELIVERY respectively.
 
 ### CAP-OUTCOME-TRUTH — Truthful profiled delivery outcomes
 

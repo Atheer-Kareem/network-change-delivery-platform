@@ -140,6 +140,9 @@ class Cisco:
     def __init__(self, results):
         self.results, self.artifacts = iter(results), []
 
+    def verify_runtime(self):
+        """Injected writer has no Ansible runtime dependency."""
+
     def execute_profiled(self, _target, _credentials, artifact):
         self.artifacts.append(artifact)
         return next(self.results)

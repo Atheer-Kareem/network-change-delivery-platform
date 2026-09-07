@@ -10,11 +10,13 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
+from network_change_delivery.ansible_adapter import DeploymentRuntimeError
 from network_change_delivery.architecture_contracts import (
     AutomationProfileID,
     NetworkOS,
     Sha256Digest,
     StableInterfaceIdentity,
+    TransportFamily,
 )
 from network_change_delivery.models import (
     CiscoConfigArtifact,
@@ -260,6 +262,24 @@ def execute_profiled_plan(
             approval_digest,
             FinalOutcome.BLOCKED,
             preflight=blocked.model_copy(update={"message": message}),
+            now=now,
+        )
+    try:
+        if (
+            plan.operation_admission.transport_family
+            is TransportFamily.ANSIBLE_NETWORK_CLI
+        ):
+            writer.verify_cisco_runtime()
+    except DeploymentRuntimeError:
+        return _record(
+            plan,
+            approval_digest,
+            FinalOutcome.BLOCKED,
+            preflight=blocked.model_copy(
+                update={
+                    "message": "deployment Ansible runtime prerequisites unavailable"
+                }
+            ),
             now=now,
         )
     try:

@@ -5,6 +5,28 @@ schema-v1 protected delivery. Runtime acceptance remains PENDING. Main planning
 is read-only; execution requires same-build promotion and explicit human unblock.
 Never run a live plan or deploy as an implementation/unit-test gate.
 
+## Deployment runtime prerequisite — CAP-RUNTIME-VERIFY
+
+Current `ncdp profiled-deploy` calls `execute_profiled_plan`. After exact plan
+and approval-digest checks, Ansible-backed operation admission verifies the
+selected Cisco adapter's runtime before inventory preflight, credential loading,
+device collection or writer invocation. The adapter reuses
+`verify_deployment_ansible_runtime` with its own repository root and the same
+effective collection-path resolver used by Runner. Junos skips this prerequisite.
+
+The existing pins remain `ansible.netcommon == 8.6.0` and
+`cisco.ios == 11.4.2`. Missing, wrong, malformed, duplicate or ambiguous collection
+metadata and invalid search paths produce a bounded `BLOCKED` record: preflight
+failed, execution/post-validation/recovery not attempted. No installation, retry,
+credential change or speculative write occurs. This verifies manifest/version
+and path consistency, not collection-file cryptographic integrity.
+
+Buildkite retains its single invocation of the same CLI after independently
+checking promotion/authorization; there is no Buildkite-only runtime verifier.
+See the [capability ledger](../roadmap.md#cap-runtime-verify--verified-profiled-deployment-runtime)
+for pending user acceptance and `tests/test_profiled_runtime_admission.py` for
+offline call-path evidence.
+
 ## Agent-owned prerequisite
 
 Use the existing `ncdp-deploy` queue. Install reviewed source

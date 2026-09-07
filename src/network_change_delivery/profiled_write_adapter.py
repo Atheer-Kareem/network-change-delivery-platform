@@ -89,6 +89,8 @@ class ProfiledWriteTarget:
 
 
 class CiscoProfiledWriter(Protocol):
+    def verify_runtime(self) -> None: ...
+
     def execute_profiled(
         self,
         target: ProfiledWriteTarget,
@@ -123,6 +125,10 @@ class ProfiledWriteAdapter:
             raise ProviderError("profiled writes require explicit known_hosts")
         self._cisco = cisco or AnsibleRunnerCiscoAdapter(known_hosts=known_hosts)
         self._junos = junos or JunosPyEZAdapter(known_hosts=known_hosts)
+
+    def verify_cisco_runtime(self) -> None:
+        """Read local prerequisites without contacting a device or loading secrets."""
+        self._cisco.verify_runtime()
 
     def execute_cisco(
         self,

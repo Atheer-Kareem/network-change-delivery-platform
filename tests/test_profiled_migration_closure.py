@@ -105,7 +105,13 @@ def test_installed_package_contains_only_profiled_device_write_engine() -> None:
         for name, member in inspect.getmembers(ProfiledWriteAdapter, inspect.isfunction)
         if not name.startswith("_")
     }
-    assert public_dispatch == {"execute_cisco", "junos_transaction", "confirm_junos"}
+    # Runtime inspection is read-only; the three device-operation methods remain exact.
+    assert public_dispatch == {
+        "verify_cisco_runtime",
+        "execute_cisco",
+        "junos_transaction",
+        "confirm_junos",
+    }
 
 
 def test_production_and_runtime_scripts_do_not_import_legacy_write_symbols() -> None:
@@ -173,7 +179,7 @@ def test_profiled_execution_remains_outside_b5_acceptance() -> None:
         assert re.search(rf"\b{dependency}\b", source) is None
 
 
-def test_current_docs_record_retirement_and_pending_external_tag_acceptance() -> None:
+def test_current_docs_record_retirement_and_authoritative_capability_ledger() -> None:
     roadmap = (ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
     lifecycle = (ROOT / "docs/architecture/change-lifecycle.md").read_text(
         encoding="utf-8"
@@ -181,11 +187,20 @@ def test_current_docs_record_retirement_and_pending_external_tag_acceptance() ->
     workflow = (ROOT / "docs/architecture/buildkite-workflow.md").read_text(
         encoding="utf-8"
     )
-    assert "external tag retirement pending" in roadmap
+    assert "# Authoritative capability ledger" in roadmap
+    assert "Legacy schema-v1 single-device/fleet/protected delivery" in roadmap
+    assert "**RETIRED/HISTORICAL**" in roadmap
+    assert (
+        "| CAP-RUNTIME-VERIFY | Verified profiled deployment runtime | IN PROGRESS |"
+        in roadmap
+    )
+    assert (
+        "| CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |" in roadmap
+    )
     assert "schema-v1 fleet engine" in lifecycle
     assert "historically" in lifecycle and "accepted" in lifecycle
     assert "schema-v2 delivery tail" in workflow
-    assert "Canonical PRs end after CML" in workflow
+    assert "Canonical PRs temporarily skip CML" in workflow
     assert "not restored schema-v1" in workflow
     assert "not paused" not in workflow
     assert "temporarily paused" not in roadmap + lifecycle + workflow

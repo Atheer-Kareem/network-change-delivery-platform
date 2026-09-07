@@ -15,15 +15,22 @@ and manual command retries are disabled. A corrected or uncertain attempt
 requires a new commit/build and any independently required reconciliation.
 
 ```text
-Engineering validation → validation-complete → Batfish → disposable CML
-                                                       main only ↓
+Engineering validation → validation-complete → Batfish (PR path ends here temporarily)
+                                                main only ↓
+                                             disposable CML
+                                                       ↓
                              profiled-plan → promotion → HUMAN BLOCK
                                                        ↓
                                   profiled-deploy → deployment evidence
 ```
 
-Canonical PRs end after CML and cannot schedule the write tail. Canonical non-PR
-main builds run the complete graph. Batfish independently rejects arbitrary
+Canonical PRs temporarily skip CML and cannot schedule the write tail.
+Non-main development builds also skip CML. Canonical non-PR main builds retain
+the complete graph and real same-build CML success prerequisite. The approved
+[temporary exception and mandatory restoration condition](../roadmap.md#temporary-development-workflow-exceptions)
+are tracked in the capability ledger: restore PR staging on user request or
+before final integrated roadmap acceptance. No success evidence is synthesized
+for skipped staging. Batfish independently rejects arbitrary
 repositories/non-PR branches; its historical key remains
 `pr-batfish-assurance`, but its visible label is general. The bootstrap simply
 uploads the reviewed `.buildkite/pipeline.yml`. There is no separate demo

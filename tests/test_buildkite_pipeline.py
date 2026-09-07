@@ -55,6 +55,9 @@ def test_pr_vs_main_graph_and_real_human_block():
     assert batfish["concurrency"] == 1
     assert batfish["concurrency_group"] == "ncdp/batfish-assurance"
     cml = indexed["cml-staging"]
+    # Temporary development exception: PR and non-main development jobs skip CML.
+    # The same main-only condition still schedules the full authorized delivery tail.
+    assert cml["if"] == 'build.branch == "main" && build.pull_request.id == null'
     assert cml["depends_on"] == ["validation-complete", "pr-batfish-assurance"]
     assert cml["command"] == ".buildkite/scripts/profiled_cml_staging.sh"
     assert cml["agents"] == {"queue": "ncdp-staging"}
@@ -97,6 +100,20 @@ def test_no_legacy_or_separate_demo_projection():
     ):
         assert forbidden not in source
     assert not (ROOT / "scripts/buildkite/render_demo_pipeline.py").exists()
+
+
+def test_temporary_development_cml_exception_retains_real_main_prerequisite():
+    indexed = {step["key"]: step for step in steps()}
+    cml = indexed["cml-staging"]
+    assert cml["if"] == 'build.branch == "main" && build.pull_request.id == null'
+    assert cml["if"] == indexed["profiled-live-plan"]["if"]
+    assert indexed["profiled-live-plan"]["depends_on"] == "cml-staging"
+    # Skipping a scheduled job cannot produce a substitute receipt command.
+    assert cml["command"] == ".buildkite/scripts/profiled_cml_staging.sh"
+    assert "profiled-cml-success" not in PIPELINE.read_text()
+    ledger = (ROOT / "docs/roadmap.md").read_text()
+    assert "Disposable CML staging on PR/development builds — ACTIVE" in ledger
+    assert "before final integrated acceptance of the refinement roadmap" in ledger
 
 
 def test_engineering_commands_keep_truthful_exit_and_receipt_last():

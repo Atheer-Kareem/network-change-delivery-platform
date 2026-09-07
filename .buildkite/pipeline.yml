@@ -204,7 +204,7 @@ steps:
     key: validation-complete
     continue_on_failure: true
 
-  - label: ":fish: Profiled Batfish · four-device assurance"
+  - label: ":batfish: Profiled Batfish · four-device assurance"
     key: pr-batfish-assurance
     soft_fail: true
     depends_on: validation-complete

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1000" role="img" aria-labelledby="title description">
-  <title id="title">NCDP · current exact-four architecture</title>
-  <desc id="description">Three separate lanes: GitHub intent flows through Buildkite validation and Batfish before disposable exact-four CML read-only integration. NetBox identity and OpenBao credentials feed Python-owned profiled-plan, immutable promotion, human authorization and profiled-deploy. The operator-owned NCDP Live contains core-02, edge-junos-01, transit-ios-01 and access-sw-01; current writes are limited to devices 1 and 2. Independent validation, AuditStore, Oxidized and read-only monitoring retain evidence and operational visibility. An uncertain write stops without retry and requires independent reconciliation.</desc>
+  <title id="title">NCDP · current profiled architecture</title>
+  <desc id="description">Managed population, profile/capability projection and operation-specific authority are separate. Continuing Buildkite checks and modeled-service Batfish assurance precede main-only disposable CML integration; PR staging is temporarily skipped. Schema-v2 planning, same-build promotion, fieldless human approval and independently revalidated deployment lead to fresh observation and typed artifacts. The main demo writes core-02; the CLI also admits vJunos. Current artifacts are not connected to historical AuditStore or PRE/write/POST correlation. Oxidized and management monitoring remain independent. Uncertain mutation stops without retry and requires independent reconciliation.</desc>
   <defs>
     <linearGradient id="canvas" x2="1" y2="1">
       <stop stop-color="#08111f"/><stop offset="1" stop-color="#142139"/>
@@ -34,7 +34,7 @@
   <!-- Review is an assurance lane, never a device-write gate. -->
   <rect x="24" y="124" width="1152" height="203" rx="18" class="panel"/>
   <text x="44" y="161" class="lane">01 / REVIEW &amp; ASSURANCE</text>
-  <text x="1152" y="161" text-anchor="end" class="detail" fill="#c4b5fd">PR / no live write</text>
+  <text x="1152" y="161" text-anchor="end" class="detail" fill="#c4b5fd">PR: no write · CML skip temporary</text>
   <g stroke-width="1.5">
     <rect x="44" y="185" width="245" height="100" rx="12" class="review"/>
     <rect x="329" y="185" width="245" height="100" rx="12" class="review"/>
@@ -44,15 +44,15 @@
   <text x="64" y="225" class="title">GitHub</text>
   <text x="64" y="257" class="detail">Reviewed intent</text>
   <text x="349" y="225" class="title">Buildkite</text>
-  <text x="349" y="257" class="detail">Validation gates</text>
+  <text x="349" y="257" class="detail">Checks + receipts</text>
   <text x="634" y="225" class="title">Batfish assurance</text>
-  <text x="634" y="257" class="detail">Candidate behavior</text>
+  <text x="634" y="257" class="detail">Modeled services</text>
   <text x="919" y="225" class="title">Disposable CML</text>
-  <text x="919" y="257" class="detail">Exact-four · read-only</text>
+  <text x="919" y="257" class="detail">Main · read-only</text>
   <path d="M289 235H324" class="flow"/>
   <path d="M574 235H609" class="flow"/>
   <path d="M859 235H894" class="flow"/>
-  <text x="1152" y="310" text-anchor="end" class="detail">Batfish first → real device integration → destroy</text>
+  <text x="1152" y="310" text-anchor="end" class="detail">Batfish first → main CML integration → destroy; success receipts required</text>
 
   <!-- Current main delivery requires promotion and explicit human authorization. -->
   <rect x="24" y="350" width="1152" height="364" rx="18" class="panel"/>
@@ -66,7 +66,7 @@
   <text x="349" y="480" class="detail">Policy &amp; fresh checks</text>
   <rect x="614" y="410" width="245" height="98" rx="12" class="control"/>
   <text x="634" y="449" class="title">Promotion</text>
-  <text x="634" y="480" class="detail">Same-build plan</text>
+  <text x="634" y="480" class="detail">Plan + receipts</text>
   <rect x="899" y="410" width="253" height="98" rx="12" fill="url(#approval)" stroke="#fbbf24" stroke-width="2"/>
   <text x="919" y="449" class="title">Human approval</text>
   <text x="919" y="480" class="detail">Exact promotion</text>
@@ -76,24 +76,24 @@
   <path d="M1025 508V548" class="flow"/>
   <rect x="899" y="553" width="253" height="132" rx="12" class="control"/>
   <text x="919" y="603" class="title">profiled-deploy</text>
-  <text x="919" y="636" class="detail">Cisco / Junos · --live</text>
+  <text x="919" y="636" class="detail">Main demo: core-02</text>
   <path d="M899 619H864" class="flow"/>
   <!-- The population card is deliberately larger than an ordinary two-line box. -->
   <rect x="44" y="553" width="815" height="132" rx="12" class="read"/>
-  <text x="64" y="589" class="title">NCDP Live · exact-four</text>
+  <text x="64" y="589" class="title">NCDP Live · proof population</text>
   <text x="64" y="622" class="detail">core-02 · edge-junos-01 · transit-ios-01 · access-sw-01</text>
   <text x="64" y="660" class="title" style="fill:#7dd3fc">Current write projection: devices 1/2 only</text>
 
   <rect x="24" y="738" width="1152" height="152" rx="18" class="panel"/>
   <text x="44" y="775" class="lane">03 / EVIDENCE &amp; OPERATIONS</text>
-  <text x="1152" y="775" text-anchor="end" class="detail">Read-only · independent of CI</text>
+  <text x="1152" y="775" text-anchor="end" class="detail">Typed artifacts; separate supporting stores</text>
   <rect x="44" y="797" width="267" height="70" rx="12" class="evidence"/>
   <text x="60" y="825" class="title" style="font-size:20px">Independent validation</text>
-  <text x="60" y="851" class="detail">Fresh observation</text>
-  <path d="M311 832H339" class="flow"/>
+  <text x="60" y="851" class="detail">Fresh O′ + typed record</text>
+  <!-- No validation-to-AuditStore arrow: schema-v2 integration is not implemented. -->
   <rect x="344" y="797" width="194" height="70" rx="12" class="evidence"/>
   <text x="360" y="825" class="title">AuditStore</text>
-  <text x="360" y="851" class="detail">Typed evidence</text>
+  <text x="360" y="851" class="detail" style="font-size:18px">Historical delivery</text>
   <rect x="558" y="797" width="187" height="70" rx="12" class="evidence"/>
   <text x="574" y="825" class="title">Oxidized</text>
   <text x="574" y="851" class="detail">Config history</text>

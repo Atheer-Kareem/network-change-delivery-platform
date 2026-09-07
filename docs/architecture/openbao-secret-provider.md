@@ -6,7 +6,7 @@ persistent local SecretID with fresh 300-second, one-use tokens and exact reads
 for devices 1/2; see [installation](buildkite-profiled-delivery-operations.md).
 Buildkite staging consumes the existing device-scoped
 JWT roles through its injected staging provider. Deployment JWT roles below
-remain historical authority records: protected delivery is retired.
+remain historical authority records: schema-v1 protected delivery is retired.
 
 ## Boundary and authentication
 
@@ -33,7 +33,9 @@ hostname, management address, or profile selects a credential. Devices 8/9
 store distinct operator-generated credentials at their stable-ID paths and the
 values remain only in OpenBao.
 
-The mature Buildkite path uses a Buildkite-issued OIDC JWT with issuer
+## Historical deployment JWT/OIDC identity
+
+The retired mature Buildkite path used a Buildkite-issued OIDC JWT with issuer
 `https://agent.buildkite.com`, audience `urn:ncdp:openbao:deploy`, and the fixed
 OpenBao JWT role `ncdp-buildkite-deploy`. The job requests a 300-second JWT with
 `pipeline_id` as its subject claim, making the immutable pipeline UUID available
@@ -81,6 +83,8 @@ and reports only whether the mount was newly enabled and whether the non-secret
 backend, role, and no-device-capability contracts were verified. This is an
 operator action, never a Buildkite job action.
 
+## Current staging JWT identity
+
 Buildkite ephemeral staging uses audience `urn:ncdp:openbao:staging` and
 separate roles `ncdp-buildkite-staging-device-1`, `-2`, `-8`, and `-9`. Each
 binds the immutable pipeline subject and exact `cml-staging` step and issues one
@@ -93,13 +97,16 @@ unchanged. A credential belongs to the logical NetBox device, not its LIVE or
 STAGING management IP; no address-specific secrets exist.
 
 The existing four staging capabilities are an external prerequisite for the
-profiled exact-four Buildkite gate. The operator-only
+profiled Buildkite assurance step. The operator-only
 `scripts/openbao/configure_buildkite_staging.py` reuses the existing configurator
 and role family; activation does not automatically reconfigure OpenBao. Live
 role/policy verification requires an authorized operator and remains separate
-from static/unit proof. Protected delivery remains retired.
+from static/unit proof. Schema-v1 protected delivery remains retired; current schema-v2
+main uses the dedicated AppRole.
 
-7C-A adds a separate device-specific Buildkite JWT role family without changing
+## Historical device-specific deployment roles
+
+7C-A added a separate device-specific Buildkite JWT role family without changing
 the AppRole provider or accepted zero-policy identity role. Role
 `ncdp-buildkite-cml-deploy-device-<id>` carries exactly policy
 `ncdp-buildkite-cml-device-<id>-read`, whose sole capability is `read` on
@@ -126,13 +133,14 @@ path only; it never writes OpenBao data or falls back to environment credentials
 ## Immutable non-secret provenance
 
 Secret providers resolve a `credential_source` and `credential_reference` before
-loading secret values. Both fields are frozen into `DeploymentPlan`, covered by
-its canonical digest, and copied to `ChangeRecord`. Deployment re-resolves and
+loading secret values. Both fields are frozen into the current schema-v2 plan, covered by
+its canonical digest, and copied to `ProfiledChangeRecord` (historically
+`DeploymentPlan` / `ChangeRecord`). Deployment re-resolves and
 compares the current reference after inventory verification but before OpenBao
 login, credential retrieval, or device connection. A source or reference mismatch
 returns `STALE_PLAN`.
 
-Username, password, AppRole IDs, and issued tokens never enter models, plans,
+Username, password, AppRole IDs, and issued tokens never enter evidence models, plans,
 digests, evidence, logs, or normalized errors. Credential values and KV secret
 versions are deliberately not plan-bound: trusted administrative rotation at the
 same approved reference does not invalidate network configuration intent.

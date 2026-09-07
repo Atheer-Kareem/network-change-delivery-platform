@@ -16,8 +16,11 @@ write access. Work is limited to schema, policy, lint, unit, rendering, and
 assurance checks, using only read-only source-of-truth access where required and
 sanitized configuration snapshots.
 
-Disposable exact-four CML integration is a separate credentialed assurance
-boundary on `ncdp-staging`. An agent-owned command hook checks the exact command,
+Disposable profiled CML integration is a separate credentialed assurance
+boundary on `ncdp-staging`. The temporary ACTIVE exception schedules it only
+on canonical non-PR main; retained PR hook admission is used when PR staging is
+explicitly restored. Its success remains a main promotion prerequisite. An agent-owned
+command hook checks the exact command,
 step, queue, canonical repository/PR origin, and retry zero before sourcing its
 protected environment, after repository pre-command hooks. Before sourcing it
 requires an agent-owned, regular, non-symlink file with exact mode `0600`. Before
@@ -35,7 +38,8 @@ STOP/START recycle. It cannot apply device CLI configuration or touch NCDP Live.
 
 Only the current `profiled-deploy` command may enter this zone with a
 schema-v2 plan and exact approval digest. It obtains narrowly scoped,
-short-lived credentials, uses the explicit profiled LIVE trust generation,
+short-lived OpenBao tokens for static device credentials, uses the explicit profiled
+LIVE trust generation,
 re-verifies complete identity and state, and executes only the approved
 operation-specific artifact. The personal-lab Buildkite main tail may invoke
 that same CLI only after same-build schema-v2 promotion, all validation and
@@ -78,7 +82,7 @@ its own persistent SecretID (unlimited lifetime/logins) with fresh 300-second,
 one-use tokens and exact reads for devices 1/2. This explicitly accepted
 single-user MacBook convenience does not change delivery authorization; the
 general operator AppRole retains its bounded settings.
-Secrets and secret-bearing payloads never enter Git, application models, logs,
+Secrets and secret-bearing payloads never enter Git, evidence models, logs,
 artifacts, or evidence. Company data of any kind is forbidden; only synthetic
 personal-lab data may be used.
 
@@ -95,6 +99,11 @@ offline promotion verification.
 
 The accepted 7C path required a commit-bound exact-plan request and one
 device-specific token. Those contracts and artifacts remain parseable for
-history and audit. No current command or pipeline step can execute them. Future
-protected delivery requires a new profiled design rather than restoration of
-the schema-v1 gate.
+history and audit. No current command or pipeline step can execute them. Current
+schema-v2 protected main delivery uses the new profiled boundary
+described above, not restoration of the schema-v1 gate.
+
+Cisco profiled execution verifies exact pinned collection manifests and the
+adapter's effective Runner path before credential/device activity. This accepted
+local prerequisite is not cryptographic content verification and does not apply
+to Junos. See [runtime operations](buildkite-profiled-delivery-operations.md).

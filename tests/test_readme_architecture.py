@@ -19,9 +19,13 @@ def test_readme_embeds_accessible_current_architecture():
     assert "](docs/assets/ncdp-current-architecture.svg)" in readme
     texts = " ".join(element.text or "" for element in root.findall("s:text", NS))
     for phrase in (
-        "PR / no live write",
+        "PR: no write · CML skip temporary",
         "Batfish first",
-        "Exact-four · read-only",
+        "Main · read-only",
+        "Checks + receipts",
+        "Modeled services",
+        "Historical delivery",
+        "Main demo: core-02",
         "NetBox + OpenBao",
         "Promotion",
         "profiled-plan",
@@ -49,6 +53,9 @@ def test_readme_embeds_accessible_current_architecture():
         "PROTECTED MAIN",
     ):
         assert retired not in texts
+    assert root.find("s:desc", NS) is not None
+    assert "not connected to historical AuditStore" in root.find("s:desc", NS).text
+    assert all(path.get("d") != "M311 832H339" for path in root.findall("s:path", NS))
     assert len(root.findall("s:rect", NS)) < 20
     assert root.find(".//s:script", NS) is None
     assert root.find(".//s:image", NS) is None

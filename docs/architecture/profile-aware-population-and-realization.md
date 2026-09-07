@@ -1,6 +1,14 @@
 # Profile-aware population and realization contracts
 
-## Final population boundary
+The governing contract is managed population → profile/capability projection →
+applicable assurance → operation-specific execution authority. Exact selected
+membership is required; permanent population size is not the design goal.
+Current code still enforces a closed name/identity catalog and several fixed
+counts, documented below as implementation limits. CAP-POPULATION-SCOPES owns
+their generalization. Historical B3/B4 sections record what was accepted at each
+milestone; they do not create another roadmap.
+
+## Current population boundary
 
 Detour B3-1 introduced repository-only authority contracts. B3-2 through B3-5
 then applied the reviewed NetBox, OpenBao, persistent CML, LIVE trust, and
@@ -10,8 +18,8 @@ B4-2 adds exact OSPF router-ID authority and a separate read-only OSPF vertical.
 B4-3 adds exact VLAN gateway authority and a read-only router-on-a-stick/access
 service vertical. None of these increments broadens a write path.
 
-The additive `ncdp profiled-plan` command exposes ordinary schema-v2 planning
-through this profiled boundary. The separate local `ncdp profiled-deploy`
+The current `ncdp profiled-plan` command exposes ordinary schema-v2 planning
+through this profiled boundary. The current `ncdp profiled-deploy`
 activation surface requires explicit `--live`, exact digest approval, the
 profiled NetBox/OpenBao boundaries, and the exact profiled LIVE known-hosts
 generation. Its create-only evidence is immutable and secret-free. Controlled
@@ -22,21 +30,24 @@ O′ validation, and explicit confirmation. IOSv and IOSvL2 remain exact
 managed-fleet members but are not admitted; no other B4 vertical gained write
 authority. B5/D0 is unchanged. Schema-v1 planning/deployment and protected
 delivery are retired from current runtime. The historical exact-two disposable
-staging runtime is retired; its profiled exact-four replacement has local
-acceptance and is wired to Buildkite, with real Buildkite acceptance pending.
+staging runtime is retired. Its profiled replacement is part of the demonstrated
+[current main chain](../acceptance/profiled-main-delivery.md). The current main
+wrapper invokes the same CLI after immutable promotion, fieldless human
+approval and independent prerequisite revalidation.
 
 The final inventory authority is:
 
 | NetBox tag | Meaning | Intended membership | Authority granted |
 |---|---|---|---|
-| `ncdp-profiled-inventory` | Eligibility for profiled inventory and realization | The exact four logical devices | None by itself |
+| `ncdp-profiled-inventory` | Eligibility for profiled inventory and realization | The declared current proof population | None by itself |
 
-The architecture has one profiled exact-four managed population for devices
-1/2/8/9. Each consumer admits only the profiles and capabilities appropriate to
+The current proof population comprises NetBox devices 1/2/8/9. Each consumer admits only
+the profiles and capabilities appropriate to
 its operation; fleet membership never grants every device identical router,
 write, or service behavior. The old `ncdp-managed` tag has zero legitimate
-runtime consumers. Its external removal from devices 1/2 is a separate
-controlled acceptance step and does not affect current code authority.
+runtime consumers. Its external assignments were removed during the
+[PR #133 closure acceptance](../acceptance/profiled-migration-closure-pr133.md);
+the inert tag object has no runtime authority.
 
 The profiled tag alone grants no credential, device command, deployment, SNMP,
 fleet, Oxidized, or protected-write capability. Observability consumes the
@@ -120,12 +131,12 @@ It binds:
 It contains no CML client or mutation method. Missing or extra members,
 duplicate identities, wrong profile pairs, cross-device management bindings,
 or STAGING endpoints fail validation. Management-service observability consumes
-the same profiled exact-four population for its target projection, deriving the
+the same profiled managed population for its target projection, deriving the
 service from each automation profile; its separate bounded readiness/admission
 artifact does not use this model directly. Local runtime quality validation is
-active; protected schema-v1 delivery is retired. The profiled exact-four
-disposable staging implementation has local acceptance; its Buildkite gate
-acceptance remains pending.
+active; protected schema-v1 delivery is retired. The profiled
+disposable staging implementation is a required main assurance step; see the
+user-supplied current acceptance. PR/development staging remains temporarily skipped.
 
 ## CML-anchored host trust
 
@@ -143,7 +154,7 @@ record binds:
 The trust generation rejects missing members and duplicate stable-device or CML
 node identities. A fingerprint cannot be represented without its CML anchor and
 stable device binding. Normal evidence deliberately has no raw public-key field.
-Public key bytes needed by SSH remain only in the private exact-four
+Public key bytes needed by SSH remain only in the private profiled
 `known_hosts` rendering. They do not enter normal evidence or the repository.
 
 Trust policy remains:
@@ -155,7 +166,7 @@ Trust policy remains:
 - atomic publication of only the exact CML-anchored generation.
 
 The canonical profiled LIVE trust authority covers all four profiled devices
-and exact-four Oxidized collection. When the Junos CML node was replaced, trust
+and profiled Oxidized collection. When the Junos CML node was replaced, trust
 was freshly CML-anchored to the new node UUID as required by ADR 0020. The
 observed key bytes remained the same, but realization-bound metadata was
 republished.
@@ -183,8 +194,8 @@ NetBox now assigns these stable identities and management relationships:
 
 | Device | NetBox ID | Status | Role | Profile tag | LIVE | STAGING |
 |---|---:|---|---|---|---|---|
-| `core-02` | 1 | active | `core` | present; obsolete legacy marker pending external retirement | `192.168.4.14/24` | `192.168.4.30/24` |
-| `edge-junos-01` | 2 | active | `edge` | present; obsolete legacy marker pending external retirement | `192.168.4.20/24` | `192.168.4.40/24` |
+| `core-02` | 1 | active | `core` | present; legacy marker subsequently removed in PR #133 acceptance | `192.168.4.14/24` | `192.168.4.30/24` |
+| `edge-junos-01` | 2 | active | `edge` | present; legacy marker subsequently removed in PR #133 acceptance | `192.168.4.20/24` | `192.168.4.40/24` |
 | `transit-ios-01` | 8 | active | `transit` | present; no `ncdp-managed` | `192.168.4.16/24` | `192.168.4.31/24` |
 | `access-sw-01` | 9 | active | `access` | present; no `ncdp-managed` | `192.168.4.17/24` | `192.168.4.32/24` |
 
@@ -258,9 +269,10 @@ text. IOS XE, classic IOS, and Junos change renderings are deterministic O-to-D1
 artifacts: they remove only addresses in the routed-underlay envelope and add
 the desired addresses. A separate final-state renderer builds the clean D1-only
 Batfish candidate. Neither path nor `ProfileReadOnlyAdapter` exposes execution.
-Offline Batfish assurance uses an exact-four snapshot so that `access-sw-01`
-exclusion is positively checked rather than assumed. D0 persistence and live
-application remain deferred.
+Offline Batfish assurance covers the declared modeled scope so that `access-sw-01`
+exclusion is positively checked rather than assumed. At B4-1, D0 persistence
+and live application were deferred; B5 subsequently adopted observed D0, while
+service application remains deferred. See [managed state](managed-state-drift.md).
 
 ## B4-2 OSPF read-only path
 
@@ -305,10 +317,10 @@ hostname, role, profile, and management address cannot select a credential.
 
 B3-3 prepared four staging identity capabilities and paused the then-exact-two
 runtime. The final migration retires those staging and protected-delivery entry
-points. The locally accepted profiled exact-four staging replacement reuses
+points. The locally accepted profiled staging replacement reuses
 the existing device-scoped Buildkite JWT roles for devices 1/2/8/9 through
-injected providers. Real Buildkite acceptance remains pending. Quality
-validation and profiled PR Batfish precede the CML gate for runtime PRs.
+injected providers. Engineering validation and modeled Batfish assurance precede
+CML on non-PR main. The ACTIVE ledger exception temporarily skips PR/development CML.
 
 The [B3-3 acceptance record](../acceptance/profiled-openbao-onboarding-detour-b3-3.md)
 contains the secret-free applied-state evidence.
@@ -326,7 +338,7 @@ NetBox devices 8 and 9, derives IOS type-9 scrypt verifiers in memory, and store
 no plaintext password in CML configuration or evidence. `access-sw-01` uses
 routed `GigabitEthernet0/0` with `no switchport` for independent management.
 
-The exact-four private LIVE trust generation is CML-anchored before network key
+The profiled private LIVE trust generation is CML-anchored before network key
 observation and is published atomically outside the repository. It is the trust
 input for four real `ProfileReadOnlyAdapter` PASS results. Ambient user trust,
 Oxidized trust, auto-add, fallback, and algorithm relaxation are not used.
@@ -338,23 +350,23 @@ CML node UUID. The exact identities, topology, fingerprints, and read-only
 results are in the
 [B3-4 acceptance record](../acceptance/persistent-profiled-live-realization-detour-b3-4.md).
 
-Observability admits and projects the exact four-device persistent CML
-population, deriving each management service from its automation profile.
-Oxidized now consumes the exact-four profiled population through explicit
+Observability admits and projects the current persistent CML
+proof population, deriving each management service from its automation profile.
+Oxidized now consumes the profiled managed population through explicit
 profile capability (IOS-XE/IOSv/IOSvL2 use the `ios` model; Junos uses
 `junos`; all collection uses SSH/22). Its CML-anchored trust and read-only
-OpenBao authority are exact-four, while its existing private Git chronology is
+OpenBao authority cover the admitted realization scope, while its existing private Git chronology is
 preserved additively. Successful collection is passive observation evidence and
 does not authorize IOSv/IOSvL2 writes or imply write causality. Schema-v1
 planning/write execution and protected delivery are retired. SNMP
-telemetry is separately projected from the exact-four profiled population by
+telemetry is separately projected from the profiled managed population by
 the explicit `SNMPV3_AUTHPRIV_SHA256_AES128` capability; the current projection
 is devices 1 and 2, while IOSv and IOSvL2 are excluded by the accepted
 SHA256/AES128 contract.
 Disposable exact-two CML staging, its Terraform topology, and protected
-delivery are retired. The profiled exact-four staging replacement is documented
+delivery are retired. The profiled staging replacement is documented
 in [profiled disposable CML staging](profiled-disposable-cml-staging.md) and is
-locally accepted, with Buildkite staging acceptance pending. The operator has
+part of the demonstrated current main chain. The operator has
 restored local observability runtime and synthetic SNMPv3 quality validation.
 The latter keeps its two-agent disposable
 fixture because it proves protocol behavior rather than the LIVE fleet;

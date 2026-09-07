@@ -1,5 +1,15 @@
 # Product contract
 
+**Current implementation versus product direction:** the current schema-v2
+single-target description path and demonstrated main delivery are summarized in
+[overview](../architecture/overview.md) and [current
+acceptance](../acceptance/profiled-main-delivery.md).
+Fleet/canary and durable correlation properties below describe the product's
+intended lifecycle and earlier accepted implementation. Their current profiled
+restoration is approved, not implemented (CAP-PROFILED-ROLLOUT,
+CAP-DURABLE-EVIDENCE, CAP-CONFIG-CHRONOLOGY). Current operation admission is
+CAT8000V/vJunos; managed IOSv/IOSvL2 membership does not grant writes.
+
 ## Product statement and audiences
 
 Network Change Delivery Platform is a greenfield, self-hosted reference system
@@ -44,7 +54,8 @@ reported honestly; the system does not claim multi-device atomicity.
 
 ## Audit, recovery, and observability
 
-Typed `ChangeRecord` and `FleetChangeRecord` evidence describes bounded device
+In the historical schema-v1 architecture, typed `ChangeRecord` and `FleetChangeRecord`
+evidence describes bounded device
 and fleet execution. Append-only `ChangeAuditRecord` and
 `ConfigurationObservationRecord` objects durably correlate those records by
 identity and digest with change and PR identity, exact commit, Buildkite build,

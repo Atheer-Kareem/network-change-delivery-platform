@@ -191,11 +191,15 @@ def test_current_docs_record_retirement_and_authoritative_capability_ledger() ->
     assert "Legacy schema-v1 single-device/fleet/protected delivery" in roadmap
     assert "**RETIRED/HISTORICAL**" in roadmap
     assert (
-        "| CAP-RUNTIME-VERIFY | Verified profiled deployment runtime | IN PROGRESS |"
+        "| CAP-RUNTIME-VERIFY | Verified profiled deployment runtime | ACCEPTED |"
         in roadmap
     )
     assert (
         "| CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |" in roadmap
+    )
+    assert (
+        "| CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation "
+        "| IN PROGRESS |" in roadmap
     )
     assert "schema-v1 fleet engine" in lifecycle
     assert "historically" in lifecycle and "accepted" in lifecycle

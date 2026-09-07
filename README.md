@@ -1,125 +1,129 @@
 # Network Change Delivery Platform
 
-NCDP is a production-inspired personal NetDevOps reference platform for
-reviewed, assured, human-authorized, auditable, and observable network changes.
-It demonstrates how a network change can move from Git intent to independently
-validated Cisco IOS XE or Junos execution without collapsing review, inventory,
-credentials, delivery, evidence, and operations into one automation script.
+NCDP is a production-inspired personal Network Automation / NetDevOps reference
+platform running on a MacBook CML lab. It is for learning, architecture
+experimentation and portfolio demonstration, not a production deployment
+template. It uses personal-lab data and infrastructure only.
 
-The platform runs on one Mac with a personal CML environment. It has exercised
-protected Cisco and Junos live changes, including retained fail-closed and
-no-retry evidence, but it is a learning, portfolio, and demonstration system—not
-a production deployment template.
+It demonstrates a network change moving from reviewed intent to an independently
+validated device write, with explicit boundaries between inventory, credentials,
+assurance, human authorization, execution and evidence.
 
-## How the platform works
+## Current architecture
 
-![Current NCDP architecture: GitHub and Buildkite validation feed Batfish then disposable exact-four CML read-only staging; main delivery requires immutable profiled promotion and human approval, with writes limited to devices 1/2 and independent evidence and read-only operations.](docs/assets/ncdp-current-architecture.svg)
+![Current NCDP architecture: managed population and capability admission; continuing
+engineering checks and network-model assurance; main-only disposable CML, immutable
+schema-v2 promotion, human authorization and independently validated deployment; typed
+artifacts and separate supporting audit/observability
+planes.](docs/assets/ncdp-current-architecture.svg)
 
-1. **Review intent.** GitHub holds reviewed code, managed intent, plans, policy,
-   tests, and pipeline definitions. A pull request has no protected live-write
-   authority.
-2. **Validate visibly.** Buildkite exposes lint, tests, packaging, runtime
-   validation, and pipeline contracts as separate continuing checks at
-   `validation-complete`; a green aggregate is not proof that every check passed.
-3. **Exercise assurance.** The canonical PR/main Batfish boundary evaluates the
-   profiled four-device candidate before disposable CML read-only integration
-   staging. Buildkite staging acceptance is pending its first successful run.
-4. **Plan and approve explicitly.** `profiled-plan` produces an immutable
-   schema-v2 artifact; `profiled-deploy` requires its exact digest and explicit
-   `--live` authority.
-5. **Execute with vendor semantics.** Python owns policy and orchestration.
-   Cisco uses Ansible Runner with `cisco.ios`; Junos uses direct PyEZ/NETCONF
-   with an exclusive candidate and commit-confirmed safety.
-6. **Validate and preserve evidence.** Fresh independent post-validation decides
-   success. AuditStore retains append-only typed evidence, while Oxidized records
-   observed actual-state chronology.
-7. **Observe independently.** NetBox-bound, CML-admitted Prometheus/Blackbox
-   probes feed Grafana and Alertmanager without deployment or remediation
-   authority. Monitoring does not end when the pipeline does.
+```text
+managed population → profile/capability projection
+                   → applicable validation/assurance
+                   → operation-specific execution authority
+```
 
-## What it demonstrates
+NetBox owns stable device/interface and factual topology identities; CML owns
+realization identities. Git-owned typed catalogs select profiles from explicit
+platform/device-type facts, with no vendor-name guessing or fallback. Membership
+never grants writes. The current implementation still binds a closed catalog;
+[population
+generalization](docs/roadmap.md#cap-population-scopes--population-derived-admission-and-realization)
+is approved future work, not an already implemented onboarding promise.
 
-- NetBox-authoritative device, interface, topology, and targeting identity
-- OpenBao workload identity and bounded device-credential capabilities
-- Cisco IOS XE and Junos planning, execution, validation, and recovery
-- Profiled exact-four inventory with explicit operation/capability projections
-- Batfish four-device candidate assurance without device-write authority
-- Exact-digest local Cisco and Junos execution with immutable schema-v2 evidence
-- Historical schema-v1 promotion, fleet, and staging artifacts remain parseable
-- Append-only AuditStore correlation and private Oxidized Git chronology
-- Persistent Prometheus, Blackbox, Grafana, and Alertmanager visibility
-- SNMPv3 synthetic integration and historical protected provisioning evidence,
-  without claiming persistent live polling or current provisioning authority
+| Current proof population | Profile/platform | Interface-description write admission |
+|---|---|---|
+| `core-02` · NetBox 1 | CAT8000V IOS-XE | Admitted; current main demo target |
+| `edge-junos-01` · NetBox 2 | vJunos | Admitted through the current CLI |
+| `transit-ios-01` · NetBox 8 | IOSv | Managed/read-only; operation denied |
+| `access-sw-01` · NetBox 9 | IOSvL2 | Managed/read-only; operation denied |
 
-## Safety model
+## Current delivery
 
-NCDP binds local profiled execution to an immutable schema-v2 plan and exact
-operator-approved digest. Immediately before a write, it re-resolves
-authoritative identity and checks current device state, profile/operation
-support, credential reference, safety, and whether work is still required.
+```text
+engineering validation → Batfish assurance → disposable CML integration
+→ schema-v2 live plan → immutable promotion → fieldless human authorization
+→ independently revalidated profiled deployment → typed execution evidence
+```
 
-SSH and NETCONF trust are strict and realization-anchored. Vendor behavior is
-not flattened: Cisco uses bounded Ansible execution and targeted recovery;
-Junos preserves candidate locking and commit-confirmed semantics. If a write
-outcome is uncertain, the platform stops and never retries automatically. The
-current local profiled path requires independent reconciliation and a new
-explicit plan/digest authorization for any corrected attempt. Historical
-protected Buildkite delivery additionally required a new commit and build. No
-fleet-wide atomicity is claimed.
+Canonical non-PR main follows this chain. PR/development builds temporarily
+skip disposable CML under the [ACTIVE roadmap
+exception](docs/roadmap.md#temporary-development-workflow-exceptions)
+and have no delivery tail. Main still requires real same-build CML success.
+Soft failure preserves downstream visibility; it grants no deployment authority.
+Human unblock cannot repair missing prerequisites.
 
-## Current reference lab
+`ncdp profiled-plan` freezes exact identity, intent and execution/recovery
+artifacts into a digest-bound schema-v2 plan. `ncdp profiled-deploy` requires that
+exact approval, explicit LIVE authority and fresh preflight. Python owns policy;
+Cisco uses Ansible Runner with an accepted exact collection-runtime prerequisite,
+while Junos uses PyEZ/NETCONF, exclusive candidate validation and commit-confirmed.
+Independent fresh post-observation decides success. Recovery preserves vendor
+semantics: a bounded Cisco inverse or an unconfirmed Junos temporary commit,
+never a generic rollback promise.
 
-| Area | Current reference implementation |
-| --- | --- |
-| Purpose | Personal NetDevOps learning, portfolio, and demonstration lab |
-| Profile-aware LIVE devices | 4 |
-| Managed population | Exact profiled identities 1/2/8/9 |
-| Current write projection | Interface descriptions on devices 1/2 only |
-| Cisco | `core-02` · IOS XE; `transit-ios-01` · IOS; `access-sw-01` · IOS switching |
-| Junos | `edge-junos-01` · Junos |
-| Persistent lab | Manually/operator-owned `NCDP Live` in CML |
-| Disposable staging | Locally accepted exact-four lifecycle; Buildkite runtime acceptance pending |
-| Inventory | NetBox, consumed read-only by automation |
-| Credentials | OpenBao with bounded workload/device authority |
-| CI/CD | Continuing validation → Batfish → CML; main-only profiled plan/promotion/approval/deploy |
-| Evidence | AuditStore + exact-four Oxidized actual-state chronology |
-| Observability | Exact-four Prometheus + Blackbox + Grafana + Alertmanager |
-| Persistent SNMP polling | Deferred |
-| gNMI/OpenConfig | Deferred/skipped |
+**Uncertain mutation → stop → no retry → independently reconcile.** Unsupported
+operations fail closed. Buildkite independently revalidates promotion and human
+authorization before the same CLI path. Its dedicated OpenBao AppRole uses a
+persistent local SecretID and short-lived, one-use login tokens—an accepted
+single-user reliability tradeoff. Historical deployment JWT/OIDC is retired;
+separate staging JWT identities remain current.
 
-## Deliberate scope
+## What has been demonstrated
 
-- This is a personal-lab reference implementation, not a production-ready or
-  enterprise deployment product.
-- It uses no company infrastructure or data and claims no high availability,
-  enterprise identity governance, organizational separation, or production scale.
-- Continuous observability is read-only and has no autonomous remediation
-  authority.
-- Persistent live SNMP exporter polling is deferred; accepted SNMPv3 provisioning
-  does not imply that polling exists.
-- Historical schema-v1 protected delivery and disposable exact-two staging are
-  retired. Profiled exact-four staging reuses the locally accepted lifecycle;
-  the current schema-v2 main delivery tail requires verified promotion and
-  human approval.
-- IOSv and IOSvL2 are managed exact-four members but do not admit the current
-  interface-description write operation.
+The [current delivery acceptance](docs/acceptance/profiled-main-delivery.md)
+records user-supplied positive and negative main-delivery evidence:
+
+- **Authorized success:** core-02 interface description changed, independent
+  post-validation observed desired state, and schema-v2 evidence reported
+  `SUCCEEDED`, write attempted, recovery not attempted.
+- **Fail-closed continuation:** failed prerequisites could leave the human block
+  visible, but deployment independently returned `NO WRITE`; no execution record
+  was fabricated.
+- **Compliant planning:** source/tests establish that an already-compliant
+  target produces no write plan. Its downstream presentation still needs
+  refinement; devices must not be reset just to manufacture a demo change.
+
+Current plans, promotions and execution records are typed artifacts. They are
+**not yet integrated into the durable AuditStore/PRE-write-POST/viewer chain**.
+The accepted record also exposes a known `execution.changed` metadata limitation;
+its before/post observations prove the transition. Both gaps are explicit in the
+[capability ledger](docs/roadmap.md).
+
+## Engineering depth beyond the write
+
+- **Managed-state reasoning:** D0 is accepted managed state, O is fresh observed
+  state, and D1 is proposed state. Typed ownership envelopes distinguish drift
+  from proposed change; description writes do not advance B5 D0.
+- **Network assurance:** Batfish models routed underlay, OSPF, VLAN and selected
+  ACL/service behavior. Its required success digest does not prove the exact
+  interface-description candidate. Disposable Terraform/CML staging proves
+  realization, management readiness, trust, read-only integration and cleanup;
+  it does not rehearse the candidate write.
+- **Independent operations:** NetBox, OpenBao, Ansible, Terraform and CML have
+  distinct roles. Prometheus/Blackbox, Grafana/Alertmanager and private Oxidized
+  config history continue independently of delivery, without remediation authority.
+- **Testing:** extensive offline fault, identity, digest, transaction and pipeline
+  contracts complement synthetic container/runtime integration and separately
+  authorized live acceptance. SNMPv3 synthetic integration and historical
+  provisioning are demonstrated; persistent live polling remains deferred.
+
+Historical schema-v1 fleet/canary delivery, protected JWT deployment and durable
+configuration chronology remain valuable [engineering
+evidence](docs/architecture/audit-and-configuration-history.md),
+with their executors retired. Current fleet rollout, service writes and broader
+profile write admission are not implemented. No fleet-wide atomicity, enterprise
+HA, production isolation or dynamic platform-plugin system is claimed.
 
 ## Explore
 
-Architecture and operating model:
-
-- [Architecture overview](docs/architecture/overview.md)
-- [Buildkite workflow](docs/architecture/buildkite-workflow.md)
-- [Change lifecycle](docs/architecture/change-lifecycle.md)
-- [Security boundaries](docs/architecture/security-boundaries.md)
-- [Recovery safety](docs/architecture/recovery-safety.md)
-- [Audit and configuration history](docs/architecture/audit-and-configuration-history.md)
-- [Continuous observability](docs/architecture/continuous-observability.md)
-- [Architecture decision records](docs/adr/)
-- [Current roadmap](docs/roadmap.md)
-
-Selected cumulative acceptance evidence:
-
-- [Increment 7C protected live deployment](docs/acceptance/buildkite-live-deployment-increment-7c.md)
-- [Increment 10C-7B protected PRE/write/POST correlation](docs/acceptance/protected-configuration-observation-increment-10c7b.md)
-- [Increment 11C SNMPv3 interface telemetry](docs/acceptance/continuous-observability-increment-11c.md)
+- [Architecture and subsystem map](docs/architecture/overview.md)
+- [Delivery workflow](docs/architecture/buildkite-workflow.md),
+  [lifecycle](docs/architecture/change-lifecycle.md) and [trust
+  boundaries](docs/architecture/security-boundaries.md)
+- [Current acceptance](docs/acceptance/profiled-main-delivery.md) and [demo evidence
+  guide](docs/demo/evidence-package.md)
+- [Managed state](docs/architecture/managed-state-drift.md),
+  [Batfish](docs/architecture/batfish-assurance.md) and
+  [observability](docs/architecture/continuous-observability.md)
+- [Capability ledger](docs/roadmap.md) and [historical architecture decisions](docs/adr/)

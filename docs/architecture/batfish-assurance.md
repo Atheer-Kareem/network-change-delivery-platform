@@ -1,7 +1,7 @@
 # Batfish assurance
 
 Batfish provides the active offline behavioral-assurance boundary for the
-profiled PR candidate. Historical schema-v1 plan assurance remains parseable,
+modeled service proposal on PR and main. Historical schema-v1 plan assurance remains parseable,
 but its protected runtime is retired. Batfish is not a management-plane
 reachability, live SNMP polling, or unmodeled routing-protocol test.
 
@@ -12,7 +12,7 @@ Increment 6A established provider normalization: a snapshot contains only
 to the explicit Batfish provider, normalizes observations, and applies typed
 policy. Raw Batfish objects never enter platform evidence.
 
-Increment 6B binds the exact validated plan, policy, frozen baseline bytes,
+Historically, Increment 6B bound the exact validated plan, policy, frozen baseline bytes,
 derived candidate, baseline/candidate snapshot digests, expected nodes,
 critical flows, invariants, and a self-digested assurance record. Source
 snapshots are read once into private mode-0700 staging trees. Each analysis uses
@@ -28,15 +28,18 @@ PyBatfish is pinned to `2025.7.7.2423`; the server reports
 
 ## First-class Buildkite stages
 
-ADR 0027 adds a top-level `pr-batfish-assurance` stage for runtime-relevant pull
-requests. Active PR assurance evaluates the current profiled four-device
-candidate through `profiled_pr_batfish_assurance.sh`, retains serialized
-concurrency, and prohibits automatic or manual retry. The former protected-main
-schema-v1 stage is retired.
+The current `pr-batfish-assurance` key retains its historical name but runs on
+canonical PR/main without path filtering. It evaluates the explicit assurance
+scope through `profiled_pr_batfish_assurance.sh`, with serialized concurrency
+and no automatic/manual retry. Commands soft-fail for visibility; success
+receipts remain required by main promotion. ADR 0027's earlier hard merge-gate
+policy and protected schema-v1 stage are historical.
 
-On a pull request, active Batfish assurance is prevention evidence for the
-reviewed profiled candidate. Disposable exact-four CML read-only integration
-follows successful PR Batfish; no protected-delivery branch follows it.
+PR/development disposable CML staging is temporarily skipped under the ACTIVE
+[ledger exception](../roadmap.md#temporary-development-workflow-exceptions).
+Non-PR main continues through CML and the current schema-v2 delivery tail.
+Batfish models routed underlay, OSPF, VLAN and selected ACL/service behavior;
+it is not derived from the live interface-description plan.
 
 The profiled PR stage verifies the checked-out commit, builds the pinned
 assurance image, starts Batfish, performs bounded readiness, evaluates the
@@ -62,7 +65,7 @@ It also requires no differential reachability. It does not claim to validate
 Mac-to-management reachability, SNMP VACM/polling, or nonexistent protocol
 adjacencies.
 
-Candidate derivation remains part of `ncdp assure-plan`. The record already
+Historical candidate derivation was part of `ncdp assure-plan`. That historical record
 binds the plan, policy, frozen baseline, derived candidate, baseline/candidate
 digests, flows, invariants, and its own digest. A separate candidate-generation
 artifact would add a handoff without a new safety property and is deliberately
@@ -70,7 +73,7 @@ not introduced.
 
 Batfish is complementary to CML rather than a substitute for it. Batfish proves
 offline normalized behavior of the derived candidate. CML proves topology,
-Day-0, real IOS XE/Junos readiness, strict trust, and the read-only NCDP vendor
+Day-0, profile-specific SSH/NETCONF readiness, strict trust, and the read-only NCDP vendor
 paths; CML does not apply or validate the proposed candidate configuration.
 
 ## B4-1 routed-underlay candidate assurance
@@ -118,7 +121,7 @@ cannot pass. See the
 
 ## B4-2 composed OSPF assurance
 
-The canonical profiled PR stack is now exactly `routed_underlay, ospf`, with an
+At B4-2 the profiled stack became `routed_underlay, ospf`, with an
 independent normalized digest for each subject. The combined final-state
 snapshot requires exact four nodes, three OSPF routers/router IDs, six area-0
 point-to-point interfaces, three unordered adjacency pairs, three required
@@ -131,7 +134,7 @@ contract is not weakened when B4-2 composes the service stack. See the
 
 ## B4-3 composed VLAN assurance
 
-The canonical profiled PR stack is now exactly `routed_underlay, ospf, vlan`.
+At B4-3 the profiled stack became `routed_underlay, ospf, vlan`.
 The managed network population remains the four profiled devices. B4-3 alone
 adds two Batfish host fixtures under `hosts/`, plus two synthetic host
 attachment edges alongside the four accepted infrastructure edges.
@@ -173,5 +176,11 @@ Buildkite build, rejects an unexpected filesystem shape or symlink, and
 independently verifies the exact bytes against the checked-out plan, policy,
 and baseline. Promotion then created and verified the immutable bundle.
 
-The similarly named artifact produced by `pr-batfish-assurance` is pre-merge
-evidence only. No current promotion or device-write step consumes it.
+## Current assurance-to-promotion handoff
+
+Current schema-v4 profiled assurance is verified and published before the
+`profiled-batfish-success` digest receipt. Schema-v2 main promotion requires this
+real same-build digest together with CML success and engineering receipts.
+Deployment independently checks them again. This is required modeled-service
+assurance evidence, not proof of the exact interface-description candidate.
+Operation-bound service-write assurance remains deferred CAP-OP-ASSURANCE.

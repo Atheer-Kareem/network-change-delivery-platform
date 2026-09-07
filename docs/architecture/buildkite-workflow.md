@@ -58,8 +58,8 @@ Buildkite status APIs. No application converts failure to exit zero.
 
 ## Assurance
 
-Batfish on `ncdp-validation` remains credential-free exact-four offline
-candidate assurance: routed underlay, OSPF, VLAN and ACL. All 40 invariants and
+Batfish on `ncdp-validation` remains credential-free offline
+modeled service assurance: routed underlay, OSPF, VLAN and ACL. All 40 invariants and
 full schema-v4 evidence remain authoritative; the concise human renderer is
 unchanged. This fixed network assurance is not derived from the live
 interface-description plan.
@@ -82,7 +82,7 @@ protected delivery or the historical cryptographic deployment JWT boundary.
 
 1. `profiled-live-plan` on `ncdp-deploy` validates current profiled LIVE trust,
    uses current NetBox/OpenBao providers and read-only collection, and plans the
-   fixed PR #132 target: device 1, core-02, interface 2/GigabitEthernet2.
+   current fixed demo target: device 1, core-02, interface 2/GigabitEthernet2.
    `deployments/live/profiled-demo.yaml` requests one interface description.
    An already-compliant target produces no plan, rather than fabricated work.
 2. `profiled-promotion` on `ncdp-validation` independently downloads the exact
@@ -120,6 +120,10 @@ Buildkite administrators or compromised trusted main/agent code can undermine
 them; they are not a replacement for independent production authorization.
 
 Historical schema-v1 ADRs and acceptance remain historical. ADR 0027's proposed
-hard merge-gate policy is superseded for this workflow. Real acceptance of the
-corrected CML start/performance path and new main delivery tail remains PENDING;
-local fake tests and a successful aggregate cannot establish it.
+hard merge-gate policy is superseded for this workflow. The user supplied positive main
+delivery and negative fail-closed acceptance;
+see the canonical [current acceptance](../acceptance/profiled-main-delivery.md)
+for exact digests, source boundaries and limits. Local fake tests and a successful
+aggregate alone cannot establish runtime acceptance. Current artifacts are not
+yet persisted through AuditStore or its PRE/write/POST/viewer chain. The known
+provider `execution.changed` limitation remains CAP-OUTCOME-TRUTH.

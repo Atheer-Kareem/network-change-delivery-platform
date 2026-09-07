@@ -15,13 +15,14 @@ reviewed interface-description intent
   -> fresh read-only observation
   -> immutable schema-v2 plan
   -> exact digest approval plus explicit --live
+  -> exact effective Cisco collection-runtime verification (Junos independent)
   -> fresh complete preflight
   -> one profile-bound vendor transaction
   -> independent post-write observation
   -> immutable ProfiledChangeRecord
 ```
 
-Fleet membership never implies write capability. The exact managed population
+Population membership never implies write capability. The current proof population
 is stable NetBox devices 1, 2, 8, and 9 through
 `ncdp-profiled-inventory` plus `PROFILED_POPULATION_CATALOG`. The current
 interface-description operation admits only:
@@ -31,7 +32,7 @@ interface-description operation admits only:
 - `vjunos_router`: NETCONF/830, an exclusive candidate, commit-confirmed five
   minutes, independent observation, and explicit confirmation.
 
-The `iosv_159_3_m12` and `iosvl2_2020` profiles remain exact-four managed
+The `iosv_159_3_m12` and `iosvl2_2020` profiles remain managed
 members but fail before secret or transport access for this operation. No
 routed-underlay, OSPF, VLAN/trunk, ACL, or SNMP device-write authority is added.
 
@@ -42,7 +43,9 @@ operation before interface or credential access, resolves stable interface
 identity, rejects protected interfaces, binds the stable-ID OpenBao reference,
 and collects current state through the profile-bound read-only adapter. It
 creates a schema-v2 plan only when the target is not already compliant. The
-artifact is create-only, mode `0600`, digest-bound, and secret-free.
+artifact is create-only, mode `0600`, digest-bound, and secret-free. Compliant
+planning produces no deployable plan and therefore no promotion authority;
+current downstream no-change presentation remains CAP-OUTCOME-TRUTH work.
 
 `profiled-deploy` accepts only schema-v2 plans, validates canonical approval
 syntax before external access, requires the exact plan digest and explicit
@@ -50,7 +53,10 @@ syntax before external access, requires the exact plan digest and explicit
 evidence before execution. Fresh preflight repeats subject, endpoint, profile,
 operation, stable interface, credential-reference, protection, hostname, and
 current-description checks. Any changed reviewed binding is stale; provider
-inability is blocked.
+inability is blocked. Before preflight can load credentials or collect device
+state, Ansible-backed admission invokes the retained exact runtime verifier
+through the selected Cisco adapter and its effective Runner path. It verifies
+pinned manifests/versions, not cryptographic collection contents. Junos skips it.
 
 ## Execution and recovery
 
@@ -87,15 +93,26 @@ The schema-v1 fleet engine, protected Buildkite delivery, and disposable
 exact-two Terraform/CML staging were successfully engineered and historically
 accepted. Their typed artifacts and historical ADR/acceptance evidence remain
 valid and parseable, but the legacy execution engine and its current CLI,
-script, and pipeline entry points have been removed. Protected delivery and
-profiled fleet rollout still require new designs and separate review. A new
-profiled exact-four disposable staging implementation has successful local
-acceptance and is wired to the Buildkite `cml-staging` gate. Its first real
-Buildkite acceptance remains pending. It has no device-write authority.
+script, and pipeline entry points have been removed. Profiled fleet rollout
+still requires its approved new design. Current schema-v2 main delivery and its
+real disposable staging prerequisite are demonstrated in the user-supplied
+[current acceptance](../acceptance/profiled-main-delivery.md). Staging grants no
+device-write authority.
 
 The active Buildkite network assurance surface is the credential-free profiled
-four-device PR/main Batfish step followed by disposable CML read-only integration.
+PR/main Batfish step followed on non-PR main by disposable CML read-only integration.
+PR/development staging is temporarily skipped under the ACTIVE ledger exception.
 The current main-only Buildkite tail wraps the same schema-v2 plan/deploy
 boundary with immutable same-build promotion and a real human block. Commands
 soft-fail only for presentation; missing validation/assurance/promotion still
 prevents execution. PRs have no write tail. See [workflow](buildkite-workflow.md).
+
+## Current evidence boundary
+
+Schema-v2 plans, promotions and `ProfiledChangeRecord` artifacts are retained
+through the current private delivery state and Buildkite artifact path. They do
+not yet connect to durable AuditStore, PRE/write/POST correlation or the viewer.
+The accepted record's provider-derived `execution.changed == false` does not
+represent its independently observed before/post transition. CAP-OUTCOME-TRUTH,
+CAP-DURABLE-EVIDENCE and CAP-CONFIG-CHRONOLOGY own those refinements; historical
+records are not rewritten.

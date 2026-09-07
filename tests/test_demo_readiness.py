@@ -271,6 +271,16 @@ def test_all_automated_checks_pass_without_mutation_or_privileged_calls(
         ReadinessStatus.MANUAL,
         ReadinessStatus.MANUAL,
     ]
+    manual = {
+        item.name: item.summary
+        for item in report.checks
+        if item.status is ReadinessStatus.MANUAL
+    }
+    for device in ("core-02", "edge-junos-01", "transit-ios-01", "access-sw-01"):
+        assert device in manual["CML NCDP Live"]
+        assert device in manual["Grafana target health"]
+    assert "compliant/no plan" in manual["Delivery evidence"]
+    assert "historical builds are separate evidence" in manual["Delivery evidence"]
     assert store_snapshot(store.root) == before
     assert CREDENTIAL_REFERENCE not in render_report(report)
     assert str(store.root) not in render_report(report)
@@ -375,11 +385,11 @@ def test_openbao_sealed_nonactive_and_uninitialized_fail_safely(
 @pytest.mark.parametrize(
     ("store_changes", "failed_name"),
     [
-        ({"missing_build": 275}, "Audit #275"),
-        ({"wrong_outcome_build": 267}, "Audit #267"),
-        ({"observation": "missing"}, "Chronology #158"),
-        ({"observation": "post-only"}, "Chronology #158"),
-        ({"observation": "causality"}, "Chronology #158"),
+        ({"missing_build": 275}, "Historical audit #275"),
+        ({"wrong_outcome_build": 267}, "Historical audit #267"),
+        ({"observation": "missing"}, "Historical chronology #158"),
+        ({"observation": "post-only"}, "Historical chronology #158"),
+        ({"observation": "causality"}, "Historical chronology #158"),
     ],
 )
 def test_missing_wrong_outcome_and_invalid_chronology_fail(
@@ -403,7 +413,7 @@ def test_tampered_canonical_audit_fails_without_raw_detail(tmp_path: Path) -> No
 
     report, _runner, _http = _run(tmp_path, store)
 
-    check = next(item for item in report.checks if item.name == "Audit #158")
+    check = next(item for item in report.checks if item.name == "Historical audit #158")
     assert check.status is ReadinessStatus.FAIL
     assert "digest" not in check.summary.casefold()
     assert str(store.root) not in render_report(report)

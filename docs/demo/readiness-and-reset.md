@@ -10,7 +10,14 @@ Five minutes before the walkthrough, from clean `main`, run:
 uv run ncdp-demo-readiness --audit-root <existing-private-audit-root>
 ```
 
-The command is read-only. `PASS` and `FAIL` are automated local results;
+The command is read-only. It checks local services and selected historical
+AuditStore records (#158/#267/#275), not current schema-v2 delivery persistence.
+A missing historical record is a readiness failure for that historical evidence
+package, not proof that current profiled delivery failed. Current acceptance
+is reviewed separately from the [canonical record](../acceptance/profiled-main-delivery.md).
+No Buildkite or CML API is queried by readiness; their presentation remains manual.
+
+`PASS` and `FAIL` are automated local results;
 `MANUAL` preserves browser/authentication boundaries; `OPTIONAL` identifies a
 presentation convenience that is not platform readiness. It neither fetches Git
 nor starts services. Resolve failures through the bounded ownership paths below,
@@ -60,8 +67,10 @@ state; do not bypass that owner or expose unseal material.
 `NCDP Live` is persistent, manually/operator-owned CML state and is outside
 Terraform. Never Terraform-destroy it, recreate it as a reset, or create a
 second live lab. If the exact accepted lab is stopped, verify its identity in
-the CML UI and use the UI to start that realization only. Confirm `core-02` and
-`edge-junos-01` are both `BOOTED`; do not edit node configuration.
+the CML UI and use the UI to start that realization only. Confirm the declared proof
+population—`core-02`, `edge-junos-01`,
+`transit-ios-01`, `access-sw-01`—is `BOOTED`; do not edit node configuration.
+Readiness presentation takes expected names from the Git-owned catalog.
 
 ## Ephemeral staging
 
@@ -78,7 +87,7 @@ Do not rotate working credentials, recreate auth methods, generate new
 SecretIDs, or mint presentation tokens to “freshen” the demo. The native UI is
 available only through the existing loopback listener at
 `http://127.0.0.1:8200/ui/`; it requires existing authorized OpenBao
-authentication and does not replace AppRole/OIDC machine authentication.
+authentication and does not replace current deploy AppRole or separate staging JWT authentication.
 
 ## AuditStore and Oxidized
 
@@ -92,7 +101,8 @@ with `create=False`; neither is an evidence publisher.
 Never retry a historical deployment job and never authorize a pending block to
 make the demo look active. An uncertain or corrected attempt requires a new
 commit, build, and authorization. Buildkite browser history is presentation;
-AuditStore remains durable evidence authority.
+AuditStore remains historical durable evidence authority; current schema-v2
+artifacts are not yet connected to it or the viewer.
 
 ### Continuation-oriented personal lab
 
@@ -102,15 +112,16 @@ The normal reviewed pipeline is now the demonstration graph. Bootstrap with:
 buildkite-agent pipeline upload .buildkite/pipeline.yml
 ```
 
-Do not configure a demo renderer or special environment flag. If an operator
-previously selected that retired renderer in Settings → Steps, restore ordinary
-upload only after the replacement source is merged. Implementation does not
-change live Buildkite settings.
+Do not configure the retired demo renderer, path filters or a special environment
+flag. The current source uses ordinary upload. Documentation reconciliation
+does not change live Buildkite settings.
 
-For a main walkthrough: **New build → branch main → Start build**, with no PR
-context. Every command reports its real result but soft-fails for scheduling;
+The default walkthrough uses retained acceptance evidence. Only for a separately
+authorized fresh main demonstration: **New build → branch main → Start build**,
+with no PR context. Every command reports its real result but soft-fails for scheduling;
 validation wait continues. All steps appear without path filtering.
-PRs run validation/Batfish/CML only. Main also shows plan, promotion, human
+PRs run validation/Batfish and temporarily skip CML under the ACTIVE ledger
+exception. Main retains real CML success evidence and also shows plan, promotion, human
 authorization, current profiled deploy, and final evidence.
 
 A green aggregate is not merge or deployment acceptance. Review the exact
@@ -119,7 +130,11 @@ admitted interface-description write when every prerequisite is valid.
 Otherwise deployment says NO WRITE and fails visibly; approval cannot override
 missing validation, assurance, promotion or trust. Never unblock merely to
 manufacture success. An already-compliant target truthfully has no plan; do not
-reset its description to create work.
+reset its description to create work. Compliant/no-plan cannot establish promotion
+authority; current downstream presentation is not yet the refined typed no-change
+outcome (CAP-OUTCOME-TRUTH). The three demonstration outcomes are successful
+authorized change, fail-closed blocked delivery, and compliant/no plan; see the
+[evidence guide](evidence-package.md).
 
 The current path uses schema-v2 only. See the
 [workflow](../architecture/buildkite-workflow.md) and

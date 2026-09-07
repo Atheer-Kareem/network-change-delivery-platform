@@ -1,5 +1,14 @@
 # Audit and configuration history
 
+> **Current boundary:** this document retains the accepted Increment 10 durable
+> audit/configuration-history contract and implementation history. Its schema-v1
+> delivery integration is historical; AuditStore, correlation readers and viewer
+> remain supporting machinery. Current schema-v2 plan/promotion/execution artifacts
+> do **not yet** enter this chain. See [current acceptance](../acceptance/profiled-main-delivery.md)
+> and CAP-DURABLE-EVIDENCE / CAP-CONFIG-CHRONOLOGY in the [ledger](../roadmap.md).
+> The evidence inventory and protected-gate chronology below describe that earlier
+> architecture, not current profiled delivery persistence.
+
 ## Purpose and boundary
 
 The audit architecture correlates the bounded evidence that NCDP already
@@ -430,15 +439,16 @@ are outside the controller contract. Real collection and observation
 publication remain disabled in 10C-5.
 
 Current state after the third retained-consumer migration: persistent Oxidized
-configuration collection and chronology use the profiled exact-four population
+configuration collection and chronology use the profiled managed population
 (stable identities 1, 2, 8, and 9) with explicit profile capability, SSH/22 for
-all four including Junos, exact-four CML-anchored trust, and exact-four
+all admitted members including Junos, scope-bound CML-anchored trust, and exact
 read-only OpenBao paths. CollectionReady is schema v3 with semantic
 `configuration-collection`; the private Git history and existing device-1/2
 paths are preserved and device-8/9 paths are additive. This remains passive
 observation evidence, not write authority or causality proof. Legacy planning,
-SNMP provisioning writes, disposable staging, and protected delivery are
-retired; persistent live SNMP remains deferred.
+SNMP provisioning writes, schema-v1 disposable staging and schema-v1 protected
+delivery are retired. Current profiled staging and main delivery are active;
+persistent live SNMP remains deferred.
 
 ### Strict live observation and host trust
 

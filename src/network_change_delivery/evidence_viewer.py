@@ -27,6 +27,10 @@ from network_change_delivery.configuration_observation import (
 from network_change_delivery.configuration_observation_store import (
     ConfigurationObservationStore,
 )
+from network_change_delivery.profiled_audit import (
+    ProfiledDeliveryAuditRecord,
+    ProfiledDeliveryKind,
+)
 
 LOOPBACK_ADDRESS = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -117,6 +121,22 @@ class RecordSummaryPresentation:
     commit: str
     targets: tuple[TargetPresentation, ...]
     approved: bool
+    profiled: bool = False
+    compliant: bool = False
+
+
+@dataclass(frozen=True)
+class ProfiledDeliveryPresentation:
+    """Current correlation allowlist; no credential, locator or raw artifact content."""
+
+    delivery_kind: str
+    pipeline_id: UUID
+    build_id: UUID
+    job_id: UUID
+    planning_result_digest: str
+    byte_digests: tuple[tuple[str, str], ...]
+    assurance_digests: tuple[tuple[str, str], ...]
+    authorization_promotion_digest: str | None
 
 
 @dataclass(frozen=True)
@@ -137,16 +157,25 @@ class RecordDetailPresentation:
     targets: tuple[TargetPresentation, ...]
     artifacts: tuple[ArtifactPresentation, ...]
     observations: tuple[ObservationPresentation, ...]
+    profiled: ProfiledDeliveryPresentation | None = None
 
 
-def _target_presentations(record: ChangeAuditRecord) -> tuple[TargetPresentation, ...]:
+def _target_presentations(
+    record: ChangeAuditRecord | ProfiledDeliveryAuditRecord,
+) -> tuple[TargetPresentation, ...]:
     return tuple(
         TargetPresentation(device=item.device, interface=item.interface)
-        for item in record.targets
+        for item in (
+            (record.target,)
+            if isinstance(record, ProfiledDeliveryAuditRecord)
+            else record.targets
+        )
     )
 
 
-def _summary(record: ChangeAuditRecord) -> RecordSummaryPresentation:
+def _summary(
+    record: ChangeAuditRecord | ProfiledDeliveryAuditRecord,
+) -> RecordSummaryPresentation:
     return RecordSummaryPresentation(
         record_id=record.record_id,
         generated_at=record.generated_at,
@@ -155,7 +184,14 @@ def _summary(record: ChangeAuditRecord) -> RecordSummaryPresentation:
         build_number=(record.buildkite.build_number if record.buildkite else None),
         commit=record.git.commit,
         targets=_target_presentations(record),
-        approved=record.approval is not None,
+        approved=(
+            record.authorization is not None
+            if isinstance(record, ProfiledDeliveryAuditRecord)
+            else record.approval is not None
+        ),
+        profiled=isinstance(record, ProfiledDeliveryAuditRecord),
+        compliant=isinstance(record, ProfiledDeliveryAuditRecord)
+        and record.delivery_kind is ProfiledDeliveryKind.COMPLIANCE,
     )
 
 
@@ -228,6 +264,45 @@ def _detail(
             for item in record.artifacts
         ),
         observations=tuple(_observation(item) for item in observations),
+    )
+
+
+def _profiled_detail(record: ProfiledDeliveryAuditRecord) -> RecordDetailPresentation:
+    return RecordDetailPresentation(
+        record_id=record.record_id,
+        generated_at=record.generated_at,
+        digest=record.digest,
+        change_id=record.change_id,
+        final_outcome=str(record.final_outcome),
+        repository=record.git.repository,
+        commit=record.git.commit,
+        pull_request=record.git.pull_request,
+        build_number=record.buildkite.build_number,
+        step_key=record.buildkite.step_key,
+        approved=record.authorization is not None,
+        targets=_target_presentations(record),
+        artifacts=tuple(
+            ArtifactPresentation(str(ref.kind), ref.sha256, ref.schema_version)
+            for ref in record.artifacts
+        ),
+        observations=(),
+        profiled=ProfiledDeliveryPresentation(
+            delivery_kind=record.delivery_kind.value,
+            pipeline_id=record.buildkite.pipeline_id,
+            build_id=record.buildkite.build_id,
+            job_id=record.buildkite.job_id,
+            planning_result_digest=record.planning_result_digest,
+            byte_digests=tuple(
+                (kind.value, digest)
+                for kind, digest in record.byte_digests_by_kind().items()
+            ),
+            assurance_digests=tuple(record.assurance.model_dump().items())
+            if record.assurance
+            else (),
+            authorization_promotion_digest=record.authorization.promotion_digest
+            if record.authorization
+            else None,
+        ),
     )
 
 
@@ -328,6 +403,8 @@ def render_index(values: tuple[RecordSummaryPresentation, ...]) -> bytes:
             if value.approved
             else _badge("NOT RECORDED", emphasis="not-recorded")
         )
+        if value.compliant:
+            approval = _badge("NOT REQUIRED — COMPLIANT")
         build = (
             str(value.build_number)
             if value.build_number is not None
@@ -335,9 +412,10 @@ def render_index(values: tuple[RecordSummaryPresentation, ...]) -> bytes:
         )
         cards.append(
             f"""<article class="card">
-  <h2><a href="/records/{value.record_id}">{_escape(value.change_id)}</a></h2>
+  <h2><a href="/{"profiled-records" if value.profiled else "records"}/{value.record_id}">{_escape(value.change_id)}</a></h2>
   <p>{_badge(value.final_outcome)} {approval}</p>
   <dl>
+    <dt>Provenance</dt><dd>{"Current profiled delivery" if value.profiled else "Historical protected delivery"}</dd>
     <dt>Generated</dt><dd>{_escape(_index_timestamp(value.generated_at))}</dd>
     <dt>Buildkite build</dt><dd>{_escape(build)}</dd>
     <dt>Git commit</dt><dd class="mono">{_escape(value.commit[:12])}</dd>
@@ -449,6 +527,47 @@ def render_record(value: RecordDetailPresentation) -> bytes:
     observations = "".join(_observation_block(item) for item in value.observations)
     if not observations:
         observations = '<section><h2>Configuration observations</h2><p class="meta">No correlated configuration-observation record.</p></section>'
+    delivery_title = "Historical protected delivery"
+    profiled_metadata = ""
+    if value.profiled is not None:
+        delivery_title = "Current profiled delivery"
+        current = value.profiled
+        if not value.approved:
+            approval = _badge("NOT REQUIRED — COMPLIANT")
+        rows = [
+            ("Delivery kind", current.delivery_kind),
+            ("Pipeline UUID", current.pipeline_id),
+            ("Build UUID", current.build_id),
+            ("Delivery job UUID", current.job_id),
+            ("Planning result digest", current.planning_result_digest),
+        ]
+        if current.authorization_promotion_digest is not None:
+            rows.extend(
+                [
+                    ("Authorization step", "profiled-human-authorization"),
+                    (
+                        "Authorized promotion digest",
+                        current.authorization_promotion_digest,
+                    ),
+                ]
+            )
+        rows.extend(
+            ("Original JSON bytes · " + kind, digest)
+            for kind, digest in current.byte_digests
+        )
+        rows.extend(
+            ("Prerequisite assurance · " + kind, digest)
+            for kind, digest in current.assurance_digests
+        )
+        profiled_metadata = (
+            "<section><h2>Profiled durable correlation</h2><dl>"
+            + "".join(
+                f'<dt>{_escape(label)}</dt><dd class="mono">{_escape(item)}</dd>'
+                for label, item in rows
+            )
+            + "</dl><p>Original artifact-byte hashes are distinct from canonical AuditStore identities. Assurance digests are prerequisites, not candidate-write proof.</p></section>"
+        )
+        observations = "<section><h2>Configuration observations</h2><p>Current PRE/write/POST delivery correlation not connected yet.</p></section>"
     body = f"""<a class="back" href="/">← All durable evidence</a>
 <section>
   <h2>Audit identity · {_badge(value.final_outcome)}</h2>
@@ -465,7 +584,7 @@ def render_record(value: RecordDetailPresentation) -> bytes:
     <dt>Commit</dt><dd class="mono">{commit}</dd>
     <dt>Pull request</dt><dd>{pull_request}</dd>
   </dl></section>
-  <section><h2>Protected delivery</h2><dl>
+  <section><h2>{delivery_title}</h2><dl>
     <dt>Buildkite</dt><dd>{build}</dd>
     <dt>Step</dt><dd class="mono">{_escape(value.step_key or "NOT RECORDED")}</dd>
     <dt>Approval</dt><dd>{approval}</dd>
@@ -473,6 +592,7 @@ def render_record(value: RecordDetailPresentation) -> bytes:
 </div>
 <section><h2>Stable targets</h2><table><thead><tr><th>Device identity</th><th>Interface identity</th></tr></thead><tbody>{target_rows}</tbody></table></section>
 <section><h2>Bound artifact integrity</h2><table><thead><tr><th>Kind</th><th>Schema</th><th>Digest</th></tr></thead><tbody>{artifact_rows}</tbody></table></section>
+{profiled_metadata}
 {observations}
 """
     return _page(f"NCDP Evidence · {value.change_id}", body)
@@ -502,13 +622,31 @@ class EvidenceViewerApplication:
             return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
         if parsed.path == "/":
             records = sorted(
-                self.store.iter_records(),
-                key=lambda item: (item.generated_at, str(item.record_id)),
+                (*self.store.iter_records(), *self.store.iter_profiled_records()),
+                key=lambda item: (
+                    item.generated_at,
+                    str(item.record_id),
+                    isinstance(item, ProfiledDeliveryAuditRecord),
+                ),
                 reverse=True,
             )[:MAX_PRESENTED_RECORDS]
             return HTTPStatus.OK, render_index(
                 tuple(_summary(item) for item in records)
             )
+        prefix = "/profiled-records/"
+        if parsed.path.startswith(prefix) and parsed.path.count("/") == 2:
+            identity = parsed.path.removeprefix(prefix)
+            try:
+                record_id = UUID(identity)
+            except ValueError:
+                return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
+            if identity != str(record_id):
+                return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
+            try:
+                current = self.store.read_profiled_record(record_id)
+            except AuditStoreError:
+                return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
+            return HTTPStatus.OK, render_record(_profiled_detail(current))
         prefix = "/records/"
         if parsed.path.startswith(prefix) and parsed.path.count("/") == 2:
             identity = parsed.path.removeprefix(prefix)

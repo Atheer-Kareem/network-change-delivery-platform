@@ -6,6 +6,7 @@ import errno
 import json
 import os
 import stat
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import fields
 from pathlib import Path
@@ -28,6 +29,16 @@ from network_change_delivery.models import (
     FleetDeploymentPlan,
 )
 from network_change_delivery.plan_assurance import PlanAssuranceRecord
+from network_change_delivery.profiled_audit import (
+    ProfiledDeliveryAuditRecord,
+    verify_profiled_audit_artifacts,
+)
+from network_change_delivery.profiled_execution import ProfiledChangeRecord
+from network_change_delivery.profiled_planning import (
+    ProfiledComplianceRecord,
+    ProfiledDeploymentPlan,
+)
+from network_change_delivery.profiled_promotion import ProfiledPromotion
 from network_change_delivery.promotion import DeploymentPromotionManifest
 from network_change_delivery.snmp_provisioning import (
     SnmpProvisioningPlan,
@@ -48,6 +59,10 @@ type AuditArtifact = (
     | FleetChangeRecord
     | SnmpProvisioningPlan
     | SnmpProvisioningRecord
+    | ProfiledDeploymentPlan
+    | ProfiledComplianceRecord
+    | ProfiledPromotion
+    | ProfiledChangeRecord
 )
 
 _ARTIFACT_TYPES: dict[AuditArtifactKind, type[object]] = {
@@ -61,7 +76,18 @@ _ARTIFACT_TYPES: dict[AuditArtifactKind, type[object]] = {
     AuditArtifactKind.FLEET_CHANGE_RECORD: FleetChangeRecord,
     AuditArtifactKind.SNMP_PROVISIONING_RECORD: SnmpProvisioningRecord,
 }
+_PROFILED_ARTIFACT_TYPES = {
+    AuditArtifactKind.PROFILED_DEPLOYMENT_PLAN: ProfiledDeploymentPlan,
+    AuditArtifactKind.PROFILED_COMPLIANCE_RECORD: ProfiledComplianceRecord,
+    AuditArtifactKind.PROFILED_PROMOTION: ProfiledPromotion,
+    AuditArtifactKind.PROFILED_CHANGE_RECORD: ProfiledChangeRecord,
+}
+_ARTIFACT_TYPES.update(_PROFILED_ARTIFACT_TYPES)
+
 _INTRINSIC_DIGEST_KINDS = {
+    AuditArtifactKind.PROFILED_DEPLOYMENT_PLAN,
+    AuditArtifactKind.PROFILED_COMPLIANCE_RECORD,
+    AuditArtifactKind.PROFILED_PROMOTION,
     AuditArtifactKind.DEPLOYMENT_PLAN,
     AuditArtifactKind.FLEET_DEPLOYMENT_PLAN,
     AuditArtifactKind.SNMP_PROVISIONING_PLAN,
@@ -87,6 +113,12 @@ class AuditStore:
         self._root_identity = (metadata.st_dev, metadata.st_ino)
         self._artifacts = self._managed_directory(self.root / "artifacts")
         self._records = self._managed_directory(self.root / "records")
+        # Optional namespaces: opening a historical store never creates/migrates them.
+        self._profiled_records = self.root / "profiled-records"
+        self._profiled_bytes = self.root / "profiled-artifact-bytes"
+        for path in (self._profiled_records, self._profiled_bytes):
+            if path.exists() or path.is_symlink():
+                self._validate_managed_directory(path)
 
     def persist_artifact(
         self, kind: AuditArtifactKind, artifact: AuditArtifact
@@ -146,7 +178,9 @@ class AuditStore:
         """Publish a record only after every referenced artifact verifies."""
         self._require_writable()
         self._validate_root_identity()
-        record = ChangeAuditRecord.model_validate(record)
+        record = ChangeAuditRecord.model_validate(
+            record.model_dump(mode="json", warnings=False)
+        )
         if not record.verify_digest():
             raise AuditStoreError("audit record digest is invalid")
         content = canonical_json_bytes(record.model_dump(mode="json"))
@@ -213,6 +247,176 @@ class AuditStore:
                 raise AuditStoreError("audit record scan bound exceeded")
         return tuple(
             self.read_record(UUID(name.removesuffix(".json"))) for name in sorted(names)
+        )
+
+    def persist_profiled_record(
+        self,
+        record: ProfiledDeliveryAuditRecord,
+        *,
+        artifact_bytes: Mapping[AuditArtifactKind, bytes],
+    ) -> Path:
+        """Validate artifacts and original bytes before envelope publication.
+
+        Canonical artifacts must already be persisted. Source bytes are retained
+        separately so later readers can verify their hashes without reformatting.
+        Interrupted publication may leave immutable artifacts but no final envelope.
+        """
+        self._require_writable()
+        self._validate_root_identity()
+        record = self._validate_profiled_record(record)
+        artifact_bytes = dict(artifact_bytes)
+        content = canonical_json_bytes(record.model_dump(mode="json"))
+        if len(content) > MAX_AUDIT_RECORD_BYTES:
+            raise AuditStoreError("profiled audit record exceeds bounded size")
+        self._verify_profiled_references(record, artifact_bytes)
+        directory = self._managed_directory(self._profiled_records)
+        destination = directory / f"{record.record_id}.json"
+        if destination.exists() or destination.is_symlink():
+            raise AuditStoreError("profiled audit record identity already exists")
+        raw_root = self._managed_directory(self._profiled_bytes)
+        for kind, digest in record.byte_digests_by_kind().items():
+            parent = self._managed_directory(raw_root / kind.value)
+            raw_path = parent / f"{digest[7:]}.json"
+            raw = artifact_bytes[kind]
+            if raw_path.exists() or raw_path.is_symlink():
+                if self._read_private_file(raw_path, MAX_AUDIT_ARTIFACT_BYTES) != raw:
+                    raise AuditStoreError("profiled artifact bytes conflict")
+            else:
+                try:
+                    self._publish_new(parent, raw_path.name, raw)
+                except FileExistsError:
+                    if (
+                        self._read_private_file(raw_path, MAX_AUDIT_ARTIFACT_BYTES)
+                        != raw
+                    ):
+                        raise AuditStoreError(
+                            "profiled artifact bytes conflict"
+                        ) from None
+        try:
+            self._publish_new(directory, destination.name, content)
+        except FileExistsError:
+            raise AuditStoreError(
+                "profiled audit record identity already exists"
+            ) from None
+        return destination
+
+    @staticmethod
+    def _validate_profiled_record(
+        record: ProfiledDeliveryAuditRecord,
+    ) -> ProfiledDeliveryAuditRecord:
+        try:
+            return ProfiledDeliveryAuditRecord.model_validate(
+                record.model_dump(mode="json", warnings=False)
+            )
+        except (ValueError, AttributeError) as error:
+            raise AuditStoreError(
+                "profiled audit record schema/digest invalid"
+            ) from error
+
+    def _verify_profiled_references(
+        self,
+        record: ProfiledDeliveryAuditRecord,
+        artifact_bytes: Mapping[AuditArtifactKind, bytes],
+    ) -> None:
+        digests = record.byte_digests_by_kind()
+        if set(artifact_bytes) != set(digests):
+            raise AuditStoreError("profiled artifact byte set rejected")
+        artifacts = {}
+        for ref in record.artifacts:
+            artifact = self.read_artifact(ref)
+            raw = artifact_bytes[ref.kind]
+            if (
+                not isinstance(raw, bytes)
+                or not 0 < len(raw) <= MAX_AUDIT_ARTIFACT_BYTES
+            ):
+                raise AuditStoreError("profiled source artifact bytes exceed bound")
+            if sha256_identity(raw) != digests[ref.kind]:
+                raise AuditStoreError("profiled source artifact byte digest rejected")
+            decoded = self._decode_artifact(ref.kind, raw)
+            if canonical_json_bytes(
+                decoded.model_dump(mode="json")
+            ) != canonical_json_bytes(artifact.model_dump(mode="json")):
+                raise AuditStoreError(
+                    "profiled source bytes differ from canonical artifact"
+                )
+            artifacts[ref.kind] = artifact
+        try:
+            verify_profiled_audit_artifacts(record, artifacts)
+        except ValueError as error:
+            raise AuditStoreError(
+                "profiled cross-artifact correlation rejected"
+            ) from error
+
+    def read_profiled_record(self, record_id: UUID) -> ProfiledDeliveryAuditRecord:
+        """Read a current envelope and validate canonical and original-byte evidence."""
+        self._validate_root_identity()
+        self._validate_managed_directory(self._profiled_records)
+        try:
+            record_id = UUID(str(record_id))
+        except ValueError:
+            raise AuditStoreError("profiled audit record ID invalid") from None
+        content = self._read_private_file(
+            self._profiled_records / f"{record_id}.json", MAX_AUDIT_RECORD_BYTES
+        )
+        try:
+            record = ProfiledDeliveryAuditRecord.model_validate_json(content)
+        except ValueError as error:
+            raise AuditStoreError(
+                "profiled audit record schema/digest invalid"
+            ) from error
+        if (
+            record.record_id != record_id
+            or canonical_json_bytes(record.model_dump(mode="json")) != content
+        ):
+            raise AuditStoreError(
+                "profiled audit record identity/canonical bytes invalid"
+            )
+        self._validate_managed_directory(self._profiled_bytes)
+        raw = {}
+        for kind, digest in record.byte_digests_by_kind().items():
+            parent = self._profiled_bytes / kind.value
+            self._validate_managed_directory(parent)
+            raw[kind] = self._read_private_file(
+                parent / f"{digest[7:]}.json", MAX_AUDIT_ARTIFACT_BYTES
+            )
+        self._verify_profiled_references(record, raw)
+        return record
+
+    def iter_profiled_records(
+        self, *, max_scan: int = MAX_AUDIT_RECORD_SCAN
+    ) -> tuple[ProfiledDeliveryAuditRecord, ...]:
+        """Bounded deterministic current-only scan; old stores need no migration."""
+        self._validate_root_identity()
+        if not 1 <= max_scan <= MAX_AUDIT_RECORD_SCAN:
+            raise AuditStoreError("profiled audit scan bound invalid")
+        if (
+            not self._profiled_records.exists()
+            and not self._profiled_records.is_symlink()
+        ):
+            return ()
+        self._validate_managed_directory(self._profiled_records)
+        names = []
+        with os.scandir(self._profiled_records) as entries:
+            for entry in entries:
+                if entry.name.startswith(".audit-tmp-"):
+                    continue
+                try:
+                    record_id = UUID(entry.name.removesuffix(".json"))
+                except ValueError:
+                    raise AuditStoreError(
+                        "profiled audit directory entry invalid"
+                    ) from None
+                if (
+                    entry.name != f"{record_id}.json"
+                    or entry.is_symlink()
+                    or not entry.is_file(follow_symlinks=False)
+                ):
+                    raise AuditStoreError("profiled audit directory entry invalid")
+                names.append(entry.name)
+                if len(names) > max_scan:
+                    raise AuditStoreError("profiled audit scan bound exceeded")
+        return tuple(
+            self.read_profiled_record(UUID(name[:-5])) for name in sorted(names)
         )
 
     @staticmethod
@@ -283,6 +487,11 @@ class AuditStore:
         expected_type = _ARTIFACT_TYPES[kind]
         if not isinstance(artifact, expected_type):
             raise AuditStoreError("audit artifact kind and schema disagree")
+        if kind in _PROFILED_ARTIFACT_TYPES:
+            artifact = self._decode_artifact(
+                kind,
+                canonical_json_bytes(artifact.model_dump(mode="json", warnings=False)),
+            )
         if isinstance(artifact, StagingEvidence):
             payload = artifact.safe_dict()
             validated = self._validate_staging_payload(payload)
@@ -292,7 +501,12 @@ class AuditStore:
             content = canonical_json_bytes(validated.model_dump(mode="json"))
         schema_version = str(validated.schema_version)
         if kind in _INTRINSIC_DIGEST_KINDS:
-            if not isinstance(validated, BaseModel) or not validated.verify_digest():
+            digest_valid = (
+                validated.digest == validated.calculated_digest()
+                if kind in _PROFILED_ARTIFACT_TYPES
+                else isinstance(validated, BaseModel) and validated.verify_digest()
+            )
+            if not digest_valid:
                 raise AuditStoreError("intrinsic audit artifact digest is invalid")
             identity = str(validated.digest)
         else:
@@ -311,11 +525,27 @@ class AuditStore:
             raise AuditStoreError("staging evidence schema version is unsupported")
         return evidence
 
+    @staticmethod
+    def _unique_profiled_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise AuditStoreError("duplicate profiled artifact field")
+            value[key] = item
+        return value
+
     def _decode_artifact(
         self, kind: AuditArtifactKind, content: bytes
     ) -> AuditArtifact:
         try:
-            payload = json.loads(content)
+            payload = json.loads(
+                content,
+                object_pairs_hook=(
+                    self._unique_profiled_fields
+                    if kind in _PROFILED_ARTIFACT_TYPES
+                    else None
+                ),
+            )
             if kind is AuditArtifactKind.STAGING_EVIDENCE:
                 return self._validate_staging_payload(payload)
             model = _ARTIFACT_TYPES[kind]

@@ -1,7 +1,10 @@
 # OpenBao secret provider
 
-Current profiled local execution uses the bounded personal-lab AppRole and exact
-stable-device-ID paths. Buildkite staging consumes the existing device-scoped
+Current profiled local execution uses AppRole and exact stable-device-ID paths.
+The general operator role remains bounded. Buildkite plan/deploy uses a dedicated
+persistent local SecretID with fresh 300-second, one-use tokens and exact reads
+for devices 1/2; see [installation](buildkite-profiled-delivery-operations.md).
+Buildkite staging consumes the existing device-scoped
 JWT roles through its injected staging provider. Deployment JWT roles below
 remain historical authority records: protected delivery is retired.
 
@@ -10,9 +13,10 @@ remain historical authority records: protected delivery is retired.
 OpenBao is the primary personal-lab credential provider. The local/bootstrap
 path authenticates with AppRole using `NCDP_OPENBAO_URL`, `NCDP_OPENBAO_ROLE_ID`, and
 `NCDP_OPENBAO_SECRET_ID`; it does not accept a bootstrap OpenBao token. RoleID and
-SecretID are never CLI arguments or plan/evidence fields. The personal-lab
-SecretID is a bounded bootstrap mechanism, not the mature Buildkite identity
-design.
+SecretID are never CLI arguments or plan/evidence fields. The general operator
+SecretID is bounded; the dedicated Buildkite deploy-agent SecretID deliberately
+has no time/use expiry for reliable single-user MacBook demonstrations.
+Neither is a production workload identity design.
 
 Each credential load performs a fresh AppRole login, accepts only a positive
 token lease no longer than ten minutes, and uses the issued token for exactly one

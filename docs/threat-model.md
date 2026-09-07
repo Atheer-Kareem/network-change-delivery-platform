@@ -74,5 +74,8 @@ not override invalid prerequisites. Metadata and unblocker UUIDs trust the
 Buildkite scheduler, reviewed main and agent owner; they are not signed workload
 attestations against an administrator or compromised trusted host. The dedicated
 agent-owned command hook prevents PR/pre-command access to deployment credentials.
-Existing operator AppRole authority is a personal-lab exception, not the retired
-cryptographic deployment JWT boundary. See [current workflow](architecture/buildkite-workflow.md).
+The dedicated deploy-agent AppRole uses a persistent private SecretID with fresh
+short-lived one-use tokens. Compromise of that local pair permits its exact
+device-secret reads until revocation, not automatic plan/promotion authorization.
+This explicit personal-Mac convenience is not the retired cryptographic
+deployment JWT boundary. See [current workflow](architecture/buildkite-workflow.md).

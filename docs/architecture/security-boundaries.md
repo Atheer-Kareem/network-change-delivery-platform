@@ -40,7 +40,7 @@ re-verifies complete identity and state, and executes only the approved
 operation-specific artifact. The personal-lab Buildkite main tail may invoke
 that same CLI only after same-build schema-v2 promotion, all validation and
 assurance receipts, exact human-block authorization, and fresh LIVE trust.
-Its agent-owned command hook releases existing operator AppRole/NetBox authority
+Its agent-owned command hook releases dedicated deploy-agent AppRole/NetBox authority
 only to the exact main plan/deploy steps. This is not the retired deployment JWT
 role family. PRs cannot schedule the write tail. See the
 [current boundary](buildkite-profiled-delivery-operations.md).
@@ -72,8 +72,12 @@ short-lived, single-use, exact-path OpenBao token for a static device credential
 The historical protected-delivery identity chain used Buildkite OIDC and
 claim-bound OpenBao roles. It remains accepted historical evidence but is not a
 current credential path: its privileged CLI and pipeline entry points are
-retired. Current profiled local execution uses the bounded personal-lab AppRole
-mechanism and exact stable-device-ID KV reads.
+retired. Current profiled local execution uses the personal-lab AppRole
+mechanism and exact stable-device-ID KV reads. The Buildkite deploy agent uses
+its own persistent SecretID (unlimited lifetime/logins) with fresh 300-second,
+one-use tokens and exact reads for devices 1/2. This explicitly accepted
+single-user MacBook convenience does not change delivery authorization; the
+general operator AppRole retains its bounded settings.
 Secrets and secret-bearing payloads never enter Git, application models, logs,
 artifacts, or evidence. Company data of any kind is forbidden; only synthetic
 personal-lab data may be used.

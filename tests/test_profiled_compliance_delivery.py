@@ -139,8 +139,11 @@ def test_real_compliant_planner_through_entire_static_delivery_tail(
         )
     for _step, function, ctx, directory in downstream(driver, context, tmp_path):
         assert function(ctx, directory) == 0
-        assert [p.name for p in directory.iterdir()] == [key[2]]
-    assert len(artifacts) == len(metadata) == 1
+        expected = {key[2]}
+        if _step != "profiled-promotion":
+            expected.add(driver.artifact_name(ctx, "durable-publication"))
+        assert {p.name for p in directory.iterdir()} == expected
+    assert len(artifacts) == len(metadata) == 2
     for _step, message in annotations[1:]:
         for text in (
             "Outcome: COMPLIANT",

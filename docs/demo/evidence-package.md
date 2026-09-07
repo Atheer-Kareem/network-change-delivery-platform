@@ -14,13 +14,19 @@ not regenerated or presented as the current delivery mechanism.
 | Fail-closed blocked delivery | Supplied negative current-tail result: continuation and visible human block, invalid promotion, deployment `NO WRITE`, no fabricated typed record | Scheduling/unblock cannot repair prerequisites; missing evidence alone in another attempt is not proof of no write. |
 | Already compliant / no plan | Current planner and offline delivery tests: desired state already present yields a typed `ProfiledComplianceRecord`, no deployable plan | A valid same-build compliance receipt yields COMPLIANT, write/recovery false, no promotion and no deploy invocation. Missing/failed planning never means compliance. The static block may remain visible; never reset devices to manufacture work. |
 
-The profiled durable schema/store/viewer foundation is implemented offline, but
-current Buildkite delivery does not yet publish it. Existing accepted main runs
-still have private/Buildkite artifacts, not profiled durable records in the viewer.
-Historical durable evidence remains valid. Synthetic foundation fixtures prove
-correlation and presentation, not a new live acceptance. Buildkite publication is
-the next CAP-DURABLE-EVIDENCE increment; PRE/write/POST remains separate
-CAP-CONFIG-CHRONOLOGY work.
+Current Buildkite delivery is now connected to the profiled durable schema/store/
+viewer. Successful delivery completion requires a validated publication receipt
+from `profiled-deploy` after durable readback. EXECUTION stores exact promoted
+inputs before command invocation and typed outcome afterward; COMPLIANCE stores
+only its planning observation without write authority. Final evidence shows the
+durable record UUID/digest, or explicitly reports publication NOT ESTABLISHED.
+Evidence failure never replays execution. The viewer reads durable authority;
+Buildkite's receipt is a pointer only.
+
+This integration is tested offline. Existing accepted main runs still have their
+original private/Buildkite artifacts; no durable evidence or new runtime acceptance
+is retrospectively claimed. Historical durable evidence remains valid, and
+PRE/write/POST remains separate CAP-CONFIG-CHRONOLOGY work.
 
 ## Historical evidence and optional current surfaces
 

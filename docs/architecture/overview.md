@@ -65,7 +65,10 @@ and Oxidized read-only collection consume all four.
 - **Evidence:** schema-v2 `ProfiledChangeRecord` preserves reviewed identities,
   stages and exact plan/approval digests. The provider-derived `execution.changed`
   flag is not reliable observed-transition evidence; see CAP-OUTCOME-TRUTH.
-  Current artifacts do not yet enter AuditStore or its chronology/viewer chain.
+  Current Buildkite delivery now publishes profiled durable envelopes read by
+  the existing viewer; pre-write destination admission is required. This is
+  offline-verified integration with runtime acceptance pending. PRE/write/POST
+  chronology remains unconnected.
 - **Continuous operations:** observability and Oxidized are read-only,
   scoped to admitted profiles, and independent of change execution.
 - **Assurance:** Buildkite runs validation plus credential-free profiled

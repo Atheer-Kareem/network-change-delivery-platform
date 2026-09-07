@@ -152,9 +152,12 @@ def protected(tmp_path):
         f"NCDP_OPENBAO_URL={URL}\nNCDP_NETBOX_URL=https://netbox.example\nNCDP_NETBOX_TOKEN=private-netbox\n"
     )
     external.chmod(0o600)
+    audit = tmp_path.resolve() / "audit"
+    audit.mkdir(mode=0o700)
     original = (
         f"source {external}\nNCDP_BUILDKITE_PIPELINE_ID=keep-pipeline\n"
         "NCDP_PROFILED_DELIVERY_STATE_ROOT=/keep/state\n"
+        f"NCDP_AUDIT_STORE_ROOT={audit}\n"
         'NCDP_OPENBAO_ROLE_ID="$(< /old/operator/approle-role-id)"\n'
         'NCDP_OPENBAO_SECRET_ID="$(< /old/operator/approle-secret-id)"\n'
         "# preserve comment\n"
@@ -185,6 +188,14 @@ def test_install_reuses_pair_and_preserves_settings_atomically(
     assert b"NCDP_BUILDKITE_PIPELINE_ID=keep-pipeline\n" in first
     assert b"NCDP_PROFILED_DELIVERY_STATE_ROOT=/keep/state\n" in first
     assert b"# preserve comment\n" in first
+    assert (
+        next(
+            line
+            for line in original.splitlines()
+            if line.startswith(b"NCDP_AUDIT_STORE_ROOT=")
+        )
+        in first
+    )
     helper.install(hooks, state, bao.operator())
     assert (hooks / "profiled.env").read_bytes() == first
     assert bao.issued == 1
@@ -495,3 +506,41 @@ def test_preparation_not_in_pipeline_and_role_limits_unchanged():
         "prepare_profiled_delivery_session"
         not in (ROOT / ".buildkite/pipeline.yml").read_text()
     )
+
+
+@pytest.mark.parametrize(
+    "damage", ["missing", "relative", "mode", "symlink", "namespace"]
+)
+def test_installer_checks_audit_setting_before_any_openbao_operation(
+    helper,
+    protected,
+    damage,
+):
+    hooks, state, _original = protected
+    root = hooks.parent.parent / "audit"
+    protected_file = hooks / "profiled.env"
+    if damage in {"missing", "relative"}:
+        text = protected_file.read_text()
+        line = next(
+            line
+            for line in text.splitlines()
+            if line.startswith("NCDP_AUDIT_STORE_ROOT=")
+        )
+        text = text.replace(
+            line, "" if damage == "missing" else "NCDP_AUDIT_STORE_ROOT=relative"
+        )
+        protected_file.write_text(text)
+    elif damage == "mode":
+        root.chmod(0o755)
+    elif damage == "symlink":
+        root.rmdir()
+        root.symlink_to(hooks)
+    else:
+        (root / "profiled-records").symlink_to(hooks)
+    bao = Bao()
+    before = protected_file.read_bytes()
+    with pytest.raises(ValueError):
+        helper.install(hooks, state, bao.operator())
+    assert not bao.calls and bao.issued == 0
+    assert protected_file.read_bytes() == before
+    assert not state.exists()

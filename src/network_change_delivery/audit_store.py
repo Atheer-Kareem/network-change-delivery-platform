@@ -249,6 +249,36 @@ class AuditStore:
             self.read_record(UUID(name.removesuffix(".json"))) for name in sorted(names)
         )
 
+    def prepare_profiled_publication(
+        self, record_id: UUID, kinds: frozenset[AuditArtifactKind]
+    ) -> None:
+        """Admit managed destinations before a possible write; publish no record.
+
+        This is structural readiness, not a reservation or a promise that later
+        I/O cannot fail. Immutable partial inputs are intentionally retained.
+        """
+        self._require_writable()
+        self._validate_root_identity()
+        execution = frozenset(
+            {
+                AuditArtifactKind.PROFILED_DEPLOYMENT_PLAN,
+                AuditArtifactKind.PROFILED_PROMOTION,
+                AuditArtifactKind.PROFILED_CHANGE_RECORD,
+            }
+        )
+        compliance = frozenset({AuditArtifactKind.PROFILED_COMPLIANCE_RECORD})
+        if kinds not in (execution, compliance) or not isinstance(record_id, UUID):
+            raise AuditStoreError("profiled preparation scope rejected")
+        directory = self._managed_directory(self._profiled_records)
+        destination = directory / f"{record_id}.json"
+        if destination.exists() or destination.is_symlink():
+            raise AuditStoreError("profiled audit record identity already exists")
+        raw_root = self._managed_directory(self._profiled_bytes)
+        self._validate_managed_directory(self._artifacts)
+        for kind in sorted(kinds, key=str):
+            self._managed_directory(raw_root / kind.value)
+            self._managed_directory(self._artifacts / kind.value)
+
     def persist_profiled_record(
         self,
         record: ProfiledDeliveryAuditRecord,

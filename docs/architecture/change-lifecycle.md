@@ -117,11 +117,14 @@ prevents execution. PRs have no write tail. See [workflow](buildkite-workflow.md
 ## Current evidence boundary
 
 Schema-v2 plans, promotions and `ProfiledChangeRecord` artifacts are retained
-through the current private delivery state and Buildkite artifact path. They do
-not yet connect to durable AuditStore, PRE/write/POST correlation or the viewer.
-Compliant records use the same private artifact path without fabricating an
-execution record. CAP-DURABLE-EVIDENCE and CAP-CONFIG-CHRONOLOGY own durable
-integration; historical records are not rewritten.
+through private delivery state and Buildkite artifacts. The Buildkite deploy
+boundary additionally admits AuditStore and persists plan/promotion before its
+single CLI invocation, then durably correlates typed execution evidence.
+COMPLIANCE is durably published without a plan, promotion or execution record.
+The existing viewer reads current envelopes; final Buildkite evidence consumes
+only a same-build publication pointer. This integration is tested offline with
+runtime acceptance pending. PRE/write/POST remains CAP-CONFIG-CHRONOLOGY;
+historical records are not rewritten. See the [publication contract](audit-and-configuration-history.md#current-buildkite-publication-integration).
 
 ### Provider metadata, observation and outcome
 

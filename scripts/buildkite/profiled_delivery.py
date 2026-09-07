@@ -10,10 +10,12 @@ import stat
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
 
+from network_change_delivery.inventory import InventoryError
 from network_change_delivery.models import InterfaceDescriptionIntent
 from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
@@ -37,11 +39,53 @@ from network_change_delivery.profiled_promotion import (
     digest_bytes,
     promote,
 )
-from network_change_delivery.secrets import OpenBaoSecretProvider
+from network_change_delivery.secrets import OpenBaoSecretProvider, SecretError
 
 ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = ".buildkite/scripts/profiled_delivery.sh"
 PROTECTED = {"NCDP_NETBOX_TOKEN", "NCDP_OPENBAO_ROLE_ID", "NCDP_OPENBAO_SECRET_ID"}
+PLAN_PHASES = frozenset(
+    {
+        "commit/context",
+        "protected environment",
+        "LIVE trust",
+        "NetBox inventory",
+        "OpenBao authentication",
+        "device read-only preflight",
+        "plan publication",
+    }
+)
+
+
+class PlanPhaseError(ValueError):
+    def __init__(self, phase):
+        if phase not in PLAN_PHASES:
+            raise ValueError("unknown plan phase")
+        self.phase = phase
+        super().__init__(phase)
+
+
+@contextmanager
+def plan_boundary(phase):
+    try:
+        yield
+    except Exception:
+        raise PlanPhaseError(phase) from None
+
+
+def plan_failure(context, phase):
+    # Never interpolate provider messages, exception repr, or environment values.
+    if phase not in PLAN_PHASES:
+        phase = "commit/context"
+    message = f"Profiled live plan FAILED — phase: {phase}. No device write."
+    if context is None:
+        print(message, file=sys.stderr)
+    else:
+        try:
+            annotate(context, message, failed=True)
+        except Exception:
+            print("Plan failure annotation publication failed", file=sys.stderr)
+    return 2
 
 
 def command(args, *, cwd=ROOT, stdin=None, device_authority=False):
@@ -197,25 +241,43 @@ def verify_human_dependency():
 
 
 def plan_step(context, directory):
-    intent = InterfaceDescriptionIntent.model_validate(
-        yaml.safe_load((ROOT / "deployments/live/profiled-demo.yaml").read_text())
-    )
+    with plan_boundary("commit/context"):
+        intent = InterfaceDescriptionIntent.model_validate(
+            yaml.safe_load((ROOT / "deployments/live/profiled-demo.yaml").read_text())
+        )
     if (
         intent.change_id,
         intent.target,
         intent.interface,
         intent.desired.description,
     ) != (CHANGE_ID, "core-02", "GigabitEthernet2", DESCRIPTION):
-        raise ValueError("reviewed intent rejected")
-    validate_profiled_live_host_trust()
-    result = plan_profiled_change(
-        intent,
-        NetBoxProfileInventoryProvider(),
-        OpenBaoSecretProvider(),
-        ProfileReadOnlyAdapter(
-            known_hosts=DEFAULT_PROFILED_LIVE_TRUST_ROOT / KNOWN_HOSTS_NAME
-        ),
-    )
+        raise PlanPhaseError("commit/context")
+    with plan_boundary("LIVE trust"):
+        validate_profiled_live_host_trust()
+    with plan_boundary("NetBox inventory"):
+        inventory = NetBoxProfileInventoryProvider()
+    with plan_boundary("protected environment"):
+        secrets = OpenBaoSecretProvider()
+    try:
+        result = plan_profiled_change(
+            intent,
+            inventory,
+            secrets,
+            ProfileReadOnlyAdapter(
+                known_hosts=DEFAULT_PROFILED_LIVE_TRUST_ROOT / KNOWN_HOSTS_NAME
+            ),
+        )
+    except InventoryError:
+        raise PlanPhaseError("NetBox inventory") from None
+    except SecretError:
+        raise PlanPhaseError("OpenBao authentication") from None
+    except Exception:
+        raise PlanPhaseError("device read-only preflight") from None
+    with plan_boundary("plan publication"):
+        return publish_plan(context, directory, intent, result)
+
+
+def publish_plan(context, directory, intent, result):
     plan = result.plan
     facts = {
         "Change": intent.change_id,
@@ -370,6 +432,9 @@ def evidence_step(context, directory):
 def main():
     logging.disable(logging.CRITICAL)
     os.umask(0o077)
+    is_plan = os.environ.get("BUILDKITE_STEP_KEY") == "profiled-live-plan"
+    context = None
+    phase = "commit/context"
     try:
         context = ProfiledBuildContext.from_environment(os.environ)
         checked_command(["scripts/buildkite/verify_commit.sh"])
@@ -382,6 +447,18 @@ def main():
         if context.step not in handlers:
             raise ValueError("unknown profiled command")
         if context.step in {"profiled-live-plan", "profiled-deploy"}:
+            phase = "protected environment"
+            if is_plan and any(
+                not os.environ.get(key)
+                for key in (
+                    "NCDP_NETBOX_URL",
+                    "NCDP_NETBOX_TOKEN",
+                    "NCDP_OPENBAO_URL",
+                    "NCDP_OPENBAO_ROLE_ID",
+                    "NCDP_OPENBAO_SECRET_ID",
+                )
+            ):
+                raise PlanPhaseError(phase)
             if (
                 not os.environ.get("NCDP_BUILDKITE_PIPELINE_ID")
                 or os.environ.get("BUILDKITE_PIPELINE_ID")
@@ -398,7 +475,11 @@ def main():
             return handlers[context.step](context, directory)
         with tempfile.TemporaryDirectory(prefix="ncdp-profiled-delivery-") as temporary:
             return handlers[context.step](context, Path(temporary))
-    except Exception:
+    except Exception as error:
+        if is_plan:
+            return plan_failure(
+                context, error.phase if isinstance(error, PlanPhaseError) else phase
+            )
         print(
             "Profiled delivery prerequisite/operation failed; no automatic retry. "
             "Only typed execution evidence can establish a write outcome.",

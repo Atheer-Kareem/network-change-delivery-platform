@@ -38,14 +38,72 @@ Required protected names:
 - `NCDP_NETBOX_URL`, `NCDP_NETBOX_TOKEN`
 - `NCDP_OPENBAO_URL`, `NCDP_OPENBAO_ROLE_ID`, `NCDP_OPENBAO_SECRET_ID`
 
-The existing operator-owned NetBox environment and private AppRole source files
-may be referenced only inside this protected environment. Never copy values into
-Git, command arguments, logs or test fixtures. No new OpenBao roles, secret
+The existing operator-owned NetBox environment may be referenced only inside
+this protected environment. AppRole entries are a freshly prepared bounded
+session, **not persistent agent credentials**. Never copy values into Git,
+command arguments, logs or test fixtures. No new OpenBao roles, device secret
 values or AppRole configuration are installed. This operator bootstrap is not
 least-privilege production deployment identity or the retired JWT role family.
 Validate the existing profiled LIVE trust under
 `/Users/netdevops/.config/ncdp/profiled-live/ssh`; do not generate trust on demand,
 use ambient SSH trust, or collect devices merely to check installation.
+
+### Prepare a bounded demonstration window
+
+The existing `ncdp-personal-lab` AppRole remains unchanged: SecretID TTL
+**1800 seconds (30 minutes)**, **10 uses**; login tokens **300 seconds**, **one
+use**. Static RoleID/SecretID assignments in `profiled.env` are a session
+snapshot, not long-lived agent identity. An old assignment or a reference to an
+old operator SecretID file will expire; never change TTL/use limits to hide it.
+
+From a reviewed operator checkout, shortly before a new main demonstration:
+
+```sh
+# BAO_TOKEN and NCDP_OPENBAO_URL must already be supplied securely by the operator.
+uv run --frozen python scripts/buildkite/prepare_profiled_delivery_session.py prepare --confirm-idle
+```
+
+`--confirm-idle` is an operator assertion: no running or pending main build,
+including a paused human block, still needs the old session. Do not prepare or
+retire across an active window. The helper never polls Buildkite or starts a
+build. It rejects execution inside a Buildkite job and does not read an admin
+token file or add administrative authority to the agent. The supplied OpenBao
+URL must match the protected setting. Do not pass credentials on the command line.
+
+Preparation reuses `OpenBaoProfiledDeviceConfigurator.issue_bounded_session()`:
+it verifies existing AppRole limits/policy, issues exactly one fresh SecretID,
+and atomically replaces only the two AppRole assignments. NetBox, pipeline
+binding, OpenBao URL and state root remain byte-preserved. The protected file
+stays agent-owned `0600`, in its private `0700` directory. A separate private
+`profiled-session.accessor` is journaled before environment installation, and
+`.session-preparation.lock` serializes operator preparations. Neither contains
+a token to be supplied to a Buildkite job; never print or commit their contents.
+Existing external `env/ncdp-deploy.env` settings are inspected without sourcing.
+
+After the demonstration is finished and no build needs the session:
+
+```sh
+uv run --frozen python scripts/buildkite/prepare_profiled_delivery_session.py retire --confirm-idle
+```
+
+Retirement uses only the previously recorded accessor, removes that record after
+acknowledgement, and clears the agent's two session entries. Preparation also
+retires a prior known accessor before minting a replacement. Untracked old
+sessions are not enumerated or revoked; their existing bounds still apply.
+An expired/unavailable accessor or uncertain operator request that cannot be
+acknowledged fails closed, retaining private state for explicit operator review.
+No automatic mutation replay occurs. A crash before accessor journaling can
+leave an uninstalled session, bounded by its 30-minute TTL; do not blindly rerun
+after an uncertain issuance. Failed environment installation retains its accessor
+for retirement and leaves either complete old or complete new environment bytes.
+
+The 30-minute window starts at issuance, not at job start. Allow for validation,
+Batfish, CML and the human pause; do not leave the build paused past expiry.
+Correcting an expired session requires a **new main build** and fresh normal
+authorization. Never retry the old failed plan/deploy job, revive its state, or
+reset device configuration to make work appear. Preparation authenticates only
+the operator to OpenBao; it does not log in as the device AppRole, read device
+credentials, contact NetBox/CML/devices, or write device configuration.
 
 ## State, artifacts and authorization
 
@@ -103,6 +161,12 @@ strategy, plan digest and change-required facts. Provider stdout/stderr is
 captured, never dumped. Artifacts contain typed plans/manifests/records, not
 credentials, JWTs, Terraform state or raw device configuration. Historical
 AuditStore acceptance is not replaced or fabricated by this new artifact path.
+
+Failed planning emits only a closed phase: `commit/context`, `protected
+environment`, `LIVE trust`, `NetBox inventory`, `OpenBao authentication`, `device
+read-only preflight`, or `plan publication`. Rejected/expired AppRole login maps
+to OpenBao authentication; provider and exception bodies are never printed.
+Annotation publication failure does not replace the primary nonzero plan result.
 
 Bootstrap remains `buildkite-agent pipeline upload .buildkite/pipeline.yml`.
 If an external bootstrap still invokes the retired demo renderer, its operator

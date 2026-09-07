@@ -6,16 +6,20 @@ import stat
 from pathlib import Path
 
 import pytest
-from test_profiled_planning import profiled_device
+from test_profiled_planning import (
+    FakeCollector,
+    FakeInventory,
+    FakeSecrets,
+    profiled_device,
+)
 
 from network_change_delivery import cli
 from network_change_delivery.architecture_contracts import AutomationProfileID
 from network_change_delivery.models import InterfaceDescriptionIntent, InterfaceState
 from network_change_delivery.profiled_planning import (
     ProfiledPlanningResult,
-    build_profiled_plan,
+    plan_profiled_change,
 )
-from network_change_delivery.secrets import CredentialReference
 
 
 def _intent() -> InterfaceDescriptionIntent:
@@ -40,23 +44,8 @@ def _result(description: str | None = "old") -> ProfiledPlanningResult:
         protected=False,
         description=description,
     )
-    credential = CredentialReference("openbao", "openbao:kv-v2:ncdp/devices/1/ssh")
-    plan = (
-        None
-        if description == intent.desired.description
-        else build_profiled_plan(
-            intent, device, interface, state, credential=credential
-        )
-    )
-    return ProfiledPlanningResult(
-        plan=plan,
-        state=state,
-        credential=credential,
-        message=(
-            "interface is already compliant; no profiled plan produced"
-            if plan is None
-            else "profiled immutable plan created"
-        ),
+    return plan_profiled_change(
+        intent, FakeInventory(device, interface), FakeSecrets(), FakeCollector(state)
     )
 
 
@@ -214,5 +203,70 @@ def test_profiled_trust_failure_prevents_provider_and_output(
     monkeypatch.setattr(cli, "OpenBaoSecretProvider", _not_called)
     with pytest.raises(SystemExit) as caught:
         cli.main(_arguments(change, output))
+    assert caught.value.code == 2
+    assert not output.exists()
+
+
+def test_cli_real_compliant_planner_writes_only_non_deployable_evidence(
+    tmp_path, monkeypatch, capsys
+):
+    from network_change_delivery.profiled_planning import ProfiledComplianceRecord
+
+    device, interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
+    change, output, compliance = (
+        tmp_path / name for name in ("intent.yaml", "plan.json", "compliant.json")
+    )
+    _write_change(change)
+    monkeypatch.setattr(cli, "validate_profiled_live_host_trust", lambda: None)
+    monkeypatch.setattr(
+        cli, "NetBoxProfileInventoryProvider", lambda: FakeInventory(device, interface)
+    )
+    monkeypatch.setattr(cli, "OpenBaoSecretProvider", FakeSecrets)
+    monkeypatch.setattr(
+        cli,
+        "ProfileReadOnlyAdapter",
+        lambda **_k: FakeCollector(_result("managed-by-ncdp").state),
+    )
+    assert (
+        cli.main([*_arguments(change, output), "--compliance-output", str(compliance)])
+        == 0
+    )
+    record = ProfiledComplianceRecord.model_validate_json(compliance.read_bytes())
+    assert record.outcome == "COMPLIANT" and record.plan is None
+    assert not output.exists() and stat.S_IMODE(compliance.stat().st_mode) == 0o600
+    assert "Outcome: COMPLIANT" in capsys.readouterr().out
+    # The same bytes cannot be used as deployment authority, even after approval.
+    monkeypatch.setattr(cli, "validate_profiled_live_host_trust", _not_called)
+    with pytest.raises(SystemExit) as caught:
+        cli.main(
+            [
+                "profiled-deploy",
+                "--plan",
+                str(compliance),
+                "--approve-digest",
+                record.digest,
+                "--report-json",
+                str(tmp_path / "execution.json"),
+                "--netbox",
+                "--openbao",
+                "--live",
+            ]
+        )
+    assert caught.value.code == 2
+    assert not (tmp_path / "execution.json").exists()
+
+
+@pytest.mark.parametrize("collision", ["same", "existing"])
+def test_compliant_output_collision_precedes_providers(
+    tmp_path, monkeypatch, collision
+):
+    change, output = tmp_path / "intent.yaml", tmp_path / "plan.json"
+    _write_change(change)
+    compliance = output if collision == "same" else tmp_path / "compliant.json"
+    if collision == "existing":
+        compliance.write_text("keep")
+    monkeypatch.setattr(cli, "validate_profiled_live_host_trust", _not_called)
+    with pytest.raises(SystemExit) as caught:
+        cli.main([*_arguments(change, output), "--compliance-output", str(compliance)])
     assert caught.value.code == 2
     assert not output.exists()

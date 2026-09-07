@@ -748,6 +748,7 @@ class AnsibleRunnerCiscoAdapter:
         """Classify profiled execution with the historical v1 result semantics."""
         status = str(getattr(runner, "status", "failed"))
         rc = getattr(runner, "rc", None)
+        changed = selected.get(EXECUTION_TASK, {}).get("changed")
         execution_event = selected.get(EXECUTION_TASK, {}).get("_ncdp_event")
         if (
             status in {"timeout", "canceled"}
@@ -756,6 +757,7 @@ class AnsibleRunnerCiscoAdapter:
         ):
             return ExecutionResult(
                 disposition=ExecutionDisposition.AMBIGUOUS,
+                changed=changed,
                 message=(
                     "network write outcome is ambiguous; "
                     "operator investigation required"
@@ -764,11 +766,12 @@ class AnsibleRunnerCiscoAdapter:
         if status != "successful" or rc != 0 or EXECUTION_TASK not in selected:
             return ExecutionResult(
                 disposition=ExecutionDisposition.FAILED,
+                changed=changed,
                 message="configuration task failed before an unambiguous success",
             )
         return ExecutionResult(
             disposition=ExecutionDisposition.SUCCEEDED,
-            changed=bool(selected[EXECUTION_TASK].get("changed", False)),
+            changed=changed,
             message="exact approved configuration artifact completed successfully",
         )
 

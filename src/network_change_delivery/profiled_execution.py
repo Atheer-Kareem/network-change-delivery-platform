@@ -8,7 +8,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from network_change_delivery.ansible_adapter import DeploymentRuntimeError
 from network_change_delivery.architecture_contracts import (
@@ -31,6 +31,7 @@ from network_change_delivery.profile_inventory import (
     admit_profiled_subject,
 )
 from network_change_delivery.profiled_planning import (
+    PROFILED_OPERATION_ADMISSIONS,
     ProfiledDeploymentPlan,
     ProfiledOperation,
     admit_profiled_operation,
@@ -84,6 +85,222 @@ class ProfiledChangeRecord(BaseModel):
     confirmation: StageResult | None = None
     managed_state_acceptance_attempted: Literal[False] = False
     final_outcome: FinalOutcome
+
+    @model_validator(mode="after")
+    def consistent_outcome(self) -> ProfiledChangeRecord:
+        """Validate representable stage facts without treating metadata as authority."""
+        if self.approval_digest != self.plan_digest:
+            raise ValueError("record approval and plan digests differ")
+        admission = PROFILED_OPERATION_ADMISSIONS.get(
+            (self.automation_profile_id, self.operation)
+        )
+        if (
+            admission is None
+            or self.network_os is not admission.network_os
+            or self.transaction_strategy != admission.transaction_strategy
+        ):
+            raise ValueError("record operation/profile strategy rejected")
+        for stage in (
+            self.preflight,
+            self.execution,
+            self.post_validation,
+            self.recovery,
+            self.candidate_validation,
+            self.confirmation,
+        ):
+            if (
+                stage is not None
+                and not stage.attempted
+                and (
+                    stage.succeeded is not None
+                    or stage.changed is not None
+                    or stage.observed_description is not None
+                )
+            ):
+                raise ValueError("unattempted stage carries result facts")
+            if stage is not None and stage.attempted and stage.succeeded is None:
+                raise ValueError("attempted stage lacks a classified result")
+        pre, execution, post, recovery = (
+            self.preflight,
+            self.execution,
+            self.post_validation,
+            self.recovery,
+        )
+        outcome = self.final_outcome
+        junos = self.transaction_strategy == "junos_commit_confirmed"
+        if not pre.attempted:
+            raise ValueError("record requires attempted preflight")
+        if (
+            pre.succeeded is True
+            and pre.observed_description != self.previous_description
+        ):
+            raise ValueError("successful preflight differs from reviewed state")
+        if execution.attempted and pre.succeeded is not True:
+            raise ValueError("execution without successful preflight")
+        if post.attempted and not execution.attempted:
+            raise ValueError("post-validation without execution")
+        if post.changed is not None and post.changed != (
+            post.observed_description != self.previous_description
+        ):
+            raise ValueError("observed transition contradicts observed description")
+        if (
+            post.succeeded is True
+            and outcome is not FinalOutcome.AMBIGUOUS
+            and (post.observed_description != self.desired_description)
+        ):
+            raise ValueError("successful post-validation did not observe desired state")
+        recovery_outcomes = {
+            FinalOutcome.RECOVERED,
+            FinalOutcome.RECOVERY_FAILED,
+            FinalOutcome.RECOVERY_AMBIGUOUS,
+        }
+        if recovery.attempted != (outcome in recovery_outcomes):
+            raise ValueError("recovery outcome/attempt mismatch")
+        if recovery.attempted and (
+            junos
+            or execution.succeeded is not True
+            or not post.attempted
+            or post.succeeded is not False
+            or post.observed_description == self.desired_description
+        ):
+            raise ValueError("recovery is ineligible")
+        if outcome is FinalOutcome.RECOVERED and (
+            recovery.succeeded is not True
+            or recovery.observed_description != self.previous_description
+        ):
+            raise ValueError("recovery lacks verified restoration")
+        if (
+            outcome is FinalOutcome.RECOVERY_AMBIGUOUS
+            and recovery.succeeded is not False
+        ):
+            raise ValueError("ambiguous recovery cannot claim success")
+        if not junos and any(
+            value is not None
+            for value in (
+                self.candidate_validation,
+                self.candidate_diff_digest,
+                self.confirmation,
+            )
+        ):
+            raise ValueError("Cisco record carries Junos transaction evidence")
+        if junos:
+            candidate, confirmation = self.candidate_validation, self.confirmation
+            if (
+                candidate is not None
+                and candidate.attempted
+                and pre.succeeded is not True
+            ):
+                raise ValueError("candidate without successful preflight")
+            candidate_ok = candidate is not None and candidate.succeeded is True
+            if candidate_ok != (self.candidate_diff_digest is not None):
+                raise ValueError("candidate validation/diff mismatch")
+            if execution.attempted != candidate_ok:
+                raise ValueError("Junos execution/candidate mismatch")
+            confirmation_outcomes = {
+                FinalOutcome.SUCCEEDED,
+                FinalOutcome.CONFIRMATION_FAILED,
+                FinalOutcome.CONFIRMATION_AMBIGUOUS,
+            }
+            if (confirmation is not None and confirmation.attempted) != (
+                outcome in confirmation_outcomes
+            ):
+                raise ValueError("Junos confirmation/outcome mismatch")
+            if (
+                confirmation is not None
+                and confirmation.attempted
+                and (
+                    execution.succeeded is not True
+                    or post.succeeded is not True
+                    or confirmation.succeeded is not (outcome is FinalOutcome.SUCCEEDED)
+                )
+            ):
+                raise ValueError("Junos confirmation lifecycle inconsistent")
+        if outcome in {FinalOutcome.BLOCKED, FinalOutcome.STALE_PLAN}:
+            if execution.attempted or post.attempted or recovery.attempted:
+                raise ValueError("blocked/stale record attempted execution")
+            if pre.succeeded is True and not (
+                junos
+                and outcome is FinalOutcome.BLOCKED
+                and self.candidate_validation is not None
+                and self.candidate_validation.attempted
+                and self.candidate_validation.succeeded is False
+            ):
+                raise ValueError("blocked/stale record lacks failed prerequisite")
+        elif outcome is FinalOutcome.SUCCEEDED:
+            if execution.succeeded is not True or post.succeeded is not True:
+                raise ValueError(
+                    "success lacks execution and independent post-validation"
+                )
+        elif outcome in {FinalOutcome.EXECUTION_FAILED, FinalOutcome.AMBIGUOUS}:
+            if not execution.attempted or execution.succeeded is not False:
+                raise ValueError("failed/ambiguous execution facts inconsistent")
+            if post.attempted and (junos or outcome is FinalOutcome.EXECUTION_FAILED):
+                raise ValueError("post observation on unsupported failure path")
+        elif outcome in recovery_outcomes:
+            pass  # Eligibility and restoration are checked above.
+        elif outcome is FinalOutcome.POST_VALIDATION_FAILED:
+            if (
+                junos
+                or execution.succeeded is not True
+                or not post.attempted
+                or post.succeeded is not False
+            ):
+                raise ValueError("post-validation failure facts inconsistent")
+        elif outcome is FinalOutcome.AUTO_ROLLBACK_PENDING:
+            if not junos or execution.succeeded is not True or post.succeeded is True:
+                raise ValueError("auto-rollback-pending facts inconsistent")
+        elif outcome in {
+            FinalOutcome.CONFIRMATION_FAILED,
+            FinalOutcome.CONFIRMATION_AMBIGUOUS,
+        }:
+            if not junos:
+                raise ValueError("confirmation outcome requires Junos")
+        else:
+            raise ValueError("unsupported profiled execution outcome")
+        return self
+
+
+def verify_profiled_record_plan(
+    record: ProfiledChangeRecord, plan: ProfiledDeploymentPlan
+) -> None:
+    """Verify all duplicated approval bindings; never execute or reinterpret a write."""
+    # Revalidate even model_copy/model_construct inputs at the consumer boundary.
+    record = ProfiledChangeRecord.model_validate(record.model_dump(warnings=False))
+    plan = ProfiledDeploymentPlan.model_validate(plan.model_dump(warnings=False))
+    fields = (
+        "change_id",
+        "target",
+        "device_identity",
+        "interface",
+        "platform_slug",
+        "network_os",
+        "automation_profile_id",
+        "host",
+        "port",
+        "expected_hostname",
+        "desired_description",
+        "credential_source",
+        "credential_reference",
+    )
+    if any(getattr(record, field) != getattr(plan, field) for field in fields) or (
+        record.plan_digest != plan.digest
+        or record.approval_digest != plan.digest
+        or record.previous_description != plan.current_description
+        or record.operation is not plan.operation_admission.operation
+        or record.transaction_strategy != plan.operation_admission.transaction_strategy
+    ):
+        raise ValueError("profiled execution record/plan binding rejected")
+
+
+def _observed_transition(plan, observed):
+    if (
+        observed is None
+        or not observed.exists
+        or observed.observed_hostname != plan.expected_hostname
+        or observed.interface != plan.interface.name
+    ):
+        return None
+    return observed.description != plan.current_description
 
 
 class ProfiledInventory(Protocol):
@@ -251,12 +468,12 @@ def execute_profiled_plan(
     blocked = _stage("pre-write verification blocked", attempted=True, succeeded=False)
     if re.fullmatch(r"sha256:[0-9a-f]{64}", approval_digest) is None:
         raise ValueError("approval digest is invalid")
-    if not plan.verify_digest() or approval_digest != plan.digest:
-        message = (
-            "plan digest is invalid"
-            if not plan.verify_digest()
-            else "approval digest does not match plan"
+    if approval_digest != plan.digest:
+        raise ProfiledExecutionError(
+            FinalOutcome.BLOCKED, "approval digest does not match plan"
         )
+    if not plan.verify_digest():
+        message = "plan digest is invalid"
         return _record(
             plan,
             approval_digest,
@@ -314,15 +531,15 @@ def execute_profiled_plan(
         if result.disposition is not ExecutionDisposition.SUCCEEDED:
             if result.disposition is ExecutionDisposition.AMBIGUOUS:
                 try:
+                    reconciled = collector.collect(
+                        device.live_read_only_target(), credentials, plan.interface.name
+                    )
                     post = _stage(
                         "reconciliation observation collected",
                         attempted=True,
                         succeeded=True,
-                        observed_description=collector.collect(
-                            device.live_read_only_target(),
-                            credentials,
-                            plan.interface.name,
-                        ).description,
+                        observed_description=reconciled.description,
+                        changed=_observed_transition(plan, reconciled),
                     )
                 except (ValueError, OSError, RuntimeError):
                     post = _stage(
@@ -378,6 +595,7 @@ def execute_profiled_plan(
                     attempted=True,
                     succeeded=True,
                     observed_description=observed.description,
+                    changed=_observed_transition(plan, observed),
                 ),
                 now=now,
             )
@@ -393,6 +611,7 @@ def execute_profiled_plan(
                     attempted=True,
                     succeeded=False,
                     observed_description=observed.description,
+                    changed=_observed_transition(plan, observed),
                 ),
                 now=now,
             )
@@ -410,6 +629,7 @@ def execute_profiled_plan(
             attempted=True,
             succeeded=False,
             observed_description=observed.description,
+            changed=_observed_transition(plan, observed),
         )
         if recovery_result.disposition is ExecutionDisposition.AMBIGUOUS:
             return _record(
@@ -599,6 +819,7 @@ def execute_profiled_plan(
                 attempted=True,
                 succeeded=False,
                 observed_description=observed.description if observed else None,
+                changed=_observed_transition(plan, observed),
             ),
             now=now,
         )
@@ -631,6 +852,7 @@ def execute_profiled_plan(
             attempted=True,
             succeeded=True,
             observed_description=observed.description,
+            changed=_observed_transition(plan, observed),
         ),
         confirmation=confirmation,
         now=now,

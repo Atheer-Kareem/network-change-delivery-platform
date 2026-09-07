@@ -179,7 +179,9 @@ not reset device state to manufacture a demonstration.
 
 Applications retain real exit codes. Buildkite soft-fails commands and schedules
 later steps; it does not grant write authority. The final step validates any
-available schema-v2 execution record and shows actual execution/recovery attempts.
+available schema-v2 execution record against the exact executed plan and shows
+actual execution/recovery attempts. All duplicated approved bindings are verified
+before publication and final rendering, not just digest equality.
 No record is fabricated. Missing publication is not evidence of no write: inspect
 the retained private report before any new attempt. Primary execution failure
 is preserved if annotation/artifact publication also fails. A successful command
@@ -193,7 +195,24 @@ artifacts do not yet enter the historical durable
 AuditStore/PRE-write-POST/viewer chain. That machinery remains available;
 CAP-DURABLE-EVIDENCE and CAP-CONFIG-CHRONOLOGY own reconnection. The accepted
 record reports `execution.changed == false` despite observed state transition;
-that provider metadata is not observational change truth (CAP-OUTCOME-TRUTH).
+that historical provider metadata is not observational change truth. Newly
+normalized missing/censored/non-boolean provider metadata is unknown (`null`),
+and independent `post_validation.changed` records comparable observed transition.
+See [stage semantics](change-lifecycle.md#provider-metadata-observation-and-outcome).
+
+Successful compliant planning publishes a schema-v2 `ProfiledComplianceRecord`
+with its own canonical digest, exact identities/state and false authority/attempt
+flags. The `profiled-planning-result` receipt binds build UUID, source commit,
+artifact kind, exact bytes and result digest. Each downstream step retrieves that
+exact artifact from `profiled-live-plan` in the same build and validates it.
+No artifact-absence fallback is allowed. Promotion mints nothing; deploy returns
+COMPLIANT without invoking the CLI or device providers; final evidence renders
+write attempted false, recovery attempted false and promotion minted false.
+The static human block may still appear. Continuing it creates no authority.
+This describes the planning observation, not a new live acceptance or proof that
+other assurance steps succeeded. Invalid/missing receipts or artifacts remain
+failures; neither a missing plan nor failed planning is compliant. The CLI's
+optional `--compliance-output` exposes the same artifact without another planner.
 
 Failed planning emits only a closed phase: `commit/context`, `protected
 environment`, `LIVE trust`, `NetBox inventory`, `OpenBao login`, `OpenBao credential read`, `device
@@ -206,4 +225,5 @@ Bootstrap remains `buildkite-agent pipeline upload .buildkite/pipeline.yml`.
 The retired demo renderer/path-filter bootstrap is not current architecture.
 PR execution cannot validate the main write tail. The supplied main acceptance
 is linked above; any new run still needs separate authorization and human unblock.
-No live pipeline settings are changed by documentation reconciliation.
+No static pipeline scheduling, retry policy or main assurance prerequisite is
+changed by the outcome refinement. The PR CML exception remains ACTIVE.

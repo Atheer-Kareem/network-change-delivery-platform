@@ -293,15 +293,16 @@ def test_junos_success_confirms_once():
 def test_invalid_approval_blocks_before_writer():
     value, device, interface, state = plan()
     cisco = Cisco([])
-    record = execute_profiled_plan(
-        value,
-        "sha256:" + "b" * 64,
-        Inventory(device, interface),
-        Secrets(),
-        Collector([state]),
-        writer(cisco),
-    )
-    assert record.final_outcome.value == "BLOCKED" and not cisco.artifacts
+    with pytest.raises(ValueError, match="approval digest does not match plan"):
+        execute_profiled_plan(
+            value,
+            "sha256:" + "b" * 64,
+            Inventory(device, interface),
+            Secrets(),
+            Collector([state]),
+            writer(cisco),
+        )
+    assert not cisco.artifacts
 
 
 def test_profiled_write_target_is_immutable_and_binds_stable_identity():

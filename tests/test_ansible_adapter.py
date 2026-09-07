@@ -472,3 +472,44 @@ def test_runner_rejects_missing_or_invalid_private_host_authority(
             DeviceCredentials(username="user", password="secret"),
             "inspect_snmp_provisioning.yml",
         )
+
+
+@pytest.mark.parametrize(
+    "metadata,expected",
+    [
+        ({"changed": True}, True),
+        ({"changed": False}, False),
+        ({}, None),
+        ({"censored": "no_log"}, None),
+        ({"changed": None}, None),
+        ({"changed": "false"}, None),
+        ({"changed": 0}, None),
+        ({"changed": 1}, None),
+        ({"changed": {}}, None),
+    ],
+)
+@pytest.mark.parametrize(
+    "status,disposition",
+    [
+        ("successful", ExecutionDisposition.SUCCEEDED),
+        ("timeout", ExecutionDisposition.AMBIGUOUS),
+        ("failed", ExecutionDisposition.FAILED),
+    ],
+)
+def test_current_cisco_writer_preserves_provider_change_metadata(
+    monkeypatch, metadata, expected, status, disposition
+):
+    adapter = AnsibleRunnerCiscoAdapter(known_hosts=Path("/tmp/known_hosts"))
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *_a, **_k: (
+            SimpleNamespace(status=status, rc=0 if status == "successful" else 1),
+            {EXECUTION_TASK: metadata},
+        ),
+    )
+    value = adapter.execute_profiled(
+        _profiled_target(), DeviceCredentials(username="u", password="p"), _artifact()
+    )
+    assert value.changed is expected
+    assert value.disposition is disposition

@@ -591,6 +591,10 @@ def _run_audit_find_observations(arguments: argparse.Namespace) -> int:
 def _run_profiled_plan(arguments: argparse.Namespace) -> int:
     """Create one schema-v2 plan through profiled read-only boundaries only."""
     _require_unused_profiled_plan_path(arguments.output)
+    if arguments.compliance_output is not None:
+        if arguments.compliance_output.resolve() == arguments.output.resolve():
+            raise ValueError("plan and compliance outputs must be distinct")
+        _require_unused_profiled_plan_path(arguments.compliance_output)
     intent = _load_change(arguments.change)
     validate_profiled_live_host_trust()
     inventory = NetBoxProfileInventoryProvider()
@@ -602,7 +606,15 @@ def _run_profiled_plan(arguments: argparse.Namespace) -> int:
     print(f"Credential source: {result.credential.source}")
     print(f"Credential reference: {result.credential.reference}")
     if result.plan is None:
+        if result.compliance is None:
+            raise ValueError("successful compliant planning requires typed evidence")
+        if arguments.compliance_output is not None:
+            _write_new_profiled_plan(
+                arguments.compliance_output,
+                result.compliance.model_dump_json(indent=2) + "\n",
+            )
         print(result.message)
+        print(f"Outcome: COMPLIANT; evidence digest: {result.compliance.digest}")
         return 0
     plan = result.plan
     _write_new_profiled_plan(arguments.output, plan.model_dump_json(indent=2) + "\n")
@@ -695,6 +707,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profiled_plan_parser.add_argument("--change", required=True, type=Path)
     profiled_plan_parser.add_argument("--output", required=True, type=Path)
+    profiled_plan_parser.add_argument(
+        "--compliance-output",
+        type=Path,
+        help="create typed non-deployable evidence only when already compliant",
+    )
     profiled_plan_parser.add_argument("--netbox", required=True, action="store_true")
     profiled_plan_parser.add_argument("--openbao", required=True, action="store_true")
     profiled_plan_parser.set_defaults(handler=_run_profiled_plan)

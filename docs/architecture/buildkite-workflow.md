@@ -84,9 +84,13 @@ protected delivery or the historical cryptographic deployment JWT boundary.
    uses current NetBox/OpenBao providers and read-only collection, and plans the
    current fixed demo target: device 1, core-02, interface 2/GigabitEthernet2.
    `deployments/live/profiled-demo.yaml` requests one interface description.
-   An already-compliant target produces no plan, rather than fabricated work.
+   Successful planning publishes exactly one typed plan or compliant record,
+   plus `profiled-planning-result` metadata selecting its kind, build/commit,
+   canonical result digest and exact artifact-byte digest. An already-compliant
+   target produces no plan. Missing/failed publication cannot mean compliance.
 2. `profiled-promotion` on `ncdp-validation` independently downloads the exact
-   same-build plan from its producer. The strict, self-digested
+   same-build planning result from its producer and verifies its receipt. For a
+   real plan, the strict, self-digested
    `ProfiledPromotion` schema-v2 binds build UUID, commit, change, target/device,
    current plan digest, byte-level artifact hash, all validation receipts and
    both assurance digests. Legacy schema-v1 is rejected. Its annotation exposes
@@ -102,9 +106,20 @@ protected delivery or the historical cryptographic deployment JWT boundary.
    Fresh CLI preflight, stale-plan and current-state checks remain authoritative.
    Invalid authorization emits NO WRITE and exits nonzero.
 5. `profiled-deployment-evidence` validates a same-build schema-v2
-   `ProfiledChangeRecord` when available, showing outcome and actual execution/
-   recovery attempts. Missing artifacts are not fabricated evidence or proof
+   `ProfiledChangeRecord` against its exact plan when available, showing outcome
+   and actual execution/recovery attempts. Publication also checks every duplicated
+   record/plan binding, rather than just digest equality. Missing artifacts are not fabricated evidence or proof
    that no write occurred; inspect retained state before a new attempt.
+
+For a valid same-build `ProfiledComplianceRecord`, promotion, deploy and final
+steps instead report COMPLIANT, write/recovery attempted false, promotion minted
+false. They mint no promotion, invoke no `ncdp profiled-deploy`, and fabricate no
+`ProfiledChangeRecord`. The static fieldless block may remain visible; continuing
+it grants zero write authority. This reports a successful planning observation,
+not successful deployment or assurance. A missing plan is never a substitute for
+an explicit valid receipt and compliant artifact. Missing, corrupt or mismatched
+results fail closed, with cautious artifact-absence wording in final evidence.
+The static DAG, PR CML exception and real-plan assurance prerequisites are unchanged.
 
 The CLI write projection remains devices 1/2 only; this automation narrows it to
 one device-1 target. Devices 8/9, B4 service changes, fleet deployment and SNMP
@@ -125,5 +140,6 @@ delivery and negative fail-closed acceptance;
 see the canonical [current acceptance](../acceptance/profiled-main-delivery.md)
 for exact digests, source boundaries and limits. Local fake tests and a successful
 aggregate alone cannot establish runtime acceptance. Current artifacts are not
-yet persisted through AuditStore or its PRE/write/POST/viewer chain. The known
-provider `execution.changed` limitation remains CAP-OUTCOME-TRUTH.
+yet persisted through AuditStore or its PRE/write/POST/viewer chain. Provider mutation metadata is now tri-state and distinct from independent
+observed transition; the accepted historical record remains unchanged. See
+[stage semantics](change-lifecycle.md#provider-metadata-observation-and-outcome).

@@ -199,7 +199,11 @@ def test_current_docs_record_retirement_and_authoritative_capability_ledger() ->
     )
     assert (
         "| CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation "
-        "| IN PROGRESS |" in roadmap
+        "| ACCEPTED |" in roadmap
+    )
+    assert (
+        "| CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | IN PROGRESS |"
+        in roadmap
     )
     assert "schema-v1 fleet engine" in lifecycle
     assert "historically" in lifecycle and "accepted" in lifecycle

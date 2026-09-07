@@ -78,9 +78,19 @@ def test_pr_vs_main_graph_and_real_human_block():
             )
             assert step["agents"] == {"queue": queue}
     block = indexed[MAIN_KEYS[2]]
-    assert block["block"] == "Human authorization · exact promoted plan"
+    assert block["block"] == "Human continuation · promoted change or compliance"
     assert "fields" not in block and "command" not in block
-    assert "does not override failed prerequisites" in block["prompt"]
+    assert "For a real promotion, review the promoted schema-v2 plan" in block["prompt"]
+    assert "unblocking authorizes only this exact build/promotion" in block["prompt"]
+    assert "For COMPLIANT, no plan or promotion exists" in block["prompt"]
+    assert "continuation grants no write authority" in block["prompt"]
+    assert "Human continuation never repairs failed prerequisites" in block["prompt"]
+    assert indexed["profiled-promotion"]["label"] == (
+        "Delivery decision · promotion or compliance"
+    )
+    assert indexed["profiled-deploy"]["label"] == (
+        "Profiled delivery · authorized execution or compliant no-write"
+    )
     for key in (MAIN_KEYS[0], MAIN_KEYS[3]):
         assert indexed[key]["concurrency"] == 1
         assert indexed[key]["concurrency_group"] == "ncdp/profiled-live-delivery"

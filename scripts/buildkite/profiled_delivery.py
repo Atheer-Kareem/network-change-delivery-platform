@@ -19,22 +19,32 @@ from network_change_delivery.inventory import InventoryError
 from network_change_delivery.models import InterfaceDescriptionIntent
 from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
-from network_change_delivery.profiled_execution import ProfiledChangeRecord
+from network_change_delivery.profiled_execution import (
+    ProfiledChangeRecord,
+    verify_profiled_record_plan,
+)
 from network_change_delivery.profiled_live_host_trust import (
     DEFAULT_PROFILED_LIVE_TRUST_ROOT,
     KNOWN_HOSTS_NAME,
     validate_profiled_live_host_trust,
 )
-from network_change_delivery.profiled_planning import plan_profiled_change
+from network_change_delivery.profiled_planning import (
+    ProfiledComplianceRecord,
+    ProfiledDeploymentPlan,
+    plan_profiled_change,
+)
 from network_change_delivery.profiled_promotion import (
     BATFISH_METADATA,
     CHANGE_ID,
     CML_METADATA,
     DESCRIPTION,
     MAIN_KEYS,
+    PLANNING_METADATA,
     PROMOTION_METADATA,
     VALIDATION_KEYS,
     ProfiledBuildContext,
+    ProfiledPlanningPublication,
+    admit_demo_plan,
     authorize,
     digest_bytes,
     promote,
@@ -298,13 +308,18 @@ def publish_plan(context, directory, intent, result):
         "Plan digest": plan.digest if plan else "none — already compliant",
         "Change required": plan is not None,
     }
-    if plan:
-        from network_change_delivery.profiled_promotion import admit_demo_plan
-
-        admit_demo_plan(plan)
-        name = artifact_name(context, "plan")
-        write_new(directory / name, plan.model_dump_json(indent=2).encode() + b"\n")
-        upload(context, directory, name)
+    value = plan if plan is not None else result.compliance
+    if value is None or (plan is not None and result.compliance is not None):
+        raise ValueError("planning must produce exactly one typed result")
+    # Revalidate before publication, even if a caller supplied an unvalidated copy.
+    model = ProfiledDeploymentPlan if plan is not None else ProfiledComplianceRecord
+    value = model.model_validate(value.model_dump())
+    admit_demo_plan(value)
+    kind = "plan" if plan is not None else "compliance"
+    name = artifact_name(context, kind)
+    raw = value.model_dump_json(indent=2).encode() + b"\n"
+    write_new(directory / name, raw)
+    upload(context, directory, name)
     annotate(
         context,
         "## Profiled live plan\n\n"
@@ -312,13 +327,69 @@ def publish_plan(context, directory, intent, result):
             f"- {key}: {html.escape(str(value))}" for key, value in facts.items()
         ),
     )
+    publish_metadata(
+        context,
+        PLANNING_METADATA,
+        ProfiledPlanningPublication(
+            build_id=context.build_id,
+            commit=context.commit,
+            artifact_kind=kind,
+            artifact_digest=digest_bytes(raw),
+            result_digest=value.digest,
+        ).model_dump_json(),
+    )
+    return 0
+
+
+def planning_result(context, directory):
+    """Require successful publication; never infer compliance from absence."""
+    receipt = ProfiledPlanningPublication.model_validate_json(
+        metadata(context, PLANNING_METADATA)
+    )
+    receipt.verify_context(context)
+    raw = download(
+        context,
+        directory,
+        artifact_name(context, receipt.artifact_kind),
+        "profiled-live-plan",
+    )
+    model = (
+        ProfiledDeploymentPlan
+        if receipt.artifact_kind == "plan"
+        else ProfiledComplianceRecord
+    )
+    value = model.model_validate_json(raw)
+    if (
+        digest_bytes(raw) != receipt.artifact_digest
+        or value.digest != receipt.result_digest
+    ):
+        raise ValueError("planning publication digest rejected")
+    admit_demo_plan(value)
+    return value, raw
+
+
+def compliant_annotation(context, value):
+    annotate(
+        context,
+        "## Profiled delivery — COMPLIANT\n\n"
+        f"Target: {html.escape(value.target)} / {value.device_identity}\n\n"
+        "Outcome: COMPLIANT\n\nWrite attempted: False\n\n"
+        "Recovery attempted: False\n\nPromotion minted: False\n\n"
+        "No deployment plan or execution record exists for this result. "
+        "The static human block may remain visible; "
+        "unblock grants zero write authority.\n\n"
+        "Compliance was established by the planning observation at "
+        f"{html.escape(value.observed_at.isoformat())}; downstream continuation does "
+        "not perform a fresh device-state check because no write is authorized.\n\n"
+        f"Compliance evidence: `{value.digest}`",
+    )
     return 0
 
 
 def promotion_step(context, directory):
-    plan_bytes = download(
-        context, directory, artifact_name(context, "plan"), "profiled-live-plan"
-    )
+    value, plan_bytes = planning_result(context, directory)
+    if isinstance(value, ProfiledComplianceRecord):
+        return compliant_annotation(context, value)
     value = promote(context, plan_bytes, *prerequisites(context))
     name = artifact_name(context, "promotion")
     write_new(directory / name, value.model_dump_json(indent=2).encode() + b"\n")
@@ -337,9 +408,9 @@ def promotion_step(context, directory):
 def deploy_step(context, directory):
     try:
         verify_human_dependency()
-        plan_bytes = download(
-            context, directory, artifact_name(context, "plan"), "profiled-live-plan"
-        )
+        value, plan_bytes = planning_result(context, directory)
+        if isinstance(value, ProfiledComplianceRecord):
+            return compliant_annotation(context, value)
         promotion_bytes = download(
             context,
             directory,
@@ -389,11 +460,7 @@ def deploy_step(context, directory):
     if report.exists() and report.stat().st_size:
         try:
             record = ProfiledChangeRecord.model_validate_json(read_artifact(report))
-            if (
-                record.plan_digest != plan.digest
-                or record.approval_digest != plan.digest
-            ):
-                raise ValueError("execution evidence binding rejected")
+            verify_profiled_record_plan(record, plan)
             upload(context, directory, report.name)
             publication_failed = False
         except Exception:
@@ -412,18 +479,23 @@ def deploy_step(context, directory):
 
 def evidence_step(context, directory):
     try:
+        plan, _plan_bytes = planning_result(context, directory)
+        if isinstance(plan, ProfiledComplianceRecord):
+            return compliant_annotation(context, plan)
         raw = download(
             context, directory, artifact_name(context, "record"), "profiled-deploy"
         )
+        record = ProfiledChangeRecord.model_validate_json(raw)
+        verify_profiled_record_plan(record, plan)
     except (ValueError, OSError):
         annotate(
             context,
-            "No typed execution record produced.\n\n"
+            "No typed execution record produced or verified, "
+            "and no valid compliant result.\n\n"
             "Device write not proven/executed by this build. Artifact unavailability "
             "is not proof of absence; inspect retained state before any new attempt.",
         )
         return 2
-    record = ProfiledChangeRecord.model_validate_json(raw)
     annotate(
         context,
         "## Deployment evidence\n\n"
@@ -489,7 +561,7 @@ def main():
             )
         print(
             "Profiled delivery prerequisite/operation failed; no automatic retry. "
-            "Only typed execution evidence can establish a write outcome.",
+            "Only valid typed planning or execution evidence can establish an outcome.",
             file=sys.stderr,
         )
         return 2

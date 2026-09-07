@@ -10,9 +10,9 @@ not regenerated or presented as the current delivery mechanism.
 
 | Outcome | Evidence and interpretation | Boundary |
 |---|---|---|
-| Successful authorized change | Current acceptance: core-02/GigabitEthernet2, exact supplied plan/promotion/record digests, independent final description, `SUCCEEDED`, write attempted, no recovery | Main demo targets core-02; broader CLI Junos acceptance is separate. `execution.changed` is a known provider-metadata limitation. |
+| Successful authorized change | Current acceptance: core-02/GigabitEthernet2, exact supplied plan/promotion/record digests, independent final description, `SUCCEEDED`, write attempted, no recovery | Main demo targets core-02; broader CLI Junos acceptance is separate. `execution.changed=false` in that historical artifact is preserved; current provider metadata and observed transition have distinct meanings. |
 | Fail-closed blocked delivery | Supplied negative current-tail result: continuation and visible human block, invalid promotion, deployment `NO WRITE`, no fabricated typed record | Scheduling/unblock cannot repair prerequisites; missing evidence alone in another attempt is not proof of no write. |
-| Already compliant / no plan | Current planner and tests: desired state already present yields no deployable plan | No plan means no promotion authority. Current downstream presentation awaits CAP-OUTCOME-TRUTH; never reset devices to manufacture work. |
+| Already compliant / no plan | Current planner and offline delivery tests: desired state already present yields a typed `ProfiledComplianceRecord`, no deployable plan | A valid same-build compliance receipt yields COMPLIANT, write/recovery false, no promotion and no deploy invocation. Missing/failed planning never means compliance. The static block may remain visible; never reset devices to manufacture work. |
 
 Current schema-v2 artifacts are not yet integrated into AuditStore, configuration
 correlation or the viewer. The viewer demonstrates historical durable evidence,

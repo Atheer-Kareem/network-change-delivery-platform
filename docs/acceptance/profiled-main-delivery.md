@@ -53,10 +53,16 @@ Exact supplied digests:
 The supplied record reports fresh preflight success, execution success and
 post-validation observing desired state. **`execution.changed == false` is also
 present**, despite before/post observations proving a description transition.
-The current adapter derives that flag from provider result metadata, defaulting
-missing metadata to false. It is not a reliable observed-transition predicate.
-This record is not silently corrected; semantics and consistency improvements
-belong to [CAP-OUTCOME-TRUTH](../roadmap.md#cap-outcome-truth--truthful-profiled-delivery-outcomes).
+The adapter at that milestone defaulted missing provider metadata to false.
+The supplied record does not establish whether the provider explicitly reported
+false or omitted the field. This record is not silently corrected. Subsequent
+[CAP-OUTCOME-TRUTH](../roadmap.md#cap-outcome-truth--truthful-profiled-delivery-outcomes)
+implementation preserves explicit booleans and normalizes missing/censored or
+malformed change metadata to unknown. Newly produced post-validation metadata
+records independently comparable transition, without changing provider reports.
+A regression reconstruction from the supplied facts remains parseable with
+execution.changed=false and SUCCEEDED. Unprovided fixture fields are synthetic;
+this is not verification of unavailable original bytes or their digest.
 
 ## Source-confirmed controls and limits
 
@@ -90,8 +96,11 @@ That restoration belongs to CAP-DURABLE-EVIDENCE and CAP-CONFIG-CHRONOLOGY;
 independent Oxidized history remains supporting observation, not proof of cause.
 
 Already-compliant planning produces no deployable plan and cannot establish
-promotion authority. The current downstream Buildkite presentation does not yet
-provide the refined typed no-change outcome proposed in CAP-OUTCOME-TRUTH.
+promotion authority. Subsequent CAP-OUTCOME-TRUTH
+implementation publishes a separate typed compliant result and verifies its
+same-build receipt downstream without minting promotion or invoking deployment.
+Offline tests establish that behavior; this historical acceptance source supplies
+no new runtime no-change acceptance.
 Never reset a device merely to manufacture a change for demonstration.
 
 This acceptance does not authorize a new live attempt. The local Cisco runtime

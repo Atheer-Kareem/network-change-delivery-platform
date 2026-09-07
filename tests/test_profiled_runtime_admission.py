@@ -83,8 +83,9 @@ def trace_real_verifier(monkeypatch, events, expected_root):
 
 
 @pytest.mark.parametrize("explicit_path", [True, False])
+@pytest.mark.parametrize("changed", [True, False, None])
 def test_cli_verifies_actual_cisco_runner_path_before_preflight(
-    runtime, tmp_path, monkeypatch, explicit_path
+    runtime, tmp_path, monkeypatch, explicit_path, changed
 ):
     root, collections = runtime
     if not explicit_path:
@@ -111,7 +112,9 @@ def test_cli_verifies_actual_cisco_runner_path_before_preflight(
                 "event": "runner_on_ok",
                 "event_data": {
                     "task": ansible_adapter.EXECUTION_TASK,
-                    "res": {"changed": True},
+                    "res": {"changed": changed}
+                    if changed is not None
+                    else {"censored": "no_log"},
                 },
             }
         )
@@ -131,6 +134,8 @@ def test_cli_verifies_actual_cisco_runner_path_before_preflight(
     record = ProfiledChangeRecord.model_validate_json(report.read_bytes())
     assert record.final_outcome.value == "SUCCEEDED"
     assert record.execution.attempted and not record.recovery.attempted
+    assert record.execution.changed is changed
+    assert record.post_validation.changed is True
 
 
 @pytest.mark.parametrize(

@@ -22,8 +22,10 @@ from network_change_delivery.profiled_planning import plan_profiled_change
 from network_change_delivery.profiled_promotion import (
     CHANGE_ID,
     DESCRIPTION,
+    PLANNING_METADATA,
     VALIDATION_KEYS,
     ProfiledBuildContext,
+    ProfiledPlanningPublication,
     ProfiledPromotion,
     authorize,
     digest_bytes,
@@ -88,13 +90,31 @@ def receipts(context):
 
 
 @pytest.fixture
-def driver():
+def driver(monkeypatch):
     spec = importlib.util.spec_from_file_location(
         "delivery_driver", ROOT / "scripts/buildkite/profiled_delivery.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    monkeypatch.setattr(
+        module,
+        "checked_command",
+        lambda *_a, **_k: pytest.fail(
+            "unmocked external helper forbidden in delivery tests"
+        ),
+    )
     return module
+
+
+def planning_receipt(context, value):
+    raw = value.model_dump_json().encode()
+    return ProfiledPlanningPublication(
+        build_id=context.build_id,
+        commit=context.commit,
+        artifact_kind="plan" if hasattr(value, "plan_type") else "compliance",
+        artifact_digest=digest_bytes(raw),
+        result_digest=value.digest,
+    ).model_dump_json()
 
 
 def test_current_promotion_round_trip_and_authorization(context, plan, receipts):
@@ -260,6 +280,9 @@ def test_invalid_promotion_reaches_no_write_and_evidence_remains_truthful(
         lambda: pytest.fail("trust before authorization"),
     )
     monkeypatch.setenv("BUILDKITE_UNBLOCKER_ID", JOB)
+    monkeypatch.setattr(
+        driver, "metadata", lambda *_a: (_ for _ in ()).throw(ValueError("missing"))
+    )
     assert driver.deploy_step(context, tmp_path) == 2
     assert "NO WRITE" in messages[0]
     assert driver.evidence_step(context, tmp_path) == 2
@@ -283,7 +306,15 @@ def test_valid_authorization_calls_only_current_cli_once(
         ),
     )
     monkeypatch.setattr(driver, "prerequisites", lambda _c: (receipts, DIGEST, DIGEST))
-    monkeypatch.setattr(driver, "metadata", lambda *_a: promotion.digest)
+    monkeypatch.setattr(
+        driver,
+        "metadata",
+        lambda _c, key: (
+            planning_receipt(context, plan)
+            if key == PLANNING_METADATA
+            else promotion.digest
+        ),
+    )
     monkeypatch.setenv("BUILDKITE_UNBLOCKER_ID", JOB)
     events = []
     monkeypatch.setattr(
@@ -310,7 +341,7 @@ def test_valid_authorization_calls_only_current_cli_once(
 
 @pytest.mark.parametrize("no_change", [False, True])
 def test_planning_reuses_current_read_only_implementation(
-    driver, context, plan, tmp_path, monkeypatch, no_change
+    driver, context, tmp_path, monkeypatch, no_change
 ):
     messages, uploaded = [], []
     monkeypatch.setattr(driver, "validate_profiled_live_host_trust", lambda: None)
@@ -320,20 +351,33 @@ def test_planning_reuses_current_read_only_implementation(
         "ProfileReadOnlyAdapter",
     ):
         monkeypatch.setattr(driver, name, lambda **_k: object())
-    monkeypatch.setattr(
-        driver,
-        "plan_profiled_change",
-        lambda *_a: SimpleNamespace(
-            plan=None if no_change else plan,
-            state=SimpleNamespace(description="previous"),
+    device, interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
+    intent = InterfaceDescriptionIntent(
+        kind="interface_description",
+        change_id=CHANGE_ID,
+        target=device.logical_name,
+        interface=interface.name,
+        desired={"description": DESCRIPTION},
+    )
+    result = plan_profiled_change(
+        intent,
+        FakeInventory(device, interface),
+        FakeSecrets(),
+        FakeCollector(
+            observed(device, interface).model_copy(
+                update={"description": DESCRIPTION if no_change else "previous"}
+            )
         ),
     )
+    monkeypatch.setattr(driver, "plan_profiled_change", lambda *_a: result)
     monkeypatch.setattr(driver, "upload", lambda *a: uploaded.append(a))
     monkeypatch.setattr(driver, "annotate", lambda _c, text: messages.append(text))
+    published = []
+    monkeypatch.setattr(driver, "publish_metadata", lambda *a: published.append(a))
     assert driver.plan_step(context, tmp_path) == 0
-    assert len(uploaded) == (0 if no_change else 1)
+    assert len(uploaded) == 1 and len(published) == 1
     assert ("already compliant" in messages[0]) is no_change
-    assert "previous" in messages[0]
+    assert (DESCRIPTION if no_change else "previous") in messages[0]
 
 
 @pytest.mark.parametrize("mode", [0o755, 0o770, 0o777])
@@ -375,12 +419,30 @@ def test_typed_execution_evidence_reports_real_attempts_only(
         plan,
         plan.digest,
         FinalOutcome.SUCCEEDED,
-        preflight=StageResult(attempted=True, succeeded=True, message="private-body"),
+        preflight=StageResult(
+            attempted=True,
+            succeeded=True,
+            observed_description=plan.current_description,
+            message="private-body",
+        ),
+        post=StageResult(
+            attempted=True,
+            succeeded=True,
+            observed_description=plan.desired_description,
+            message="private-body",
+        ),
         execution=StageResult(attempted=True, succeeded=True, message="private-body"),
         now=lambda: datetime.now(UTC),
     )
     raw = record.model_dump_json().encode()
-    monkeypatch.setattr(driver, "download", lambda *_a: raw)
+    monkeypatch.setattr(
+        driver,
+        "download",
+        lambda _c, _d, _n, step: (
+            raw if step == "profiled-deploy" else plan.model_dump_json().encode()
+        ),
+    )
+    monkeypatch.setattr(driver, "metadata", lambda *_a: planning_receipt(context, plan))
     messages = []
     monkeypatch.setattr(driver, "annotate", lambda _c, text: messages.append(text))
     assert driver.evidence_step(context, tmp_path) == 0
@@ -500,3 +562,78 @@ def test_agent_protected_mode_pipeline_and_exact_wrapper(
     assert ("WRAPPER EXECUTED" in result.stdout) is success
     assert marker.exists() is sourced
     assert "protected-secret" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_execution_publication_and_final_render_require_exact_plan_binding(
+    driver, context, plan, receipts, tmp_path, monkeypatch, mismatch
+):
+    from datetime import UTC, datetime
+
+    from network_change_delivery.models import FinalOutcome, StageResult
+    from network_change_delivery.profiled_execution import _record
+
+    record = _record(
+        plan,
+        plan.digest,
+        FinalOutcome.SUCCEEDED,
+        preflight=StageResult(
+            message="reviewed state observed",
+            attempted=True,
+            succeeded=True,
+            observed_description=plan.current_description,
+        ),
+        execution=StageResult(
+            attempted=True, succeeded=True, changed=None, message="provider success"
+        ),
+        post=StageResult(
+            message="desired state observed",
+            attempted=True,
+            succeeded=True,
+            changed=True,
+            observed_description=plan.desired_description,
+        ),
+        now=lambda: datetime.now(UTC),
+    )
+    if mismatch:
+        # Coherent record with matching digests but belonging to a different change.
+        record = record.model_copy(update={"change_id": "CHG-DIFFERENT"})
+    raw = plan.model_dump_json().encode()
+    promotion = promote(context, raw, receipts, DIGEST, DIGEST)
+    monkeypatch.setattr(
+        driver,
+        "metadata",
+        lambda _c, key: (
+            planning_receipt(context, plan)
+            if key == PLANNING_METADATA
+            else promotion.digest
+        ),
+    )
+    monkeypatch.setattr(driver, "prerequisites", lambda _c: (receipts, DIGEST, DIGEST))
+    monkeypatch.setenv("BUILDKITE_UNBLOCKER_ID", JOB)
+    monkeypatch.setattr(driver, "validate_profiled_live_host_trust", lambda: None)
+    artifacts = {
+        "profiled-live-plan": raw,
+        "profiled-promotion": promotion.model_dump_json().encode(),
+        "profiled-deploy": record.model_dump_json().encode(),
+    }
+    monkeypatch.setattr(driver, "download", lambda _c, _d, _n, step: artifacts[step])
+    uploaded, annotations, commands = [], [], []
+    monkeypatch.setattr(driver, "upload", lambda *_a: uploaded.append(_a[-1]))
+    monkeypatch.setattr(
+        driver, "annotate", lambda _c, text, **_k: annotations.append(text)
+    )
+
+    def command(args, **_k):
+        commands.append(args)
+        Path(args[args.index("--report-json") + 1]).write_bytes(
+            artifacts["profiled-deploy"]
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(driver, "command", command)
+    assert driver.deploy_step(context, tmp_path) == (3 if mismatch else 0)
+    assert len(commands) == 1  # Publication failure never retries execution.
+    assert len(uploaded) == (0 if mismatch else 1)
+    assert driver.evidence_step(context, tmp_path) == (2 if mismatch else 0)
+    assert ("Outcome: SUCCEEDED" in annotations[-1]) is not mismatch

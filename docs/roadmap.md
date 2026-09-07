@@ -84,8 +84,8 @@ See [workflow](architecture/buildkite-workflow.md) and
 | Stable ID | Capability | State |
 |---|---|---|
 | CAP-RUNTIME-VERIFY | Verified profiled deployment runtime | ACCEPTED |
-| CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation | IN PROGRESS |
-| CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | USER APPROVED |
+| CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation | ACCEPTED |
+| CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | IN PROGRESS |
 | CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | USER APPROVED |
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | USER APPROVED |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | USER APPROVED |
@@ -94,8 +94,8 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
-Only CAP-DOCS-TRUTH is in the current implementation scope. CAP-RUNTIME-VERIFY
-is accepted; other approved capabilities await their own implementation tasks.
+Only CAP-OUTCOME-TRUTH is in the current implementation scope. CAP-RUNTIME-VERIFY
+and CAP-DOCS-TRUTH are accepted; other approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -136,7 +136,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-DOCS-TRUTH — Current architecture, acceptance and demo reconciliation
 
-- **State:** IN PROGRESS; user review/sign-off pending.
+- **State:** ACCEPTED.
 - **Target/value:** README, current architecture/operations and readiness must
   describe implemented behavior and accepted positive/negative delivery paths,
   while preserving historical records. Make engineering capabilities discoverable
@@ -153,16 +153,18 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   reconciled with source and the user-supplied
   [current main-delivery acceptance](acceptance/profiled-main-delivery.md).
   Historical records remain historical. No live acceptance is performed here.
-- **Acceptance/sign-off:** PENDING USER REVIEW; this capability remains IN PROGRESS.
-- **Remaining behavior boundaries:** provider `execution.changed` and downstream
-  no-plan presentation remain CAP-OUTCOME-TRUTH; readiness still checks selected
+- **Acceptance/sign-off:** the user reviewed and merged [#141](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/141)
+  (merge `72e80d8`), including the final active-source docstring cleanup, and
+  explicitly accepted this capability by moving on to CAP-OUTCOME-TRUTH.
+- **Remaining behavior boundaries:** provider metadata and downstream
+  no-plan presentation are addressed by CAP-OUTCOME-TRUTH; readiness still checks selected
   historical audit records, while current delivery/viewer integration awaits
   CAP-DURABLE-EVIDENCE. Fixed catalog/scope constraints and the fixed main target
   remain CAP-POPULATION-SCOPES and CAP-INTENT-DELIVERY respectively.
 
 ### CAP-OUTCOME-TRUTH — Truthful profiled delivery outcomes
 
-- **State:** USER APPROVED.
+- **State:** IN PROGRESS.
 - **Target/value:** distinguish compliant/no-change planning, blocked
   planning/authorization, execution attempt, provider-reported change metadata,
   unknown provider metadata and independently observed state transition.
@@ -175,6 +177,13 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   uncertain-write/no-retry rules or historical record bytes.
 - **Origin/population effect:** restores coherent no-write handling and corrects
   inherited evidence debt; semantics apply to any explicit target.
+- **Implementation evidence:** tri-state provider mutation metadata; independent
+  `post_validation.changed`; bounded record consistency and exact record/plan
+  verification; digest-bound `ProfiledComplianceRecord` plus same-build planning
+  publication receipts. Offline CLI/provider/delivery tests cover both vendors,
+  invalid records/bindings and compliant continuation without execution authority.
+- **Acceptance/sign-off:** PENDING USER REVIEW; tests and implementation do not
+  establish acceptance. No new LIVE acceptance was performed.
 
 ### CAP-DURABLE-EVIDENCE — Durable schema-v2 delivery evidence
 

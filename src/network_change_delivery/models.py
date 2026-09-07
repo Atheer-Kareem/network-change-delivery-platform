@@ -9,7 +9,14 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from xml.etree import ElementTree
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 CliBoundString = Annotated[
@@ -565,9 +572,15 @@ class ExecutionResult(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     disposition: ExecutionDisposition
-    changed: bool = False
+    changed: bool | None = None
     message: str
     provider: str = "ansible-runner/cisco.ios.ios_config"
+
+    @field_validator("changed", mode="before")
+    @classmethod
+    def provider_change_metadata(cls, value: object) -> bool | None:
+        """Only an explicit provider boolean is mutation metadata; otherwise unknown."""
+        return value if type(value) is bool else None
 
 
 class FinalOutcome(StrEnum):
@@ -589,7 +602,13 @@ class FinalOutcome(StrEnum):
 
 
 class StageResult(BaseModel):
-    """Bounded status for a lifecycle stage."""
+    """Bounded stage status.
+
+    In profiled execution/recovery, changed is provider mutation metadata. In
+    profiled post-validation it is an independently observed transition from
+    reviewed state, or None when comparison cannot be established (also used
+    by historical records without transition evidence). Neither implies success.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     attempted: bool = False

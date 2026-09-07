@@ -13,7 +13,7 @@ reviewed interface-description intent
   -> exact profiled LIVE trust
   -> stable interface and OpenBao reference binding
   -> fresh read-only observation
-  -> immutable schema-v2 plan
+  -> compliant observation (no plan/authority), OR immutable schema-v2 plan
   -> exact digest approval plus explicit --live
   -> exact effective Cisco collection-runtime verification (Junos independent)
   -> fresh complete preflight
@@ -45,7 +45,14 @@ and collects current state through the profile-bound read-only adapter. It
 creates a schema-v2 plan only when the target is not already compliant. The
 artifact is create-only, mode `0600`, digest-bound, and secret-free. Compliant
 planning produces no deployable plan and therefore no promotion authority;
-current downstream no-change presentation remains CAP-OUTCOME-TRUTH work.
+a successful comparable observation instead produces `ProfiledComplianceRecord`.
+The CLI prints COMPLIANT and can save it with `--compliance-output`; `--output`
+remains exclusively a real deployment plan. A failed planner produces neither.
+The compliant record binds change/target, stable device/interface, platform/NOS/
+profile/operation, endpoint/hostname, observed and desired description, OpenBao
+reference (no secret), aware observation timestamp and canonical digest. Its
+plan is null and promotion/execution/recovery flags are false. It cannot be
+parsed as a deployment plan or grant write authority.
 
 `profiled-deploy` accepts only schema-v2 plans, validates canonical approval
 syntax before external access, requires the exact plan digest and explicit
@@ -112,7 +119,42 @@ prevents execution. PRs have no write tail. See [workflow](buildkite-workflow.md
 Schema-v2 plans, promotions and `ProfiledChangeRecord` artifacts are retained
 through the current private delivery state and Buildkite artifact path. They do
 not yet connect to durable AuditStore, PRE/write/POST correlation or the viewer.
-The accepted record's provider-derived `execution.changed == false` does not
-represent its independently observed before/post transition. CAP-OUTCOME-TRUTH,
-CAP-DURABLE-EVIDENCE and CAP-CONFIG-CHRONOLOGY own those refinements; historical
-records are not rewritten.
+Compliant records use the same private artifact path without fabricating an
+execution record. CAP-DURABLE-EVIDENCE and CAP-CONFIG-CHRONOLOGY own durable
+integration; historical records are not rewritten.
+
+### Provider metadata, observation and outcome
+
+`execution.changed` and `recovery.changed` mean provider-reported mutation:
+explicit boolean true/false is preserved; missing, censored or non-boolean
+metadata is `null` (unknown). Disposition is classified independently. Missing
+metadata neither fails execution nor implies that no mutation occurred.
+`post_validation.changed` instead compares an independently observed description
+with the reviewed/preflight description: true for a transition, false for the
+same state, null when identity/state cannot be compared. It is never copied from
+the provider. Older records may retain null observational metadata and the
+previous adapter's false default; they are not rewritten.
+
+Final success requires successful fresh preflight, attempted successful execution
+and successful independent observation of desired state. Junos additionally
+requires validated candidate/diff, commit-confirmed and successful confirmation.
+Provider `changed=false` or `null` is compatible with SUCCEEDED and an observed
+transition. Cisco ambiguous reconciliation remains AMBIGUOUS even when collection
+succeeds; on that path `post_validation.succeeded` records collection success,
+while `changed` requires comparable identity. It cannot authorize retry/recovery.
+Recovery's `succeeded` retains the current lifecycle classification: provider
+success can still yield RECOVERY_FAILED if restoration cannot be observed.
+
+`ProfiledChangeRecord` rejects mismatched approval/plan digests, unattempted stages
+with result facts, inconsistent pre/post observations, execution on blocked/stale
+paths, ineligible recovery, Cisco records with Junos-only stages, and inconsistent
+Junos candidate/confirmation outcomes. It preserves failed, ambiguous, recovery,
+auto-rollback-pending and confirmation distinctions. These are consistency checks
+of representable evidence, not independent proof of external device activity.
+
+`verify_profiled_record_plan` revalidates both schema-v2 artifacts and compares all
+duplicated approved bindings: change, digests, target/device/interface, platform,
+NOS/profile/operation, endpoint/hostname, reviewed/desired descriptions, credential
+reference and transaction strategy. Buildkite uses it before execution-record
+publication and final rendering. Candidate diff is execution-time evidence, not
+a duplicated plan value. No write is rebuilt or retried by this verification.

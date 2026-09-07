@@ -131,8 +131,9 @@ Otherwise deployment says NO WRITE and fails visibly; approval cannot override
 missing validation, assurance, promotion or trust. Never unblock merely to
 manufacture success. An already-compliant target truthfully has no plan; do not
 reset its description to create work. Compliant/no-plan cannot establish promotion
-authority; current downstream presentation is not yet the refined typed no-change
-outcome (CAP-OUTCOME-TRUTH). The three demonstration outcomes are successful
+authority. Current downstream steps validate the typed compliant artifact and
+same-build receipt, report COMPLIANT, and never invoke deployment for it. The
+static human block may remain visible but cannot create write authority. The three demonstration outcomes are successful
 authorized change, fail-closed blocked delivery, and compliant/no plan; see the
 [evidence guide](evidence-package.md).
 

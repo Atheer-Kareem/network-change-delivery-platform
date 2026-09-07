@@ -81,14 +81,16 @@ records user-supplied positive and negative main-delivery evidence:
   visible, but deployment independently returned `NO WRITE`; no execution record
   was fabricated.
 - **Compliant planning:** source/tests establish that an already-compliant
-  target produces no write plan. Its downstream presentation still needs
-  refinement; devices must not be reset just to manufacture a demo change.
+  target produces typed COMPLIANT evidence, no write plan, no promotion and no
+  deployment invocation. This path is verified offline; devices must not be
+  reset just to manufacture a demo change.
 
 Current plans, promotions and execution records are typed artifacts. They are
 **not yet integrated into the durable AuditStore/PRE-write-POST/viewer chain**.
-The accepted record also exposes a known `execution.changed` metadata limitation;
-its before/post observations prove the transition. Both gaps are explicit in the
-[capability ledger](docs/roadmap.md).
+Provider mutation metadata (true/false/unknown) is distinct from independently
+observed transition and final outcome. The accepted historical record retains
+`execution.changed=false`; its before/post observations prove the transition.
+Implementation and acceptance status are explicit in the [capability ledger](docs/roadmap.md).
 
 ## Engineering depth beyond the write
 

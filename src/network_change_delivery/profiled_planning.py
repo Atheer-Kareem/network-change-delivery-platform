@@ -12,7 +12,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from network_change_delivery.architecture_contracts import (
     AdapterFamily,
@@ -213,7 +213,7 @@ class ProfiledPlanPreconditions(BaseModel):
 
 
 class ProfiledDeploymentPlan(BaseModel):
-    """Schema-v2 profiled immutable plan; no executor consumes it yet."""
+    """Schema-v2 immutable plan consumed by current profiled execution."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -340,6 +340,100 @@ class ProfiledDeploymentPlan(BaseModel):
         return self.digest == self.calculated_digest()
 
 
+class ProfiledComplianceRecord(BaseModel):
+    """Successful planning observation, explicitly non-deployable and immutable."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: Literal["2"] = "2"
+    record_type: Literal["profiled_compliance_record"] = "profiled_compliance_record"
+    outcome: Literal["COMPLIANT"] = "COMPLIANT"
+    plan: None = None
+    promotion_minted: Literal[False] = False
+    execution_attempted: Literal[False] = False
+    recovery_attempted: Literal[False] = False
+    change_id: CliBoundString
+    target: CliBoundString
+    device_identity: NonEmptyString
+    interface: StableInterfaceIdentity
+    platform_slug: NonEmptyString
+    network_os: NetworkOS
+    automation_profile_id: AutomationProfileID
+    operation: ProfiledOperation
+    host: NonEmptyString
+    port: int = Field(ge=1, le=65535)
+    expected_hostname: NonEmptyString
+    observed_description: str
+    desired_description: str
+    credential_source: Literal["openbao"]
+    credential_reference: NonEmptyString
+    observed_at: AwareDatetime
+    digest: Sha256Digest
+
+    def calculated_digest(self) -> str:
+        raw = json.dumps(
+            self.model_dump(mode="json", exclude={"digest"}),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+    @model_validator(mode="after")
+    def verified_compliance(self) -> ProfiledComplianceRecord:
+        admit_profiled_subject(
+            device_identity=self.device_identity,
+            logical_name=self.target,
+            platform_slug=self.platform_slug,
+            network_os=self.network_os,
+            automation_profile_id=self.automation_profile_id,
+        )
+        admission = PROFILED_OPERATION_ADMISSIONS.get(
+            (self.automation_profile_id, self.operation)
+        )
+        device_id = self.device_identity.rsplit(":", 1)[1]
+        if (
+            admission is None
+            or self.network_os is not admission.network_os
+            or self.port != admission.management_port
+            or self.interface.device != self.device_identity
+            or self.expected_hostname != self.target
+            or self.observed_description != self.desired_description
+            or self.credential_reference
+            != f"openbao:kv-v2:ncdp/devices/{device_id}/ssh"
+            or self.digest != self.calculated_digest()
+        ):
+            raise ValueError("profiled compliance binding rejected")
+        ipaddress.ip_address(self.host)
+        DesiredDescription(description=self.desired_description)
+        return self
+
+
+def _build_compliance(intent, device, interface, state, credential, observed_at):
+    # Called only after the planner's normal successful identity/safety observation.
+    target = device.live_read_only_target()
+    values = {
+        "change_id": intent.change_id,
+        "target": device.logical_name,
+        "device_identity": device.device_identity,
+        "interface": interface,
+        "platform_slug": device.platform.slug,
+        "network_os": device.network_os,
+        "automation_profile_id": device.automation_profile_id,
+        "operation": ProfiledOperation.INTERFACE_DESCRIPTION,
+        "host": target.host,
+        "port": target.port,
+        "expected_hostname": device.expected_hostname,
+        "observed_description": state.description,
+        "desired_description": intent.desired.description,
+        "credential_source": credential.source,
+        "credential_reference": credential.reference,
+        "observed_at": observed_at or datetime.now(UTC),
+        "digest": "sha256:" + "0" * 64,
+    }
+    unsigned = ProfiledComplianceRecord.model_construct(**values)
+    values["digest"] = unsigned.calculated_digest()
+    return ProfiledComplianceRecord.model_validate(values)
+
+
 @dataclass(frozen=True)
 class ProfiledPlanningResult:
     """Either one deployable profiled plan or an already-compliant result."""
@@ -348,6 +442,7 @@ class ProfiledPlanningResult:
     state: InterfaceState
     credential: CredentialReference
     message: str
+    compliance: ProfiledComplianceRecord | None = None
 
 
 class ProfiledPlanningInventory(Protocol):
@@ -554,6 +649,9 @@ def plan_profiled_change(
     if state.description == intent.desired.description:
         return ProfiledPlanningResult(
             plan=None,
+            compliance=_build_compliance(
+                intent, device, interface, state, credential, created_at
+            ),
             state=state,
             credential=credential,
             message="interface is already compliant; no profiled plan produced",

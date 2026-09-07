@@ -13,7 +13,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from network_change_delivery.architecture_contracts import Sha256Digest
-from network_change_delivery.profiled_planning import ProfiledDeploymentPlan
+from network_change_delivery.profiled_planning import (
+    ProfiledComplianceRecord,
+    ProfiledDeploymentPlan,
+)
 
 VALIDATION_KEYS = (
     "quality-env",
@@ -123,7 +126,7 @@ def verify_validation(
     return digest_bytes(json.dumps(dict(receipts), sort_keys=True).encode())
 
 
-def admit_demo_plan(plan: ProfiledDeploymentPlan) -> None:
+def admit_demo_plan(plan: ProfiledDeploymentPlan | ProfiledComplianceRecord) -> None:
     # Further narrows the current CLI's 1/2 projection to the reviewed PR132 target.
     if (
         plan.change_id != CHANGE_ID
@@ -217,3 +220,23 @@ def authorize(
     if promotion != expected or promotion.digest != checked_digest(promoted_digest):
         raise ValueError("same-build promotion authorization rejected")
     return ProfiledDeploymentPlan.model_validate_json(plan_bytes)
+
+
+PLANNING_METADATA = "profiled-planning-result"
+
+
+class ProfiledPlanningPublication(BaseModel):
+    """Select one successfully published same-build planning result, not authority."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: Literal["2"] = "2"
+    build_id: str
+    commit: str
+    artifact_kind: Literal["plan", "compliance"]
+    artifact_digest: Sha256Digest
+    result_digest: Sha256Digest
+
+    def verify_context(self, context: ProfiledBuildContext) -> None:
+        checked_uuid(self.build_id)
+        if self.build_id != context.build_id or self.commit != context.commit:
+            raise ValueError("planning publication context rejected")

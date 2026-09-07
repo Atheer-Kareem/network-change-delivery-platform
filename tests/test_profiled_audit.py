@@ -6,6 +6,7 @@ from uuid import UUID
 
 import pytest
 from profiled_audit_fixtures import ASSURANCE, NOW, bundle, planning_result
+from pydantic import ValidationError
 from test_audit import artifact as legacy_reference
 from test_audit import record as legacy_record
 from test_audit_store import make_store, store_snapshot
@@ -276,7 +277,7 @@ def test_new_envelope_is_frozen_and_extra_forbid(tmp_path):
         )
 
 
-def test_junos_plan_execution_artifacts_preserve_transaction_without_faking_promotion(
+def test_junos_artifact_durability_preserves_current_promotion_authority_boundary(
     tmp_path,
 ):
     from profiled_audit_fixtures import BUILD, COMMIT, execution_pair, raw_bytes
@@ -290,25 +291,31 @@ def test_junos_plan_execution_artifacts_preserve_transaction_without_faking_prom
     assert execution.candidate_validation.succeeded and execution.confirmation.succeeded
     plan_ref = store.persist_artifact(Kind.PROFILED_DEPLOYMENT_PLAN, plan)
     record_ref = store.persist_artifact(Kind.PROFILED_CHANGE_RECORD, execution)
+    assert store.read_artifact(plan_ref) == plan
+    assert store.read_artifact(record_ref) == execution
     verify_profiled_record_plan(
         store.read_artifact(record_ref), store.read_artifact(plan_ref)
     )
-    forged = ProfiledPromotion.model_construct(
-        build_id=str(BUILD),
-        commit=COMMIT,
-        change_id=plan.change_id,
-        target=plan.target,
-        device_identity=plan.device_identity,
-        plan_digest=plan.digest,
-        plan_artifact_digest=sha256_identity(raw_bytes(plan)),
-        validation_digest=ASSURANCE,
-        batfish_digest=ASSURANCE,
-        cml_digest=ASSURANCE,
-        digest=ASSURANCE,
-    )
-    forged = forged.model_copy(update={"digest": forged.calculated_digest()})
-    # Current promotion literals are Cisco-demo-only. Never claim a valid Junos
-    # promoted envelope by bypassing that current schema with model_construct.
-    with pytest.raises(AuditStoreError):
-        store.persist_artifact(Kind.PROFILED_PROMOTION, forged)
+    rejected_payload = {
+        "schema_version": "2",
+        "promotion_type": "profiled_buildkite_promotion",
+        "build_id": str(BUILD),
+        "commit": COMMIT,
+        "change_id": plan.change_id,
+        "target": plan.target,
+        "device_identity": plan.device_identity,
+        "plan_digest": plan.digest,
+        "plan_artifact_digest": sha256_identity(raw_bytes(plan)),
+        "validation_digest": ASSURANCE,
+        "batfish_digest": ASSURANCE,
+        "cml_digest": ASSURANCE,
+    }
+    # Junos artifacts are supported; promoted Junos EXECUTION is outside current
+    # authority. Validate rejected input normally, never manufacture a promotion.
+    with pytest.raises(ValidationError) as rejected:
+        ProfiledPromotion.model_validate(rehash(rejected_payload))
+    assert {(error["loc"], error["type"]) for error in rejected.value.errors()} == {
+        (("target",), "literal_error"),
+        (("device_identity",), "literal_error"),
+    }
     assert store.iter_profiled_records() == ()

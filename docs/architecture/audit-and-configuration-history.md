@@ -100,11 +100,23 @@ by the envelope digest; the reader cannot independently infer their external tru
 Batfish and CML hashes remain prerequisite assurance, not proof that either system
 rehearsed the exact interface-description write.
 
-Current `ProfiledPromotion` is still restricted to core-02/device 1. The foundation
-does not change its schema or admission: Cisco promoted execution can be persisted,
-while a Junos promoted execution envelope is rejected until a later reviewed
-promotion capability exists. Junos plan/record validation and compliant durable
-evidence remain supported; no current main Junos acceptance is invented.
+The confirmed foundation proof boundary covers every currently representable
+delivery family:
+
+- Cisco/core-02 promoted EXECUTION: full plan → promotion → execution-record →
+  durable-envelope correlation, including assurance and human authorization.
+- Junos execution artifacts: canonical plan/record persistence and readback, exact
+  `verify_profiled_record_plan()` binding and current Junos lifecycle/outcome
+  semantics, without a fabricated promotion.
+- Cisco and Junos COMPLIANCE envelopes: no promotion, authorization or execution
+  claim.
+
+Current `ProfiledPromotion` intentionally admits only core-02/device 1. Promoted
+Junos EXECUTION is **NOT CURRENTLY REPRESENTABLE** under that authority, not an
+incomplete vendor implementation. Its durable-envelope proof is deferred until
+[CAP-INTENT-DELIVERY](../roadmap.md#cap-intent-delivery--intent-selected-generic-delivery)
+legitimately changes promotion/intent admission. This foundation changes no
+promotion model or delivery authority and claims no new live acceptance.
 
 ### Viewer boundary
 

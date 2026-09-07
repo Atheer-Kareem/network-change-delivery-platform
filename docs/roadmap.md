@@ -214,11 +214,18 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 - **Exact byte verification:** retain bounded validated original artifact JSON
   separately from canonical artifacts; compare hashes and typed content on
   persistence and reads. Canonicalization cannot prove the original byte hash.
-- **Promotion scope constraint:** current `ProfiledPromotion` permits only the
-  core-02 main target. This foundation does not broaden it. Junos planning and
-  execution evidence remain valid, but a Junos EXECUTION envelope cannot satisfy
-  current promotion correlation; Junos COMPLIANCE is supported. Generic promotion
-  remains CAP-INTENT-DELIVERY rather than an implicit scope expansion here.
+- **Confirmed foundation proof boundary:** supports every currently representable
+  delivery family: Cisco/core-02 promoted EXECUTION with complete plan/promotion/
+  execution correlation, assurance and human authorization; Junos plan/execution
+  canonical artifact persistence/readback and exact `verify_profiled_record_plan()`
+  binding with current lifecycle semantics; and Cisco and Junos COMPLIANCE
+  envelopes without promotion, authorization or execution claims.
+- **Promotion authority boundary:** the user confirmed that `ProfiledPromotion`
+  continues to admit only the existing core-02/device-1 main target. Promoted
+  Junos EXECUTION is **NOT CURRENTLY REPRESENTABLE**, not an incomplete vendor
+  implementation. Its durable-envelope proof is deferred until
+  CAP-INTENT-DELIVERY legitimately broadens promotion/intent admission. Evidence
+  support must not broaden delivery authority to construct a proof fixture.
 - **Acceptance/sign-off:** PENDING USER REVIEW and later integration; no new
   live delivery or production-store evidence was created for this checkpoint.
 
@@ -267,6 +274,9 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   intent changes invalidate authorization; human authorization stays fieldless.
 - **Dependencies/scope:** CAP-OUTCOME-TRUTH and population-contract alignment;
   intent/promotion models, delivery driver, demo data and tests.
+- **Durable-evidence prerequisite:** broader promoted target selection under this
+  capability is required before a valid promoted Junos EXECUTION durable-envelope
+  proof can exist. The CAP-DURABLE-EVIDENCE foundation preserves current admission.
 - **Must not change:** write eligibility, credential architecture or human
   approval into an unrestricted free-text target selector.
 - **Origin/population effect:** generalizes delivery selection, independently of

@@ -84,6 +84,10 @@ class SecretError(ValueError):
     """Raised without exposing secret values."""
 
 
+class OpenBaoLoginError(SecretError):
+    """AppRole login/issued-token failure, distinct from the subsequent KV read."""
+
+
 @dataclass(frozen=True)
 class CredentialReference:
     """Stable non-secret credential provenance."""
@@ -221,7 +225,10 @@ class OpenBaoSecretProvider:
     def load(self, device: NetBoxCredentialTarget) -> DeviceCredentials:
         """Authenticate once and consume the single-use token on one exact GET."""
         device_id = self._device_id(device)
-        token = self._login()
+        try:
+            token = self._login()
+        except SecretError as error:
+            raise OpenBaoLoginError(str(error)) from None
         try:
             response = self._client.get(
                 f"/v1/ncdp/data/devices/{device_id}/ssh",

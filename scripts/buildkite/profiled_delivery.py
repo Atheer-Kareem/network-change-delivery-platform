@@ -39,7 +39,11 @@ from network_change_delivery.profiled_promotion import (
     digest_bytes,
     promote,
 )
-from network_change_delivery.secrets import OpenBaoSecretProvider, SecretError
+from network_change_delivery.secrets import (
+    OpenBaoLoginError,
+    OpenBaoSecretProvider,
+    SecretError,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = ".buildkite/scripts/profiled_delivery.sh"
@@ -50,7 +54,8 @@ PLAN_PHASES = frozenset(
         "protected environment",
         "LIVE trust",
         "NetBox inventory",
-        "OpenBao authentication",
+        "OpenBao login",
+        "OpenBao credential read",
         "device read-only preflight",
         "plan publication",
     }
@@ -269,8 +274,10 @@ def plan_step(context, directory):
         )
     except InventoryError:
         raise PlanPhaseError("NetBox inventory") from None
+    except OpenBaoLoginError:
+        raise PlanPhaseError("OpenBao login") from None
     except SecretError:
-        raise PlanPhaseError("OpenBao authentication") from None
+        raise PlanPhaseError("OpenBao credential read") from None
     except Exception:
         raise PlanPhaseError("device read-only preflight") from None
     with plan_boundary("plan publication"):

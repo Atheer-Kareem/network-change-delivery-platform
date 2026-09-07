@@ -79,9 +79,7 @@ def test_mixed_index_sorts_by_time_and_routes_same_uuid_unambiguously(mixed_stor
         and "Historical protected delivery" not in current_page
     )
     assert "CHG-HISTORICAL" in old_page and "Current profiled delivery" not in old_page
-    assert (
-        "Current PRE/write/POST delivery correlation not connected yet." in current_page
-    )
+    assert "Configuration chronology: NOT ESTABLISHED" in current_page
     assert "No correlated configuration-observation record." in old_page
 
 
@@ -199,3 +197,51 @@ def test_invalid_current_artifact_fails_closed_without_leaking_path(mixed_store)
         status, headers, body = _request(base, "/")
         assert status == 500 and headers["Cache-Control"] == "no-store"
         assert b"failed closed" in body and str(store.root).encode() not in body
+
+
+def test_current_chronology_detail_uses_metadata_only(mixed_store):
+    from datetime import UTC, datetime
+
+    from profiled_chronology_fixtures import observation
+
+    from network_change_delivery.profiled_configuration_observation import (
+        build_profiled_observation_record,
+    )
+
+    readonly, parent, compliant, _historical = mixed_store
+    writable = ConfigurationObservationStore(
+        readonly.root, checkout=readonly.root.parent / "checkout"
+    )
+    pre = observation(changed=True)
+    post = observation(expected_before=pre.after_revision)
+    child = build_profiled_observation_record(
+        parent, pre, post, generated_at=datetime.now(UTC)
+    )
+    writable.persist_profiled_observation_record(child)
+    with _running(readonly) as (base, _server):
+        status, headers, raw = _request(base, f"/profiled-records/{parent.record_id}")
+        assert status == 200
+        page = raw.decode()
+        for value in [
+            "PRE",
+            "POST",
+            "CHANGED",
+            "UNCHANGED",
+            "TEMPORALLY_BRACKETED",
+            "NOT_PROVEN",
+            "SUCCEEDED",
+            pre.after_revision.commit,
+            pre.after_revision.blob,
+            str(child.observation_record_id),
+        ]:
+            assert value in page
+        for value in [
+            str(readonly.root),
+            parent.credential.reference,
+            pre.after_revision.config_path,
+            "configuration_lines",
+        ]:
+            assert value not in page
+        assert headers["Cache-Control"] == "no-store"
+        page = _request(base, f"/profiled-records/{compliant.record_id}")[2].decode()
+        assert "Configuration chronology: NOT REQUIRED — COMPLIANT" in page

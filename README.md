@@ -82,14 +82,15 @@ records user-supplied positive and negative main-delivery evidence:
   was fabricated.
 - **Compliant planning:** source/tests establish that an already-compliant
   target produces typed COMPLIANT evidence, no write plan, no promotion and no
-  deployment invocation. This path is verified offline; devices must not be
-  reset just to manufacture a demo change.
+  deployment invocation. This path is [runtime-accepted](docs/acceptance/profiled-durable-publication.md);
+  devices must not be reset just to manufacture a demo change.
 
 Current plans, promotions and execution records are typed artifacts. They are
 now published through a separate profiled AuditStore envelope and the existing
-viewer, with destination admission before a possible write. This integration is
-verified offline; controlled runtime acceptance is pending. PRE/write/POST
-chronology remains unconnected.
+viewer, with destination admission before a possible write. COMPLIANT durable publication is runtime-accepted. Independent Oxidized PRE/POST
+chronology for EXECUTION is now implemented offline, with acceptance pending;
+it records temporal bracketing, never proven causality. COMPLIANCE requires no
+chronology. See the [current contract](docs/architecture/audit-and-configuration-history.md#current-profiled-configuration-chronology).
 Provider mutation metadata (true/false/unknown) is distinct from independently
 observed transition and final outcome. The accepted historical record retains
 `execution.changed=false`; its before/post observations prove the transition.

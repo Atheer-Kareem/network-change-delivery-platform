@@ -10,9 +10,12 @@ from uuid import UUID
 from pydantic import TypeAdapter, ValidationError
 
 from network_change_delivery.audit import NetBoxDeviceIdentity, canonical_json_bytes
-from network_change_delivery.audit_store import AuditStore, AuditStoreError
+from network_change_delivery.audit_store import AuditStoreError
 from network_change_delivery.configuration_observation import (
     ConfigurationObservationRecord,
+)
+from network_change_delivery.profiled_configuration_observation_store import (
+    ProfiledConfigurationObservationStore,
 )
 
 MAX_OBSERVATION_RECORD_BYTES = 64 * 1024
@@ -21,7 +24,7 @@ MAX_OBSERVATION_QUERY_RESULTS = 100
 _DEVICE_IDENTITY_ADAPTER = TypeAdapter(NetBoxDeviceIdentity)
 
 
-class ConfigurationObservationStore(AuditStore):
+class ConfigurationObservationStore(ProfiledConfigurationObservationStore):
     """Typed sibling store for immutable configuration-observation records."""
 
     def __init__(self, root: Path, *, checkout: Path, create: bool = True) -> None:

@@ -31,6 +31,20 @@ from network_change_delivery.profiled_audit import (
     build_profiled_compliance_audit_record,
     build_profiled_execution_audit_record,
 )
+from network_change_delivery.profiled_configuration_observation import (
+    CHRONOLOGY_METADATA,
+    SUCCESS,
+    Overall,
+    ProfiledChronologyPublicationReceipt,
+    build_profiled_observation_record,
+    capture_profiled_attempt,
+    load_attempt_file,
+    persist_attempt_file,
+    validate_pre,
+)
+from network_change_delivery.profiled_configuration_observation_store import (
+    ProfiledConfigurationObservationStore,
+)
 from network_change_delivery.profiled_execution import (
     ProfiledChangeRecord,
     verify_profiled_record_plan,
@@ -389,6 +403,7 @@ def compliant_annotation(context, value, *, durable="", failed=False):
         f"Target: {html.escape(value.target)} / {value.device_identity}\n\n"
         "Outcome: COMPLIANT\n\nWrite attempted: False\n\n"
         "Recovery attempted: False\n\nPromotion minted: False\n\n"
+        "Configuration chronology: NOT REQUIRED — COMPLIANT\n\n"
         "No deployment plan or execution record exists for this result. "
         "The static human block may remain visible; "
         "unblock grants zero write authority.\n\n"
@@ -563,13 +578,25 @@ def deploy_step(context, directory):
             persist_input(store, Kind.PROFILED_DEPLOYMENT_PLAN, plan),
             persist_input(store, Kind.PROFILED_PROMOTION, promotion),
         )
+        chronology_store = ProfiledConfigurationObservationStore(
+            store.root, checkout=ROOT
+        )
+        chronology_store.prepare_profiled_observation_publication(UUID(context.job_id))
+        pre_path, post_path = (
+            directory / "configuration-pre.json",
+            directory / "configuration-post.json",
+        )
+        pre = capture_profiled_attempt(plan)
+        persist_attempt_file(pre_path, pre)
+        pre = validate_pre(plan, load_attempt_file(pre_path))
     except Exception:
         safe_annotation(
             context,
-            "NO WRITE — authorization or durable destination admission failed. "
+            "NO WRITE — deployment prerequisite admission failed. "
             "Missing or invalid same-build prerequisites, promotion, approval, "
             "LIVE trust "
-            "or durable inputs; human unblock cannot override them.",
+            "or durable inputs / independent PRE chronology; "
+            "human unblock cannot override them.",
         )
         return 2
     report = directory / artifact_name(context, "record")
@@ -598,6 +625,15 @@ def deploy_step(context, directory):
     except Exception:
         # The child may have started. Inspect any report and never replay it.
         returncode = 3
+    # First work after the uncertain command boundary: one independent POST attempt.
+    chronology_failed = False
+    try:
+        post = capture_profiled_attempt(plan, expected_before=pre.after_revision)
+        persist_attempt_file(post_path, post)
+        post = load_attempt_file(post_path)
+        chronology_failed = post.status not in SUCCESS
+    except Exception:
+        chronology_failed = True
     publication_failed = False
     receipt = None
     try:
@@ -632,6 +668,36 @@ def deploy_step(context, directory):
             receipt = publish_durable(context, directory, store, envelope, original)
         except Exception:
             publication_failed = True
+    chronology = None
+    if receipt is not None:
+        try:
+            parent = store.read_profiled_record(receipt.record_id)
+            child = build_profiled_observation_record(
+                parent,
+                load_attempt_file(pre_path),
+                load_attempt_file(post_path),
+                generated_at=datetime.now(UTC),
+            )
+            chronology_store.persist_profiled_observation_record(child)
+            if (
+                chronology_store.read_profiled_observation_record(
+                    child.observation_record_id
+                )
+                != child
+            ):
+                raise ValueError("chronology readback rejected")
+            chronology = ProfiledChronologyPublicationReceipt.from_record(parent, child)
+            name = artifact_name(context, "chronology")
+            content = chronology.model_dump_json(indent=2).encode() + b"\n"
+            write_new(directory / name, content)
+            upload(context, directory, name)
+            publish_metadata(context, CHRONOLOGY_METADATA, digest_bytes(content))
+        except Exception:
+            chronology_failed = True
+            chronology = None
+    else:
+        chronology_failed = True
+    publication_failed = publication_failed or chronology_failed
     message = (
         "Profiled deployment command completed. No automatic retry; retained private "
         "state and immutable partial artifacts are not removed. "
@@ -643,6 +709,7 @@ def deploy_step(context, directory):
         if receipt
         else "\n\nDurable publication: NOT ESTABLISHED."
     )
+    message += chronology_text(chronology)
     if not safe_annotation(
         context, message, failed=bool(returncode or publication_failed)
     ):
@@ -672,6 +739,30 @@ def publication_receipt(context, directory, kind, outcome):
     return receipt
 
 
+def chronology_text(receipt):
+    if receipt is None:
+        return "\n\nConfiguration chronology: NOT ESTABLISHED"
+    return (
+        f"\n\nConfiguration chronology: {receipt.overall_status.value}"
+        f"\n\nPRE: {receipt.pre_status.value}\n\nPOST: {receipt.post_status.value}"
+        f"\n\nRelationship: {receipt.relationship.value}"
+        f"\n\nCausality: {receipt.causality}"
+        f"\n\nChronology record: {receipt.chronology_record_id}"
+        f"\n\nChronology digest: {receipt.chronology_digest}"
+    )
+
+
+def chronology_receipt(context, directory, parent, plan):
+    raw = download(
+        context, directory, artifact_name(context, "chronology"), "profiled-deploy"
+    )
+    if digest_bytes(raw) != metadata(context, CHRONOLOGY_METADATA):
+        raise ValueError("chronology receipt byte binding rejected")
+    receipt = ProfiledChronologyPublicationReceipt.model_validate_json(raw)
+    receipt.verify_delivery(context, parent, plan.device_identity)
+    return receipt
+
+
 def evidence_step(context, directory):
     try:
         plan, _plan_bytes = planning_result(context, directory)
@@ -694,6 +785,7 @@ def evidence_step(context, directory):
             "inspect retained state before any new attempt.",
         )
         return 2
+    receipt = None
     try:
         receipt = publication_receipt(context, directory, kind, FinalOutcome(outcome))
         durable, failed = durable_text(receipt), False
@@ -710,6 +802,14 @@ def evidence_step(context, directory):
             return compliant_annotation(context, plan, durable=durable, failed=failed)
         except Exception:
             return 3
+    chronology = None
+    try:
+        if receipt is None:
+            raise ValueError("parent publication unavailable")
+        chronology = chronology_receipt(context, directory, receipt, plan)
+        failed = failed or chronology.overall_status is not Overall.SUCCEEDED
+    except Exception:
+        failed = True
     if not safe_annotation(
         context,
         "## Deployment evidence\n\n"
@@ -718,7 +818,8 @@ def evidence_step(context, directory):
         f"Write attempted: {record.execution.attempted}\n\n"
         f"Recovery attempted: {record.recovery.attempted}\n\n"
         f"Evidence: `{digest_bytes(raw)}` / `{artifact_name(context, 'record')}`"
-        + durable,
+        + durable
+        + chronology_text(chronology),
         failed=failed,
     ):
         return 3

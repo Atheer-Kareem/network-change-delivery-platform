@@ -112,7 +112,7 @@ def delivery(driver, context, offline, monkeypatch, tmp_path):
 
     monkeypatch.setattr(driver, "command", command)
     directory = tmp_path / "deploy"
-    directory.mkdir()
+    directory.mkdir(mode=0o700)
     return SimpleNamespace(
         values=values,
         raw=raw,
@@ -130,7 +130,7 @@ def delivery(driver, context, offline, monkeypatch, tmp_path):
 
 def final(driver, context, tmp_path):
     directory = tmp_path / "final"
-    directory.mkdir()
+    directory.mkdir(mode=0o700)
     return driver.evidence_step(
         replace(
             context,
@@ -165,6 +165,7 @@ def test_execution_durable_order_exact_bytes_and_final_pointer(
         "envelope",
         "readback",
         "receipt",
+        "readback",
     ]
     assert len(delivery.commands) == 1
     store = AuditStore(delivery.root, checkout=driver.ROOT, create=False)
@@ -336,7 +337,9 @@ def test_post_command_failures_never_replay_or_hide_primary_exit(
         assert (context.build_id, DURABLE_PUBLICATION_METADATA) not in delivery.metadata
 
 
-@pytest.mark.parametrize("outcome", ["EXECUTION_FAILED", "AMBIGUOUS", "RECOVERED"])
+@pytest.mark.parametrize(
+    "outcome", ["EXECUTION_FAILED", "AMBIGUOUS", "RECOVERED", "RECOVERY_FAILED"]
+)
 def test_non_success_typed_execution_is_persisted_without_changing_exit(
     driver,
     context,
@@ -353,20 +356,33 @@ def test_non_success_typed_execution_is_persisted_without_changing_exit(
     success = ExecutionResult(disposition="SUCCEEDED", message="ok")
     execution = (
         success
-        if outcome == "RECOVERED"
+        if outcome in {"RECOVERED", "RECOVERY_FAILED"}
         else ExecutionResult(
             disposition="AMBIGUOUS" if outcome == "AMBIGUOUS" else "FAILED",
             message="bounded",
         )
     )
-    states = [state, state, state] if outcome == "RECOVERED" else [state, state]
+    states = (
+        [state, state, state]
+        if outcome in {"RECOVERED", "RECOVERY_FAILED"}
+        else [state, state]
+    )
     record = execute_profiled_plan(
         result.plan,
         result.plan.digest,
         Inventory(device, interface),
         Secrets(),
         Collector(states),
-        writer(Cisco([execution, success])),
+        writer(
+            Cisco(
+                [
+                    execution,
+                    ExecutionResult(disposition="FAILED", message="bounded recovery")
+                    if outcome == "RECOVERY_FAILED"
+                    else success,
+                ]
+            )
+        ),
         now=lambda: NOW,
     )
     assert record.final_outcome.value == outcome
@@ -378,6 +394,8 @@ def test_non_success_typed_execution_is_persisted_without_changing_exit(
         store.read_profiled_record(UUID(context.job_id)).final_outcome.value == outcome
     )
     assert len(delivery.commands) == 1
+    assert (delivery.directory / "configuration-pre.json").exists()
+    assert (delivery.directory / "configuration-post.json").exists()
 
 
 @pytest.mark.parametrize("damage", ["missing", "invalid", "binding"])
@@ -489,7 +507,7 @@ def test_compliance_publication_without_any_device_authority(
     elif fault == "receipt":
         monkeypatch.setattr(driver, "publish_metadata", fail)
     directory = tmp_path / "deploy"
-    directory.mkdir()
+    directory.mkdir(mode=0o700)
     assert driver.deploy_step(context, directory) == (3 if fault else 0)
     assert "Outcome: COMPLIANT" in offline[2][-1][1]
     if fault:

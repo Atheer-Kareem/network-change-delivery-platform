@@ -217,8 +217,8 @@ strategy, plan digest and change-required facts. Provider stdout/stderr is
 captured, never dumped. Artifacts contain typed plans/manifests/records, not
 credentials, JWTs, Terraform state or raw device configuration. Current schema-v2
 artifacts now enter the separate profiled AuditStore namespace through
-`profiled-deploy`, and the existing viewer reads them. PRE/write/POST remains
-unconnected (CAP-CONFIG-CHRONOLOGY). This integration has offline tests, not new
+`profiled-deploy`, and the existing viewer reads them. Current PRE/write/POST is implemented offline
+under CAP-CONFIG-CHRONOLOGY (see below). This chronology integration has offline tests, not new
 runtime acceptance. See the [durable publication contract](audit-and-configuration-history.md#current-buildkite-publication-integration). The accepted
 record reports `execution.changed == false` despite observed state transition;
 that historical provider metadata is not observational change truth. Newly
@@ -262,3 +262,16 @@ PR execution cannot validate the main write tail. The supplied main acceptance
 is linked above; any new run still needs separate authorization and human unblock.
 No static pipeline scheduling, retry policy or main assurance prerequisite is
 changed by the outcome refinement. The PR CML exception remains ACTIVE.
+
+## Current profiled chronology boundary
+
+After existing authorization and durable-input admission, the deploy agent uses
+the retained loopback Oxidized controller, readiness/trust and private Git history.
+An existing baseline and successful persisted PRE are required before its one
+device command. POST is attempted immediately even after failed or uncertain
+execution. Keep that local read-only plane ready; no new credential or protected
+secret setting is introduced. Missing readiness blocks writes. No operator
+setup, service change or runtime acceptance is performed by this implementation.
+
+CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
+acceptance. See the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).

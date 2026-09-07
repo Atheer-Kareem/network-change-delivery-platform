@@ -123,7 +123,8 @@ single CLI invocation, then durably correlates typed execution evidence.
 COMPLIANCE is durably published without a plan, promotion or execution record.
 The existing viewer reads current envelopes; final Buildkite evidence consumes
 only a same-build publication pointer. This integration is tested offline with
-runtime acceptance pending. PRE/write/POST remains CAP-CONFIG-CHRONOLOGY;
+COMPLIANT durability runtime-accepted. Current chronology is implemented offline
+under CAP-CONFIG-CHRONOLOGY (see below);
 historical records are not rewritten. See the [publication contract](audit-and-configuration-history.md#current-buildkite-publication-integration).
 
 ### Provider metadata, observation and outcome
@@ -161,3 +162,14 @@ NOS/profile/operation, endpoint/hostname, reviewed/desired descriptions, credent
 reference and transaction strategy. Buildkite uses it before execution-record
 publication and final rendering. Candidate diff is execution-time evidence, not
 a duplicated plan value. No write is rebuilt or retried by this verification.
+
+## Current profiled chronology boundary
+
+`ProfiledChangeRecord` remains operation-specific lifecycle evidence. Independent
+Oxidized metadata brackets the execution window with successful PRE and a POST
+attempt. Exact PRE-after/POST-before binding is required for success; intervening
+history is ambiguous. TEMPORALLY_BRACKETED with NOT_PROVEN causality never means
+whole-config atomicity, candidate validation or exclusive NCDP causation.
+
+CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
+acceptance. See the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).

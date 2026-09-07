@@ -151,6 +151,18 @@ delivery and negative fail-closed acceptance;
 see the canonical [current acceptance](../acceptance/profiled-main-delivery.md)
 for exact digests, source boundaries and limits. Local fake tests and a successful
 aggregate alone cannot establish runtime acceptance. Current delivery now requires durable profiled publication, verified offline;
-controlled runtime acceptance is pending. PRE/write/POST remains unconnected. Provider mutation metadata is now tri-state and distinct from independent
+COMPLIANT runtime acceptance is recorded in build 420. Current EXECUTION chronology
+is implemented offline; its acceptance remains pending (see below). Provider mutation metadata is now tri-state and distinct from independent
 observed transition; the accepted historical record remains unchanged. See
 [stage semantics](change-lifecycle.md#provider-metadata-observation-and-outcome).
+
+## Current profiled chronology boundary
+
+The DAG is unchanged. PRE, the single command and POST are coordinated inside
+`profiled-deploy`; the parent receipt is independent of the later chronology
+child/receipt. Final evidence verifies both same-build pointers without store
+access. A chronology failure preserves the device outcome but fails evidence
+completion; it never retries execution. COMPLIANCE expects no chronology receipt.
+
+CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
+acceptance. See the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).

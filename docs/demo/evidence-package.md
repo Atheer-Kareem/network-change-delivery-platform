@@ -23,10 +23,11 @@ durable record UUID/digest, or explicitly reports publication NOT ESTABLISHED.
 Evidence failure never replays execution. The viewer reads durable authority;
 Buildkite's receipt is a pointer only.
 
-This integration is tested offline. Existing accepted main runs still have their
-original private/Buildkite artifacts; no durable evidence or new runtime acceptance
-is retrospectively claimed. Historical durable evidence remains valid, and
-PRE/write/POST remains separate CAP-CONFIG-CHRONOLOGY work.
+Durable COMPLIANCE is [runtime-accepted in build 420](../acceptance/profiled-durable-publication.md).
+Earlier accepted main runs retain their original evidence; no durable envelope is
+retrospectively claimed for them. Historical durable evidence remains valid.
+PRE/write/POST integration is implemented offline under CAP-CONFIG-CHRONOLOGY;
+its acceptance remains pending (see below).
 
 ## Historical evidence and optional current surfaces
 
@@ -64,3 +65,14 @@ chronology. No screenshot is authoritative.
   sessions, the declared `NCDP Live` proof population `BOOTED`, and healthy Grafana target panels.
 - A missing foreground viewer is `OPTIONAL`, not platform failure; start it with
   the supplied private AuditStore root before the browser walkthrough.
+
+## Current profiled chronology boundary
+
+Distinguish device lifecycle outcome from independent chronology quality.
+EXECUTION annotations show SUCCEEDED/PARTIAL/AMBIGUOUS or NOT ESTABLISHED for
+chronology, PRE/POST statuses, child UUID/digest and NOT_PROVEN causality.
+COMPLIANCE says NOT REQUIRED — COMPLIANT; build 420 needs no child or migration.
+Private attempt files retain metadata only; no configuration is uploaded.
+
+CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
+acceptance. See the [current chronology contract](../architecture/audit-and-configuration-history.md#current-profiled-configuration-chronology).

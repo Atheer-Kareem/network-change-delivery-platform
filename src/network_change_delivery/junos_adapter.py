@@ -601,7 +601,7 @@ class JunosPyEZAdapter:
         target: ReadOnlyConnectionTarget,
         credentials: DeviceCredentials,
     ) -> tuple[InterfaceState, ...]:
-        """Collect through the B2 profile-admitted read-only NETCONF boundary."""
+        """Collect through the profile-admitted read-only NETCONF boundary."""
         return self._discover_read_only(target, credentials, profile_bound=True)
 
     def _discover_read_only(
@@ -707,7 +707,7 @@ class JunosPyEZAdapter:
         credentials: DeviceCredentials,
         interface: str,
     ) -> InterfaceState:
-        """Return one exact interface through the B2 read-only NETCONF path."""
+        """Return one exact interface through the profiled read-only NETCONF path."""
         states = self.discover_read_only(target, credentials)
         matches = [state for state in states if state.interface == interface]
         if len(matches) == 1:

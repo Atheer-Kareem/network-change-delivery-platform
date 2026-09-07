@@ -1,6 +1,9 @@
 # Managed state and drift
 
-Detour B5-1 establishes the durable D0 contract without creating a real D0.
+B5-1 established the durable D0 contract; subsequent explicit B5 adoption
+established generation-one D0 from observed managed state. The chronology below
+retains that distinction. D0 is accepted state, O is fresh observation and D1 is
+proposed state; Git main or a successful description write never silently advances D0.
 The four B4 service states remain proposals: they have not been applied to LIVE
 and must not be relabeled as accepted state.
 

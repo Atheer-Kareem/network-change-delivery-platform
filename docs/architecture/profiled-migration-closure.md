@@ -1,16 +1,24 @@
 # Profiled migration closure
 
+**Historical migration record:** the deletion matrix and acceptance below record
+PR #133, not the present pipeline. Current replacements are [profiled
+staging](profiled-disposable-cml-staging.md)
+and the [schema-v2 main workflow](buildkite-workflow.md), with
+[current delivery acceptance](../acceptance/profiled-main-delivery.md).
+Preserve historical counts and deletion claims in their original milestone scope;
+they do not imply current staging or protected schema-v2 delivery is absent.
+
 This document records the completed Detour-B deletion and external acceptance
-gates. Current state is one profiled exact-four managed architecture. The
+gates. At that milestone the admitted proof population contained four devices. The
 obsolete `ncdp-managed` Tag object remains inert with zero device assignments.
 
 The deletion-gate matrix below records PR #133. Subsequent PR #134 restored a
 new exact-four disposable lifecycle; its Buildkite activation now reuses the
 existing staging identity and reviewed command-hook boundary. The old exact-two
-runtime and protected delivery remain retired. See the current
+runtime and schema-v1 protected delivery remain retired. See the current
 [staging contract](profiled-disposable-cml-staging.md).
 
-## Final authority
+## Authority at migration closure
 
 The managed population is exactly `netbox:dcim.device:1`, `:2`, `:8`, and `:9`
 through `ncdp-profiled-inventory` plus `PROFILED_POPULATION_CATALOG`.

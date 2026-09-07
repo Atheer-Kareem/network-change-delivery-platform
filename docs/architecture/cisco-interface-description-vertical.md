@@ -2,22 +2,22 @@
 
 ## Status and supported operation
 
-Increment 2 is complete. Real CML execution, independent post-validation, and
-read-only idempotency evidence are recorded in the
-[live acceptance report](../acceptance/cisco-interface-description-increment-2.md).
-The successful validation path did not make targeted recovery eligible, so no
-live recovery write was attempted; recovery policy and outcomes remain covered
-by automated tests. The only supported operation is setting one non-empty
-description, up to 240 characters, on one explicitly selected, non-protected
-Cisco IOS/IOS XE interface. Arbitrary commands, fleets, other configuration
-properties, vendors, and production targets are out of scope.
+The current schema-v2 `profiled-plan` / `profiled-deploy` path admits the
+`cat8000v_iosxe` profile for one non-empty interface description (up to 240
+characters) on an explicitly selected, non-protected interface. IOSv and IOSvL2
+remain managed/read-only; Cisco family membership alone does not admit writes.
+The [profiled CLI acceptance](../acceptance/profiled-deploy-live-acceptance-pr132.md)
+and [current main acceptance](../acceptance/profiled-main-delivery.md) establish
+successful independent validation without recovery writes. The original
+[Increment 2 record](../acceptance/cisco-interface-description-increment-2.md)
+remains historical evidence of the vendor kernel and idempotency.
 
 ## Provider boundaries
 
 NetBox is the primary personal-lab source for device identity, endpoint,
-platform, eligibility, interface identity, and protection tags. A local YAML
-provider remains for isolated tests and offline development. Neither contains
-credentials or performs dynamic selection.
+platform, eligibility, interface identity, and protection tags. Current profiled
+deployment requires the profiled NetBox boundary; legacy YAML
+providers remain supporting test/compatibility machinery, not an alternate current LIVE path.
 
 OpenBao is the primary personal-lab credential path. AppRole obtains a
 short-lived single-use OpenBao token, then reads the exact static IOS XE
@@ -30,23 +30,20 @@ explicit test/offline option; there is no automatic fallback.
 Ansible Runner invokes `ansible.netcommon.network_cli` and explicitly selects
 Paramiko with `ansible_network_cli_ssh_type=paramiko`. Host-key checking is
 enabled, auto-add is disabled, and a pre-existing entry is required in the
-current user's standard `~/.ssh/known_hosts`. Increment 2 does not support a
-custom trust-store path, discover keys with `ssh-keyscan`, or automatically
-trust keys. Collection uses `cisco.ios.ios_facts`,
-`cisco.ios.ios_interfaces`, and `cisco.ios.ios_l3_interfaces`, then immediately
-normalizes only identity, IOS XE version, interface existence, description,
-enabled state, and bounded IP-address evidence.
+explicit profiled LIVE trust generation. It does not use ambient user trust,
+`ssh-keyscan`, auto-add, fallback or algorithm relaxation. Profile-bound
+read-only collection normalizes bounded identity/interface evidence using the
+Cisco Ansible collector family.
 
-That remains the accepted v1 collection and write behavior. Detour B2 does not
-migrate it. A separate
-[profile-bound read-only adapter](profile-bound-read-only-inventory.md) reuses
-the bounded collection normalization while selecting Paramiko explicitly for
-all three reviewed Cisco profiles. It selects neither Ansible `auto` nor a
-fallback, keeps strict pre-existing host trust, disables auto-add, admits no
-algorithm relaxation, and exposes no write surface.
+Before deployment preflight can load credentials or collect device state,
+`execute_profiled_plan` asks the selected writer adapter to verify its effective
+Runner collection path against `ansible.netcommon 8.6.0` and `cisco.ios 11.4.2`.
+CAP-RUNTIME-VERIFY is accepted; it checks path/manifests/versions, not installed
+file cryptographic integrity. Failure is bounded, with execution/recovery not
+attempted. See [operations](buildkite-profiled-delivery-operations.md).
 
-Planning fails closed unless the target resolves exactly once, platform is
-`cisco_iosxe`, credentials and trusted authenticated access are available,
+Planning fails closed unless the target resolves exactly once, profile/operation admission is
+`cat8000v_iosxe` interface description, credentials and trusted authenticated access are available,
 observed hostname matches inventory, the interface exists, its description is
 unambiguous, and inventory policy does not protect it. `GigabitEthernet1` is
 always protected for the personal-lab candidate. Interface operational state
@@ -81,7 +78,7 @@ fresh state. Ambiguous writes are not retried or automatically recovered.
 Recovery failure is final and requires operator action. Ambiguous recovery is a
 distinct final outcome and is never retried.
 
-The initial typed `ChangeRecord` distinguishes blocking, stale plan, execution
+The current typed schema-v2 `ProfiledChangeRecord` distinguishes blocking, stale plan, execution
 failure, ambiguity, validation failure, successful recovery, and recovery
 failure. It includes bounded stage results and provider identity, never raw
 Runner events, full configuration, usernames, passwords, or host keys. Evidence
@@ -92,13 +89,13 @@ is observational and never authorizes a write.
 Normal automated tests use provider fakes and require no CML access. Live
 acceptance is deliberately separate:
 
-1. Confirm environment credentials, reachability, and existing host trust.
+1. Confirm authorized NetBox/OpenBao providers and the explicit profiled LIVE trust.
 2. Perform read-only identity, interface, description, and bounded L3 discovery.
 3. Have an operator select a safe non-management interface from the evidence.
 4. Generate and display the exact execution/recovery artifacts and plan digest.
 5. Stop until the operator explicitly approves that exact digest.
 6. Run deployment once, validate independently, and exercise documented targeted
-   recovery acceptance under operator control.
+   recovery acceptance only if separately authorized and eligible.
 
 No live configuration write is authorized by repository work or plan creation.
 Acceptance evidence must be documented only after the real procedure occurs.

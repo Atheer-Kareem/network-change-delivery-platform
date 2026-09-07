@@ -14,18 +14,18 @@ evidence store, and the personal lab and any company environment.
 | Threat | Primary mitigations |
 | --- | --- |
 | Malicious or accidental PR content | Unprivileged Zone 1, review, policy/schema tests, no write credentials or access, sanitized inputs |
-| Secret exposure | OIDC-derived short-lived scoped credentials; no secrets in Git, models, logs, artifacts, or evidence; restrictive external state and CML access for the explicit personal-lab Day-0 exception |
+| Secret exposure | Dedicated deploy AppRole with persistent local SecretID and short-lived scoped tokens; separate staging JWT identity; no secrets in Git, models, logs, artifacts, or evidence; restrictive external state and CML access for the explicit personal-lab Day-0 exception |
 | Unauthorized deployment | Protected commit binding, immutable plan digest, human approval, isolated deployment queue and identity |
 | Stale approved plan | Fresh identity/state/necessity checks immediately before writes; fail closed |
 | Target identity mismatch | Complete frozen resolution plus endpoint and device identity verification; no fallback |
 | Compromised agent | Zone separation, minimal credentials, exact-artifact execution, short lifetimes, audit and rotation |
 | Misconfigured agent | Explicit queue constraints, reproducible pinned containers, preflight, least privilege, fail-closed checks |
 | Dependency tampering | Frozen lockfile, reviewed updates, immutable base-image digests, deterministic builds and later artifact provenance |
-| Container-image tampering | Digest-pinned bases, recorded execution digest, controlled build/promotion, later signature/provenance verification |
+| Container-image tampering | Digest-pinned bases and controlled builds; execution-image attestation/signature verification is not claimed |
 | Unauthorized manual configuration | Oxidized chronology, desired/live comparison, monitoring, investigation before remediation |
-| False or incomplete evidence | Typed required records, correlation IDs and digests, independent validation, append-oriented storage and completeness checks |
-| Ambiguous write outcome | No automatic retry; observe and classify before vendor-aware recovery |
-| Overlapping fleet changes | Target-set intersection detection with serialization or rejection |
+| False or incomplete evidence | Typed artifacts/digests and independent validation; historical append-only store/correlation remain disconnected from current schema-v2 delivery |
+| Ambiguous write outcome | Stop, no automatic/manual mutation retry, independently reconcile; no speculative recovery after uncertainty |
+| Overlapping fleet changes | Historical fleet target-set intersection; current single-target delivery concurrency and fresh stale-plan checks; profiled rollout restoration pending |
 | Monitoring failure | Independent monitoring health and alerting; pipeline completion never implies continued health |
 | Source-of-truth inconsistency | Explicit Git/NetBox/device authority split, snapshots, freshness checks, blocking contradictions |
 
@@ -49,7 +49,7 @@ restrictive permissions on encrypted host storage, CML access remains bounded,
 credential-bearing tfvars and saved plans are prohibited, and logs/evidence must
 never emit the value. Compromise of either store can still expose the static lab
 credential; this pattern is explicitly not accepted for production.
-## Buildkite deployment-boundary residual risks
+## Historical Buildkite deployment-boundary residual risks
 
 7A established protected-main promotion acceptance. Protected-main build #26
 then established the 7B cryptographic Buildkite/OpenBao identity boundary,

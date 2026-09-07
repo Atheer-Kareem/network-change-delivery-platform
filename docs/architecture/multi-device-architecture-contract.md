@@ -1,5 +1,14 @@
 # Multi-device architecture contract
 
+This document preserves B1–B5 contract evolution. The current entry point is the
+[architecture overview](overview.md); [current main
+acceptance](../acceptance/profiled-main-delivery.md)
+distinguishes demonstrated delivery from proposed service writes. Historical
+“additive”, “parallel” and v1 compatibility statements below describe migration
+stages. Profiled inventory/execution now replace the retired v1 runtime.
+Current scope membership remains explicitly closed in code; population-count
+generalization is CAP-POPULATION-SCOPES, not a claim of this documentation update.
+
 ## Status and compatibility boundary
 
 Detour B1 defines additive architecture contracts for a multi-device
@@ -14,8 +23,9 @@ delivery, Terraform, or promotion.
 
 [ADR 0031](../adr/0031-four-device-persistent-live-realization.md) is current
 truth for persistent LIVE. ADR 0024 remains historical truth for the retired
-exact-two runtime and two-router Terraform staging implementation. No
-four-device STAGING authority is claimed.
+exact-two runtime and two-router Terraform staging implementation. Current disposable
+realization assurance is described in
+[profiled staging](profiled-disposable-cml-staging.md); it grants no write authority.
 
 Compatibility `InventoryDevice`, `DeploymentPlan`, fleet-plan/member,
 `ChangeRecord`, `FleetChangeRecord`, `ChangeAuditRecord`,
@@ -64,8 +74,8 @@ recovery, and profile-local SSH policy. It is not a generic plugin mechanism.
 | `vjunos_router` | `junos` | Layer-3 routing, OSPF, Junos firewall filter, commit-confirmed |
 
 The IOSvL2 profile deliberately does not yet admit unproven PACL/VACL behavior.
-Catalog membership is architectural data in B1 and has no effect on current
-provider dispatch.
+Catalog membership was architectural data only in B1; current profiled provider
+dispatch consumes explicit profile/capability contracts. Membership alone grants no write.
 
 ## SSH compatibility policy
 
@@ -74,7 +84,7 @@ policy cannot express global or profile-local host-key/KEX algorithm
 relaxation. B1 changed no Ansible, Paramiko, OpenSSH, known-host, or Junos
 transport behavior.
 
-The current v1 Cisco implementation explicitly sets
+The historical v1 Cisco implementation explicitly sets
 `ansible_network_cli_ssh_type=paramiko`. Documentation describing that current
 path as libssh was incorrect; B1 corrects the documentation without changing
 the implementation. B2's separate read-only catalog explicitly selects
@@ -387,9 +397,10 @@ NetBox owns these exact management endpoints:
 | `transit-ios-01` | `192.168.4.16/24` | `192.168.4.31/24` |
 | `access-sw-01` | `192.168.4.17/24` | `192.168.4.32/24` |
 
-The LIVE endpoints are realized and admitted. The STAGING IP objects are
-allocated in NetBox, but no four-device STAGING realization is claimed or
-active; that realization remains deferred until explicit operator decision.
+The LIVE endpoints are realized and admitted. STAGING IP objects are allocated
+in NetBox and consumed by the disposable profiled realization scope during
+staging. A retained allocation does not assert a staging lab is currently running;
+normal successful staging verifies absence and retires its state.
 
 ### Current B3-5 data-plane authority
 
@@ -450,7 +461,8 @@ advertised routes.
 Real read-only observation found OSPF absent. Observation-bound IOS XE, IOS,
 and Junos artifacts propose the exact transition while a clean final candidate
 composes `routed_underlay + ospf` for four-node Batfish assurance. Live
-application remains deferred while protected delivery is disabled. See the
+application of this OSPF service remains deferred; current protected schema-v2
+description delivery does not grant service-write authority. See the
 [B4-2 acceptance record](../acceptance/ospf-triangle-detour-b4-2.md).
 
 ### Current B4-3 VLAN proposal
@@ -512,7 +524,7 @@ The reserved future LIVE/CML traffic fixtures remain `users-host-01` and
 `servers-host-01`, likely implemented as lightweight Alpine CML nodes. They are
 not NCDP-managed network devices, fleet members, canaries/waves,
 network-device `DeploymentPlan` recipients, credential owners, or members of
-the four-device managed-network population. Their eventual data-plane addresses
+the managed network population. Their eventual data-plane addresses
 must remain identical between LIVE and STAGING realizations.
 
 The similarly purposed `assurance-users-probe` and

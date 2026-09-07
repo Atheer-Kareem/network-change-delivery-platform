@@ -4,10 +4,10 @@
 > Terraform/operator-twin design as historical architecture. Its source,
 > executable entry points, and pipeline validation were removed at the final
 > profiled migration deletion gate. Current CML truth is the persistent,
-> operator-owned exact-four `NCDP Live` lab. The separately designed profiled
-> exact-four disposable replacement is
-> [documented here](profiled-disposable-cml-staging.md), locally accepted, and
-> wired to Buildkite with runtime gate acceptance pending.
+> operator-owned `NCDP Live` proof population. The separately designed profiled
+> disposable replacement is [documented here](profiled-disposable-cml-staging.md)
+> and required by the demonstrated [current main delivery](../acceptance/profiled-main-delivery.md).
+> PR/development staging is temporarily skipped under the ACTIVE ledger exception.
 
 ## Scope
 

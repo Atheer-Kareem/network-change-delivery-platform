@@ -1,4 +1,4 @@
-"""Parallel profiled planning contracts for the interface-description write vertical."""
+"""Current profiled planning contracts for the interface-description write vertical."""
 
 from __future__ import annotations
 

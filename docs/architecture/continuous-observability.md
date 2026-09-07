@@ -1,5 +1,11 @@
 # Continuous observability
 
+Current management observability is independent of delivery and projects the
+admitted proof population. Historical 11A/11C acceptance below remains evidence;
+it does not imply current SNMP provisioning or persistent live SNMP polling.
+Buildkite soft failure preserves visibility, not authorization; see
+[workflow](buildkite-workflow.md).
+
 Increment 11A establishes an independent read-only observability plane for the
 automation management service selected by NetBox. It does not participate in
 planning, approval, deployment, recovery, or audit authority.
@@ -98,10 +104,11 @@ Successful final 11A acceptance does not retire these targets or stop
 
 ## Current migration and runtime status
 
-Management-service observability is migrated to the profiled exact-four fleet;
+Management-service observability is migrated to the profiled managed population;
 its target generation, CML realization admission, and readiness artifact bind
 all four managed identities. Observability runtime validation and synthetic
-SNMPv3 validation are restored as active, visible hard Buildkite gates. The
+SNMPv3 validation are restored as active, visible Buildkite checks with truthful success
+receipts. The
 first observed failure was a Docker identity collision caused by the
 synthetic-SNMP step invoking its nested management-runtime regression alongside
 the dedicated management-runtime step. The Buildkite synthetic-SNMP invocation
@@ -114,11 +121,12 @@ live SNMP has completed its profiled migration. The current SNMP projection is
 capability-derived: `cat8000v_iosxe` and `vjunos_router` qualify, while
 `iosv_159_3_m12` and `iosvl2_2020` are intentionally excluded because they do
 not satisfy the accepted SHA256/AES128 contract. This is a telemetry subset of
-the exact-four managed fleet, not legacy `ncdp-managed` admission. Live SNMP
-remains deferred to 11C-4. The legacy SNMP provisioning write path, disposable
-CML staging, and protected schema-v1 delivery are retired. Telemetry admission
-is the explicit capability projection of the one profiled exact-four managed
-fleet; it does not query `ncdp-managed`.
+the managed population, not legacy `ncdp-managed` admission. Live SNMP
+remains deferred to 11C-4. The legacy SNMP provisioning write path, schema-v1 disposable
+CML staging and protected schema-v1 delivery are retired. Current profiled CML
+staging remains a main-delivery prerequisite; PR staging is temporarily skipped. Telemetry admission
+is the explicit capability projection of the profiled managed population; it does not
+query `ncdp-managed`.
 
 ## Boundaries
 
@@ -221,7 +229,7 @@ used separate commits, builds, approvals, and non-retryable attempts. Those
 historical plans contain the controlled username and logical credential
 reference but no passphrase, localized key, encrypted secret, or secret-derived
 digest. Current SNMP is telemetry-only and projects devices 1/2 from the
-exact-four profiled population under the SHA256/AES128 capability contract.
+profiled managed population under the SHA256/AES128 capability contract.
 
 The owned device contract is the exact ADR 0026 OID closure in view
 `NCDP_IFMIB`, privacy-level read-only group `NCDP_SNMP_RO`, and a versioned

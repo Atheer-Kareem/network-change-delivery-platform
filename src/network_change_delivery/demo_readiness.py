@@ -26,6 +26,7 @@ from network_change_delivery.configuration_observation import (
 from network_change_delivery.configuration_observation_store import (
     ConfigurationObservationStore,
 )
+from network_change_delivery.profile_inventory import PROFILED_POPULATION_CATALOG
 
 NETBOX_URL = "http://127.0.0.1:8000/"
 GRAFANA_DASHBOARD_URL = (
@@ -338,7 +339,7 @@ def _audit_checks(
     checks: list[ReadinessCheck] = []
     records = {}
     for expected in CANONICAL_AUDITS:
-        name = f"Audit #{expected.build_number}"
+        name = f"Historical audit #{expected.build_number}"
         try:
             record = store.read_record(expected.record_id)
             records[expected.record_id] = record
@@ -386,7 +387,7 @@ def _audit_checks(
         checks.append(
             _check(
                 ReadinessStatus.PASS,
-                "Chronology #158",
+                "Historical chronology #158",
                 f"{CHRONOLOGY_OBSERVATION_ID} · TEMPORALLY_BRACKETED · NOT_PROVEN",
             )
         )
@@ -394,7 +395,7 @@ def _audit_checks(
         checks.append(
             _check(
                 ReadinessStatus.FAIL,
-                "Chronology #158",
+                "Historical chronology #158",
                 "canonical PRE/POST observation missing or inconsistent",
             )
         )
@@ -466,7 +467,10 @@ def run_demo_readiness(
             _check(
                 ReadinessStatus.MANUAL,
                 "Grafana target health",
-                "confirm both management targets are healthy",
+                "confirm management targets are healthy: "
+                + ", ".join(
+                    member.logical_name for member in PROFILED_POPULATION_CATALOG
+                ),
             ),
             _check(
                 ReadinessStatus.MANUAL,
@@ -476,12 +480,16 @@ def run_demo_readiness(
             _check(
                 ReadinessStatus.MANUAL,
                 "CML NCDP Live",
-                "confirm core-02 and edge-junos-01 are BOOTED in the UI",
+                "confirm BOOTED in the UI: "
+                + ", ".join(
+                    member.logical_name for member in PROFILED_POPULATION_CATALOG
+                ),
             ),
             _check(
                 ReadinessStatus.MANUAL,
-                "Buildkite session",
-                "confirm signed in and Builds #281 and #275 are accessible",
+                "Delivery evidence",
+                "review current acceptance: authorized success, blocked NO WRITE, "
+                "and compliant/no plan; historical builds are separate evidence",
             ),
         )
     )

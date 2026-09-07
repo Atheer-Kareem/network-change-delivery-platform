@@ -83,8 +83,8 @@ See [workflow](architecture/buildkite-workflow.md) and
 
 | Stable ID | Capability | State |
 |---|---|---|
-| CAP-RUNTIME-VERIFY | Verified profiled deployment runtime | IN PROGRESS |
-| CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation | USER APPROVED |
+| CAP-RUNTIME-VERIFY | Verified profiled deployment runtime | ACCEPTED |
+| CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation | IN PROGRESS |
 | CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | USER APPROVED |
 | CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | USER APPROVED |
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | USER APPROVED |
@@ -94,14 +94,13 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
-Only CAP-RUNTIME-VERIFY, this ledger and the temporary scheduling exception are
-in the current implementation scope. All other approved capabilities await
-their own implementation task. Final acceptance/sign-off is pending for every
-refinement capability below.
+Only CAP-DOCS-TRUTH is in the current implementation scope. CAP-RUNTIME-VERIFY
+is accepted; other approved capabilities await their own implementation tasks.
+The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
 
-- **State:** IN PROGRESS; implementation review and user acceptance pending.
+- **State:** ACCEPTED; implementation merged and explicitly reviewed/accepted by the user.
 - **Problem:** the retained exact Ansible collection verifier was historically
   enforced, but current profiled Cisco deployment did not invoke it.
 - **Target:** Ansible-backed profiled deployment admits execution only when the
@@ -127,13 +126,17 @@ refinement capability below.
   the CLI with external providers replaced by test doubles. The retained
   verifier checks path/manifest/version consistency, not cryptographic integrity
   of every installed collection file.
-- **Acceptance/sign-off:** PENDING USER REVIEW. Test completion must not change
-  this capability to ACCEPTED automatically. No LIVE deployment acceptance is
-  authorized by the current implementation task.
+- **Acceptance/sign-off:** explicit user review and acceptance supplied at the
+  start of CAP-DOCS-TRUTH, after merge of
+  [#140](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/140)
+  (`aa9b3c7`). Current CLI composition exercises failure before credentials or
+  device activity, with no attempted write; Junos is unaffected and pins are
+  unchanged. No LIVE write was needed: this is a local deployment-runtime
+  prerequisite. Passing tests alone did not confer acceptance.
 
 ### CAP-DOCS-TRUTH — Current architecture, acceptance and demo reconciliation
 
-- **State:** USER APPROVED.
+- **State:** IN PROGRESS; user review/sign-off pending.
 - **Target/value:** README, current architecture/operations and readiness must
   describe implemented behavior and accepted positive/negative delivery paths,
   while preserving historical records. Make engineering capabilities discoverable
@@ -142,13 +145,20 @@ refinement capability below.
   are explicit; pending-runtime claims are reconciled with supplied acceptance;
   readiness describes current scopes; README links to authoritative detail.
 - **Dependencies/scope:** source/test/acceptance review, README/current docs,
-  architecture diagram and demo/readiness. This increment creates only the ledger.
+  architecture diagram and demo/readiness; presentation changes only.
 - **Must not change:** historical evidence or schemas; no new runtime capability.
 - **Origin/population effect:** reconciles documentation and demo integration;
   uses population/scope terminology without pretending code is generalized.
-- **Recorded follow-ups:** old two-router demo checks, pending main acceptance
-  prose, additive/v1-current architecture wording and implied current AuditStore
-  integration belong here; they are deliberately not repaired in this change.
+- **Implementation evidence:** current docs/readiness and architecture SVG are
+  reconciled with source and the user-supplied
+  [current main-delivery acceptance](acceptance/profiled-main-delivery.md).
+  Historical records remain historical. No live acceptance is performed here.
+- **Acceptance/sign-off:** PENDING USER REVIEW; this capability remains IN PROGRESS.
+- **Remaining behavior boundaries:** provider `execution.changed` and downstream
+  no-plan presentation remain CAP-OUTCOME-TRUTH; readiness still checks selected
+  historical audit records, while current delivery/viewer integration awaits
+  CAP-DURABLE-EVIDENCE. Fixed catalog/scope constraints and the fixed main target
+  remain CAP-POPULATION-SCOPES and CAP-INTENT-DELIVERY respectively.
 
 ### CAP-OUTCOME-TRUTH — Truthful profiled delivery outcomes
 

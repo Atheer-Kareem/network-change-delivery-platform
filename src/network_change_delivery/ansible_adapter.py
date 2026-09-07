@@ -512,7 +512,7 @@ class AnsibleRunnerCiscoAdapter:
         *,
         ssh_type: Literal["paramiko"],
     ) -> tuple[InterfaceState, ...]:
-        """Collect through one explicit B2 profile-bound Cisco SSH backend."""
+        """Collect through one explicit profile-bound Cisco SSH backend."""
         return self._discover_read_only(
             target,
             credentials,
@@ -620,7 +620,7 @@ class AnsibleRunnerCiscoAdapter:
         *,
         ssh_type: Literal["paramiko"],
     ) -> InterfaceState:
-        """Return one exact interface through the selected B2 Cisco backend."""
+        """Return one exact interface through the profile-bound Cisco backend."""
         states = self.discover_read_only(
             target,
             credentials,
@@ -745,7 +745,7 @@ class AnsibleRunnerCiscoAdapter:
     def _classify_interface_execution(
         runner: object, selected: dict[str, dict[str, Any]]
     ) -> ExecutionResult:
-        """Keep v1 and profiled result classification identical."""
+        """Classify profiled execution with the historical v1 result semantics."""
         status = str(getattr(runner, "status", "failed"))
         rc = getattr(runner, "rc", None)
         execution_event = selected.get(EXECUTION_TASK, {}).get("_ncdp_event")

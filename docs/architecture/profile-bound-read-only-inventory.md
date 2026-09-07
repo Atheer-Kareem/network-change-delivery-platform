@@ -2,7 +2,7 @@
 
 ## Current status and historical B2 boundary
 
-The profiled provider and adapter are now the current exact-four read-only
+The profiled provider and adapter are now the current profiled managed read-only
 boundary and are consumed by schema-v2 planning/execution and passive services.
 The paragraphs below preserve the sequence and constraints of the earlier
 parallel B2 introduction; references to a current v1 path are historical.

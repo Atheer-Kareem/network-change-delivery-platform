@@ -1,8 +1,8 @@
-"""Additive B3 contracts for profiled CML realization and host trust.
+"""Current profiled contracts for CML realization and host trust.
 
-This module contains no CML client, credential, device command, persistence, or
-write authority. Current v1 observability, Oxidized, staging, and deployment do
-not import it.
+These types bind realization identity, host trust, and run-scoped STAGING
+read-only projection. This module contains no CML client, credential, device
+command, persistence, or write authority.
 """
 
 from __future__ import annotations

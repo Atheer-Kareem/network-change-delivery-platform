@@ -2,15 +2,16 @@
 
 ## Common intent and authority
 
-Increment 4 extends the existing vendor-neutral interface-description intent to
-Junos. Git remains authoritative for the desired description. NetBox owns device
+The current schema-v2 path admits interface descriptions on `vjunos_router`.
+It preserves the vendor transaction kernel first accepted in Increment 4. Git remains
+authoritative for the desired description. NetBox owns device
 and requested-interface identity, the NETCONF endpoint, platform, eligibility,
 and protection tags. OpenBao resolves the static lab credential from stable
 NetBox device identity.
 
 Junos uses NETCONF port 830 with no fallback. Every fresh PyEZ connection requires
-the exact operator-established `[host]:830` entry in the current user's standard
-`known_hosts`, verifies host keys, supplies the OpenBao username/password, and
+the exact operator-established `[host]:830` entry in the explicit profiled LIVE
+known-hosts generation, verifies host keys, supplies the OpenBao username/password, and
 disables SSH key, agent, proxy-command, and user SSH-config routing fallback.
 
 Read-only discovery uses structured `get-interface-information` operational data
@@ -82,8 +83,11 @@ the [Increment 4 acceptance report](../acceptance/junos-interface-description-in
 
 ## Limitations
 
-Increment 4 supports one interface description on one explicit Junos target. It
+Current profiled delivery supports one interface description on one explicit Junos target. It
 does not provide fleets, arbitrary XML, rollback 1 automation, proxy/bastion
 routing, dynamic device credentials, or a claim of generic cross-vendor
-transactions. Increment 4 is complete with real vJunos plan/write acceptance;
-those broader capabilities remain later roadmap work.
+transactions. [Profiled CLI acceptance](../acceptance/profiled-deploy-live-acceptance-pr132.md)
+proves the current path. The [current main milestone](../acceptance/profiled-main-delivery.md)
+is a Cisco demo-target write, not a main-pipeline Junos write. Junos does not
+require the Cisco collection-runtime prerequisite. Its schema-v2 records are
+not yet connected to historical AuditStore/correlation/viewer machinery.

@@ -1,8 +1,13 @@
 # Buildkite profiled ephemeral CML staging operations
 
-The current gate reuses the exact-four lifecycle locally accepted in PR #134.
-Buildkite runtime acceptance is PENDING until the activation PR staging job
-succeeds. Schema-v1 protected delivery remains retired; the separate current
+The current assurance step reuses the profiled lifecycle locally accepted in
+PR #134 and refined in #136. The user-supplied [main-delivery
+acceptance](../acceptance/profiled-main-delivery.md)
+records success through the current required CML prerequisite. PR/development
+staging is temporarily skipped under the ACTIVE [ledger
+exception](../roadmap.md#temporary-development-workflow-exceptions);
+canonical non-PR main retains real staging success evidence. Schema-v1 protected
+delivery remains retired; the separate current
 schema-v2 main delivery tail is described in [workflow](buildkite-workflow.md).
 Staging commands now soft-fail for presentation while retaining truthful exit
 codes; their failure no longer necessarily blocks merge via aggregate status.
@@ -25,13 +30,14 @@ Install the reviewed
 The staging agent configuration must retain queue `ncdp-staging` and
 `hooks-path="/Users/netdevops/.config/buildkite/ncdp-lab/hooks/ncdp-staging"`.
 The installed hook must be owned by the agent user, mode `0700`, and sourced
-from the reviewed commit before its PR run. Hook updates are an external
-prerequisite for this same PR, not a separate preparation PR. Hook installation
+from the reviewed commit before an authorized staging run. Hook updates are an external
+operator prerequisite when publishing a reviewed hook update. Hook installation
 does not change credential values.
 
 The hook admits only the exact step, queue, canonical repository, retry zero,
-and command `.buildkite/scripts/profiled_cml_staging.sh`. PR builds additionally
-require an explicit canonical/non-fork source repository; non-PR runs require
+and command `.buildkite/scripts/profiled_cml_staging.sh`. The retained hook admission
+for PR builds (currently unscheduled) additionally
+requires an explicit canonical/non-fork source repository; non-PR runs require
 main. Fork or ambiguous origins fail before credentials are sourced. A
 maintainer must adopt a runtime-affecting fork change in the canonical repository
 and obtain a fresh canonical run to obtain trusted staging evidence.
@@ -114,7 +120,7 @@ creates exactly one lab, six nodes, nine links, and one lifecycle resource
 Day-0, performs the separately admitted one-shot CML LAB START,
 observes transit's own first boot plus its 60-second persistence interval,
 recycles only transit-ios-01 while other nodes can still be starting, and proves
-exact-four readiness and strict run-scoped trust, collects read-only device
+exact realization-scope readiness and strict run-scoped trust, collects read-only device
 state, destroys its exact owned graph, proves independent CML absence, and
 retires the whole run directory. No CAT8000V, vJunos, or IOSvL2 recycle is
 authorized. No network-device CLI write, B4 D1 application, protected delivery,
@@ -166,8 +172,8 @@ cannot replace the primary failure.
 The summary also renders the schema-v2 closed `timings_seconds` phase durations
 for comparison with the former approximately 11-minute job. The lifecycle total
 includes nested phases and cleanup, not wrapper setup/publication. Early-recycle
-runtime acceptance remains PENDING until the corrected refinement PR run; failure
-must not cause a retry or fallback IOSv boot. See the lifecycle document for the
+runtime was reported by the user at approximately 8m22s for the successful
+lifecycle; failure must not cause a retry or fallback IOSv boot. See the lifecycle document for the
 pinned-provider analysis and preserved persistence/readiness waits.
 
 The failed-phase line uses only lifecycle state to select admission,

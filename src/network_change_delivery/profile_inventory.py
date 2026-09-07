@@ -1,9 +1,9 @@
-"""Parallel B2 profile-aware, read-only NetBox inventory resolution.
+"""Profiled read-only NetBox inventory for the current profiled architecture.
 
-This module does not replace or feed the v1 inventory/deployment path. It binds
-reviewed B1 profiles to factual NetBox metadata and exposes only a LIVE
-read-only target. A STAGING target can be projected only by an explicit,
-run-scoped realization authority.
+This module binds reviewed profiles to factual NetBox metadata for current
+planning, execution preflight, and read-only consumers. Inventory devices
+project only LIVE read-only targets; STAGING projection requires explicit,
+run-scoped realization authority. Inventory membership alone grants no writes.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ PROTECTED_INTERFACE_TAG = "ncdp-protected"
 
 
 class NetBoxPlatformFact(BaseModel):
-    """NetBox-owned factual platform identity frozen into B2 inventory."""
+    """NetBox-owned factual platform identity frozen into profiled inventory."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     object_id: int = Field(ge=1)
@@ -71,7 +71,7 @@ class NetBoxPlatformFact(BaseModel):
 
 
 class NetBoxDeviceTypeFact(BaseModel):
-    """NetBox-owned factual device-type identity frozen into B2 inventory."""
+    """NetBox-owned factual device-type identity frozen into profiled inventory."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     object_id: int = Field(ge=1)
@@ -280,7 +280,7 @@ def _expected_profiled_member(logical_name: str) -> _ProfiledPopulationMember:
 
 
 class ProfileReadOnlyTarget(BaseModel):
-    """Narrow non-secret LIVE target accepted by B2 read-only adapters."""
+    """Narrow non-secret profiled target accepted by read-only adapters."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["1"] = "1"
@@ -318,7 +318,7 @@ class ProfileReadOnlyTarget(BaseModel):
 
 
 class ProfiledInventoryDevice(BaseModel):
-    """Immutable versioned B2 resolution of identity, profile, and management."""
+    """Immutable versioned profiled resolution of identity, profile, and management."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["1"] = "1"
@@ -377,7 +377,7 @@ class ProfiledInventoryDevice(BaseModel):
         return self
 
     def live_read_only_target(self) -> ProfileReadOnlyTarget:
-        """Project only LIVE; B2 intentionally has no STAGING projection API."""
+        """Project only LIVE; STAGING projection requires realization authority."""
         endpoint = self.management_endpoints.live.binding.l3_endpoint
         return ProfileReadOnlyTarget(
             logical_name=self.logical_name,
@@ -517,7 +517,7 @@ def _role_fact(value: object) -> NetBoxRoleFact:
 
 
 class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
-    """Resolve full B2 profile identity through NetBox GET requests only."""
+    """Resolve full profiled inventory identity through NetBox GET requests only."""
 
     _DEVICE_PATH = "/api/dcim/devices/"
     _INTERFACE_PATH = "/api/dcim/interfaces/"

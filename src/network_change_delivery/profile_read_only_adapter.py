@@ -1,4 +1,4 @@
-"""Exact profile-bound B2 adapter composition with no write surface."""
+"""Exact profile-bound read-only adapter composition with no write surface."""
 
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ _validate_transport_catalog()
 
 
 class CiscoReadOnlyCollector(Protocol):
-    """Only the Cisco collection surface B2 may consume."""
+    """Cisco collection-only surface consumed by the profile-bound read-only adapter."""
 
     def discover_read_only(
         self,
@@ -138,7 +138,7 @@ class CiscoReadOnlyCollector(Protocol):
 
 
 class JunosReadOnlyCollector(Protocol):
-    """Only the Junos collection surface B2 may consume."""
+    """Junos collection-only surface consumed by the profile-bound read-only adapter."""
 
     def discover_read_only(
         self,

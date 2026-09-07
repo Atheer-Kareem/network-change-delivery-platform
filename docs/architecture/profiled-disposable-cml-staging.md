@@ -1,16 +1,20 @@
-# Profiled exact-four disposable CML staging
+# Profiled disposable CML staging
 
-Status: the exact-four lifecycle merged in PR #134 has successful controlled
-local acceptance. The `cml-staging` Buildkite gate is wired in source; real
-Buildkite acceptance remains pending its first successful PR run.
+Status: the lifecycle introduced in PR #134 and refined in #136 is current.
+The user-supplied [main-delivery acceptance](../acceptance/profiled-main-delivery.md)
+records the successful chain requiring real CML success. PR/development staging
+is temporarily skipped under the ACTIVE [ledger
+exception](../roadmap.md#temporary-development-workflow-exceptions);
+canonical non-PR main retains staging and its same-build success digest.
 
 ## Purpose and authority
 
 Disposable staging is the real-platform, credentialed, strict-trust, read-only
-integration counterpart to four-device Batfish assurance. It is not protected
+integration counterpart to modeled service assurance in Batfish. It is not protected
 delivery, a deployment authority, a schema-v1 restoration, a B5 acceptance
 path, or candidate configuration application. The sole current configuration
-write surface remains local `ncdp profiled-deploy` for its admitted operation.
+write surface remains `ncdp profiled-deploy`, also invoked by authorized main delivery,
+for its admitted operation.
 
 Its population is resolved only through `NetBoxProfileInventoryProvider` and
 `ncdp-profiled-inventory`: core-02 (CAT8000V IOS-XE), edge-junos-01 (vJunos),
@@ -21,7 +25,8 @@ provider, multivendor adapter, planning function, or write adapter participates.
 
 ## Disposable realization
 
-One run creates `NCDP Staging <run-id>` with exactly six nodes, nine links, and
+The current declared realization scope creates `NCDP Staging <run-id>` with
+exactly six nodes, nine links, and
 17 Terraform-managed resources: a CML lab, system bridge, unmanaged management
 switch, four profiled device nodes, nine links, and one lifecycle resource.
 Day-0 is management-only and derives each STAGING endpoint from NetBox. It sets
@@ -89,9 +94,12 @@ that observation, without waiting for CAT8000V, vJunos, or IOSvL2. Identity and
 `BOOTED` are rechecked before STOP. `STARTED` alone is not evidence that IOSv
 has consumed and persisted Day-0, so neither an earlier interval nor a shorter
 one is admitted by the retained diagnosis. After the single STOP/START and
-second `BOOTED`, the unchanged exact-four SSH/NETCONF readiness path follows.
-No third boot or mutation replay exists. The next commit's PR staging run is the
-acceptance experiment; shorter runtime is not yet proven.
+second `BOOTED`, the unchanged realization-scope SSH/NETCONF readiness path follows.
+No third boot or mutation replay exists. The user reported the optimized
+successful lifecycle at approximately 8m22s (roughly 8–9 minutes); this is a
+historical measured result, not a guaranteed duration. Raw timing/job identity
+is not recorded in the current acceptance source. No further optimization is
+required by this documentation capability.
 
 Before Terraform can create anything, authenticated GET-only CML admission
 rejects any existing lab whose title starts with `NCDP Staging` and any active
@@ -101,7 +109,7 @@ six node UUIDs and profile definitions/images, nine link UUIDs and device-side
 slots, and the bounded management-only stored Day-0. The resulting topology
 evidence digest binds those observed run-specific UUIDs and relationships.
 
-The run first creates an exact-four PREPARING `StagingRealizationContext`, then
+The run first creates a realization-scope PREPARING `StagingRealizationContext`, then
 establishes trust and validates a new READY context. A READY context is invalid
 if any trust reference is absent. Validation uses only its staging read-only
 targets and `ProfileReadOnlyAdapter`. Readiness is profile-derived: SSH/22 for
@@ -138,7 +146,7 @@ and 9. Broad ambient AppRole, NetBox, CML, or device credentials are rejected.
 Terraform bootstrap inputs are sensitive; Cisco Day-0 uses an IOS verifier and
 Junos uses an encrypted password representation.
 
-Each run creates a private, create-only staging trust root. Its exact-four host
+Each run creates a private, create-only staging trust root. Its realization-scope host
 trust records bind the run, lab UUID, CML node UUID, stable identity, logical
 name, automation/CML profile, STAGING endpoint, and profile service. Ambient
 known-hosts, auto-add, fallback trust, and relaxed algorithms are prohibited.
@@ -207,8 +215,9 @@ and recycler accept the process-memory bearer directly; only bounded Terraform
 subprocesses receive it as `CML2_TOKEN`. Their mutation and GET-only contracts
 are unchanged.
 
-Canonical PR and main builds run validation → Batfish → CML without path
-filtering. Repository commands soft-fail for continuation; staging retains its
+Canonical non-PR main runs validation → Batfish → CML without path filtering.
+PR/development staging is temporarily skipped; validation and PR Batfish remain.
+Repository commands soft-fail for continuation; staging retains its
 real nonzero exit and truthful evidence, but no longer guarantees aggregate
 Buildkite failure or merge blocking. Verified staging success publishes a
 same-build evidence hash required by the separate schema-v2 main promotion.
@@ -216,3 +225,9 @@ Failure publishes no success authority. The staging lifecycle itself gains no
 device-write authority. See the current
 [operations runbook](buildkite-ephemeral-cml-staging-operations.md) for the
 external trusted-agent prerequisite, evidence, and retained-state handling.
+
+The present implementation enforces the named proof population and fixed graph
+counts. These are current scope limitations, not a permanent architectural
+cardinality. CAP-POPULATION-SCOPES owns generalization while preserving exact
+membership, topology, resource ownership and cleanup checks. Serialized
+identities such as `profiled-four-device` remain unchanged.

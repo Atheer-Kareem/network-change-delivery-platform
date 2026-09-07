@@ -1,7 +1,9 @@
 # Current profiled Buildkite delivery operations
 
 This personal-lab boundary wraps the current schema-v2 CLI, not historical
-schema-v1 protected delivery. Runtime acceptance remains PENDING. Main planning
+schema-v1 protected delivery. The user-supplied [current
+acceptance](../acceptance/profiled-main-delivery.md)
+records positive and negative main outcomes. Main planning
 is read-only; execution requires same-build promotion and explicit human unblock.
 Never run a live plan or deploy as an implementation/unit-test gate.
 
@@ -24,7 +26,7 @@ and path consistency, not collection-file cryptographic integrity.
 Buildkite retains its single invocation of the same CLI after independently
 checking promotion/authorization; there is no Buildkite-only runtime verifier.
 See the [capability ledger](../roadmap.md#cap-runtime-verify--verified-profiled-deployment-runtime)
-for pending user acceptance and `tests/test_profiled_runtime_admission.py` for
+for explicit user acceptance after merged #140 and `tests/test_profiled_runtime_admission.py` for
 offline call-path evidence.
 
 ## Agent-owned prerequisite
@@ -186,8 +188,12 @@ without valid published typed evidence fails the wrapper.
 Plan annotations contain bounded identity, interface, current/desired description,
 strategy, plan digest and change-required facts. Provider stdout/stderr is
 captured, never dumped. Artifacts contain typed plans/manifests/records, not
-credentials, JWTs, Terraform state or raw device configuration. Historical
-AuditStore acceptance is not replaced or fabricated by this new artifact path.
+credentials, JWTs, Terraform state or raw device configuration. Current schema-v2
+artifacts do not yet enter the historical durable
+AuditStore/PRE-write-POST/viewer chain. That machinery remains available;
+CAP-DURABLE-EVIDENCE and CAP-CONFIG-CHRONOLOGY own reconnection. The accepted
+record reports `execution.changed == false` despite observed state transition;
+that provider metadata is not observational change truth (CAP-OUTCOME-TRUTH).
 
 Failed planning emits only a closed phase: `commit/context`, `protected
 environment`, `LIVE trust`, `NetBox inventory`, `OpenBao login`, `OpenBao credential read`, `device
@@ -197,7 +203,7 @@ read. Provider and exception bodies are never printed.
 Annotation publication failure does not replace the primary nonzero plan result.
 
 Bootstrap remains `buildkite-agent pipeline upload .buildkite/pipeline.yml`.
-If an external bootstrap still invokes the retired demo renderer, its operator
-must restore ordinary upload after this source merges. No live pipeline settings
-change is part of implementation. PR execution cannot validate the main write
-tail; that requires a later explicitly authorized main run and human unblock.
+The retired demo renderer/path-filter bootstrap is not current architecture.
+PR execution cannot validate the main write tail. The supplied main acceptance
+is linked above; any new run still needs separate authorization and human unblock.
+No live pipeline settings are changed by documentation reconciliation.

@@ -1,9 +1,8 @@
-"""Additive Detour B architecture contracts outside the v1 execution path.
+"""Typed contracts and reviewed catalogs for the current profiled architecture.
 
-These types describe reviewed future architecture. They are deliberately not
-imported by the current inventory, planning, adapter, Buildkite, or Terraform
-paths. B2 may introduce an explicit, versioned migration boundary; B1 must not
-change existing serialized models, digests, or provider behavior.
+These types separate identity, profile, capability, management, realization,
+and managed-state authority. Current profiled consumers use these explicit
+contracts; catalog membership alone does not grant operation write authority.
 """
 
 from __future__ import annotations

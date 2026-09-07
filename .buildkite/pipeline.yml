@@ -222,6 +222,8 @@ steps:
 
   - label: "Ephemeral/Profiled CML staging · create → read-only validate → destroy"
     key: cml-staging
+    # Temporary PR/development exception: docs/roadmap.md. Main authority unchanged.
+    if: build.branch == "main" && build.pull_request.id == null
     soft_fail: true
     depends_on:
       - validation-complete

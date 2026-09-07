@@ -381,6 +381,10 @@ class AnsibleRunnerCiscoAdapter:
         self._root = deployment_repository_root(repository_root)
         self._known_hosts = known_hosts
 
+    def verify_runtime(self) -> None:
+        """Check the exact collections on this Runner's effective search path."""
+        verify_deployment_ansible_runtime(self._root)
+
     @staticmethod
     def _inventory(
         device: ReadOnlyConnectionTarget,

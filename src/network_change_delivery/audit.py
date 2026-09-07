@@ -52,6 +52,25 @@ class AuditArtifactKind(StrEnum):
     CHANGE_RECORD = "change_record"
     FLEET_CHANGE_RECORD = "fleet_change_record"
     SNMP_PROVISIONING_RECORD = "snmp_provisioning_record"
+    PROFILED_DEPLOYMENT_PLAN = "profiled_deployment_plan"
+    PROFILED_COMPLIANCE_RECORD = "profiled_compliance_record"
+    PROFILED_PROMOTION = "profiled_promotion"
+    PROFILED_CHANGE_RECORD = "profiled_change_record"
+
+
+HISTORICAL_ARTIFACT_KINDS = frozenset(
+    {
+        AuditArtifactKind.DEPLOYMENT_PLAN,
+        AuditArtifactKind.FLEET_DEPLOYMENT_PLAN,
+        AuditArtifactKind.SNMP_PROVISIONING_PLAN,
+        AuditArtifactKind.PLAN_ASSURANCE_RECORD,
+        AuditArtifactKind.DEPLOYMENT_PROMOTION_MANIFEST,
+        AuditArtifactKind.STAGING_EVIDENCE,
+        AuditArtifactKind.CHANGE_RECORD,
+        AuditArtifactKind.FLEET_CHANGE_RECORD,
+        AuditArtifactKind.SNMP_PROVISIONING_RECORD,
+    }
+)
 
 
 class AuditFinalOutcome(StrEnum):
@@ -168,7 +187,7 @@ class ChangeAuditRecord(BaseModel):
     credentials: tuple[CredentialProvenance, ...] = Field(default=(), max_length=100)
     final_outcome: AuditFinalOutcome
     artifacts: tuple[AuditArtifactReference, ...] = Field(
-        min_length=1, max_length=len(AuditArtifactKind)
+        min_length=1, max_length=len(HISTORICAL_ARTIFACT_KINDS)
     )
 
     @model_validator(mode="after")
@@ -210,6 +229,8 @@ class ChangeAuditRecord(BaseModel):
         if len(kinds) != len(set(kinds)) or kinds != sorted(kinds, key=str):
             raise ValueError("audit artifact references must be unique and ordered")
         kind_set = set(kinds)
+        if not kind_set <= HISTORICAL_ARTIFACT_KINDS:
+            raise ValueError("historical audit cannot contain profiled artifact kinds")
         single = AuditArtifactKind.DEPLOYMENT_PLAN in kind_set
         fleet = AuditArtifactKind.FLEET_DEPLOYMENT_PLAN in kind_set
         snmp = AuditArtifactKind.SNMP_PROVISIONING_PLAN in kind_set

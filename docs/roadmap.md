@@ -85,8 +85,8 @@ See [workflow](architecture/buildkite-workflow.md) and
 |---|---|---|
 | CAP-RUNTIME-VERIFY | Verified profiled deployment runtime | ACCEPTED |
 | CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation | ACCEPTED |
-| CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | IN PROGRESS |
-| CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | USER APPROVED |
+| CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | ACCEPTED |
+| CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | IN PROGRESS |
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | USER APPROVED |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | USER APPROVED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | USER APPROVED |
@@ -94,8 +94,9 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
-Only CAP-OUTCOME-TRUTH is in the current implementation scope. CAP-RUNTIME-VERIFY
-and CAP-DOCS-TRUTH are accepted; other approved capabilities await their own tasks.
+Only the foundation checkpoint of CAP-DURABLE-EVIDENCE is in implementation scope.
+CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH and CAP-OUTCOME-TRUTH are accepted; other
+approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -164,7 +165,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-OUTCOME-TRUTH — Truthful profiled delivery outcomes
 
-- **State:** IN PROGRESS.
+- **State:** ACCEPTED.
 - **Target/value:** distinguish compliant/no-change planning, blocked
   planning/authorization, execution attempt, provider-reported change metadata,
   unknown provider metadata and independently observed state transition.
@@ -182,12 +183,14 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   verification; digest-bound `ProfiledComplianceRecord` plus same-build planning
   publication receipts. Offline CLI/provider/delivery tests cover both vendors,
   invalid records/bindings and compliant continuation without execution authority.
-- **Acceptance/sign-off:** PENDING USER REVIEW; tests and implementation do not
-  establish acceptance. No new LIVE acceptance was performed.
+- **Acceptance/sign-off:** the user explicitly instructed that [#142](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/142)
+  be treated as merged and accepted, including the static UI/planning-time
+  observation amendment. Current main merge is `946178e`. No new LIVE acceptance
+  is claimed.
 
 ### CAP-DURABLE-EVIDENCE — Durable schema-v2 delivery evidence
 
-- **State:** USER APPROVED.
+- **State:** IN PROGRESS.
 - **Target/value:** persist current plan/promotion/execution/provenance through
   durable evidence storage and the existing viewer, using a bounded delivery/
   audit envelope rather than turning each device record into a Buildkite record.
@@ -199,6 +202,25 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 - **Must not change:** device authority, privacy boundaries or historical schemas.
 - **Origin/population effect:** restores durable correlation; target collections
   have explicit identities without permanent cardinality.
+
+- **Implementation checkpoint:** Foundation: profiled durable envelope + AuditStore
+  + viewer — implemented offline; capability remains IN PROGRESS pending
+  Buildkite publication integration and user acceptance. Envelope version 1
+  references current schema-v2 artifacts; historical schemas remain unchanged.
+- **Foundation boundary:** no current Buildkite delivery publication is enabled.
+  No pre-write store requirement, hook/env change, durable publication receipt,
+  PRE/write/POST capture or live store migration. The following increment of
+  this same capability owns delivery publication using the frozen contract.
+- **Exact byte verification:** retain bounded validated original artifact JSON
+  separately from canonical artifacts; compare hashes and typed content on
+  persistence and reads. Canonicalization cannot prove the original byte hash.
+- **Promotion scope constraint:** current `ProfiledPromotion` permits only the
+  core-02 main target. This foundation does not broaden it. Junos planning and
+  execution evidence remain valid, but a Junos EXECUTION envelope cannot satisfy
+  current promotion correlation; Junos COMPLIANCE is supported. Generic promotion
+  remains CAP-INTENT-DELIVERY rather than an implicit scope expansion here.
+- **Acceptance/sign-off:** PENDING USER REVIEW and later integration; no new
+  live delivery or production-store evidence was created for this checkpoint.
 
 ### CAP-CONFIG-CHRONOLOGY — Independent PRE/write/POST chronology
 

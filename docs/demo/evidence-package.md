@@ -14,10 +14,13 @@ not regenerated or presented as the current delivery mechanism.
 | Fail-closed blocked delivery | Supplied negative current-tail result: continuation and visible human block, invalid promotion, deployment `NO WRITE`, no fabricated typed record | Scheduling/unblock cannot repair prerequisites; missing evidence alone in another attempt is not proof of no write. |
 | Already compliant / no plan | Current planner and offline delivery tests: desired state already present yields a typed `ProfiledComplianceRecord`, no deployable plan | A valid same-build compliance receipt yields COMPLIANT, write/recovery false, no promotion and no deploy invocation. Missing/failed planning never means compliance. The static block may remain visible; never reset devices to manufacture work. |
 
-Current schema-v2 artifacts are not yet integrated into AuditStore, configuration
-correlation or the viewer. The viewer demonstrates historical durable evidence,
-not the current successful record. Buildkite retention is not a substitute for
-the planned durable integration.
+The profiled durable schema/store/viewer foundation is implemented offline, but
+current Buildkite delivery does not yet publish it. Existing accepted main runs
+still have private/Buildkite artifacts, not profiled durable records in the viewer.
+Historical durable evidence remains valid. Synthetic foundation fixtures prove
+correlation and presentation, not a new live acceptance. Buildkite publication is
+the next CAP-DURABLE-EVIDENCE increment; PRE/write/POST remains separate
+CAP-CONFIG-CHRONOLOGY work.
 
 ## Historical evidence and optional current surfaces
 

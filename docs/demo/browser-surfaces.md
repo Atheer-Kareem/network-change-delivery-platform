@@ -17,7 +17,15 @@ public GitHub material is suitable for an unauthenticated portfolio visitor.
 | CML `NCDP Live` | The distinct persistent, operator-owned current proof population | Lab topology canvas and node-state summary | Consoles, Day-0 configuration, API credentials, node definitions, or edit controls |
 | Grafana `NCDP Management Reachability` | Pipeline-independent, read-only management-service visibility | Provisioned dashboard at `http://127.0.0.1:3000` | Datasource settings, user/admin pages, or unrelated dashboards |
 | Buildkite Build #275 | Historical accepted Junos protected write with fresh validation and vendor-specific safety | Build timeline, approval boundary, deploy-gate result, and bounded logs/metadata | Raw artifacts or unrelated environment data |
-| NCDP durable evidence viewer | Historical digest-validated audit identity plus metadata-only Oxidized correlation; current schema-v2 delivery is not connected | Index and exact record detail on `http://127.0.0.1:8765` | The private store itself; no raw/download route exists |
+| NCDP durable evidence viewer | Historical audit/chronology plus offline profiled durable envelope support; current Buildkite publication is not connected | Index and exact record detail on `http://127.0.0.1:8765` | The private store itself; no raw/download route exists |
+
+Current profiled details use `/profiled-records/<uuid>`; historical URLs remain
+`/records/<uuid>`. The index distinguishes both families and sorts them by time.
+Profiled COMPLIANCE has no human write authorization. Current PRE/write/POST is
+not connected. The foundation was tested only with synthetic temporary stores;
+existing main builds do not yet supply these durable records. Do not present an
+offline fixture as live delivery acceptance. See the
+[durable foundation contract](../architecture/audit-and-configuration-history.md#current-profiled-durable-foundation).
 
 Start the evidence viewer only when needed, in the foreground:
 

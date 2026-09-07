@@ -1,13 +1,123 @@
 # Audit and configuration history
 
-> **Current boundary:** this document retains the accepted Increment 10 durable
-> audit/configuration-history contract and implementation history. Its schema-v1
-> delivery integration is historical; AuditStore, correlation readers and viewer
-> remain supporting machinery. Current schema-v2 plan/promotion/execution artifacts
-> do **not yet** enter this chain. See [current acceptance](../acceptance/profiled-main-delivery.md)
-> and CAP-DURABLE-EVIDENCE / CAP-CONFIG-CHRONOLOGY in the [ledger](../roadmap.md).
-> The evidence inventory and protected-gate chronology below describe that earlier
-> architecture, not current profiled delivery persistence.
+> **Current boundary:** the profiled durable envelope, AuditStore support and
+> existing viewer presentation are implemented as an offline foundation.
+> **No current Buildkite delivery publication is enabled.** Main delivery still
+> retains private/Buildkite artifacts only. CAP-DURABLE-EVIDENCE remains IN
+> PROGRESS until a later integration increment and user acceptance. Current
+> PRE/write/POST correlation remains CAP-CONFIG-CHRONOLOGY.
+>
+> Historical schema-v1 audit/configuration records remain unchanged and readable.
+> The Increment 10 inventory and chronology below are historical evidence, not
+> a claim that current main builds already publish profiled durable records.
+
+## Current profiled durable foundation
+
+`ProfiledDeliveryAuditRecord` has `record_type=profiled_delivery_audit_record` and
+`schema_version=1`: **version 1 of the profiled envelope referencing schema-v2
+planning/promotion/execution artifacts**, not a return to schema-v1 execution.
+It is frozen, extra-forbid, UTC timestamped, UUID identified and canonically
+self-digested. It correlates change, `GitCorrelation`, `BuildkiteCorrelation`,
+`StableTargetIdentity`, `CredentialProvenance`, exact outcome, artifact references,
+planning-result digest and original artifact-byte hashes. Current source identity
+is the canonical NCDP repository; the correlated delivery step is `profiled-deploy`.
+Pipeline/build/job UUIDs, build number and source commit are supplied by the future
+trusted publisher. They are not reconstructed through APIs, authenticated by a
+hash alone or looked up as human-readable people. `FinalOutcome` is preserved,
+including stale, ambiguous, recovery, auto-rollback-pending and confirmation states.
+
+| Family | Required evidence | Authority correlation |
+|---|---|---|
+| EXECUTION | Exactly one current plan, promotion and `ProfiledChangeRecord` | Current human authorization (`profiled-human-authorization`, passed, opaque unblocker UUID, exact promotion digest) and engineering/Batfish/CML prerequisite digests |
+| COMPLIANCE | Exactly one `ProfiledComplianceRecord` from successful planning | No plan, promotion, execution, human write authorization or deployment-assurance claim; final outcome COMPLIANT |
+
+EXECUTION means typed evidence from the profiled execution lifecycle, which may
+report blocked/stale or other non-success outcomes; it does not itself assert
+that a device write was attempted. Attempt/stage truth stays in the child record.
+COMPLIANCE records the planning observation at the child's `observed_at`; it is
+not proof of indefinite compliance or later device observation. Missing evidence
+never becomes an envelope. No `ChangeAuditRecord` is broadened or repurposed.
+
+The canonical artifact kinds are `profiled_deployment_plan`,
+`profiled_compliance_record`, `profiled_promotion` and `profiled_change_record`.
+The first three use their intrinsic digest; the execution record uses the SHA-256
+of canonical JSON. All reuse existing current models, including their validators.
+Historical envelopes explicitly reject these new artifact kinds and retain their
+original artifact-family bound and bytes.
+
+### Store and exact-byte contract
+
+`AuditStore.persist_profiled_record(record, artifact_bytes=...)`,
+`read_profiled_record(id)` and `iter_profiled_records()` operate separately from
+historical APIs. Canonical artifacts are first persisted through the existing
+`persist_artifact(kind, model)` interface. The caller supplies the exact validated
+source JSON bytes, keyed by the required current artifact kinds, to envelope
+persistence. There is no Buildkite publishing command in this foundation.
+Existing audit CLI record queries remain historical; `verify-store` checks the
+store boundary, not every record. Current records use the explicit APIs/viewer.
+
+```text
+artifacts/<kind>/<canonical-or-intrinsic-digest>.json
+records/<historical-uuid>.json
+profiled-records/<profiled-uuid>.json
+profiled-artifact-bytes/<profiled-kind>/<original-byte-digest>.json
+```
+
+The last two namespaces are optional on historical stores. Read-only opening and
+empty current scans create nothing; first writable profiled publication safely
+creates private directories. Existing permissions/owner/root/no-follow and
+create-only publication protections are reused. Canonical artifacts and original
+byte variants can be reused only after integrity checks. Record UUID reuse is
+rejected. Bounded deterministic scans and artifact/record size limits remain.
+Interrupted future publication may leave immutable artifacts without an envelope;
+no orphan deletion or fabricated final record is added.
+
+Original-byte hashes are separate because Buildkite formatted JSON/newlines need
+not equal canonical store JSON. Persistence and reads verify both exact raw hashes
+and equality of decoded typed content to the canonical referenced artifacts.
+Duplicate JSON keys are rejected for current artifacts, preventing hidden data
+from being retained outside the typed representation. Only bounded schema-checked
+artifact JSON is stored, not logs, environments or raw device configurations.
+The envelope carries planning/promotion/execution original-byte hashes; compliance
+has only a planning-byte hash. There is no raw artifact download route.
+
+### Cross-artifact verification
+
+Every envelope persistence/read revalidates its own digest, exact artifact set,
+reference kind/schema/size/digest, canonical content and original byte correlation.
+Change, device/interface and credential provenance must agree with the planning
+result. Promotion must match the plan, build/commit, change/target/device, original
+plan bytes, human promotion digest and all three assurance digests.
+`verify_profiled_record_plan()` supplies complete existing execution/plan binding;
+its exact outcome must equal the envelope outcome. Compliance's own contract
+requires successful observed/desired equality, no plan and no attempts/authority.
+A compliance artifact cannot be mixed into an execution envelope or vice versa.
+
+These are integrity and correlation controls, not signed attestations against a
+compromised publisher. Provenance fields absent from child artifacts (such as
+pipeline/job/unblocker UUID and build number) are trusted captured facts protected
+by the envelope digest; the reader cannot independently infer their external truth.
+Batfish and CML hashes remain prerequisite assurance, not proof that either system
+rehearsed the exact interface-description write.
+
+Current `ProfiledPromotion` is still restricted to core-02/device 1. The foundation
+does not change its schema or admission: Cisco promoted execution can be persisted,
+while a Junos promoted execution envelope is rejected until a later reviewed
+promotion capability exists. Junos plan/record validation and compliant durable
+evidence remain supported; no current main Junos acceptance is invented.
+
+### Viewer boundary
+
+The existing loopback-only viewer merges current and historical entries by UTC
+generation time within its bounded index. `/records/<id>` remains historical;
+`/profiled-records/<id>` is current. The same UUID in each family is unambiguous.
+Current details show only allowlisted source/build/job/step, stable target, outcome,
+kind/digests, original-byte hashes and applicable authorization/assurance metadata.
+Compliance displays `NOT REQUIRED — COMPLIANT` for human write authorization.
+Credential references, artifact locators, raw configurations and environment data
+remain excluded. CSP, no-store, HTML escaping and GET/HEAD-only behavior remain.
+Current pages state: **Current PRE/write/POST delivery correlation not connected
+yet.** No historical observation child is attached to a profiled parent.
 
 ## Purpose and boundary
 

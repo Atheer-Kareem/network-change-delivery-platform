@@ -2,9 +2,12 @@
 
 > **Current boundary:** the profiled durable foundation is connected to current
 > Buildkite delivery. Only `profiled-deploy` publishes current envelopes; it admits
-> the external destination before a possible write. Implementation is verified
-> offline; CAP-DURABLE-EVIDENCE remains IN PROGRESS pending user review / controlled
-> runtime evidence. Current PRE/write/POST remains CAP-CONFIG-CHRONOLOGY.
+> the external destination before a possible write. CAP-DURABLE-EVIDENCE is
+> user-accepted: [build 420](../acceptance/profiled-durable-publication.md) proves
+> COMPLIANT durable publication end to end. EXECUTION remains comprehensively
+> offline-validated; supplemental runtime evidence will accompany the next
+> legitimate write, without manufacturing a change for acceptance. Current
+> PRE/write/POST remains CAP-CONFIG-CHRONOLOGY, USER APPROVED and not started.
 >
 > Historical schema-v1 records remain unchanged and readable. The Increment 10
 > inventory and chronology below remain historical evidence.

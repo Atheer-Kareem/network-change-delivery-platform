@@ -86,7 +86,7 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-RUNTIME-VERIFY | Verified profiled deployment runtime | ACCEPTED |
 | CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation | ACCEPTED |
 | CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | ACCEPTED |
-| CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | IN PROGRESS |
+| CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | ACCEPTED |
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | USER APPROVED |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | USER APPROVED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | USER APPROVED |
@@ -94,10 +94,9 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
-Only the Buildkite publication integration checkpoint of CAP-DURABLE-EVIDENCE
-is in implementation scope.
-CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH and CAP-OUTCOME-TRUTH are accepted; other
-approved capabilities await their own tasks.
+CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH and CAP-DURABLE-EVIDENCE
+are accepted. Other approved capabilities await their own tasks; this acceptance
+closeout does not start CAP-CONFIG-CHRONOLOGY.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -191,7 +190,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-DURABLE-EVIDENCE — Durable schema-v2 delivery evidence
 
-- **State:** IN PROGRESS.
+- **State:** ACCEPTED; explicitly accepted by the user after build 420 evidence review.
 - **Target/value:** persist current plan/promotion/execution/provenance through
   durable evidence storage and the existing viewer, using a bounded delivery/
   audit envelope rather than turning each device record into a Buildkite record.
@@ -206,18 +205,18 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 - **Implementation checkpoint:** Foundation: profiled durable envelope + AuditStore
   + viewer — merged in #143; the frozen contract remains authoritative.
-  Capability remains IN PROGRESS pending user review / controlled runtime evidence. Envelope version 1
-  references current schema-v2 artifacts; historical schemas remain unchanged.
+  Envelope version 1 references current schema-v2 artifacts; historical schemas
+  remain unchanged.
 - **Integration checkpoint:** Buildkite publication integration implemented:
   pre-write durable destination admission and verified immutable plan/promotion
   inputs; EXECUTION and COMPLIANCE durable publication by `profiled-deploy`;
   same-build publication receipt after exact readback; read-only final evidence
   correlation. No post-command evidence failure replays a device command.
-  Acceptance pending user review / controlled runtime evidence. No live acceptance
-  or operator configuration change was performed during implementation.
+  Merged in #144; no live acceptance or operator configuration change was
+  performed during implementation. Subsequent runtime acceptance is recorded below.
 - **Remaining boundary:** no PRE/write/POST capture, store migration or broader
   promotion admission. Protected external AuditStore configuration must be
-  supplied by the operator before deployment; it is never created by this PR.
+  supplied by the operator before deployment; it is not repository-managed.
 - **Exact byte verification:** retain bounded validated original artifact JSON
   separately from canonical artifacts; compare hashes and typed content on
   persistence and reads. Canonicalization cannot prove the original byte hash.
@@ -233,8 +232,36 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   implementation. Its durable-envelope proof is deferred until
   CAP-INTENT-DELIVERY legitimately broadens promotion/intent admission. Evidence
   support must not broaden delivery authority to construct a proof fixture.
-- **Acceptance/sign-off:** PENDING USER REVIEW / controlled runtime evidence; no new
-  live delivery or production-store evidence was created for this checkpoint.
+- **Acceptance/sign-off:** explicitly USER ACCEPTED based on controlled
+  [build 420](https://buildkite.com/atheer-kareem/network-change-delivery-platform/builds/420)
+  on `main`, build UUID `01a07d93-7fe6-4064-8533-f79f427b5cca`, commit
+  `98cdf4d1b4161466624bf202aec4d27a6f89b608`. The
+  [durable-publication acceptance record](acceptance/profiled-durable-publication.md)
+  preserves exact planning, envelope and receipt digests, step evidence, typed
+  AuditStore verification and viewer privacy checks. Subsequent PR #145 changed
+  only Batfish icon presentation and does not invalidate this evidence.
+- **Runtime result:** `core-02 / netbox:dcim.device:1`, `GigabitEthernet2`, was
+  already `managed-by-ncdp-profiled-demo` at planning observation
+  `2026-09-07T20:45:34.499476+00:00`; desired description was identical and change
+  required was `False`. COMPLIANT continuation produced no plan, promotion,
+  `ProfiledChangeRecord` or deploy CLI invocation; write/recovery attempted and
+  promotion minted were all `False`. One COMPLIANCE / COMPLIANT durable envelope
+  was validated with authorization and assurance absent, exactly one compliance
+  artifact, original planning bytes and credential-provenance binding verified.
+  Historical records remained `11 → 11` with bytes unchanged; current profiled
+  records moved `0 → 1`. Final evidence independently validated the same-build
+  receipt, and the viewer preserved its metadata-only privacy boundary.
+- **Acceptance boundary:** COMPLIANT durable publication is runtime-accepted end to end.
+  EXECUTION durable publication remains comprehensively offline-validated and
+  will receive supplemental runtime evidence on the next legitimate network
+  write. No device change is required or should be manufactured solely for
+  acceptance. The capability is accepted; supplemental evidence is not a pending
+  acceptance condition.
+- **Build caveat:** `quality-observability-runtime exit 4` occurred while the
+  aggregate build passed. This does not invalidate CAP-DURABLE-EVIDENCE acceptance:
+  COMPLIANT minted no promotion, consumed no deployment-assurance prerequisites
+  and makes no claim that all assurance/engineering stages succeeded. No
+  observability investigation, fix or new roadmap item is part of this closeout.
 
 ### CAP-CONFIG-CHRONOLOGY — Independent PRE/write/POST chronology
 

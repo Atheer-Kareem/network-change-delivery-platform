@@ -1,15 +1,13 @@
 # Audit and configuration history
 
-> **Current boundary:** the profiled durable envelope, AuditStore support and
-> existing viewer presentation are implemented as an offline foundation.
-> **No current Buildkite delivery publication is enabled.** Main delivery still
-> retains private/Buildkite artifacts only. CAP-DURABLE-EVIDENCE remains IN
-> PROGRESS until a later integration increment and user acceptance. Current
-> PRE/write/POST correlation remains CAP-CONFIG-CHRONOLOGY.
+> **Current boundary:** the profiled durable foundation is connected to current
+> Buildkite delivery. Only `profiled-deploy` publishes current envelopes; it admits
+> the external destination before a possible write. Implementation is verified
+> offline; CAP-DURABLE-EVIDENCE remains IN PROGRESS pending user review / controlled
+> runtime evidence. Current PRE/write/POST remains CAP-CONFIG-CHRONOLOGY.
 >
-> Historical schema-v1 audit/configuration records remain unchanged and readable.
-> The Increment 10 inventory and chronology below are historical evidence, not
-> a claim that current main builds already publish profiled durable records.
+> Historical schema-v1 records remain unchanged and readable. The Increment 10
+> inventory and chronology below remain historical evidence.
 
 ## Current profiled durable foundation
 
@@ -21,8 +19,8 @@ self-digested. It correlates change, `GitCorrelation`, `BuildkiteCorrelation`,
 `StableTargetIdentity`, `CredentialProvenance`, exact outcome, artifact references,
 planning-result digest and original artifact-byte hashes. Current source identity
 is the canonical NCDP repository; the correlated delivery step is `profiled-deploy`.
-Pipeline/build/job UUIDs, build number and source commit are supplied by the future
-trusted publisher. They are not reconstructed through APIs, authenticated by a
+Pipeline/build/job UUIDs, build number and source commit are supplied by the current
+trusted deploy boundary. They are not reconstructed through APIs, authenticated by a
 hash alone or looked up as human-readable people. `FinalOutcome` is preserved,
 including stale, ambiguous, recovery, auto-rollback-pending and confirmation states.
 
@@ -52,7 +50,7 @@ original artifact-family bound and bytes.
 historical APIs. Canonical artifacts are first persisted through the existing
 `persist_artifact(kind, model)` interface. The caller supplies the exact validated
 source JSON bytes, keyed by the required current artifact kinds, to envelope
-persistence. There is no Buildkite publishing command in this foundation.
+persistence. Publication is owned exclusively by `profiled-deploy`.
 Existing audit CLI record queries remain historical; `verify-store` checks the
 store boundary, not every record. Current records use the explicit APIs/viewer.
 
@@ -69,7 +67,7 @@ creates private directories. Existing permissions/owner/root/no-follow and
 create-only publication protections are reused. Canonical artifacts and original
 byte variants can be reused only after integrity checks. Record UUID reuse is
 rejected. Bounded deterministic scans and artifact/record size limits remain.
-Interrupted future publication may leave immutable artifacts without an envelope;
+Interrupted publication may leave immutable artifacts without an envelope;
 no orphan deletion or fabricated final record is added.
 
 Original-byte hashes are separate because Buildkite formatted JSON/newlines need
@@ -117,6 +115,56 @@ incomplete vendor implementation. Its durable-envelope proof is deferred until
 [CAP-INTENT-DELIVERY](../roadmap.md#cap-intent-delivery--intent-selected-generic-delivery)
 legitimately changes promotion/intent admission. This foundation changes no
 promotion model or delivery authority and claims no new live acceptance.
+
+### Current Buildkite publication integration
+
+The deploy job UUID is the deterministic current record UUID. After exact
+plan/promotion/human/assurance and LIVE trust admission, `profiled-deploy` opens
+`NCDP_AUDIT_STORE_ROOT` and calls `prepare_profiled_publication`. This checks or
+creates only the required private managed namespaces, rejects an existing record
+UUID, and creates no placeholder record. Structural readiness cannot guarantee
+that later I/O will succeed. Canonical plan and promotion inputs are persisted
+and re-read before the single `ncdp profiled-deploy` command.
+
+After the command, valid typed execution evidence is processed regardless of
+exit status, using exact `verify_profiled_record_plan()` binding. Buildkite report
+upload and durable publication are independent attempts. Canonical execution
+artifact, exact three source byte streams, then the envelope are persisted;
+exact envelope readback must succeed before receipt publication. Legitimate
+non-success outcomes remain non-success. Missing/invalid reports produce no
+envelope and artifact absence is not proof of no write.
+
+COMPLIANCE follows the same deploy-owned publication boundary using only its
+validated planning artifact. It does not call deployment prerequisites,
+authorization, LIVE trust, credentials or device providers. The envelope carries
+no human authorization even if the static block was continued, and no assurance
+claim. Its observation time remains the planner's `observed_at`.
+
+`ProfiledDurablePublicationReceipt` is schema version 1, type
+`profiled_durable_publication`: build UUID, exact commit, deploy job UUID, identical
+record UUID, record digest, delivery kind, exact outcome and canonical self-digest.
+Only after readback is it uploaded from `profiled-deploy`; metadata key
+`profiled-durable-publication` holds the SHA-256 of those exact receipt bytes.
+The final evidence step downloads that same-build, step-scoped artifact, checks
+its metadata hash, schema, build/commit, job/record identity and kind/outcome,
+and renders a pointer alongside validated typed evidence. It never opens the
+store or receives its root. Missing/invalid receipt returns nonzero and says
+**durable publication NOT ESTABLISHED**, without claiming the store is empty.
+
+**AuditStore's envelope is durable correlation authority; the receipt is only a
+trusted same-build publication pointer.** Neither hashes nor metadata independently
+prove external scheduler facts against a compromised publisher. The direct durable
+read surface remains the viewer. Receipts contain no path, credential reference,
+unblocker information, configuration or environment contents.
+
+Pre-command failures return `NO WRITE` and nonzero. After invocation, the original
+nonzero command code takes precedence over all evidence failures. If the command
+succeeds but report upload, persistence, readback, receipt or annotation fails,
+the wrapper returns evidence failure (exit 3). No failure triggers another device
+command, recovery, deletion of partial immutable artifacts or cleanup of retained
+private reports. Independently reconcile uncertain execution before any new attempt.
+COMPLIANCE publication failure remains a compliant planning observation with
+failed durable publication, never a failed network change.
 
 ### Viewer boundary
 

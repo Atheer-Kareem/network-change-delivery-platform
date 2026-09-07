@@ -24,7 +24,7 @@ def test_readme_embeds_accessible_current_architecture():
         "Main · read-only",
         "Checks + receipts",
         "Modeled services",
-        "Historical delivery",
+        "Current + history",
         "Main demo: core-02",
         "NetBox + OpenBao",
         "Promotion",
@@ -54,7 +54,14 @@ def test_readme_embeds_accessible_current_architecture():
     ):
         assert retired not in texts
     assert root.find("s:desc", NS) is not None
-    assert "not connected to historical AuditStore" in root.find("s:desc", NS).text
+    assert (
+        "deploy boundary admits AuditStore before a possible write"
+        in root.find("s:desc", NS).text
+    )
+    assert (
+        "current PRE/write/POST correlation is not connected"
+        in root.find("s:desc", NS).text
+    )
     assert all(path.get("d") != "M311 832H339" for path in root.findall("s:path", NS))
     assert len(root.findall("s:rect", NS)) < 20
     assert root.find(".//s:script", NS) is None

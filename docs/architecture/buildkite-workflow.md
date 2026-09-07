@@ -100,14 +100,22 @@ protected delivery or the historical cryptographic deployment JWT boundary.
 4. `profiled-deploy` on `ncdp-deploy` independently verifies canonical non-PR
    main/retry-zero/checkout identity, exact block DAG and Buildkite unblocker
    UUID, same-build downloads, manifest, plan/artifact/digests, all receipts,
-   fixed current write projection and LIVE trust before device access. Only then
+   fixed current write projection and LIVE trust before device access. It then
+   admits the protected external AuditStore, prepares the current namespaces and
+   persists/re-reads canonical plan/promotion inputs. Only then
    it invokes current `ncdp profiled-deploy --plan ... --approve-digest ...`
    with `--report-json`, `--netbox --openbao --live`, once.
    Fresh CLI preflight, stale-plan and current-state checks remain authoritative.
-   Invalid authorization emits NO WRITE and exits nonzero.
+   Invalid authorization or durable destination/input admission emits NO WRITE.
+   After the command, valid typed outcomes (including failures) are durably
+   correlated; exact readback precedes the same-build publication receipt.
+   Evidence failure never causes replay or hides a primary nonzero device result.
 5. `profiled-deployment-evidence` validates a same-build schema-v2
    `ProfiledChangeRecord` against its exact plan when available, showing outcome
-   and actual execution/recovery attempts. Publication also checks every duplicated
+   and actual execution/recovery attempts, plus the durable record UUID/digest
+   from a validated deploy-step receipt. Missing/invalid receipt means durable
+   publication NOT ESTABLISHED and nonzero, while preserving known typed outcome.
+   This step has no AuditStore root or write access. Publication also checks every duplicated
    record/plan binding, rather than just digest equality. Missing artifacts are not fabricated evidence or proof
    that no write occurred; inspect retained state before a new attempt.
 
@@ -119,6 +127,9 @@ it grants zero write authority. This reports a successful planning observation,
 not successful deployment or assurance. A missing plan is never a substitute for
 an explicit valid receipt and compliant artifact. Missing, corrupt or mismatched
 results fail closed, with cautious artifact-absence wording in final evidence.
+`profiled-deploy` durably publishes COMPLIANCE without assurance/authorization
+lookups or device access; final presentation requires its receipt. The receipt is
+only a same-build pointer, while the AuditStore envelope is durable authority.
 The static DAG, PR CML exception and real-plan assurance prerequisites are unchanged.
 
 The CLI write projection remains devices 1/2 only; this automation narrows it to
@@ -139,7 +150,7 @@ hard merge-gate policy is superseded for this workflow. The user supplied positi
 delivery and negative fail-closed acceptance;
 see the canonical [current acceptance](../acceptance/profiled-main-delivery.md)
 for exact digests, source boundaries and limits. Local fake tests and a successful
-aggregate alone cannot establish runtime acceptance. Current artifacts are not
-yet persisted through AuditStore or its PRE/write/POST/viewer chain. Provider mutation metadata is now tri-state and distinct from independent
+aggregate alone cannot establish runtime acceptance. Current delivery now requires durable profiled publication, verified offline;
+controlled runtime acceptance is pending. PRE/write/POST remains unconnected. Provider mutation metadata is now tri-state and distinct from independent
 observed transition; the accepted historical record remains unchanged. See
 [stage semantics](change-lifecycle.md#provider-metadata-observation-and-outcome).

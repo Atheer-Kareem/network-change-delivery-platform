@@ -21,7 +21,7 @@ git diff --quiet "$BUILDKITE_COMMIT" -- || deny
 [[ -z "$(git ls-files --others --exclude-standard)" ]] || deny
 
 for variable in NCDP_NETBOX_TOKEN NCDP_OPENBAO_ROLE_ID NCDP_OPENBAO_SECRET_ID \
-  CML2_TOKEN NCDP_DEVICE_USERNAME NCDP_DEVICE_PASSWORD; do
+  NCDP_AUDIT_STORE_ROOT CML2_TOKEN NCDP_DEVICE_USERNAME NCDP_DEVICE_PASSWORD; do
   [[ -z "${!variable:-}" ]] || deny
 done
 hook_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -40,5 +40,14 @@ for variable in NCDP_NETBOX_URL NCDP_NETBOX_TOKEN NCDP_OPENBAO_URL \
   NCDP_OPENBAO_ROLE_ID NCDP_OPENBAO_SECRET_ID NCDP_PROFILED_DELIVERY_STATE_ROOT; do
   [[ -n "${!variable:-}" ]] || deny
 done
+if [[ "$BUILDKITE_STEP_KEY" == profiled-deploy ]]; then
+  [[ -n "${NCDP_AUDIT_STORE_ROOT:-}" && "$NCDP_AUDIT_STORE_ROOT" == /* && \
+     -d "$NCDP_AUDIT_STORE_ROOT" && ! -L "$NCDP_AUDIT_STORE_ROOT" && \
+     -O "$NCDP_AUDIT_STORE_ROOT" && "$(mode_of "$NCDP_AUDIT_STORE_ROOT")" == 700 ]] || deny
+  audit_resolved="$(cd -- "$NCDP_AUDIT_STORE_ROOT" && pwd -P)"
+  [[ "$audit_resolved" == "$NCDP_AUDIT_STORE_ROOT" ]] || deny
+  checkout="$(pwd -P)"
+  [[ "$audit_resolved" != "$checkout" && "$audit_resolved" != "$checkout/"* ]] || deny
+fi
 # Repository pre-command hooks have already finished; only this command receives authority.
 exec .buildkite/scripts/profiled_delivery.sh

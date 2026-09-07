@@ -23,7 +23,7 @@ evidence store, and the personal lab and any company environment.
 | Dependency tampering | Frozen lockfile, reviewed updates, immutable base-image digests, deterministic builds and later artifact provenance |
 | Container-image tampering | Digest-pinned bases and controlled builds; execution-image attestation/signature verification is not claimed |
 | Unauthorized manual configuration | Oxidized chronology, desired/live comparison, monitoring, investigation before remediation |
-| False or incomplete evidence | Typed artifacts/digests and independent validation; historical append-only store/correlation remain disconnected from current schema-v2 delivery |
+| False or incomplete evidence | Typed artifacts/digests and independent validation; current profiled durable destination admission and exact artifact correlation; PRE/write/POST remains unconnected, runtime acceptance pending |
 | Ambiguous write outcome | Stop, no automatic/manual mutation retry, independently reconcile; no speculative recovery after uncertainty |
 | Overlapping fleet changes | Historical fleet target-set intersection; current single-target delivery concurrency and fresh stale-plan checks; profiled rollout restoration pending |
 | Monitoring failure | Independent monitoring health and alerting; pipeline completion never implies continued health |

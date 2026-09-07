@@ -13,6 +13,7 @@ import stat
 import tempfile
 from pathlib import Path
 
+from network_change_delivery.audit_store import AuditStore
 from network_change_delivery.openbao_profiled_deploy_config import (
     DeployAgentCredentials,
     OpenBaoProfiledDeployConfigurator,
@@ -108,9 +109,30 @@ def install(hooks, state, operator):
         "NCDP_NETBOX_URL",
         "NCDP_NETBOX_TOKEN",
         "NCDP_OPENBAO_URL",
+        "NCDP_AUDIT_STORE_ROOT",
     }
     if not required.issubset(values) or any(not values[k] for k in required):
         raise ValueError("protected settings missing")
+    audit_values = shlex.split(values["NCDP_AUDIT_STORE_ROOT"])
+    if len(audit_values) != 1:
+        raise ValueError("protected audit root rejected")
+    audit_root = Path(audit_values[0])
+    if not audit_root.is_absolute():
+        raise ValueError("protected audit root must be absolute")
+    private_directory(audit_root)
+    # Read-only validation; never create/migrate a store or alter credentials here.
+    if any(
+        (audit_root / name).exists() or (audit_root / name).is_symlink()
+        for name in (
+            "artifacts",
+            "records",
+            "profiled-records",
+            "profiled-artifact-bytes",
+        )
+    ):
+        AuditStore(
+            audit_root, checkout=Path(__file__).resolve().parents[2], create=False
+        )
     if shlex.split(values["NCDP_OPENBAO_URL"]) != [operator.url]:
         raise ValueError("operator and protected OpenBao URL mismatch")
     if not state.is_absolute() or state.is_relative_to(

@@ -11,14 +11,26 @@ import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
 import yaml
 
+from network_change_delivery.audit import AuditArtifactKind as Kind
+from network_change_delivery.audit import BuildkiteCorrelation
+from network_change_delivery.audit_store import AuditStore
 from network_change_delivery.inventory import InventoryError
-from network_change_delivery.models import InterfaceDescriptionIntent
+from network_change_delivery.models import FinalOutcome, InterfaceDescriptionIntent
 from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
+from network_change_delivery.profiled_audit import (
+    DURABLE_PUBLICATION_METADATA,
+    ProfiledDeliveryKind,
+    ProfiledDurablePublicationReceipt,
+    build_profiled_compliance_audit_record,
+    build_profiled_execution_audit_record,
+)
 from network_change_delivery.profiled_execution import (
     ProfiledChangeRecord,
     verify_profiled_record_plan,
@@ -44,6 +56,7 @@ from network_change_delivery.profiled_promotion import (
     VALIDATION_KEYS,
     ProfiledBuildContext,
     ProfiledPlanningPublication,
+    ProfiledPromotion,
     admit_demo_plan,
     authorize,
     digest_bytes,
@@ -105,6 +118,7 @@ def plan_failure(context, phase):
 
 def command(args, *, cwd=ROOT, stdin=None, device_authority=False):
     environment = dict(os.environ)
+    environment.pop("NCDP_AUDIT_STORE_ROOT", None)
     for key in ("CML2_TOKEN", "NCDP_DEVICE_USERNAME", "NCDP_DEVICE_PASSWORD"):
         environment.pop(key, None)
     if not device_authority:
@@ -368,7 +382,7 @@ def planning_result(context, directory):
     return value, raw
 
 
-def compliant_annotation(context, value):
+def compliant_annotation(context, value, *, durable="", failed=False):
     annotate(
         context,
         "## Profiled delivery — COMPLIANT\n\n"
@@ -381,9 +395,10 @@ def compliant_annotation(context, value):
         "Compliance was established by the planning observation at "
         f"{html.escape(value.observed_at.isoformat())}; downstream continuation does "
         "not perform a fresh device-state check because no write is authorized.\n\n"
-        f"Compliance evidence: `{value.digest}`",
+        f"Compliance evidence: `{value.digest}`" + durable,
+        failed=failed,
     )
-    return 0
+    return 3 if failed else 0
 
 
 def promotion_step(context, directory):
@@ -405,107 +420,309 @@ def promotion_step(context, directory):
     return 0
 
 
+def durable_context(context):
+    # Validate all required correlation before any device command, without APIs.
+    if context.step != "profiled-deploy":
+        raise ValueError("durable publication owner rejected")
+    pipeline = os.environ["BUILDKITE_PIPELINE_ID"]
+    if pipeline != os.environ["NCDP_BUILDKITE_PIPELINE_ID"]:
+        raise ValueError("durable pipeline binding rejected")
+    correlation = BuildkiteCorrelation(
+        pipeline_id=pipeline,
+        build_id=context.build_id,
+        build_number=os.environ["BUILDKITE_BUILD_NUMBER"],
+        job_id=context.job_id,
+        step_key=context.step,
+    )
+    return {
+        "context": context,
+        "pipeline_id": str(correlation.pipeline_id),
+        "build_number": correlation.build_number,
+    }
+
+
+def durable_destination(context, kinds):
+    correlation = durable_context(context)
+    root = Path(os.environ["NCDP_AUDIT_STORE_ROOT"])
+    private_directory(root)
+    store = AuditStore(root, checkout=ROOT)
+    store.prepare_profiled_publication(UUID(context.job_id), frozenset(kinds))
+    return store, correlation
+
+
+def persist_input(store, kind, value):
+    reference = store.persist_artifact(kind, value)
+    if store.read_artifact(reference) != value:
+        raise ValueError("durable input readback rejected")
+    return reference
+
+
+def publish_durable(context, directory, store, envelope, raw):
+    store.persist_profiled_record(envelope, artifact_bytes=raw)
+    if store.read_profiled_record(envelope.record_id) != envelope:
+        raise ValueError("durable envelope readback rejected")
+    receipt = ProfiledDurablePublicationReceipt.from_record(envelope)
+    name = artifact_name(context, "durable-publication")
+    content = receipt.model_dump_json(indent=2).encode() + b"\n"
+    write_new(directory / name, content)
+    # Step-scoped artifact plus same-build exact byte hash. Neither is store authority.
+    upload(context, directory, name)
+    publish_metadata(context, DURABLE_PUBLICATION_METADATA, digest_bytes(content))
+    return receipt
+
+
+def durable_text(receipt):
+    return (
+        f"\n\nDurable evidence: {receipt.record_id}\n\n"
+        f"Durable digest: `{receipt.record_digest}`"
+    )
+
+
+def safe_annotation(context, message, *, failed=True):
+    try:
+        annotate(context, message, failed=failed)
+        return True
+    except Exception:
+        print(
+            "Evidence annotation unavailable; retained state requires review.",
+            file=sys.stderr,
+        )
+        return False
+
+
+def deploy_compliance(context, directory, value, raw):
+    try:
+        store, correlation = durable_destination(
+            context, {Kind.PROFILED_COMPLIANCE_RECORD}
+        )
+        reference = persist_input(store, Kind.PROFILED_COMPLIANCE_RECORD, value)
+        original = {Kind.PROFILED_COMPLIANCE_RECORD: raw}
+        envelope = build_profiled_compliance_audit_record(
+            compliance=value,
+            references=(reference,),
+            artifact_bytes=original,
+            generated_at=datetime.now(UTC),
+            **correlation,
+        )
+        receipt = publish_durable(context, directory, store, envelope, original)
+    except Exception:
+        try:
+            compliant_annotation(
+                context,
+                value,
+                durable=(
+                    "\n\nDurable publication: NOT ESTABLISHED. "
+                    "Planning outcome remains COMPLIANT; no device command occurred."
+                ),
+                failed=True,
+            )
+        except Exception:
+            print(
+                "COMPLIANT planning; durable publication NOT ESTABLISHED; no write.",
+                file=sys.stderr,
+            )
+        return 3
+    try:
+        return compliant_annotation(context, value, durable=durable_text(receipt))
+    except Exception:
+        return 3
+
+
 def deploy_step(context, directory):
     try:
         verify_human_dependency()
         value, plan_bytes = planning_result(context, directory)
         if isinstance(value, ProfiledComplianceRecord):
-            return compliant_annotation(context, value)
+            return deploy_compliance(context, directory, value, plan_bytes)
         promotion_bytes = download(
             context,
             directory,
             artifact_name(context, "promotion"),
             "profiled-promotion",
         )
+        unblocker = os.environ.get("BUILDKITE_UNBLOCKER_ID", "")
         plan = authorize(
             context,
             promotion_bytes,
             plan_bytes,
             *prerequisites(context),
             metadata(context, PROMOTION_METADATA),
-            os.environ.get("BUILDKITE_UNBLOCKER_ID", ""),
+            unblocker,
         )
         validate_profiled_live_host_trust()
-    except Exception:
-        annotate(
+        promotion = ProfiledPromotion.model_validate_json(promotion_bytes)
+        store, correlation = durable_destination(
             context,
-            "NO WRITE — authorization failed. Missing or invalid same-build "
-            "prerequisites, promotion, approval or LIVE trust; "
-            "human unblock cannot override them.",
-            failed=True,
+            {
+                Kind.PROFILED_DEPLOYMENT_PLAN,
+                Kind.PROFILED_PROMOTION,
+                Kind.PROFILED_CHANGE_RECORD,
+            },
+        )
+        inputs = (
+            persist_input(store, Kind.PROFILED_DEPLOYMENT_PLAN, plan),
+            persist_input(store, Kind.PROFILED_PROMOTION, promotion),
+        )
+    except Exception:
+        safe_annotation(
+            context,
+            "NO WRITE — authorization or durable destination admission failed. "
+            "Missing or invalid same-build prerequisites, promotion, approval, "
+            "LIVE trust "
+            "or durable inputs; human unblock cannot override them.",
         )
         return 2
     report = directory / artifact_name(context, "record")
-    # Exactly one invocation. Never retry or turn a real failure into success.
-    result = command(
-        [
-            "uv",
-            "run",
-            "--frozen",
-            "ncdp",
-            "profiled-deploy",
-            "--plan",
-            str(directory / artifact_name(context, "plan")),
-            "--approve-digest",
-            plan.digest,
-            "--report-json",
-            str(report),
-            "--netbox",
-            "--openbao",
-            "--live",
-        ],
-        device_authority=True,
-    )
-    publication_failed = True
-    if report.exists() and report.stat().st_size:
-        try:
-            record = ProfiledChangeRecord.model_validate_json(read_artifact(report))
-            verify_profiled_record_plan(record, plan)
-            upload(context, directory, report.name)
-            publication_failed = False
-        except Exception:
-            publication_failed = True
+    # Exactly one invocation. Never retry, even if execution or evidence is uncertain.
     try:
-        annotate(
-            context,
-            "Profiled deployment command completed. See typed execution evidence; "
-            "no automatic retry. Retained private state is not removed.",
-            failed=bool(result.returncode or publication_failed),
+        result = command(
+            [
+                "uv",
+                "run",
+                "--frozen",
+                "ncdp",
+                "profiled-deploy",
+                "--plan",
+                str(directory / artifact_name(context, "plan")),
+                "--approve-digest",
+                plan.digest,
+                "--report-json",
+                str(report),
+                "--netbox",
+                "--openbao",
+                "--live",
+            ],
+            device_authority=True,
         )
+        returncode = result.returncode
+    except Exception:
+        # The child may have started. Inspect any report and never replay it.
+        returncode = 3
+    publication_failed = False
+    receipt = None
+    try:
+        raw = read_artifact(report)
+        record = ProfiledChangeRecord.model_validate_json(raw)
+        verify_profiled_record_plan(record, plan)
     except Exception:
         publication_failed = True
-    return result.returncode or (3 if publication_failed else 0)
+    else:
+        # Independent channels: upload failure must not prevent durable evidence.
+        try:
+            upload(context, directory, report.name)
+        except Exception:
+            publication_failed = True
+        try:
+            execution_ref = persist_input(store, Kind.PROFILED_CHANGE_RECORD, record)
+            original = {
+                Kind.PROFILED_DEPLOYMENT_PLAN: plan_bytes,
+                Kind.PROFILED_PROMOTION: promotion_bytes,
+                Kind.PROFILED_CHANGE_RECORD: raw,
+            }
+            envelope = build_profiled_execution_audit_record(
+                plan=plan,
+                promotion=promotion,
+                execution=record,
+                references=(*inputs, execution_ref),
+                artifact_bytes=original,
+                unblocker_id=unblocker,
+                generated_at=datetime.now(UTC),
+                **correlation,
+            )
+            receipt = publish_durable(context, directory, store, envelope, original)
+        except Exception:
+            publication_failed = True
+    message = (
+        "Profiled deployment command completed. No automatic retry; retained private "
+        "state and immutable partial artifacts are not removed. "
+        "Artifact absence is not proof that no write occurred. "
+        "Independently reconcile if needed."
+    )
+    message += (
+        durable_text(receipt)
+        if receipt
+        else "\n\nDurable publication: NOT ESTABLISHED."
+    )
+    if not safe_annotation(
+        context, message, failed=bool(returncode or publication_failed)
+    ):
+        publication_failed = True
+    return returncode or (3 if publication_failed else 0)
+
+
+def publication_receipt(context, directory, kind, outcome):
+    raw = download(
+        context,
+        directory,
+        artifact_name(context, "durable-publication"),
+        "profiled-deploy",
+    )
+    if digest_bytes(raw) != metadata(context, DURABLE_PUBLICATION_METADATA):
+        raise ValueError("durable receipt byte binding rejected")
+    receipt = ProfiledDurablePublicationReceipt.model_validate_json(raw)
+    if (
+        str(receipt.build_id) != context.build_id
+        or receipt.commit != context.commit
+        or receipt.delivery_kind is not kind
+        or receipt.final_outcome is not outcome
+    ):
+        raise ValueError("durable receipt result binding rejected")
+    # The exact same-build artifact is fetched only from profiled-deploy. Its
+    # trusted publisher supplies the opaque deploy job/record identity, not this job.
+    return receipt
 
 
 def evidence_step(context, directory):
     try:
         plan, _plan_bytes = planning_result(context, directory)
         if isinstance(plan, ProfiledComplianceRecord):
-            return compliant_annotation(context, plan)
-        raw = download(
-            context, directory, artifact_name(context, "record"), "profiled-deploy"
-        )
-        record = ProfiledChangeRecord.model_validate_json(raw)
-        verify_profiled_record_plan(record, plan)
+            record = None
+            kind, outcome = ProfiledDeliveryKind.COMPLIANCE, plan.outcome
+        else:
+            raw = download(
+                context, directory, artifact_name(context, "record"), "profiled-deploy"
+            )
+            record = ProfiledChangeRecord.model_validate_json(raw)
+            verify_profiled_record_plan(record, plan)
+            kind, outcome = ProfiledDeliveryKind.EXECUTION, record.final_outcome
     except (ValueError, OSError):
-        annotate(
+        safe_annotation(
             context,
             "No typed execution record produced or verified, "
             "and no valid compliant result.\n\n"
-            "Device write not proven/executed by this build. Artifact unavailability "
-            "is not proof of absence; inspect retained state before any new attempt.",
+            "Artifact unavailability is not proof of absence; "
+            "inspect retained state before any new attempt.",
         )
         return 2
-    annotate(
+    try:
+        receipt = publication_receipt(context, directory, kind, FinalOutcome(outcome))
+        durable, failed = durable_text(receipt), False
+    except Exception:
+        durable, failed = (
+            (
+                "\n\nDurable publication: NOT ESTABLISHED. Receipt absence "
+                "does not prove store emptiness or absence of a write."
+            ),
+            True,
+        )
+    if record is None:
+        try:
+            return compliant_annotation(context, plan, durable=durable, failed=failed)
+        except Exception:
+            return 3
+    if not safe_annotation(
         context,
         "## Deployment evidence\n\n"
         f"Target: {html.escape(record.target)}\n\nPlan: `{record.plan_digest}`\n\n"
         f"Outcome: {record.final_outcome.value}\n\n"
         f"Write attempted: {record.execution.attempted}\n\n"
         f"Recovery attempted: {record.recovery.attempted}\n\n"
-        f"Evidence: `{digest_bytes(raw)}` / `{artifact_name(context, 'record')}`",
-    )
-    return 0
+        f"Evidence: `{digest_bytes(raw)}` / `{artifact_name(context, 'record')}`"
+        + durable,
+        failed=failed,
+    ):
+        return 3
+    return 3 if failed else 0
 
 
 def main():

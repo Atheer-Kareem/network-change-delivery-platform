@@ -59,6 +59,8 @@ Required protected names:
 - `NCDP_BUILDKITE_PIPELINE_ID` — the existing staging-bound pipeline UUID
 - `NCDP_PROFILED_DELIVERY_STATE_ROOT` — absolute, outside checkout, agent-owned,
   non-symlink directory mode `0700`
+- `NCDP_AUDIT_STORE_ROOT` — existing or operator-created private root, absolute,
+  outside checkout, non-symlink, agent-owned mode `0700`; required for deployment
 - `NCDP_NETBOX_URL`, `NCDP_NETBOX_TOKEN`
 - `NCDP_OPENBAO_URL`, `NCDP_OPENBAO_ROLE_ID`, `NCDP_OPENBAO_SECRET_ID`
 
@@ -67,6 +69,29 @@ The deploy agent uses its own persistent AppRole, not the operator's
 `ncdp-personal-lab` pair. Credential values never enter Git, arguments, logs,
 plans or evidence. The personal-Mac credential is deliberately long-lived for
 reliable demonstrations, not production identity isolation.
+
+### External durable destination setup
+
+The operator must add `NCDP_AUDIT_STORE_ROOT=<existing-or-new-private-audit-root>`
+to the existing protected `profiled.env` mechanism (or its reviewed private source).
+Use the existing AuditStore root when historical evidence already exists; do not
+create a second profiled store. No personal absolute root is committed to Git.
+The launcher must not export this root. The hook rejects ambient injection and
+requires the protected setting for
+`profiled-deploy`; planning may carry it without using the store. Root path,
+mode, owner, checkout separation and namespaces must pass AuditStore validation.
+
+The identity installer checks this setting before any OpenBao operation,
+preserves it, and validates existing store structure read-only. An empty
+operator-created private root is also valid. Adding the setting needs no role,
+policy, credential issuance or rotation. Do not rerun credential configuration
+merely to add it. This repository change does not modify installed hooks,
+protected environments, credentials or external stores; operator setup is separate.
+
+At deployment, missing/unsafe storage or inability to persist/re-read canonical
+plan/promotion inputs means NO WRITE. The wrapper prepares current namespaces
+without rewriting historical records. A later storage failure is still possible:
+after command invocation it fails visibly and never replays the device command.
 
 ### One-time persistent deploy-agent installation
 
@@ -191,9 +216,10 @@ Plan annotations contain bounded identity, interface, current/desired descriptio
 strategy, plan digest and change-required facts. Provider stdout/stderr is
 captured, never dumped. Artifacts contain typed plans/manifests/records, not
 credentials, JWTs, Terraform state or raw device configuration. Current schema-v2
-artifacts do not yet enter the historical durable
-AuditStore/PRE-write-POST/viewer chain. That machinery remains available;
-CAP-DURABLE-EVIDENCE and CAP-CONFIG-CHRONOLOGY own reconnection. The accepted
+artifacts now enter the separate profiled AuditStore namespace through
+`profiled-deploy`, and the existing viewer reads them. PRE/write/POST remains
+unconnected (CAP-CONFIG-CHRONOLOGY). This integration has offline tests, not new
+runtime acceptance. See the [durable publication contract](audit-and-configuration-history.md#current-buildkite-publication-integration). The accepted
 record reports `execution.changed == false` despite observed state transition;
 that historical provider metadata is not observational change truth. Newly
 normalized missing/censored/non-boolean provider metadata is unknown (`null`),
@@ -205,9 +231,14 @@ with its own canonical digest, exact identities/state and false authority/attemp
 flags. The `profiled-planning-result` receipt binds build UUID, source commit,
 artifact kind, exact bytes and result digest. Each downstream step retrieves that
 exact artifact from `profiled-live-plan` in the same build and validates it.
-No artifact-absence fallback is allowed. Promotion mints nothing; deploy returns
-COMPLIANT without invoking the CLI or device providers; final evidence renders
-write attempted false, recovery attempted false and promotion minted false.
+No artifact-absence fallback is allowed. Promotion mints nothing; deploy durably
+publishes the compliance artifact and envelope without invoking the CLI or device
+providers. After exact readback it publishes a sanitized receipt. Final evidence
+requires that receipt (same-build metadata hash plus deploy-step artifact) and renders
+write attempted false, recovery attempted false and promotion minted false,
+plus durable record UUID/digest and planning observation time. Missing/invalid
+durable receipt preserves the typed outcome but reports publication NOT ESTABLISHED
+and returns nonzero; the final evidence step never writes or opens AuditStore.
 The static human block may still appear. Continuing it creates no authority.
 Labels distinguish promotion/execution from compliance. The block prompt requires
 review of an exact real promotion when present and states that continuation

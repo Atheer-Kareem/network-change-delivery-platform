@@ -90,7 +90,13 @@ def receipts(context):
 
 
 @pytest.fixture
-def driver(monkeypatch):
+def driver(monkeypatch, tmp_path):
+    audit = tmp_path.resolve() / "audit"
+    audit.mkdir(mode=0o700)
+    monkeypatch.setenv("NCDP_AUDIT_STORE_ROOT", str(audit))
+    monkeypatch.setenv("BUILDKITE_PIPELINE_ID", BUILD)
+    monkeypatch.setenv("NCDP_BUILDKITE_PIPELINE_ID", BUILD)
+    monkeypatch.setenv("BUILDKITE_BUILD_NUMBER", "42")
     spec = importlib.util.spec_from_file_location(
         "delivery_driver", ROOT / "scripts/buildkite/profiled_delivery.py"
     )
@@ -371,7 +377,9 @@ def test_planning_reuses_current_read_only_implementation(
     )
     monkeypatch.setattr(driver, "plan_profiled_change", lambda *_a: result)
     monkeypatch.setattr(driver, "upload", lambda *a: uploaded.append(a))
-    monkeypatch.setattr(driver, "annotate", lambda _c, text: messages.append(text))
+    monkeypatch.setattr(
+        driver, "annotate", lambda _c, text, **_k: messages.append(text)
+    )
     published = []
     monkeypatch.setattr(driver, "publish_metadata", lambda *a: published.append(a))
     assert driver.plan_step(context, tmp_path) == 0
@@ -444,8 +452,13 @@ def test_typed_execution_evidence_reports_real_attempts_only(
     )
     monkeypatch.setattr(driver, "metadata", lambda *_a: planning_receipt(context, plan))
     messages = []
-    monkeypatch.setattr(driver, "annotate", lambda _c, text: messages.append(text))
-    assert driver.evidence_step(context, tmp_path) == 0
+    monkeypatch.setattr(
+        driver, "annotate", lambda _c, text, **_k: messages.append(text)
+    )
+    assert (
+        driver.evidence_step(context, tmp_path) == 3
+    )  # typed outcome, no durable receipt
+    assert "NOT ESTABLISHED" in messages[0]
     assert "Write attempted: True" in messages[0]
     assert "Recovery attempted: False" in messages[0]
     assert "SUCCEEDED" in messages[0] and plan.digest in messages[0]
@@ -502,15 +515,31 @@ def test_agent_hook_rejects_before_protected_source(tmp_path, changes):
     assert "protected-secret" not in result.stdout + result.stderr
 
 
-def run_hook(tmp_path, changes=None, mode=0o600, expected=BUILD):
+def run_hook(tmp_path, changes=None, mode=0o600, expected=BUILD, audit_case=None):
     hook = tmp_path / "hooks"
     hook.mkdir(mode=0o700)
     (hook / "command").write_bytes(
         (ROOT / "scripts/buildkite/profiled_deploy_agent_command_hook.sh").read_bytes()
     )
+    audit = tmp_path.parent / (tmp_path.name + "-audit")
+    audit.mkdir(mode=0o700)
+    audit_setting = str(audit)
+    if audit_case == "missing":
+        audit_setting = ""
+    elif audit_case == "mode":
+        audit.chmod(0o755)
+    elif audit_case == "symlink":
+        link = tmp_path.parent / (tmp_path.name + "-link")
+        link.symlink_to(audit)
+        audit_setting = str(link)
+    elif audit_case == "inside":
+        audit_setting = str(tmp_path)
+    elif audit_case == "relative":
+        audit_setting = "relative"
     marker = tmp_path / "sourced"
     (hook / "profiled.env").write_text(
         f"touch '{marker}'\nNCDP_BUILDKITE_PIPELINE_ID={expected}\n"
+        f"NCDP_AUDIT_STORE_ROOT={audit_setting}\n"
         + "\n".join(
             f"{key}=protected-secret"
             for key in (
@@ -619,6 +648,24 @@ def test_execution_publication_and_final_render_require_exact_plan_binding(
     }
     monkeypatch.setattr(driver, "download", lambda _c, _d, _n, step: artifacts[step])
     uploaded, annotations, commands = [], [], []
+    published = {}
+    monkeypatch.setattr(
+        driver, "publish_metadata", lambda _c, k, v: published.update({k: v})
+    )
+    old_metadata = driver.metadata
+    monkeypatch.setattr(
+        driver, "metadata", lambda c, k: published.get(k) or old_metadata(c, k)
+    )
+    old_download = driver.download
+    monkeypatch.setattr(
+        driver,
+        "download",
+        lambda c, d, n, step: (
+            (tmp_path / n).read_bytes()
+            if n.endswith("-durable-publication.json")
+            else old_download(c, d, n, step)
+        ),
+    )
     monkeypatch.setattr(driver, "upload", lambda *_a: uploaded.append(_a[-1]))
     monkeypatch.setattr(
         driver, "annotate", lambda _c, text, **_k: annotations.append(text)
@@ -634,6 +681,27 @@ def test_execution_publication_and_final_render_require_exact_plan_binding(
     monkeypatch.setattr(driver, "command", command)
     assert driver.deploy_step(context, tmp_path) == (3 if mismatch else 0)
     assert len(commands) == 1  # Publication failure never retries execution.
-    assert len(uploaded) == (0 if mismatch else 1)
+    assert len(uploaded) == (0 if mismatch else 2)
     assert driver.evidence_step(context, tmp_path) == (2 if mismatch else 0)
     assert ("Outcome: SUCCEEDED" in annotations[-1]) is not mismatch
+
+
+@pytest.mark.parametrize("case", ["missing", "mode", "symlink", "inside", "relative"])
+def test_protected_audit_destination_blocks_deploy_hook(tmp_path, case):
+    result, marker = run_hook(tmp_path, audit_case=case)
+    assert result.returncode == 2 and marker.exists()
+    assert "WRAPPER EXECUTED" not in result.stdout
+    assert "protected-secret" not in result.stdout + result.stderr
+    assert str(tmp_path) not in result.stdout + result.stderr
+
+
+def test_audit_root_may_be_absent_for_planning_but_cannot_be_injected(tmp_path):
+    result, _ = run_hook(
+        tmp_path, {"BUILDKITE_STEP_KEY": "profiled-live-plan"}, audit_case="missing"
+    )
+    assert result.returncode == 0
+
+
+def test_ambient_audit_root_rejected_before_protected_settings(tmp_path):
+    result, marker = run_hook(tmp_path, {"NCDP_AUDIT_STORE_ROOT": "/ambient"})
+    assert result.returncode == 2 and not marker.exists()

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1000" role="img" aria-labelledby="title description">
   <title id="title">NCDP · current profiled architecture</title>
-  <desc id="description">Managed population, profile/capability projection and operation-specific authority are separate. Continuing Buildkite checks and modeled-service Batfish assurance precede main-only disposable CML integration; PR staging is temporarily skipped. Schema-v2 planning, same-build promotion, fieldless human approval and independently revalidated deployment lead to fresh observation and typed artifacts. The main demo writes core-02; the CLI also admits vJunos. Current artifacts are not connected to historical AuditStore or PRE/write/POST correlation. Oxidized and management monitoring remain independent. Uncertain mutation stops without retry and requires independent reconciliation.</desc>
+  <desc id="description">Managed population, profile/capability projection and operation-specific authority are separate. Continuing Buildkite checks and modeled-service Batfish assurance precede main-only disposable CML integration; PR staging is temporarily skipped. Schema-v2 planning, same-build promotion, fieldless human approval and independently revalidated deployment lead to fresh observation and typed artifacts. The main demo writes core-02; the CLI also admits vJunos. The deploy boundary admits AuditStore before a possible write and durably publishes typed results; runtime acceptance is pending. Historical records remain readable; current PRE/write/POST correlation is not connected. Oxidized and management monitoring remain independent. Uncertain mutation stops without retry and requires independent reconciliation.</desc>
   <defs>
     <linearGradient id="canvas" x2="1" y2="1">
       <stop stop-color="#08111f"/><stop offset="1" stop-color="#142139"/>
@@ -90,10 +90,10 @@
   <rect x="44" y="797" width="267" height="70" rx="12" class="evidence"/>
   <text x="60" y="825" class="title" style="font-size:20px">Independent validation</text>
   <text x="60" y="851" class="detail">Fresh O′ + typed record</text>
-  <!-- No validation-to-AuditStore arrow: schema-v2 integration is not implemented. -->
+  <!-- Profiled deploy owns durable publication; validation is not a publisher. -->
   <rect x="344" y="797" width="194" height="70" rx="12" class="evidence"/>
   <text x="360" y="825" class="title">AuditStore</text>
-  <text x="360" y="851" class="detail" style="font-size:18px">Historical delivery</text>
+  <text x="360" y="851" class="detail" style="font-size:18px">Current + history</text>
   <rect x="558" y="797" width="187" height="70" rx="12" class="evidence"/>
   <text x="574" y="825" class="title">Oxidized</text>
   <text x="574" y="851" class="detail">Config history</text>

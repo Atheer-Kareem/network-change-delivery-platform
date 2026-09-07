@@ -86,7 +86,10 @@ records user-supplied positive and negative main-delivery evidence:
   reset just to manufacture a demo change.
 
 Current plans, promotions and execution records are typed artifacts. They are
-**not yet integrated into the durable AuditStore/PRE-write-POST/viewer chain**.
+now published through a separate profiled AuditStore envelope and the existing
+viewer, with destination admission before a possible write. This integration is
+verified offline; controlled runtime acceptance is pending. PRE/write/POST
+chronology remains unconnected.
 Provider mutation metadata (true/false/unknown) is distinct from independently
 observed transition and final outcome. The accepted historical record retains
 `execution.changed=false`; its before/post observations prove the transition.

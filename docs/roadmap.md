@@ -94,7 +94,8 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
-Only the foundation checkpoint of CAP-DURABLE-EVIDENCE is in implementation scope.
+Only the Buildkite publication integration checkpoint of CAP-DURABLE-EVIDENCE
+is in implementation scope.
 CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH and CAP-OUTCOME-TRUTH are accepted; other
 approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
@@ -204,13 +205,19 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   have explicit identities without permanent cardinality.
 
 - **Implementation checkpoint:** Foundation: profiled durable envelope + AuditStore
-  + viewer — implemented offline; capability remains IN PROGRESS pending
-  Buildkite publication integration and user acceptance. Envelope version 1
+  + viewer — merged in #143; the frozen contract remains authoritative.
+  Capability remains IN PROGRESS pending user review / controlled runtime evidence. Envelope version 1
   references current schema-v2 artifacts; historical schemas remain unchanged.
-- **Foundation boundary:** no current Buildkite delivery publication is enabled.
-  No pre-write store requirement, hook/env change, durable publication receipt,
-  PRE/write/POST capture or live store migration. The following increment of
-  this same capability owns delivery publication using the frozen contract.
+- **Integration checkpoint:** Buildkite publication integration implemented:
+  pre-write durable destination admission and verified immutable plan/promotion
+  inputs; EXECUTION and COMPLIANCE durable publication by `profiled-deploy`;
+  same-build publication receipt after exact readback; read-only final evidence
+  correlation. No post-command evidence failure replays a device command.
+  Acceptance pending user review / controlled runtime evidence. No live acceptance
+  or operator configuration change was performed during implementation.
+- **Remaining boundary:** no PRE/write/POST capture, store migration or broader
+  promotion admission. Protected external AuditStore configuration must be
+  supplied by the operator before deployment; it is never created by this PR.
 - **Exact byte verification:** retain bounded validated original artifact JSON
   separately from canonical artifacts; compare hashes and typed content on
   persistence and reads. Canonicalization cannot prove the original byte hash.
@@ -226,7 +233,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   implementation. Its durable-envelope proof is deferred until
   CAP-INTENT-DELIVERY legitimately broadens promotion/intent admission. Evidence
   support must not broaden delivery authority to construct a proof fixture.
-- **Acceptance/sign-off:** PENDING USER REVIEW and later integration; no new
+- **Acceptance/sign-off:** PENDING USER REVIEW / controlled runtime evidence; no new
   live delivery or production-store evidence was created for this checkpoint.
 
 ### CAP-CONFIG-CHRONOLOGY — Independent PRE/write/POST chronology

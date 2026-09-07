@@ -378,6 +378,9 @@ def compliant_annotation(context, value):
         "No deployment plan or execution record exists for this result. "
         "The static human block may remain visible; "
         "unblock grants zero write authority.\n\n"
+        "Compliance was established by the planning observation at "
+        f"{html.escape(value.observed_at.isoformat())}; downstream continuation does "
+        "not perform a fresh device-state check because no write is authorized.\n\n"
         f"Compliance evidence: `{value.digest}`",
     )
     return 0

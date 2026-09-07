@@ -209,9 +209,13 @@ No artifact-absence fallback is allowed. Promotion mints nothing; deploy returns
 COMPLIANT without invoking the CLI or device providers; final evidence renders
 write attempted false, recovery attempted false and promotion minted false.
 The static human block may still appear. Continuing it creates no authority.
-This describes the planning observation, not a new live acceptance or proof that
-other assurance steps succeeded. Invalid/missing receipts or artifacts remain
-failures; neither a missing plan nor failed planning is compliant. The CLI's
+Labels distinguish promotion/execution from compliance. The block prompt requires
+review of an exact real promotion when present and states that continuation
+cannot repair failed prerequisites. Compliant annotations show the artifact's
+`observed_at`: compliance was established at that planning observation, not by a
+fresh downstream device check or a guarantee of continued compliance. This is not
+new live acceptance or proof that other assurance steps succeeded. Invalid/missing
+receipts or artifacts remain failures; neither a missing plan nor failed planning is compliant. The CLI's
 optional `--compliance-output` exposes the same artifact without another planner.
 
 Failed planning emits only a closed phase: `commit/context`, `protected

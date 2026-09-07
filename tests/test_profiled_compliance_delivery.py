@@ -148,6 +148,10 @@ def test_real_compliant_planner_through_entire_static_delivery_tail(
             "Recovery attempted: False",
             "Promotion minted: False",
             "unblock grants zero write authority",
+            "Compliance was established by the planning observation at "
+            f"{value.observed_at.isoformat()}",
+            "downstream continuation does not perform a fresh device-state check",
+            "because no write is authorized",
         ):
             assert text in message
 

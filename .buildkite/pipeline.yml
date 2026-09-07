@@ -254,7 +254,7 @@ steps:
     concurrency: 1
     concurrency_group: ncdp/profiled-live-delivery
 
-  - label: "Promotion · immutable profiled plan"
+  - label: "Delivery decision · promotion or compliance"
     key: profiled-promotion
     depends_on: profiled-live-plan
     if: build.branch == "main" && build.pull_request.id == null
@@ -267,13 +267,17 @@ steps:
       manual:
         allowed: false
 
-  - block: "Human authorization · exact promoted plan"
+  - block: "Human continuation · promoted change or compliance"
     key: profiled-human-authorization
     depends_on: profiled-promotion
     if: build.branch == "main" && build.pull_request.id == null
-    prompt: "Review the promoted schema-v2 plan above. Unblock to authorize this exact build/promotion. Authorization does not override failed prerequisites."
+    prompt: >-
+      For a real promotion, review the promoted schema-v2 plan; unblocking
+      authorizes only this exact build/promotion. For COMPLIANT, no plan or
+      promotion exists and continuation grants no write authority.
+      Human continuation never repairs failed prerequisites.
 
-  - label: "Profiled deploy · authorized live execution"
+  - label: "Profiled delivery · authorized execution or compliant no-write"
     key: profiled-deploy
     depends_on: profiled-human-authorization
     if: build.branch == "main" && build.pull_request.id == null

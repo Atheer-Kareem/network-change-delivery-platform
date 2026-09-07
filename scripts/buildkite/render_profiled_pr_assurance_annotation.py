@@ -105,7 +105,7 @@ def render_annotation(evidence: ProfiledPrAssuranceEvidence) -> str:
         return "UNEXPECTED (" + ", ".join(values) + ")"
 
     lines = [
-        "## :fish: Profiled PR Batfish assurance",
+        "## :batfish: Profiled PR Batfish assurance",
         "",
         f"**Outcome:** `{_safe(evidence.outcome.value)}`",
         "",

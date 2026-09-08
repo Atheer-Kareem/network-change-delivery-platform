@@ -87,10 +87,10 @@ OSPF_D1_DIGEST = (
     "sha256:55f5718089228eb4e9f3badebca036135461c10b3c4312184462b5468d463182"
 )
 ACCEPTED_ACL_D1_DIGEST = (
-    "sha256:e4b8c5485d87476b4132351f5a9059bd7f9603a5205966834e9220ab70349b0d"
+    "sha256:5ad66ee45a9b9b2abf207da53291177657e820fd5f7d673b38481101523801f6"
 )
 ACCEPTED_ACL_CANDIDATE_DIGEST = (
-    "sha256:afa5422fdd6c230693fda6c7ae05648251fbdc5468f0e5c415b236eb3506be36"
+    "sha256:56c416fde47cd2255b1cbe5c4c81cd11989d92995772a6dfa57b8c58d84306f7"
 )
 ACL_SHARED_INVARIANTS = VLAN_SHARED_INVARIANTS
 ACL_SECURITY_INVARIANTS = (
@@ -172,10 +172,10 @@ def _expected_rules(vlan: ReferenceVlanServiceAllocation) -> tuple[AclRuleIntent
             action=AclAction.PERMIT,
             protocol=AclProtocol.TCP,
             source=AclAddressMatch(
-                prefix_identity=users.prefix_identity, prefix=users.prefix
+                prefix_identity=servers.prefix_identity, prefix=servers.prefix
             ),
             destination=AclAddressMatch(
-                prefix_identity=servers.prefix_identity, prefix=servers.prefix
+                prefix_identity=users.prefix_identity, prefix=users.prefix
             ),
             destination_port=443,
         ),

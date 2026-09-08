@@ -439,7 +439,7 @@ def acl_batfish_observation(
             BatfishAclLine(
                 filter_name=ACL_NAME,
                 line_index=0,
-                line=("10 permit tcp 10.60.10.0 0.0.0.255 10.60.20.0 0.0.0.255 eq 443"),
+                line=("10 permit tcp 10.60.20.0 0.0.0.255 10.60.10.0 0.0.0.255 eq 443"),
                 action="PERMIT",
             ),
             BatfishAclLine(

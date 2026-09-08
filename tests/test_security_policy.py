@@ -86,7 +86,7 @@ def exact_raw() -> tuple[str, str, str, str]:
         f"ip access-list extended {ACL_NAME}\n",
         (
             f"ip access-list extended {ACL_NAME}\n"
-            " 10 permit tcp 10.60.10.0 0.0.0.255 10.60.20.0 0.0.0.255 eq 443\n"
+            " 10 permit tcp 10.60.20.0 0.0.0.255 10.60.10.0 0.0.0.255 eq 443\n"
             " 20 deny ip 10.60.10.0 0.0.0.255 10.60.20.0 0.0.0.255\n"
             " 30 permit ip any any\n"
         ),
@@ -222,7 +222,7 @@ def test_render_absent_to_exact_and_exact_to_noop() -> None:
     assert not rendered.no_op
     assert rendered.payload == (
         f"ip access-list extended {ACL_NAME}\n"
-        " 10 permit tcp 10.60.10.0 0.0.0.255 10.60.20.0 0.0.0.255 eq 443\n"
+        " 10 permit tcp 10.60.20.0 0.0.0.255 10.60.10.0 0.0.0.255 eq 443\n"
         " 20 deny ip 10.60.10.0 0.0.0.255 10.60.20.0 0.0.0.255\n"
         " 30 permit ip any any\n"
         "interface GigabitEthernet3.20\n"

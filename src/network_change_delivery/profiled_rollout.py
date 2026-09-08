@@ -1,4 +1,4 @@
-"""Read-only explicit rollout planning over current schema-v2 child lifecycles.
+"""Read-only profiled rollout planning over current schema-v2 child lifecycles.
 
 These artifacts describe planning, not promotion or execution authority. Consumers
 must retain caller-owned intent, population and credential-authority boundaries.
@@ -21,7 +21,10 @@ from pydantic import (
 )
 
 from network_change_delivery.architecture_contracts import (
+    AutomationProfileID,
     GitCommit,
+    NetworkOS,
+    OperationalRole,
     Sha256Digest,
     StableInterfaceIdentity,
 )
@@ -34,6 +37,8 @@ from network_change_delivery.profile_inventory import (
     ProfiledInventoryDevice,
     ProfiledInventoryPopulation,
     ProfiledLogicalName,
+    ProfiledPopulationDeclaration,
+    ProfiledPopulationMember,
     Slug,
     _admit_profiled_device,
 )
@@ -90,8 +95,58 @@ class ProfiledRolloutPolicy(_Frozen):
     )
 
 
+class ProfiledRolloutSelector(_Frozen):
+    """Closed Git population predicates: OR within, AND across dimensions."""
+
+    operational_roles: tuple[OperationalRole, ...] | None = Field(
+        default=None, min_length=1, max_length=len(OperationalRole)
+    )
+    network_oses: tuple[NetworkOS, ...] | None = Field(
+        default=None, min_length=1, max_length=len(NetworkOS)
+    )
+    automation_profile_ids: tuple[AutomationProfileID, ...] | None = Field(
+        default=None, min_length=1, max_length=len(AutomationProfileID)
+    )
+
+    def _dimensions(self):
+        # Field names and conjunction are code-owned, never selector input.
+        return (
+            (self.operational_roles, "operational_role"),
+            (self.network_oses, "network_os"),
+            (self.automation_profile_ids, "automation_profile_id"),
+        )
+
+    @model_validator(mode="after")
+    def bounded_dimensions(self) -> ProfiledRolloutSelector:
+        supplied = [values for values, _ in self._dimensions() if values is not None]
+        if not supplied or any(len(values) != len(set(values)) for values in supplied):
+            raise ValueError("selector needs nonempty unique closed dimensions")
+        return self
+
+    def select(
+        self, declaration: ProfiledPopulationDeclaration
+    ) -> tuple[ProfiledPopulationMember, ...]:
+        """Select declared facts in declaration order; no NetBox query or payload."""
+        selected = tuple(
+            member
+            for member in declaration.members
+            if all(
+                values is None or getattr(member, field) in values
+                for values, field in self._dimensions()
+            )
+        )
+        if not selected:
+            raise ValueError("rollout selector matches no declared members")
+        for values, field in self._dimensions():
+            if values is not None and set(values) != {
+                getattr(member, field) for member in selected
+            }:
+                raise ValueError("rollout selector contains nonparticipating values")
+        return selected
+
+
 class ProfiledRolloutIntent(_Frozen):
-    """Explicit selection only; selectors and queries are intentionally rejected."""
+    """Reviewed explicit payloads, optionally governed by a closed selector."""
 
     change_id: CliBoundString = Field(max_length=100)
     operation: Literal["interface_description"]
@@ -99,6 +154,20 @@ class ProfiledRolloutIntent(_Frozen):
         min_length=1, max_length=MAX_MEMBERS
     )
     policy: ProfiledRolloutPolicy
+    # Absent/None retains Increment-1 canonical bytes, including nested dumps.
+    selector: ProfiledRolloutSelector | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    def require_selection(self, declaration: ProfiledPopulationDeclaration) -> None:
+        if self.selector is not None:
+            selected = self.selector.select(declaration)
+            if tuple(member.logical_name for member in selected) != tuple(
+                member.target for member in self.members
+            ):
+                raise ValueError(
+                    "rollout selector and reviewed member sequence disagree"
+                )
 
     @model_validator(mode="after")
     def unique_selection(self) -> ProfiledRolloutIntent:
@@ -293,6 +362,16 @@ class _RolloutResult(_Frozen):
             admit_intent_result(
                 member.child_intent(self.intent.change_id), child.result()
             )
+        if self.intent.selector is not None:
+            # Artifact-local consistency only. Runtime planning separately proves
+            # completeness against the caller's entire admitted declaration.
+            self.intent.require_selection(
+                ProfiledPopulationDeclaration(
+                    members=tuple(
+                        _admit_profiled_device(child.device) for child in self.children
+                    )
+                )
+            )
         if self.digest != self.calculated_digest():
             raise ValueError("rollout parent digest rejected")
         return self
@@ -374,6 +453,7 @@ def plan_profiled_rollout(
     population = ProfiledInventoryPopulation.model_validate(
         inventory.resolve_profiled_population().model_dump()
     )
+    intent.require_selection(population.declaration)
     by_name = {device.logical_name: device for device in population.devices}
     admitted = []
     identities, interface_ids = set(), set()

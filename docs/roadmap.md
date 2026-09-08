@@ -448,10 +448,23 @@ immutable canaries/waves/order. It returns a parent planning artifact or positiv
 all-compliant result, with no execution surface. No real network operation or
 protected credential expansion was performed.
 
-Closed typed selectors, protected runtime integration, the approved credential
-expansion, promotion, human authorization, overlap locking, execution, final
-validation, parent durable evidence and runtime acceptance remain pending.
-CAP-PROFILED-ROLLOUT remains IN PROGRESS; the approved contract below is unchanged.
+#### Increment 2 implementation checkpoint
+
+The planning foundation now also accepts a closed typed Git-population selector
+using OperationalRole, NetworkOS and AutomationProfileID. Matching is fixed OR
+within each dimension and AND across dimensions, in declaration order. The
+selector must match the exact ordered explicit member/interface/desired payload
+population; nonparticipating values fail closed. A future matching member without
+a reviewed payload blocks planning, while nonmatching population growth does not
+change the bounded parent digest. Explicit-only artifact bytes and child-owned
+observation timestamps remain unchanged. This is still planning only.
+
+Protected runtime integration, the approved credential expansion 1/2 → 1/2/8/9,
+parent promotion, fieldless human authorization, complete preflight/JIT
+revalidation, overlap admission, canary/wave execution and stop semantics, final
+whole-population validation, parent durable evidence/chronology and runtime
+acceptance remain pending. CAP-PROFILED-ROLLOUT remains IN PROGRESS; the approved
+contract below is unchanged.
 
 #### Selection and independent authority
 
@@ -495,7 +508,7 @@ write, auth-management or administrative capability. The existing persistent
 deploy-agent identity may be reused if verification passes. The current
 implementation and external role remain at `DEVICE_IDS = (1, 2)` until the
 later protected-runtime integration applies and verifies the expansion;
-Increment 1 does not apply it.
+the planning increments do not apply it.
 
 #### Complete planning and immutable rollout artifact
 

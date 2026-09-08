@@ -657,13 +657,18 @@ class EvidenceViewerApplication:
                 return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
             try:
                 current = self.store.read_profiled_record(record_id)
+            except AuditStoreError:
+                return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
+            try:
                 observations = (
                     self.store.find_by_profiled_parent(record_id)
                     if current.delivery_kind.value == "EXECUTION"
                     else ()
                 )
-            except AuditStoreError:
-                return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
+            except (OSError, ValueError):
+                # The parent is independently valid. Refuse all child fields;
+                # render NOT ESTABLISHED without weakening store validation.
+                observations = ()
             return HTTPStatus.OK, render_record(_profiled_detail(current, observations))
         prefix = "/records/"
         if parsed.path.startswith(prefix) and parsed.path.count("/") == 2:

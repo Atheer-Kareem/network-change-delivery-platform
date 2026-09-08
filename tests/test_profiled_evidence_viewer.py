@@ -245,3 +245,69 @@ def test_current_chronology_detail_uses_metadata_only(mixed_store):
         assert headers["Cache-Control"] == "no-store"
         page = _request(base, f"/profiled-records/{compliant.record_id}")[2].decode()
         assert "Configuration chronology: NOT REQUIRED — COMPLIANT" in page
+
+
+@pytest.mark.parametrize("damage", ["corrupt_child", "unsafe_namespace", "unavailable"])
+def test_valid_parent_survives_untrusted_chronology(mixed_store, monkeypatch, damage):
+    from datetime import UTC, datetime
+
+    from profiled_chronology_fixtures import observation
+
+    from network_change_delivery.profiled_configuration_observation import (
+        build_profiled_observation_record,
+    )
+
+    readonly, parent, _, _historical = mixed_store
+    writable = ConfigurationObservationStore(
+        readonly.root, checkout=readonly.root.parent / "checkout"
+    )
+    pre = observation(changed=True)
+    child = build_profiled_observation_record(
+        parent,
+        pre,
+        observation(expected_before=pre.after_revision),
+        generated_at=datetime.now(UTC),
+    )
+    path = writable.persist_profiled_observation_record(child)
+    if damage == "corrupt_child":
+        path.write_bytes(b'{"untrusted": "private-child-payload"}')
+    elif damage == "unsafe_namespace":
+        path.parent.chmod(0o755)
+    else:
+
+        def unavailable(_parent_id):
+            raise OSError("private-child-payload /private/chronology-location")
+
+        monkeypatch.setattr(readonly, "find_by_profiled_parent", unavailable)
+
+    # Store validation still fails; only presentation preserves the valid parent.
+    with pytest.raises((OSError, ValueError)):
+        readonly.find_by_profiled_parent(parent.record_id)
+    assert readonly.read_profiled_record(parent.record_id) == parent
+    with _running(readonly) as (base, _server):
+        status, headers, raw = _request(base, f"/profiled-records/{parent.record_id}")
+        assert status == 200
+        for name, expected in SECURITY_HEADERS.items():
+            assert headers[name] == expected
+        page = raw.decode()
+        for value in (
+            str(parent.record_id),
+            parent.digest,
+            parent.git.commit,
+            str(parent.buildkite.build_id),
+            parent.target.device,
+            "Configuration chronology: NOT ESTABLISHED",
+        ):
+            assert value in page
+        for value in (
+            str(child.observation_record_id),
+            child.digest,
+            "private-child-payload",
+            "/private/chronology-location",
+            str(path),
+            str(readonly.root),
+            parent.credential.reference,
+            pre.after_revision.commit,
+            pre.after_revision.blob,
+        ):
+            assert value not in page

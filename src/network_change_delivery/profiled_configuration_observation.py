@@ -26,10 +26,8 @@ from network_change_delivery.configuration_observation import (
 )
 from network_change_delivery.configuration_observation import (
     ObservationRelationship,
-    OxidizedGroupName,
     OxidizedNodeName,
     OxidizedObservation,
-    OxidizedRepositoryIdentity,
     OxidizedRevision,
     _is_utc,
 )
@@ -110,10 +108,10 @@ class ProfiledConfigurationObservationRecord(BaseModel):
     generated_at: datetime
     digest: Sha256
     parent_audit: ProfiledDeliveryAuditReference
-    repository: OxidizedRepositoryIdentity
+    repository: Literal["oxidized:ncdp-lab-actual-state"]
     target: NetBoxDeviceIdentity
     oxidized_node: OxidizedNodeName
-    group: OxidizedGroupName | None = None
+    group: Literal["managed"]
     pre_observation: OxidizedObservation
     post_observation: OxidizedObservation
     relationship: Literal[ObservationRelationship.TEMPORALLY_BRACKETED] = (
@@ -144,9 +142,7 @@ class ProfiledConfigurationObservationRecord(BaseModel):
             or self.digest != self.calculated_digest()
         ):
             raise ValueError("profiled chronology correlation rejected")
-        expected_path = (
-            f"{self.group}/{self.oxidized_node}" if self.group else self.oxidized_node
-        )
+        expected_path = f"{self.group}/{self.oxidized_node}"
         for attempt in (pre, post):
             for revision in (attempt.before_revision, attempt.after_revision):
                 if revision is not None and revision.config_path != expected_path:

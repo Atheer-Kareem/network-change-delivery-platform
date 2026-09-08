@@ -425,3 +425,29 @@ def test_capture_binding_inconsistency_remains_ambiguous(monkeypatch):
         attempt.status is Status.AMBIGUOUS
         and attempt.failure_category is Failure.INCONSISTENT_EVIDENCE
     )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("repository", "oxidized:other-history"), ("group", "other"), ("group", None)],
+)
+def test_rehashed_alternate_plane_is_rejected_by_reviewed_contract(
+    stored, field, value
+):
+    from pydantic import ValidationError
+
+    _, _, child = stored
+    data = child.model_dump(mode="json")
+    data[field] = value
+    if field == "group":
+        # Keep every revision path consistent with the substituted group. The
+        # rejection must enforce the current plane, not incidental path mismatch.
+        path = f"{value}/{child.oxidized_node}" if value else child.oxidized_node
+        for stage in ("pre_observation", "post_observation"):
+            for revision in ("before_revision", "after_revision"):
+                data[stage][revision]["config_path"] = path
+    with pytest.raises(ValidationError) as error:
+        Record.model_validate(rehash(data))
+    assert [(item["loc"], item["type"]) for item in error.value.errors()] == [
+        ((field,), "literal_error")
+    ]

@@ -90,12 +90,13 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | ACCEPTED |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | ACCEPTED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | ACCEPTED |
-| CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | IN PROGRESS |
+| CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | ACCEPTED |
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
 CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE,
-CAP-CONFIG-CHRONOLOGY, CAP-POPULATION-SCOPES and CAP-INTENT-DELIVERY are accepted;
+CAP-CONFIG-CHRONOLOGY, CAP-POPULATION-SCOPES, CAP-INTENT-DELIVERY and
+CAP-PROFILE-REUSE-WRITE are accepted;
 other approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
@@ -387,7 +388,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-PROFILE-REUSE-WRITE — Profile-reuse interface-description admission
 
-- **State:** IN PROGRESS.
+- **State:** ACCEPTED.
 - **Target/value:** prove compatible profiles can reuse established Cisco
   adapter/renderer/collector/recovery families after explicit operation admission
   and acceptance. IOSv/IOSvL2 are initial proof subjects, not an architectural
@@ -407,8 +408,21 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   lifecycle, with offline planning, one-shot execution, recovery, intent,
   durable evidence and chronology proof. Serialized schemas and profile catalogs
   are unchanged. Buildkite deploy credential policy remains devices 1/2 only.
-  No real network write was performed; runtime acceptance remains pending.
+  No real network write was performed during implementation.
   See [profile reuse](architecture/profile-reuse-write.md).
+- **Acceptance/sign-off:** explicitly USER ACCEPTED after review of merged
+  PR #153, main commit `2bdfd1a82add97ff74cf21426519c5c9ff9588f2`, merged
+  lifecycle/evidence tests and successful real local IOSv/IOSvL2 read-only
+  planning. Both schema-v2 plans validated; protected management interfaces
+  were rejected before secret reference/load or device collection. Passing
+  tests and implementation merge did not confer acceptance; explicit user
+  sign-off did. No device write was required or manufactured. Protected
+  Buildkite credential scope remains devices 1/2; expansion requires separate
+  approval. Build 443 CML readiness failed, independently of its COMPLIANT
+  planning result; neither implies CML success. See the
+  [acceptance record](acceptance/profile-reuse-write.md) for exact evidence,
+  credential-session retirement and unchanged AuditStore hashes. CML and
+  observability operational findings remain separate follow-up work.
 
 ### CAP-PROFILED-ROLLOUT — Bounded profiled multi-target rollout
 

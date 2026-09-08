@@ -1,4 +1,4 @@
-"""Narrow Ansible Runner adapter for Cisco IOS XE collection and execution."""
+"""Narrow Ansible Runner adapter for Cisco IOS/IOS-XE collection and execution."""
 
 from __future__ import annotations
 

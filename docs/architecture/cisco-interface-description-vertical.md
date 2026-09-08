@@ -3,9 +3,13 @@
 ## Status and supported operation
 
 The current schema-v2 `profiled-plan` / `profiled-deploy` path admits the
-`cat8000v_iosxe` profile for one non-empty interface description (up to 240
-characters) on an explicitly selected, non-protected interface. IOSv and IOSvL2
-remain managed/read-only; Cisco family membership alone does not admit writes.
+explicit `cat8000v_iosxe`, `iosv_159_3_m12` and `iosvl2_2020` operation entries
+for one non-empty interface description (up to 240 characters) on an explicitly
+selected, non-protected interface. All three reuse the existing Cisco families;
+family compatibility alone does not admit writes. The protected Buildkite
+credential identity remains limited to devices 1/2, excluding IOSv/IOSvL2
+credentials. New profile admission has offline proof; runtime acceptance remains
+pending. See [profile reuse](profile-reuse-write.md).
 The [profiled CLI acceptance](../acceptance/profiled-deploy-live-acceptance-pr132.md)
 and [current main acceptance](../acceptance/profiled-main-delivery.md) establish
 successful independent validation without recovery writes. The original
@@ -20,7 +24,7 @@ deployment requires the profiled NetBox boundary; legacy YAML
 providers remain supporting test/compatibility machinery, not an alternate current LIVE path.
 
 OpenBao is the primary personal-lab credential path. AppRole obtains a
-short-lived single-use OpenBao token, then reads the exact static IOS XE
+short-lived single-use OpenBao token, then reads the exact static Cisco IOS/IOS-XE
 credential selected by stable NetBox device identity. The plan binds only the
 non-secret provider source/reference. `EnvironmentSecretProvider` remains an
 explicit test/offline option; there is no automatic fallback.
@@ -43,10 +47,13 @@ file cryptographic integrity. Failure is bounded, with execution/recovery not
 attempted. See [operations](buildkite-profiled-delivery-operations.md).
 
 Planning fails closed unless the target resolves exactly once, profile/operation admission is
-`cat8000v_iosxe` interface description, credentials and trusted authenticated access are available,
-observed hostname matches inventory, the interface exists, its description is
-unambiguous, and inventory policy does not protect it. `GigabitEthernet1` is
-always protected for the personal-lab candidate. Interface operational state
+an explicit reviewed interface-description catalog entry, credentials and trusted
+authenticated access are available, observed hostname matches inventory, the
+interface exists, its description is unambiguous, and inventory policy does not
+protect it. The current CAT8000V management interface is `GigabitEthernet1`;
+IOSv/IOSvL2 management is `GigabitEthernet0/0`. Protection comes from resolved
+inventory, never interface position or a writer-side device table. Interface
+operational state
 alone never establishes safety.
 
 ## Immutable approval and execution

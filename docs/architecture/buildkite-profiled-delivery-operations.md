@@ -23,8 +23,10 @@ core promotion bytes remain valid; alternative vJunos promotion, authorization,
 durable EXECUTION and chronology are proven offline. The human block remains
 fieldless and cannot select a target or repair failed prerequisites.
 
-The active file still selects core-02. Only CAT8000V and vJunos admit description
-writes; IOSv/IOSvL2 remain denied. Dedicated deploy credentials still permit only
+The active file still selects core-02. [Profile reuse](profile-reuse-write.md)
+explicitly admits CAT8000V, vJunos, IOSv and IOSvL2 description lifecycles.
+Operation admission does not grant protected-main credential authority:
+dedicated deploy credentials still permit only
 devices 1/2. No local installer or credential update is required. Batfish remains
 B4 assurance and CML remains realization/integration assurance; neither proves
 or rehearses the exact description candidate. See the [intent contract](intent-delivery.md).

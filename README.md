@@ -31,12 +31,16 @@ selects its [exact typed scope](docs/architecture/population-scopes.md). Support
 profiles can serve multiple instances; onboarding still requires reviewed data,
 trust, realization and applicable operation admission.
 
-| Current proof population | Profile/platform | Interface-description write admission |
-|---|---|---|
-| `core-02` · NetBox 1 | CAT8000V IOS-XE | Admitted; current main demo target |
-| `edge-junos-01` · NetBox 2 | vJunos | Admitted through CLI or committed intent |
-| `transit-ios-01` · NetBox 8 | IOSv | Managed/read-only; operation denied |
-| `access-sw-01` · NetBox 9 | IOSvL2 | Managed/read-only; operation denied |
+| Current proof population | Profile/platform | Interface-description admission | Protected Buildkite credential scope |
+|---|---|---|---|
+| `core-02` · NetBox 1 | CAT8000V IOS-XE | Explicitly admitted | Available; active intent |
+| `edge-junos-01` · NetBox 2 | vJunos | Explicitly admitted | Available |
+| `transit-ios-01` · NetBox 8 | IOSv | Explicitly admitted | Not currently permitted |
+| `access-sw-01` · NetBox 9 | IOSvL2 | Explicitly admitted | Not currently permitted |
+
+These four reviewed profile/operation combinations are explicit policy. Future
+profiles need their own reviewed operation admission; compatible families alone
+never grant writes. See [profile reuse](docs/architecture/profile-reuse-write.md).
 
 ## Current delivery
 

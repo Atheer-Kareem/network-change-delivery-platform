@@ -52,19 +52,25 @@ from network_change_delivery.profiled_promotion import (
 )
 
 context, driver, offline = context_fixture, driver_fixture, offline_fixture
-PROFILES = (Profile.CAT8000V_IOSXE, Profile.VJUNOS_ROUTER)
+PROFILES = (
+    Profile.CAT8000V_IOSXE,
+    Profile.VJUNOS_ROUTER,
+    Profile.IOSV_159_3_M12,
+    Profile.IOSVL2_2020,
+)
 
 
 def selected(profile, compliant=False):
     device, interface = profiled_device(profile)
-    interface = interface.model_copy(
-        update={
-            "name": "ge-0/0/1"
-            if profile is Profile.VJUNOS_ROUTER
-            else "GigabitEthernet3",
-            "interface": "netbox:dcim.interface:99",
-        }
-    )
+    if profile in (Profile.CAT8000V_IOSXE, Profile.VJUNOS_ROUTER):
+        interface = interface.model_copy(
+            update={
+                "name": "ge-0/0/1"
+                if profile is Profile.VJUNOS_ROUTER
+                else "GigabitEthernet3",
+                "interface": "netbox:dcim.interface:99",
+            }
+        )
     intent = InterfaceDescriptionIntent(
         change_id="CHG-INTENT-JUNOS-001"
         if profile is Profile.VJUNOS_ROUTER
@@ -166,10 +172,22 @@ def test_loader_has_no_environment_selector(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("profile", PROFILES)
-@pytest.mark.parametrize("compliant", [False, True])
-def test_same_driver_plans_promotes_authorizes_and_persists_both_profiles(
-    driver, context, offline, tmp_path, monkeypatch, profile, compliant
+@pytest.mark.parametrize("case", ["execution", "compliant", "chronology_failure"])
+def test_same_driver_plans_promotes_authorizes_and_persists_admitted_profiles(
+    driver, context, offline, tmp_path, monkeypatch, profile, case
 ):
+    compliant = case == "compliant"
+    chronology_failure = case == "chronology_failure"
+    if chronology_failure:
+
+        def fail_publication(*_args, **_kwargs):
+            raise ValueError("synthetic chronology persistence failure")
+
+        monkeypatch.setattr(
+            ProfiledConfigurationObservationStore,
+            "persist_profiled_observation_record",
+            fail_publication,
+        )
     intent, device, interface, state = selected(profile, compliant)
     checkout = tmp_path / "checkout"
     committed(checkout, intent)
@@ -266,7 +284,13 @@ def test_same_driver_plans_promotes_authorizes_and_persists_both_profiles(
                         "compliant downstream must not enter authority or devices"
                     ),
                 )
-        assert func(replace(context, step=step), directory) == 0
+        expected = (
+            3
+            if chronology_failure
+            and step in {"profiled-deploy", "profiled-deployment-evidence"}
+            else 0
+        )
+        assert func(replace(context, step=step), directory) == expected
     store = ProfiledConfigurationObservationStore(
         Path(driver.os.environ["NCDP_AUDIT_STORE_ROOT"]),
         checkout=checkout,
@@ -296,8 +320,14 @@ def test_same_driver_plans_promotes_authorizes_and_persists_both_profiles(
             record.assurance.batfish_digest == DIGEST
             and record.assurance.cml_digest == DIGEST
         )
-        assert len(store.find_by_profiled_parent(record.record_id)) == 1
-        assert "Configuration chronology: SUCCEEDED" in annotations[-1][1]
+        assert record.final_outcome.value == "SUCCEEDED"
+        assert len(store.find_by_profiled_parent(record.record_id)) == (
+            0 if chronology_failure else 1
+        )
+        status = "NOT ESTABLISHED" if chronology_failure else "SUCCEEDED"
+        assert f"Configuration chronology: {status}" in annotations[-1][1]
+        assert str(record.record_id) in annotations[-1][1]
+        assert "Durable publication: NOT ESTABLISHED" not in annotations[-1][1]
     for fact in (
         intent.change_id,
         intent.target,
@@ -439,9 +469,20 @@ def test_valid_rehashed_result_disagrees_with_committed_intent(
 
 
 @pytest.mark.parametrize("profile", [Profile.IOSV_159_3_M12, Profile.IOSVL2_2020])
-def test_managed_ineligible_committed_intent_has_no_promotion(
+def test_missing_explicit_operation_admission_has_no_promotion(
     driver, context, offline, tmp_path, monkeypatch, profile
 ):
+    from network_change_delivery import profiled_planning
+
+    monkeypatch.setattr(
+        profiled_planning,
+        "PROFILED_OPERATION_ADMISSIONS",
+        {
+            k: v
+            for k, v in profiled_planning.PROFILED_OPERATION_ADMISSIONS.items()
+            if k[0] is not profile
+        },
+    )
     device, interface = profiled_device(profile)
     intent = InterfaceDescriptionIntent(
         change_id="CHG-DENIED",

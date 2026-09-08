@@ -296,22 +296,17 @@ class FakeCollector:
 
 
 def test_operation_admission_is_profile_specific_and_not_ios_family_fallback() -> None:
-    expected = {
-        (
-            AutomationProfileID.CAT8000V_IOSXE,
-            ProfiledOperation.INTERFACE_DESCRIPTION,
-        ),
-        (
-            AutomationProfileID.VJUNOS_ROUTER,
-            ProfiledOperation.INTERFACE_DESCRIPTION,
-        ),
-    }
-    assert set(PROFILED_OPERATION_ADMISSIONS) == expected
-
-    for profile_id in (
+    expected_profiles = (
         AutomationProfileID.CAT8000V_IOSXE,
         AutomationProfileID.VJUNOS_ROUTER,
-    ):
+        AutomationProfileID.IOSV_159_3_M12,
+        AutomationProfileID.IOSVL2_2020,
+    )
+    assert set(PROFILED_OPERATION_ADMISSIONS) == {
+        (profile, ProfiledOperation.INTERFACE_DESCRIPTION)
+        for profile in expected_profiles
+    }
+    for profile_id in expected_profiles:
         device, _interface = profiled_device(profile_id)
         assert (
             admit_profiled_operation(
@@ -319,14 +314,6 @@ def test_operation_admission_is_profile_specific_and_not_ios_family_fallback() -
             ).automation_profile_id
             is profile_id
         )
-
-    for profile_id in (
-        AutomationProfileID.IOSV_159_3_M12,
-        AutomationProfileID.IOSVL2_2020,
-    ):
-        device, _interface = profiled_device(profile_id)
-        with pytest.raises(ProfiledPlanningError, match="does not admit"):
-            admit_profiled_operation(device, ProfiledOperation.INTERFACE_DESCRIPTION)
 
 
 @pytest.mark.parametrize(
@@ -336,9 +323,21 @@ def test_operation_admission_is_profile_specific_and_not_ios_family_fallback() -
         AutomationProfileID.IOSVL2_2020,
     ),
 )
-def test_unsupported_profile_fails_before_interface_secret_or_transport(
+def test_family_without_explicit_admission_fails_before_interface_secret_or_transport(
     profile_id: AutomationProfileID,
+    monkeypatch,
 ) -> None:
+    from network_change_delivery import profiled_planning
+
+    monkeypatch.setattr(
+        profiled_planning,
+        "PROFILED_OPERATION_ADMISSIONS",
+        {
+            k: v
+            for k, v in PROFILED_OPERATION_ADMISSIONS.items()
+            if k[0] is not profile_id
+        },
+    )
     device, interface = profiled_device(profile_id)
     inventory = FakeInventory(device, interface)
     secrets = FakeSecrets()
@@ -467,8 +466,9 @@ def test_profiled_junos_plan_preserves_netconf_and_confirmed_commit_contract() -
     assert plan.verify_digest()
 
 
-def test_already_compliant_profiled_target_produces_no_plan() -> None:
-    device, interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
+@pytest.mark.parametrize("profile", tuple(PROFILE_FACTS))
+def test_already_compliant_profiled_target_produces_no_plan(profile) -> None:
+    device, interface = profiled_device(profile)
     result = plan_profiled_change(
         intent(device, interface),
         FakeInventory(device, interface),
@@ -479,8 +479,9 @@ def test_already_compliant_profiled_target_produces_no_plan() -> None:
     assert result.message == "interface is already compliant; no profiled plan produced"
 
 
-def test_non_openbao_reference_fails_before_secret_load_or_collection() -> None:
-    device, interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
+@pytest.mark.parametrize("profile", tuple(PROFILE_FACTS))
+def test_non_openbao_reference_fails_before_secret_load_or_collection(profile) -> None:
+    device, interface = profiled_device(profile)
     secrets = FakeSecrets(source="environment")
     collector = FakeCollector(observed(device, interface))
     with pytest.raises(ProfiledPlanningError, match="credential binding"):
@@ -495,8 +496,11 @@ def test_non_openbao_reference_fails_before_secret_load_or_collection() -> None:
     assert collector.calls == 0
 
 
-def test_profiled_subject_mismatch_fails_closed_before_secret_or_transport() -> None:
-    device, interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
+@pytest.mark.parametrize("profile", tuple(PROFILE_FACTS))
+def test_profiled_subject_mismatch_fails_closed_before_secret_or_transport(
+    profile,
+) -> None:
+    device, interface = profiled_device(profile)
     mismatched = device.model_copy(update={"device_identity": "netbox:dcim.device:99"})
     inventory = FakeInventory(mismatched, interface)
     secrets = FakeSecrets()
@@ -513,10 +517,11 @@ def test_profiled_subject_mismatch_fails_closed_before_secret_or_transport() -> 
     assert collector.calls == 0
 
 
-def test_stable_protected_interface_identity_blocks_before_secret_or_transport() -> (
-    None
-):
-    device, _interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
+@pytest.mark.parametrize("profile", tuple(PROFILE_FACTS))
+def test_stable_protected_interface_identity_blocks_before_secret_or_transport(
+    profile,
+) -> None:
+    device, _interface = profiled_device(profile)
     protected = device.protected_interfaces[0]
     secrets = FakeSecrets()
     collector = FakeCollector(observed(device, protected))
@@ -532,8 +537,9 @@ def test_stable_protected_interface_identity_blocks_before_secret_or_transport()
     assert collector.calls == 0
 
 
-def test_profiled_plan_rejects_old_schema_and_profile_tampering() -> None:
-    device, interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
+@pytest.mark.parametrize("profile", tuple(PROFILE_FACTS))
+def test_profiled_plan_rejects_old_schema_and_profile_tampering(profile) -> None:
+    device, interface = profiled_device(profile)
     result = plan_profiled_change(
         intent(device, interface),
         FakeInventory(device, interface),
@@ -549,7 +555,11 @@ def test_profiled_plan_rejects_old_schema_and_profile_tampering() -> None:
         ProfiledDeploymentPlan.model_validate(old)
 
     wrong_profile = dict(payload)
-    wrong_profile["automation_profile_id"] = AutomationProfileID.IOSV_159_3_M12
+    wrong_profile["automation_profile_id"] = (
+        AutomationProfileID.VJUNOS_ROUTER
+        if profile is AutomationProfileID.IOSV_159_3_M12
+        else AutomationProfileID.IOSV_159_3_M12
+    )
     with pytest.raises((ValidationError, ValueError)):
         ProfiledDeploymentPlan.model_validate(wrong_profile)
 

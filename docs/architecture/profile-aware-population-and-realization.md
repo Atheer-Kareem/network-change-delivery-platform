@@ -25,9 +25,11 @@ generation. Its create-only evidence is immutable and secret-free. Controlled
 LIVE acceptance has proved exactly C8000V IOS-XE and vJunos
 interface-description operations, including Cisco independent O′ validation
 without recovery and Junos candidate validation, commit-confirmed, independent
-O′ validation, and explicit confirmation. IOSv and IOSvL2 remain exact
-managed-fleet members but are not admitted; no other B4 vertical gained write
-authority. B5/D0 is unchanged. Schema-v1 planning/deployment and protected
+O′ validation, and explicit confirmation. Subsequent [profile reuse](profile-reuse-write.md)
+explicitly admits IOSv/IOSvL2 interface-description lifecycles with offline proof.
+Their protected Buildkite credentials remain unavailable; runtime acceptance is
+pending. No other B4 vertical gained write authority. B5/D0 is unchanged.
+Schema-v1 planning/deployment and protected
 delivery are retired from current runtime. The historical exact-two disposable
 staging runtime is retired. Its profiled replacement is part of the demonstrated
 [current main chain](../acceptance/profiled-main-delivery.md). The current main

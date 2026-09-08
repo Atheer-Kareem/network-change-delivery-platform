@@ -38,11 +38,12 @@ flowchart LR
 3. `transit-ios-01` — `netbox:dcim.device:8` — `iosv_159_3_m12`;
 4. `access-sw-01` — `netbox:dcim.device:9` — `iosvl2_2020`.
 
-Population admission grants no operation by itself. The present catalog has fixed
-identity/count constraints; generalization is
-approved under CAP-POPULATION-SCOPES, not implemented here. The current writable
-interface-description projection contains only devices 1 and 2. IOSv and
-IOSvL2 fail closed before credentials or transport. The SNMPv3
+Population admission grants no operation by itself. The accepted population
+contract resolves the Git declaration before exact consumer scope projection.
+The [interface-description catalog](profile-reuse-write.md) explicitly admits the
+four reviewed profile combinations. Protected Buildkite credential authority
+still covers only devices 1/2; IOSv/IOSvL2 operation admission does not grant it.
+The SNMPv3
 SHA256/AES128 projection also currently contains devices 1 and 2 because the
 accepted IOSv/IOSvL2 software lacks that capability. Management observability
 and Oxidized read-only collection consume all four.
@@ -85,7 +86,8 @@ from `deployments/live/profiled-demo.yaml`. Its logical target resolves through
 Git/NetBox and profile/operation admission. Plan/compliance, promotion and deploy
 are bound to those exact semantics; a fieldless unblock selects nothing. The
 active intent remains core-02, while CAT8000V and vJunos use the same generic
-protected control path. IOSv/IOSvL2 remain write-denied. See [intent delivery](intent-delivery.md).
+protected control path. IOSv/IOSvL2 now reuse the operation lifecycle offline;
+the dedicated main credential policy still excludes devices 8/9. See [intent delivery](intent-delivery.md).
 
 `ncdp profiled-plan` is the sole ordinary planner. `ncdp profiled-deploy` is the
 sole current device-write entry point and requires a schema-v2 plan, exact

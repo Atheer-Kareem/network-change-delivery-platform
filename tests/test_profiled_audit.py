@@ -44,7 +44,13 @@ def mutate(data, path, value):
 
 
 @pytest.mark.parametrize(
-    "profile", [AutomationProfileID.CAT8000V_IOSXE, AutomationProfileID.VJUNOS_ROUTER]
+    "profile",
+    [
+        AutomationProfileID.CAT8000V_IOSXE,
+        AutomationProfileID.VJUNOS_ROUTER,
+        AutomationProfileID.IOSV_159_3_M12,
+        AutomationProfileID.IOSVL2_2020,
+    ],
 )
 @pytest.mark.parametrize("compliant", [False, True])
 def test_current_envelope_canonical_and_original_bytes_round_trip(
@@ -80,7 +86,13 @@ def test_current_envelope_canonical_and_original_bytes_round_trip(
 
 
 @pytest.mark.parametrize(
-    "profile", [AutomationProfileID.CAT8000V_IOSXE, AutomationProfileID.VJUNOS_ROUTER]
+    "profile",
+    [
+        AutomationProfileID.CAT8000V_IOSXE,
+        AutomationProfileID.VJUNOS_ROUTER,
+        AutomationProfileID.IOSV_159_3_M12,
+        AutomationProfileID.IOSVL2_2020,
+    ],
 )
 def test_compliance_is_actual_successful_planning_without_deployment_claims(
     tmp_path, profile

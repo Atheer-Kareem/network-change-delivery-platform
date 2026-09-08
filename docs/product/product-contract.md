@@ -4,11 +4,12 @@
 single-target description path and demonstrated main delivery are summarized in
 [overview](../architecture/overview.md) and [current
 acceptance](../acceptance/profiled-main-delivery.md).
-Fleet/canary and durable correlation properties below describe the product's
-intended lifecycle and earlier accepted implementation. Their current profiled
-restoration is approved, not implemented (CAP-PROFILED-ROLLOUT,
-CAP-DURABLE-EVIDENCE, CAP-CONFIG-CHRONOLOGY). Current operation admission is
-CAT8000V/vJunos; managed IOSv/IOSvL2 membership does not grant writes.
+Fleet/canary properties below remain product direction under CAP-PROFILED-ROLLOUT.
+Current durable evidence and independent chronology are accepted capabilities;
+the [ledger](../roadmap.md) records their boundaries. The explicit
+[operation catalog](../architecture/profile-reuse-write.md) now admits CAT8000V,
+vJunos, IOSv and IOSvL2 interface-description lifecycles. Managed membership alone
+grants nothing; protected Buildkite credentials remain limited to devices 1/2.
 
 ## Product statement and audiences
 

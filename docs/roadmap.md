@@ -90,7 +90,7 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | ACCEPTED |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | ACCEPTED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | ACCEPTED |
-| CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | USER APPROVED |
+| CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | IN PROGRESS |
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
@@ -387,7 +387,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-PROFILE-REUSE-WRITE — Profile-reuse interface-description admission
 
-- **State:** USER APPROVED.
+- **State:** IN PROGRESS.
 - **Target/value:** prove compatible profiles can reuse established Cisco
   adapter/renderer/collector/recovery families after explicit operation admission
   and acceptance. IOSv/IOSvL2 are initial proof subjects, not an architectural
@@ -402,6 +402,13 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   admission, unrelated switch ACL capability or SNMP security requirements.
 - **Origin/population effect:** adds accepted operation/profile combinations
   through reuse, not a new executor per device.
+- **Implementation checkpoint:** explicit IOSv/IOSvL2 interface-description
+  operation admission reuses the Cisco adapter/renderer/collector/recovery
+  lifecycle, with offline planning, one-shot execution, recovery, intent,
+  durable evidence and chronology proof. Serialized schemas and profile catalogs
+  are unchanged. Buildkite deploy credential policy remains devices 1/2 only.
+  No real network write was performed; runtime acceptance remains pending.
+  See [profile reuse](architecture/profile-reuse-write.md).
 
 ### CAP-PROFILED-ROLLOUT — Bounded profiled multi-target rollout
 

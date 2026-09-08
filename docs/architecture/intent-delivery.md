@@ -1,7 +1,7 @@
 # Committed intent-selected delivery
 
-CAP-INTENT-DELIVERY implements this boundary; user acceptance remains pending in
-the [ledger](../roadmap.md#cap-intent-delivery--intent-selected-generic-delivery).
+CAP-INTENT-DELIVERY is user-accepted in the
+[ledger](../roadmap.md#cap-intent-delivery--intent-selected-generic-delivery).
 
 ```text
 reviewed committed InterfaceDescriptionIntent
@@ -34,7 +34,10 @@ constants. No active production intent changed to manufacture a network write.
 
 The only supported kind is `interface_description`. The planner resolves logical
 name to the exact population member and stable device/interface before operation
-admission. CAT8000V and vJunos remain eligible; IOSv and IOSvL2 remain denied.
+admission. Subsequent [profile reuse](profile-reuse-write.md) explicitly admits
+IOSv/IOSvL2 alongside CAT8000V and vJunos for this operation. Protected Buildkite
+credential permission remains device 1/2 only; devices 8/9 are not fully
+deployable on protected main.
 Existing LIVE trust, protected interfaces, credentials, preflight and vendor
 transaction semantics are unchanged. No intent carries an endpoint or host key.
 

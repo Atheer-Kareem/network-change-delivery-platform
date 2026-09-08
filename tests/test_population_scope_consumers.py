@@ -397,6 +397,7 @@ def test_read_only_scopes_never_grant_write_authority():
         LIVE_REALIZATION_SCOPE,
         OBSERVABILITY_SCOPE,
         OXIDIZED_COLLECTION_SCOPE,
+        PROFILED_MANAGED_POPULATION,
         STAGING_REALIZATION_SCOPE,
     )
     from network_change_delivery.profiled_planning import (
@@ -413,7 +414,10 @@ def test_read_only_scopes_never_grant_write_authority():
     assert {profile for profile, _ in PROFILED_OPERATION_ADMISSIONS} == {
         AutomationProfileID.CAT8000V_IOSXE,
         AutomationProfileID.VJUNOS_ROUTER,
+        AutomationProfileID.IOSV_159_3_M12,
+        AutomationProfileID.IOSVL2_2020,
     }
+    original = dict(PROFILED_OPERATION_ADMISSIONS)
     for selected in (
         scope,
         LIVE_REALIZATION_SCOPE,
@@ -422,14 +426,33 @@ def test_read_only_scopes_never_grant_write_authority():
         OBSERVABILITY_SCOPE,
     ):
         for device in population.project(selected).devices:
-            if device.automation_profile_id in {
-                AutomationProfileID.IOSV_159_3_M12,
-                AutomationProfileID.IOSVL2_2020,
+            if device.logical_name not in {
+                m.logical_name for m in PROFILED_MANAGED_POPULATION.members
             }:
                 with pytest.raises(ValueError):
                     admit_profiled_operation(
                         device, ProfiledOperation.INTERFACE_DESCRIPTION
                     )
+                continue
+            admission = admit_profiled_operation(
+                device, ProfiledOperation.INTERFACE_DESCRIPTION
+            )
+            assert (
+                admission
+                == original[
+                    (
+                        device.automation_profile_id,
+                        ProfiledOperation.INTERFACE_DESCRIPTION,
+                    )
+                ]
+            )
+        assert dict(PROFILED_OPERATION_ADMISSIONS) == original
+    from network_change_delivery.openbao_profiled_deploy_config import DEVICE_IDS
+
+    assert DEVICE_IDS == (
+        1,
+        2,
+    )  # passive scopes cannot expand protected credential authority
 
 
 def test_service_subjects_stay_bounded_when_population_grows():

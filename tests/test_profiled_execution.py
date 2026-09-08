@@ -27,6 +27,12 @@ from network_change_delivery.profiled_write_adapter import (
 )
 from network_change_delivery.secrets import CredentialReference, DeviceCredentials
 
+CISCO_PROFILES = (
+    AutomationProfileID.CAT8000V_IOSXE,
+    AutomationProfileID.IOSV_159_3_M12,
+    AutomationProfileID.IOSVL2_2020,
+)
+
 
 def plan(profile: AutomationProfileID = AutomationProfileID.CAT8000V_IOSXE):
     device, interface = profiled_device(profile)
@@ -189,8 +195,9 @@ def writer(cisco=None, junos=None):
     )
 
 
-def test_cisco_success_is_one_attempt_and_secret_free():
-    value, device, interface, state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_cisco_success_is_one_attempt_and_secret_free(profile):
+    value, device, interface, state = plan(profile)
     cisco = Cisco(
         [
             ExecutionResult(
@@ -213,8 +220,9 @@ def test_cisco_success_is_one_attempt_and_secret_free():
     )
 
 
-def test_cisco_ambiguous_never_retries_or_recovers():
-    value, device, interface, state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_cisco_ambiguous_never_retries_or_recovers(profile):
+    value, device, interface, state = plan(profile)
     cisco = Cisco(
         [
             ExecutionResult(
@@ -237,8 +245,9 @@ def test_cisco_ambiguous_never_retries_or_recovers():
     )
 
 
-def test_cisco_frozen_targeted_recovery_only_after_known_success():
-    value, device, interface, state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_cisco_frozen_targeted_recovery_only_after_known_success(profile):
+    value, device, interface, state = plan(profile)
     cisco = Cisco(
         [
             ExecutionResult(disposition=ExecutionDisposition.SUCCEEDED, message="ok"),
@@ -290,8 +299,9 @@ def test_junos_success_confirms_once():
     )
 
 
-def test_invalid_approval_blocks_before_writer():
-    value, device, interface, state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_invalid_approval_blocks_before_writer(profile):
+    value, device, interface, state = plan(profile)
     cisco = Cisco([])
     with pytest.raises(ValueError, match="approval digest does not match plan"):
         execute_profiled_plan(
@@ -305,8 +315,9 @@ def test_invalid_approval_blocks_before_writer():
     assert not cisco.artifacts
 
 
-def test_profiled_write_target_is_immutable_and_binds_stable_identity():
-    value, device, interface, _state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_profiled_write_target_is_immutable_and_binds_stable_identity(profile):
+    value, device, interface, _state = plan(profile)
     target = ProfiledWriteTarget.from_preflight(
         device, interface, value.operation_admission.operation
     )
@@ -326,10 +337,9 @@ def test_profiled_write_target_is_immutable_and_binds_stable_identity():
         ("automation_profile_id", "vjunos_router"),
     ],
 )
-def test_stale_device_bindings_never_reach_writer(field, value):
-    plan_value, device, interface, state = plan()
-    if field in {"network_os", "automation_profile_id"}:
-        pytest.skip("Pydantic rejects inconsistent profiled inventory before execution")
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_stale_device_bindings_never_reach_writer(profile, field, value):
+    plan_value, device, interface, state = plan(profile)
     changed = device.model_copy(update={field: value})
     cisco = Cisco([])
     inventory = CountingInventory(changed, interface)
@@ -349,8 +359,9 @@ def test_stale_device_bindings_never_reach_writer(field, value):
 @pytest.mark.parametrize(
     "mutation", ["interface", "host", "port", "description", "protected"]
 )
-def test_stale_interface_or_endpoint_preflight_never_reaches_writer(mutation):
-    value, device, interface, state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_stale_interface_or_endpoint_preflight_never_reaches_writer(profile, mutation):
+    value, device, interface, state = plan(profile)
     cisco = Cisco([])
     resolved_interface = (
         interface.model_copy(update={"interface": "netbox:dcim.interface:99"})
@@ -393,8 +404,9 @@ def test_stale_interface_or_endpoint_preflight_never_reaches_writer(mutation):
         (ExecutionDisposition.AMBIGUOUS, "AMBIGUOUS"),
     ],
 )
-def test_cisco_known_failure_and_ambiguity_have_no_recovery(result, outcome):
-    value, device, interface, state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_cisco_known_failure_and_ambiguity_have_no_recovery(profile, result, outcome):
+    value, device, interface, state = plan(profile)
     cisco = Cisco([ExecutionResult(disposition=result, message="result")])
     states = (
         [state, state.model_copy(update={"description": "new"})]
@@ -417,8 +429,9 @@ def test_cisco_known_failure_and_ambiguity_have_no_recovery(result, outcome):
 
 
 @pytest.mark.parametrize("restored", ["hostname", "interface", "description"])
-def test_cisco_wrong_recovery_identity_or_description_fails(restored):
-    value, device, interface, state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_cisco_wrong_recovery_identity_or_description_fails(profile, restored):
+    value, device, interface, state = plan(profile)
     cisco = Cisco(
         [
             ExecutionResult(
@@ -558,8 +571,9 @@ def test_junos_prepare_failure_closes_context_once_without_commit_or_confirm():
     assert (junos.exits, junos.commits, junos.confirms) == (1, 0, 0)
 
 
-def test_malformed_approval_fails_before_external_boundaries():
-    value, device, interface, state = plan()
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
+def test_malformed_approval_fails_before_external_boundaries(profile):
+    value, device, interface, state = plan(profile)
     with pytest.raises(ValueError, match="approval digest"):
         execute_profiled_plan(
             value,

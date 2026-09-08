@@ -135,10 +135,12 @@ lookups or device access; final presentation requires its receipt. The receipt i
 only a same-build pointer, while the AuditStore envelope is durable authority.
 The static DAG, PR CML exception and real-plan assurance prerequisites are unchanged.
 
-The interface-description projection remains CAT8000V/vJunos (current devices
-1/2). The [committed intent](intent-delivery.md) selects one exact target; the
-active file still selects core-02. Devices 8/9, B4 service changes, fleet and SNMP
-provisioning remain write-denied. Batfish and CML remain prerequisite assurance,
+The interface-description catalog explicitly admits CAT8000V, vJunos, IOSv and
+IOSvL2. The [committed intent](intent-delivery.md) selects one exact target; the
+active file still selects core-02. Protected Buildkite credentials remain limited
+to devices 1/2: device 8/9 operation admission alone cannot authorize a main write.
+B4 service changes, fleet and SNMP provisioning gain no write authority. Batfish
+and CML remain prerequisite assurance,
 not exact intent-candidate validation or write rehearsal. No replay is added.
 
 ## Trust and acceptance limits

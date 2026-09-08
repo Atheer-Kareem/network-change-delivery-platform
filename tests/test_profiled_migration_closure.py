@@ -53,9 +53,9 @@ def test_exact_four_population_and_capability_projections_are_closed() -> None:
     assert admitted == {
         AutomationProfileID.CAT8000V_IOSXE,
         AutomationProfileID.VJUNOS_ROUTER,
+        AutomationProfileID.IOSV_159_3_M12,
+        AutomationProfileID.IOSVL2_2020,
     }
-    assert AutomationProfileID.IOSV_159_3_M12 not in admitted
-    assert AutomationProfileID.IOSVL2_2020 not in admitted
 
 
 def test_only_profiled_ordinary_change_commands_are_exposed() -> None:

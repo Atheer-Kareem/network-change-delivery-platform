@@ -27,13 +27,14 @@ is stable NetBox devices 1, 2, 8, and 9 through
 `ncdp-profiled-inventory` plus `PROFILED_POPULATION_CATALOG`. The current
 interface-description operation admits only:
 
-- `cat8000v_iosxe`: SSH/22, Cisco Ansible `network_cli`, and a frozen targeted
-  inverse;
+- `cat8000v_iosxe`, `iosv_159_3_m12`, `iosvl2_2020`: three explicit Cisco
+  profile entries, SSH/22, Ansible `network_cli`, and a frozen targeted inverse;
 - `vjunos_router`: NETCONF/830, an exclusive candidate, commit-confirmed five
   minutes, independent observation, and explicit confirmation.
 
-The `iosv_159_3_m12` and `iosvl2_2020` profiles remain managed
-members but fail before secret or transport access for this operation. No
+[Profile reuse](profile-reuse-write.md) admits IOSv/IOSvL2 for this operation,
+but the protected Buildkite deploy identity still cannot read device 8/9
+credentials. Operation admission does not complete deployment authority. No
 routed-underlay, OSPF, VLAN/trunk, ACL, or SNMP device-write authority is added.
 
 Protected main delivery selects the same typed intent from the fixed committed

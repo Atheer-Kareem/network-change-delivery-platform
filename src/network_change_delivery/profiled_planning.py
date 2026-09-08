@@ -162,6 +162,14 @@ PROFILED_OPERATION_ADMISSIONS: Mapping[
             AutomationProfileID.VJUNOS_ROUTER,
             ProfiledOperation.INTERFACE_DESCRIPTION,
         ): _operation_admission(AutomationProfileID.VJUNOS_ROUTER),
+        (
+            AutomationProfileID.IOSV_159_3_M12,
+            ProfiledOperation.INTERFACE_DESCRIPTION,
+        ): _operation_admission(AutomationProfileID.IOSV_159_3_M12),
+        (
+            AutomationProfileID.IOSVL2_2020,
+            ProfiledOperation.INTERFACE_DESCRIPTION,
+        ): _operation_admission(AutomationProfileID.IOSVL2_2020),
     }
 )
 
@@ -172,6 +180,8 @@ if {
 } != {
     AutomationProfileID.CAT8000V_IOSXE,
     AutomationProfileID.VJUNOS_ROUTER,
+    AutomationProfileID.IOSV_159_3_M12,
+    AutomationProfileID.IOSVL2_2020,
 }:
     raise RuntimeError("profiled interface-description admission is not exact")
 

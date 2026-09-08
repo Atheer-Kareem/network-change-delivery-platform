@@ -5,7 +5,14 @@ from types import SimpleNamespace
 import pytest
 from test_ansible_runtime import PINS, complete_runtime, install_manifest
 from test_cli_profiled_deploy import _arguments
-from test_profiled_execution import Collector, Inventory, Junos, Secrets, plan
+from test_profiled_execution import (
+    CISCO_PROFILES,
+    Collector,
+    Inventory,
+    Junos,
+    Secrets,
+    plan,
+)
 
 from network_change_delivery import ansible_adapter, cli
 from network_change_delivery.architecture_contracts import AutomationProfileID
@@ -84,8 +91,9 @@ def trace_real_verifier(monkeypatch, events, expected_root):
 
 @pytest.mark.parametrize("explicit_path", [True, False])
 @pytest.mark.parametrize("changed", [True, False, None])
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
 def test_cli_verifies_actual_cisco_runner_path_before_preflight(
-    runtime, tmp_path, monkeypatch, explicit_path, changed
+    runtime, tmp_path, monkeypatch, explicit_path, changed, profile
 ):
     root, collections = runtime
     if not explicit_path:
@@ -97,7 +105,7 @@ def test_cli_verifies_actual_cisco_runner_path_before_preflight(
             ansible_adapter, "SYSTEM_ANSIBLE_COLLECTIONS", tmp_path / "empty-system"
         )
     events = []
-    arguments, report = compose_cli(tmp_path, monkeypatch, events)
+    arguments, report = compose_cli(tmp_path, monkeypatch, events, profile)
     trace_real_verifier(monkeypatch, events, root)
     expected_path = ansible_adapter.effective_ansible_collection_path(root)
     monkeypatch.setattr(ansible_adapter, "verify_existing_host_trust", lambda *_a: None)
@@ -151,8 +159,9 @@ def test_cli_verifies_actual_cisco_runner_path_before_preflight(
         "empty-path",
     ],
 )
+@pytest.mark.parametrize("profile", CISCO_PROFILES)
 def test_cli_runtime_rejection_is_blocked_before_any_device_boundary(
-    runtime, tmp_path, monkeypatch, capsys, failure
+    runtime, tmp_path, monkeypatch, capsys, failure, profile
 ):
     root, collections = runtime
     manifest = collections / "ansible_collections/ansible/netcommon/MANIFEST.json"
@@ -176,7 +185,7 @@ def test_cli_runtime_rejection_is_blocked_before_any_device_boundary(
             "relative/path" if failure == "relative-path" else "",
         )
     events = []
-    arguments, report = compose_cli(tmp_path, monkeypatch, events)
+    arguments, report = compose_cli(tmp_path, monkeypatch, events, profile)
     trace_real_verifier(monkeypatch, events, root)
     monkeypatch.setattr(
         ProfiledWriteAdapter,

@@ -12,9 +12,15 @@ from network_change_delivery.ansible_adapter import (
     ProviderError,
 )
 from network_change_delivery.architecture_contracts import (
+    AdapterFamily,
     AutomationProfileID,
+    CollectorFamily,
+    ManagementService,
     NetworkOS,
+    RecoveryFamily,
+    RendererFamily,
     StableInterfaceIdentity,
+    TransportFamily,
 )
 from network_change_delivery.junos_adapter import JunosPyEZAdapter
 from network_change_delivery.models import (
@@ -112,7 +118,7 @@ class JunosProfiledWriter(Protocol):
 
 
 class ProfiledWriteAdapter:
-    """Exact two-profile write surface; unsupported profiles never reach a writer."""
+    """Dispatch exact operation admission through compatible provider families."""
 
     def __init__(
         self,
@@ -155,10 +161,19 @@ class ProfiledWriteAdapter:
     @staticmethod
     def _validate_cisco_target(target: ProfiledWriteTarget) -> None:
         target.__post_init__()
+        admission = target.admission
         if (
-            target.automation_profile_id is not AutomationProfileID.CAT8000V_IOSXE
-            or target.network_os is not NetworkOS.IOSXE
-            or target.port != 22
+            admission.operation is not ProfiledOperation.INTERFACE_DESCRIPTION
+            or admission.transport_family is not TransportFamily.ANSIBLE_NETWORK_CLI
+            or admission.adapter_family is not AdapterFamily.CISCO_IOS
+            or admission.renderer_family is not RendererFamily.CISCO_IOS
+            or admission.collector_family is not CollectorFamily.CISCO_IOS_FACTS
+            or admission.recovery_family is not RecoveryFamily.CISCO_TARGETED_INVERSE
+            or admission.management_service is not ManagementService.SSH
+            or admission.management_port != 22
+            or admission.transaction_strategy != "cisco_targeted_inverse"
+            or admission.confirmed_timeout_minutes is not None
+            or admission.confirmation_operation is not None
         ):
             raise ProviderError("profiled Cisco write operation is unsupported")
 

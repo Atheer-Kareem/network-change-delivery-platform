@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enroll exact-four CML-anchored profiled LIVE SSH host trust."""
+"""Enroll CML-anchored profiled LIVE SSH trust for the reviewed realization scope."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ import hashlib
 import json
 import socket
 import sys
-from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 
 import paramiko
 
 from network_change_delivery.profiled_live_cml import (
+    CURRENT_LIVE_REALIZATION,
     LIVE_LAB_ID,
     LIVE_LAB_TITLE,
     ProfiledLiveAnchor,
@@ -67,7 +67,7 @@ def _observe_key(anchor: ProfiledLiveAnchor) -> tuple[str, str, str]:
 
 def _anchor_evidence(anchor: ProfiledLiveAnchor) -> EvidenceReference:
     value = {
-        **asdict(anchor),
+        **anchor.model_dump(mode="json"),
         "automation_profile_id": anchor.automation_profile_id.value,
         "cml_realization_profile_id": anchor.cml_realization_profile_id.value,
         "lab_id": LIVE_LAB_ID,
@@ -85,13 +85,10 @@ def _anchor_evidence(anchor: ProfiledLiveAnchor) -> EvidenceReference:
     )
 
 
-def enroll(transit_node_id: str, access_node_id: str) -> CmlAnchoredHostTrustGeneration:
+def enroll() -> CmlAnchoredHostTrustGeneration:
     operator = ProfiledLiveCmlOperator.from_environment()
     try:
-        anchors = operator.anchor_profiled_live(
-            transit_node_id=transit_node_id,
-            access_node_id=access_node_id,
-        )
+        anchors = operator.anchor_profiled_live()
     finally:
         operator.close()
     observations = tuple((anchor, _observe_key(anchor)) for anchor in anchors)
@@ -106,6 +103,7 @@ def enroll(transit_node_id: str, access_node_id: str) -> CmlAnchoredHostTrustGen
     now = datetime.now(UTC)
     records = tuple(
         CmlAnchoredHostTrustRecord(
+            declaration=CURRENT_LIVE_REALIZATION.scope.declaration,
             environment=RealizationEnvironment.LIVE,
             realization_identity="ncdp-live",
             cml_lab_id=LIVE_LAB_ID,
@@ -125,6 +123,7 @@ def enroll(transit_node_id: str, access_node_id: str) -> CmlAnchoredHostTrustGen
         for anchor, (algorithm, _encoded, fingerprint) in observations
     )
     generation = CmlAnchoredHostTrustGeneration(
+        scope=CURRENT_LIVE_REALIZATION.scope,
         environment=RealizationEnvironment.LIVE,
         realization_identity="ncdp-live",
         cml_lab_id=LIVE_LAB_ID,
@@ -138,11 +137,9 @@ def enroll(transit_node_id: str, access_node_id: str) -> CmlAnchoredHostTrustGen
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--transit-node-id", required=True)
-    parser.add_argument("--access-node-id", required=True)
-    arguments = parser.parse_args()
+    parser.parse_args()
     try:
-        generation = enroll(arguments.transit_node_id, arguments.access_node_id)
+        generation = enroll()
     except (
         EnrollmentError,
         ProfiledLiveCmlError,

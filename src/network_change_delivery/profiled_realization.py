@@ -32,10 +32,14 @@ from network_change_delivery.architecture_contracts import (
     get_automation_profile,
 )
 from network_change_delivery.profile_inventory import (
-    PROFILED_POPULATION_BY_NAME,
-    PROFILED_POPULATION_CATALOG,
-    ProfiledDeviceName,
+    LIVE_REALIZATION_SCOPE,
+    PROFILE_ADMISSION_CATALOG,
+    PROFILED_MANAGED_POPULATION,
+    STAGING_REALIZATION_SCOPE,
     ProfiledInventoryDevice,
+    ProfiledLogicalName,
+    ProfiledPopulationDeclaration,
+    ProfiledPopulationScope,
     ProfileReadOnlyTarget,
 )
 
@@ -105,8 +109,8 @@ class EvidenceReference(BaseModel):
     digest: Sha256Digest
 
 
-class _ExactFourBinding(Protocol):
-    logical_name: ProfiledDeviceName
+class _ScopedBinding(Protocol):
+    logical_name: ProfiledLogicalName
     device_identity: str
     cml_node_id: str
 
@@ -116,23 +120,16 @@ def _validate_times(admitted_at: datetime, expires_at: datetime) -> None:
         raise ValueError("realization expiration must follow admission")
 
 
-def _expected_member(name: ProfiledDeviceName):
-    member = PROFILED_POPULATION_BY_NAME.get(name)
-    if member is None:  # pragma: no cover - enum and catalog are closed together
-        raise ValueError("profiled realization logical name is not admitted")
-    return member
-
-
 def _validate_profile_pairing(
     *,
-    logical_name: ProfiledDeviceName,
     automation_profile_id: AutomationProfileID,
     cml_realization_profile_id: CmlRealizationProfileID,
 ) -> None:
-    member = _expected_member(logical_name)
-    if (
-        automation_profile_id is not member.automation_profile_id
-        or cml_realization_profile_id is not member.cml_realization_profile_id
+    # Instance membership is verified against the aggregate's exact scope.
+    if not any(
+        rule.automation_profile_id is automation_profile_id
+        and rule.cml_realization_profile_id is cml_realization_profile_id
+        for rule in PROFILE_ADMISSION_CATALOG.values()
     ):
         raise ValueError("realized device does not match the Git profile catalog")
 
@@ -158,25 +155,28 @@ def _validate_management_endpoint(
         raise ValueError("realized management service is not profile-admitted")
 
 
-def _validate_exact_four(devices: tuple[_ExactFourBinding, ...]) -> None:
-    names = tuple(device.logical_name for device in devices)
-    expected = tuple(member.logical_name for member in PROFILED_POPULATION_CATALOG)
-    identities = tuple(device.device_identity for device in devices)
+def _validate_scope(
+    devices: tuple[_ScopedBinding, ...], scope: ProfiledPopulationScope
+) -> None:
+    scope.require_bindings(devices)
     nodes = tuple(device.cml_node_id for device in devices)
-    if names != expected:
-        raise ValueError("profiled realization must contain the exact four members")
-    if len(identities) != len(set(identities)):
-        raise ValueError("profiled realization stable identities are duplicated")
     if len(nodes) != len(set(nodes)):
         raise ValueError("profiled realization CML node identities are duplicated")
+    for device, member in zip(devices, scope.members, strict=True):
+        if (
+            hasattr(device, "operational_role")
+            and device.operational_role is not member.operational_role
+        ):
+            raise ValueError("realized device role does not match the Git catalog")
 
 
 class ProfiledRealizedDevice(BaseModel):
     """One secret-free stable-device to exact CML-node realization binding."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     device_identity: NetBoxDeviceIdentity
-    logical_name: ProfiledDeviceName
+    logical_name: ProfiledLogicalName
     operational_role: OperationalRole
     automation_profile_id: AutomationProfileID
     cml_realization_profile_id: CmlRealizationProfileID
@@ -187,13 +187,23 @@ class ProfiledRealizedDevice(BaseModel):
 
     @model_validator(mode="after")
     def exact_identity_and_profile(self) -> ProfiledRealizedDevice:
+        member = self.declaration.member(self.logical_name)
         if (
-            self.operational_role
-            is not _expected_member(self.logical_name).operational_role
+            self.device_identity,
+            self.automation_profile_id,
+            self.cml_realization_profile_id,
+        ) != (
+            member.device_identity,
+            member.automation_profile_id,
+            member.cml_realization_profile_id,
+        ):
+            raise ValueError("realized device does not match the Git profile catalog")
+        if (
+            hasattr(self, "operational_role")
+            and self.operational_role is not member.operational_role
         ):
             raise ValueError("realized device role does not match the Git catalog")
         _validate_profile_pairing(
-            logical_name=self.logical_name,
             automation_profile_id=self.automation_profile_id,
             cml_realization_profile_id=self.cml_realization_profile_id,
         )
@@ -206,7 +216,7 @@ class ProfiledRealizedDevice(BaseModel):
 
 
 class PersistentProfiledRealization(BaseModel):
-    """Exact four-device persistent LIVE realization admission."""
+    """Persistent LIVE realization bound to an exact reviewed scope."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["1"] = "1"
@@ -218,12 +228,13 @@ class PersistentProfiledRealization(BaseModel):
     admitted_at: AwareDatetime
     expires_at: AwareDatetime
     admission_evidence: EvidenceReference
+    scope: ProfiledPopulationScope = LIVE_REALIZATION_SCOPE
     devices: tuple[ProfiledRealizedDevice, ...]
 
     @model_validator(mode="after")
     def exact_live_realization(self) -> PersistentProfiledRealization:
         _validate_times(self.admitted_at, self.expires_at)
-        _validate_exact_four(self.devices)
+        _validate_scope(self.devices, self.scope)
         if any(
             device.management_endpoint.purpose is not ManagementEndpointPurpose.LIVE
             for device in self.devices
@@ -246,8 +257,9 @@ class CmlAnchoredHostTrustRecord(BaseModel):
     realization_identity: StableReferenceIdentity
     cml_lab_id: CmlUUID
     cml_node_id: CmlUUID
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     device_identity: NetBoxDeviceIdentity
-    logical_name: ProfiledDeviceName
+    logical_name: ProfiledLogicalName
     management_address: IPvAnyAddress
     management_port: int = Field(ge=1, le=65535)
     automation_profile_id: AutomationProfileID
@@ -260,8 +272,23 @@ class CmlAnchoredHostTrustRecord(BaseModel):
 
     @model_validator(mode="after")
     def exact_realization_bound_trust(self) -> CmlAnchoredHostTrustRecord:
+        member = self.declaration.member(self.logical_name)
+        if (
+            self.device_identity,
+            self.automation_profile_id,
+            self.cml_realization_profile_id,
+        ) != (
+            member.device_identity,
+            member.automation_profile_id,
+            member.cml_realization_profile_id,
+        ):
+            raise ValueError("realized device does not match the Git profile catalog")
+        if (
+            hasattr(self, "operational_role")
+            and self.operational_role is not member.operational_role
+        ):
+            raise ValueError("realized device role does not match the Git catalog")
         _validate_profile_pairing(
-            logical_name=self.logical_name,
             automation_profile_id=self.automation_profile_id,
             cml_realization_profile_id=self.cml_realization_profile_id,
         )
@@ -274,7 +301,7 @@ class CmlAnchoredHostTrustRecord(BaseModel):
 
 
 class CmlAnchoredHostTrustGeneration(BaseModel):
-    """Exact four-device trust metadata generation without public-key blobs."""
+    """Scope-bound trust metadata generation without public-key blobs."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["1"] = "1"
@@ -284,12 +311,13 @@ class CmlAnchoredHostTrustGeneration(BaseModel):
     admitted_at: AwareDatetime
     expires_at: AwareDatetime
     generation_evidence: EvidenceReference
+    scope: ProfiledPopulationScope = LIVE_REALIZATION_SCOPE
     records: tuple[CmlAnchoredHostTrustRecord, ...]
 
     @model_validator(mode="after")
     def exact_trust_generation(self) -> CmlAnchoredHostTrustGeneration:
         _validate_times(self.admitted_at, self.expires_at)
-        _validate_exact_four(self.records)
+        _validate_scope(self.records, self.scope)
         for record in self.records:
             if (
                 record.environment is not self.environment
@@ -305,8 +333,9 @@ class StagingRealizedDevice(BaseModel):
     """One exact STAGING binding with readiness and trust evidence references."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     device_identity: NetBoxDeviceIdentity
-    logical_name: ProfiledDeviceName
+    logical_name: ProfiledLogicalName
     operational_role: OperationalRole
     automation_profile_id: AutomationProfileID
     cml_realization_profile_id: CmlRealizationProfileID
@@ -317,13 +346,23 @@ class StagingRealizedDevice(BaseModel):
 
     @model_validator(mode="after")
     def exact_staging_binding(self) -> StagingRealizedDevice:
+        member = self.declaration.member(self.logical_name)
         if (
-            self.operational_role
-            is not _expected_member(self.logical_name).operational_role
+            self.device_identity,
+            self.automation_profile_id,
+            self.cml_realization_profile_id,
+        ) != (
+            member.device_identity,
+            member.automation_profile_id,
+            member.cml_realization_profile_id,
         ):
-            raise ValueError("staging device role does not match the Git catalog")
+            raise ValueError("realized device does not match the Git profile catalog")
+        if (
+            hasattr(self, "operational_role")
+            and self.operational_role is not member.operational_role
+        ):
+            raise ValueError("realized device role does not match the Git catalog")
         _validate_profile_pairing(
-            logical_name=self.logical_name,
             automation_profile_id=self.automation_profile_id,
             cml_realization_profile_id=self.cml_realization_profile_id,
         )
@@ -352,12 +391,13 @@ class StagingRealizationContext(BaseModel):
     admitted_at: AwareDatetime
     expires_at: AwareDatetime
     topology_evidence: EvidenceReference
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE
     devices: tuple[StagingRealizedDevice, ...]
 
     @model_validator(mode="after")
     def exact_staging_context(self) -> StagingRealizationContext:
         _validate_times(self.admitted_at, self.expires_at)
-        _validate_exact_four(self.devices)
+        _validate_scope(self.devices, self.scope)
         if self.cml_lab_title != f"NCDP Staging {self.staging_run_id}":
             raise ValueError("staging lab title is not bound to its run identity")
         if self.lifecycle_state is RealizationLifecycleState.READY and any(

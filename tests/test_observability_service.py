@@ -73,8 +73,10 @@ class Inventory:
                 port=port,
             )
 
-        return SimpleNamespace(
-            devices=(
+        from profiled_population_fixtures import typed_population_from_subjects
+
+        return typed_population_from_subjects(
+            (
                 device(
                     "netbox:dcim.device:1",
                     "core-02",
@@ -1277,3 +1279,34 @@ def test_reconciler_uses_no_openbao_ssh_or_configuration_collection() -> None:
         assert forbidden not in lowered
     assert "NetBoxProfileInventoryProvider" in source
     assert "CmlRealizationAuthority" in source
+
+
+def test_isolated_runtime_target_fixture_uses_resolved_scope(tmp_path, monkeypatch):
+    import sys
+
+    from network_change_delivery import observability_targets
+    from network_change_delivery.profile_inventory import OBSERVABILITY_SCOPE
+
+    script = (
+        Path(__file__).parents[1] / "scripts/observability/verify_runtime.sh"
+    ).read_text()
+    marker = "quality_python -c '\nimport os\nimport sys\n"
+    code = "import os\nimport sys\n" + script.split(marker, 1)[1].split("\n'", 1)[0]
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.setenv("NCDP_TEST_CISCO_IP", "192.0.2.100")
+    monkeypatch.setenv("NCDP_TEST_JUNOS_IP", "192.0.2.101")
+    monkeypatch.setenv("NCDP_TEST_STATE_ROOT", str(tmp_path))
+    publications = []
+    monkeypatch.setattr(
+        observability_targets,
+        "publish_generation",
+        lambda root, **values: publications.append((root, values)),
+    )
+    exec(compile(code, "isolated-observability-target-fixture", "exec"), {})
+    assert len(publications) == 1
+    root, values = publications[0]
+    assert root == tmp_path
+    assert tuple(t.inventory_object_id for t in values["targets"]) == (
+        OBSERVABILITY_SCOPE.identities
+    )
+    assert tuple(t.port for t in values["targets"]) == (22, 830, 22, 22)

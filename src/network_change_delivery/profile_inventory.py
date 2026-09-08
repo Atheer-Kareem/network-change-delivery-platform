@@ -8,9 +8,10 @@ run-scoped realization authority. Inventory membership alone grants no writes.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
+import json
 from collections.abc import Mapping
-from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Literal
 
@@ -174,21 +175,20 @@ def admit_profile(platform_slug: str, device_type_slug: str) -> ProfileAdmission
     return admission
 
 
-class ProfiledDeviceName(StrEnum):
-    """Exact stable logical names in the Git-approved profiled population."""
+ProfiledLogicalName = Annotated[
+    str,
+    StringConstraints(
+        min_length=1, max_length=100, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    ),
+]
 
-    CORE_02 = "core-02"
-    EDGE_JUNOS_01 = "edge-junos-01"
-    TRANSIT_IOS_01 = "transit-ios-01"
-    ACCESS_SW_01 = "access-sw-01"
 
-
-class _ProfiledPopulationMember(BaseModel):
+class ProfiledPopulationMember(BaseModel):
     """One exact Git-admitted logical identity and NetBox subject binding."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     device_identity: str = Field(pattern=r"^netbox:dcim\.device:[1-9][0-9]*$")
-    logical_name: ProfiledDeviceName
+    logical_name: ProfiledLogicalName
     operational_role: OperationalRole
     platform_slug: Slug
     device_type_slug: Slug
@@ -197,7 +197,7 @@ class _ProfiledPopulationMember(BaseModel):
     cml_realization_profile_id: CmlRealizationProfileID
 
     @model_validator(mode="after")
-    def exact_profile_admission(self) -> _ProfiledPopulationMember:
+    def exact_profile_admission(self) -> ProfiledPopulationMember:
         admission = admit_profile(self.platform_slug, self.device_type_slug)
         if (
             PLATFORM_NETWORK_OS[self.platform_slug] is not self.network_os
@@ -209,10 +209,10 @@ class _ProfiledPopulationMember(BaseModel):
         return self
 
 
-PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
-    _ProfiledPopulationMember(
+PROFILED_POPULATION_CATALOG: tuple[ProfiledPopulationMember, ...] = (
+    ProfiledPopulationMember(
         device_identity="netbox:dcim.device:1",
-        logical_name=ProfiledDeviceName.CORE_02,
+        logical_name="core-02",
         operational_role=OperationalRole.CORE,
         platform_slug="cisco-ios-xe",
         device_type_slug="c8000v",
@@ -220,9 +220,9 @@ PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
         automation_profile_id=AutomationProfileID.CAT8000V_IOSXE,
         cml_realization_profile_id=CmlRealizationProfileID.CAT8000V_17_18_02,
     ),
-    _ProfiledPopulationMember(
+    ProfiledPopulationMember(
         device_identity="netbox:dcim.device:2",
-        logical_name=ProfiledDeviceName.EDGE_JUNOS_01,
+        logical_name="edge-junos-01",
         operational_role=OperationalRole.EDGE,
         platform_slug="juniper-junos",
         device_type_slug="vjunos-router-lab",
@@ -230,9 +230,9 @@ PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
         automation_profile_id=AutomationProfileID.VJUNOS_ROUTER,
         cml_realization_profile_id=(CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15),
     ),
-    _ProfiledPopulationMember(
+    ProfiledPopulationMember(
         device_identity="netbox:dcim.device:8",
-        logical_name=ProfiledDeviceName.TRANSIT_IOS_01,
+        logical_name="transit-ios-01",
         operational_role=OperationalRole.TRANSIT,
         platform_slug="cisco-ios",
         device_type_slug="iosv-159-3-m12",
@@ -240,9 +240,9 @@ PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
         automation_profile_id=AutomationProfileID.IOSV_159_3_M12,
         cml_realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
     ),
-    _ProfiledPopulationMember(
+    ProfiledPopulationMember(
         device_identity="netbox:dcim.device:9",
-        logical_name=ProfiledDeviceName.ACCESS_SW_01,
+        logical_name="access-sw-01",
         operational_role=OperationalRole.ACCESS,
         platform_slug="cisco-ios",
         device_type_slug="iosvl2-2020",
@@ -252,31 +252,140 @@ PROFILED_POPULATION_CATALOG: tuple[_ProfiledPopulationMember, ...] = (
     ),
 )
 
-PROFILED_POPULATION_BY_NAME: Mapping[ProfiledDeviceName, _ProfiledPopulationMember] = (
-    MappingProxyType(
-        {member.logical_name: member for member in PROFILED_POPULATION_CATALOG}
-    )
-)
 
-if len(PROFILED_POPULATION_BY_NAME) != 4:
-    raise RuntimeError("profiled population catalog must contain exactly four names")
+class ProfiledPopulationDeclaration(BaseModel):
+    """Ordered Git-owned membership; profile reuse does not grant operations."""
 
-PROFILED_POPULATION_IDENTITIES = tuple(
-    member.device_identity for member in PROFILED_POPULATION_CATALOG
-)
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    members: tuple[ProfiledPopulationMember, ...] = Field(min_length=1)
 
-if len(PROFILED_POPULATION_IDENTITIES) != len(set(PROFILED_POPULATION_IDENTITIES)):
-    raise RuntimeError("profiled population catalog must contain unique identities")
+    @model_validator(mode="after")
+    def unique_members(self) -> ProfiledPopulationDeclaration:
+        for values in (self.identities, tuple(m.logical_name for m in self.members)):
+            if len(values) != len(set(values)):
+                raise ValueError("profiled population declaration contains duplicates")
+        return self
 
+    @property
+    def identities(self) -> tuple[str, ...]:
+        return tuple(m.device_identity for m in self.members)
 
-def _expected_profiled_member(logical_name: str) -> _ProfiledPopulationMember:
-    try:
-        admitted_name = ProfiledDeviceName(logical_name)
-    except ValueError:
+    def member(self, name: str) -> ProfiledPopulationMember:
+        for member in self.members:
+            if member.logical_name == name:
+                return member
         raise InventoryError(
             "NetBox profile target name is not in the Git-owned population"
-        ) from None
-    return PROFILED_POPULATION_BY_NAME[admitted_name]
+        )
+
+
+PROFILED_MANAGED_POPULATION = ProfiledPopulationDeclaration(
+    members=PROFILED_POPULATION_CATALOG
+)
+PROFILED_POPULATION_BY_NAME = MappingProxyType(
+    {m.logical_name: m for m in PROFILED_POPULATION_CATALOG}
+)
+PROFILED_POPULATION_IDENTITIES = PROFILED_MANAGED_POPULATION.identities
+
+
+class ProfiledPopulationScope(BaseModel):
+    """Exact reviewed ordered subjects, independently selected by a consumer."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    identity: Slug
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
+    members: tuple[ProfiledPopulationMember, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def admitted_members(self) -> ProfiledPopulationScope:
+        ProfiledPopulationDeclaration(members=self.members)
+        for member in self.members:
+            if member != self.declaration.member(member.logical_name):
+                raise ValueError("scope member differs from Git declaration")
+        selected = set(self.identities)
+        if self.members != tuple(
+            m for m in self.declaration.members if m.device_identity in selected
+        ):
+            raise ValueError("scope order differs from Git declaration")
+        return self
+
+    @property
+    def identities(self) -> tuple[str, ...]:
+        return tuple(m.device_identity for m in self.members)
+
+    @property
+    def digest(self) -> str:
+        content = json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode()
+        return "sha256:" + hashlib.sha256(content).hexdigest()
+
+    def require_bindings(self, devices) -> None:
+        if tuple(d.device_identity for d in devices) != self.identities:
+            raise ValueError("consumer membership differs from its declared scope")
+        for device, member in zip(devices, self.members, strict=True):
+            if any(
+                getattr(device, name) != getattr(member, name)
+                for name in (
+                    "logical_name",
+                    "automation_profile_id",
+                    "cml_realization_profile_id",
+                )
+            ):
+                raise ValueError("consumer profile binding differs from declared scope")
+
+
+def population_scope(
+    identity: str,
+    identities: tuple[str, ...],
+    *,
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION,
+) -> ProfiledPopulationScope:
+    if (
+        not identities
+        or len(identities) != len(set(identities))
+        or not set(identities) <= set(declaration.identities)
+    ):
+        raise ValueError("scope identities are missing, duplicate or unknown")
+    return ProfiledPopulationScope(
+        identity=identity,
+        declaration=declaration,
+        members=tuple(
+            m for m in declaration.members if m.device_identity in identities
+        ),
+    )
+
+
+# These are reviewed consumer selections, not automatic whole-population discovery.
+# Trust derives from LIVE realization; passive services deliberately reuse its subjects.
+LIVE_REALIZATION_SCOPE = population_scope(
+    "persistent-live",
+    (
+        "netbox:dcim.device:1",
+        "netbox:dcim.device:2",
+        "netbox:dcim.device:8",
+        "netbox:dcim.device:9",
+    ),
+)
+STAGING_REALIZATION_SCOPE = ProfiledPopulationScope(
+    identity="disposable-staging", members=LIVE_REALIZATION_SCOPE.members
+)
+OXIDIZED_COLLECTION_SCOPE = ProfiledPopulationScope(
+    identity="oxidized-collection", members=LIVE_REALIZATION_SCOPE.members
+)
+OBSERVABILITY_SCOPE = ProfiledPopulationScope(
+    identity="management-observability", members=LIVE_REALIZATION_SCOPE.members
+)
+
+
+def _expected_profiled_member(
+    logical_name: str,
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION,
+) -> ProfiledPopulationMember:
+    return declaration.member(logical_name)
 
 
 class ProfileReadOnlyTarget(BaseModel):
@@ -397,9 +506,10 @@ class ProfiledInventoryDevice(BaseModel):
 
 def _admit_profiled_device(
     device: ProfiledInventoryDevice,
-) -> _ProfiledPopulationMember:
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION,
+) -> ProfiledPopulationMember:
     """Compare resolved NetBox facts with the one Git-owned name binding."""
-    member = _expected_profiled_member(device.logical_name)
+    member = _expected_profiled_member(device.logical_name, declaration)
     if (
         device.device_identity != member.device_identity
         or device.logical_name != member.logical_name
@@ -423,9 +533,10 @@ def admit_profiled_subject(
     platform_slug: str,
     network_os: NetworkOS,
     automation_profile_id: AutomationProfileID,
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION,
 ) -> None:
     """Fail closed unless one target is the exact admitted profiled subject."""
-    member = _expected_profiled_member(logical_name)
+    member = _expected_profiled_member(logical_name, declaration)
     if (
         device_identity != member.device_identity
         or platform_slug != member.platform_slug
@@ -436,28 +547,48 @@ def admit_profiled_subject(
 
 
 class ProfiledInventoryPopulation(BaseModel):
-    """Immutable deterministic resolution of the exact four-member population."""
+    """Exact deterministic NetBox resolution of a reviewed Git declaration."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["1"] = "1"
     population_tag: Literal["ncdp-profiled-inventory"] = PROFILED_INVENTORY_TAG
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     devices: tuple[ProfiledInventoryDevice, ...]
 
     @model_validator(mode="after")
     def exact_git_approved_population(self) -> ProfiledInventoryPopulation:
-        expected_names = tuple(
-            member.logical_name for member in PROFILED_POPULATION_CATALOG
-        )
-        names = tuple(device.logical_name for device in self.devices)
-        identities = tuple(device.device_identity for device in self.devices)
-        if names != expected_names:
-            raise ValueError("profiled inventory population names are not exact")
-        if identities != PROFILED_POPULATION_IDENTITIES:
+        if (
+            tuple(d.device_identity for d in self.devices)
+            != self.declaration.identities
+        ):
             raise ValueError("profiled inventory population identities are not exact")
-        if len(identities) != len(set(identities)):
-            raise ValueError("profiled inventory population identities are duplicated")
         for device in self.devices:
-            _admit_profiled_device(device)
+            _admit_profiled_device(device, self.declaration)
+        return self
+
+    def project(self, scope: ProfiledPopulationScope) -> ProfiledInventoryScope:
+        # A larger managed declaration may serve an existing bounded scope.
+        for member in scope.members:
+            if self.declaration.member(member.logical_name) != member:
+                raise ValueError("scope differs from resolved managed declaration")
+        by_id = {d.device_identity: d for d in self.devices}
+        return ProfiledInventoryScope(
+            scope=scope, devices=tuple(by_id[m.device_identity] for m in scope.members)
+        )
+
+
+class ProfiledInventoryScope(BaseModel):
+    """Resolved subset; it cannot stand in for full managed-population admission."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    scope: ProfiledPopulationScope
+    devices: tuple[ProfiledInventoryDevice, ...]
+
+    @model_validator(mode="after")
+    def exact_scope(self) -> ProfiledInventoryScope:
+        self.scope.require_bindings(self.devices)
+        for device in self.devices:
+            _admit_profiled_device(device, self.scope.declaration)
         return self
 
 
@@ -529,12 +660,14 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
         token: str | None = None,
         *,
         transport: httpx.BaseTransport | None = None,
+        declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION,
     ) -> None:
         super().__init__(url, token, transport=transport)
+        self.declaration = declaration
 
     def resolve(self, target: str) -> ProfiledInventoryDevice:
         """Resolve one exact Git-owned member from independently factual metadata."""
-        _expected_profiled_member(target)
+        _expected_profiled_member(target, self.declaration)
         payload = self._get(
             self._DEVICE_PATH,
             params={
@@ -550,7 +683,7 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
         if len(exact) != 1 or payload.get("count") != 1:
             raise InventoryError("NetBox profile target is ambiguous")
         resolved = self._resolve_device_payload(exact[0])
-        _admit_profiled_device(resolved)
+        _admit_profiled_device(resolved, self.declaration)
         return resolved
 
     def resolve_interface(
@@ -559,7 +692,7 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
         interface_name: str,
     ) -> StableInterfaceIdentity:
         """Resolve one exact stable interface identity for an admitted device."""
-        _admit_profiled_device(device)
+        _admit_profiled_device(device, self.declaration)
         requested = _required_string(interface_name, "interface name")
         device_id = int(device.device_identity.rsplit(":", 1)[1])
         payloads = self._get_all(
@@ -627,18 +760,17 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
         )
 
     def resolve_profiled_population(self) -> ProfiledInventoryPopulation:
-        """Resolve only the exact four Git-approved profiled inventory members."""
+        """Resolve only the exact Git-declared profiled inventory members."""
         payloads = self._get_all(
             self._DEVICE_PATH,
             params={
                 "tag": PROFILED_INVENTORY_TAG,
-                "status": "active",
                 "ordering": "id",
             },
         )
-        if len(payloads) != len(PROFILED_POPULATION_CATALOG):
+        if len(payloads) != len(self.declaration.members):
             raise InventoryError(
-                "NetBox profiled population must contain exactly four devices"
+                "NetBox profiled population must match the declared managed membership"
             )
         by_name: dict[str, dict[str, object]] = {}
         identities: set[int] = set()
@@ -655,15 +787,16 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
                 )
             identities.add(device_id)
             by_name[name] = device
-        expected_names = {member.logical_name for member in PROFILED_POPULATION_CATALOG}
+        expected_names = {member.logical_name for member in self.declaration.members}
         if set(by_name) != expected_names:
             raise InventoryError("NetBox profiled population names are not exact")
         try:
             return ProfiledInventoryPopulation(
+                declaration=self.declaration,
                 devices=tuple(
                     self._resolve_device_payload(by_name[member.logical_name])
-                    for member in PROFILED_POPULATION_CATALOG
-                )
+                    for member in self.declaration.members
+                ),
             )
         except ValidationError:
             raise InventoryError(
@@ -849,3 +982,34 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
             raise InventoryError(
                 "NetBox profile inventory contract is inconsistent"
             ) from None
+
+
+def oxidized_scope_nodes(
+    scope: ProfiledPopulationScope = OXIDIZED_COLLECTION_SCOPE,
+) -> tuple[str, ...]:
+    """Canonical stable node identities derived from reviewed scope membership."""
+    return tuple(
+        "netbox-device-" + m.device_identity.rsplit(":", 1)[1] for m in scope.members
+    )
+
+
+ROUTED_SERVICE_SCOPE = population_scope(
+    "routed-underlay-service",
+    ("netbox:dcim.device:1", "netbox:dcim.device:2", "netbox:dcim.device:8"),
+)
+OSPF_SERVICE_SCOPE = ProfiledPopulationScope(
+    identity="ospf-service", members=ROUTED_SERVICE_SCOPE.members
+)
+VLAN_SERVICE_SCOPE = population_scope(
+    "vlan-service", ("netbox:dcim.device:1", "netbox:dcim.device:9")
+)
+ACL_SERVICE_SCOPE = population_scope("acl-service", ("netbox:dcim.device:1",))
+REFERENCE_ASSURANCE_SCOPE = population_scope(
+    "reference-assurance",
+    (
+        "netbox:dcim.device:1",
+        "netbox:dcim.device:2",
+        "netbox:dcim.device:8",
+        "netbox:dcim.device:9",
+    ),
+)

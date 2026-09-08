@@ -57,7 +57,6 @@ def fixture_payloads() -> dict[str, list[dict[str, object]]]:
                 (1, "core-02", 1),
                 (2, "edge-junos-01", 2),
                 (8, "transit-ios-01", 13),
-                (9, "access-sw-01", 15),
             )
         ],
     }

@@ -88,15 +88,15 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | ACCEPTED |
 | CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | ACCEPTED |
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | ACCEPTED |
-| CAP-POPULATION-SCOPES | Population-derived admission and realization | USER APPROVED |
+| CAP-POPULATION-SCOPES | Population-derived admission and realization | IN PROGRESS |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | USER APPROVED |
 | CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | USER APPROVED |
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
 CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE
-and CAP-CONFIG-CHRONOLOGY are accepted. Other approved capabilities await their
-own tasks; no next capability is started by this acceptance closeout.
+and CAP-CONFIG-CHRONOLOGY are accepted. CAP-POPULATION-SCOPES is in
+implementation; other approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -315,7 +315,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-POPULATION-SCOPES — Population-derived admission and realization
 
-- **State:** USER APPROVED.
+- **State:** IN PROGRESS.
 - **Target/value:** remove unnecessary permanent-cardinality assumptions and
   duplicated instance knowledge. Supported-device additions normally require
   onboarding/data/trust/realization changes, not control-plane redesign.
@@ -330,6 +330,14 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   for terminology. No arbitrary-device admission or dynamic plugin system.
 - **Origin/population effect:** corrects current architecture coupling; this is
   the primary population-generalization capability.
+- **Implementation checkpoint:** public ordered population declaration and typed
+  consumer scopes; exact NetBox resolution; scoped realization/trust, Oxidized,
+  observability and service projections; derived staging topology/ownership and
+  profile-selected IOSv recycle behavior. Synthetic 1/2/4/5-member and repeated-
+  profile coverage is recorded in the [contract and audit](architecture/population-scopes.md).
+  Current staging evidence is v3; the historical v2 reader remains intact.
+  No real member, write admission or pipeline graph changed. Implementation
+  validation does not constitute user acceptance; state remains IN PROGRESS.
 
 ### CAP-INTENT-DELIVERY — Intent-selected generic delivery
 

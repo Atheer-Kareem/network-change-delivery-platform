@@ -1,9 +1,10 @@
-"""Bounded operator reconciliation for the persistent four-device CML lab."""
+"""Current scoped LIVE admission and retained historical lab reconciliation."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import os
 import re
 import socket
@@ -13,10 +14,18 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from network_change_delivery.architecture_contracts import (
+    CML_REALIZATION_PROFILE_CATALOG,
     AutomationProfileID,
     CmlRealizationProfileID,
+    get_automation_profile,
+)
+from network_change_delivery.profile_inventory import (
+    LIVE_REALIZATION_SCOPE,
+    ProfiledLogicalName,
+    ProfiledPopulationScope,
 )
 
 LIVE_LAB_ID = "09605569-0468-4fc4-8684-beb5a1342b9c"
@@ -108,20 +117,147 @@ class ProfiledLiveCmlResult:
     all_link_ids: tuple[str, ...]
 
 
-@dataclass(frozen=True)
-class ProfiledLiveAnchor:
-    """Secret-free CML-controlled identity facts admitted before key observation."""
+class ProfiledLiveAnchor(BaseModel):
+    """Reviewed realization data; no observed CML fact can add a member."""
 
-    logical_name: str
-    device_id: int
-    cml_node_id: str
-    cml_label: str
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    logical_name: ProfiledLogicalName
+    device_id: int = Field(gt=0)
+    cml_node_id: str = Field(pattern=r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
+    cml_label: str = Field(min_length=1, max_length=100)
     node_definition: str
     image_definition: str
-    management_address: str
-    management_port: int
+    management_address: str = Field(pattern=r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$")
+    management_port: int = Field(ge=1, le=65535)
     automation_profile_id: AutomationProfileID
     cml_realization_profile_id: CmlRealizationProfileID
+
+    @field_validator("management_address")
+    @classmethod
+    def numeric_address(cls, value: str) -> str:
+        return str(ipaddress.IPv4Address(value))
+
+
+class ProfiledLiveRealizationCatalog(BaseModel):
+    """Explicit LIVE lab data bound to an exact Git-admitted realization scope."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    scope: ProfiledPopulationScope = LIVE_REALIZATION_SCOPE
+    anchors: tuple[ProfiledLiveAnchor, ...] = Field(min_length=1)
+    data_links: tuple[tuple[ProfiledLogicalName, ProfiledLogicalName], ...]
+    baseline_link_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def exact_scope(self):
+        if (
+            tuple(f"netbox:dcim.device:{a.device_id}" for a in self.anchors)
+            != self.scope.identities
+        ):
+            raise ValueError("LIVE realization catalog scope rejected")
+        if len({a.cml_node_id for a in self.anchors}) != len(self.anchors) or len(
+            {a.management_address for a in self.anchors}
+        ) != len(self.anchors):
+            raise ValueError("LIVE realization catalog duplicate anchor rejected")
+        if {a.cml_node_id for a in self.anchors} & {
+            EXTERNAL_CONNECTOR_ID,
+            MANAGEMENT_SWITCH_ID,
+        }:
+            raise ValueError("LIVE device cannot reuse an infrastructure node")
+        for anchor, member in zip(self.anchors, self.scope.members, strict=True):
+            profile = CML_REALIZATION_PROFILE_CATALOG[member.cml_realization_profile_id]
+            if (
+                anchor.logical_name != member.logical_name
+                or anchor.automation_profile_id != member.automation_profile_id
+                or anchor.cml_realization_profile_id
+                != member.cml_realization_profile_id
+                or anchor.node_definition != profile.node_definition
+                or anchor.image_definition != profile.image_definition
+                or anchor.management_port
+                not in {
+                    s.port
+                    for s in get_automation_profile(
+                        member.automation_profile_id
+                    ).readiness_services
+                }
+            ):
+                raise ValueError("LIVE realization catalog profile rejected")
+        names = {m.logical_name for m in self.scope.members}
+        if len(set(self.data_links)) != len(self.data_links) or any(
+            a not in names or b not in names or a == b for a, b in self.data_links
+        ):
+            raise ValueError("LIVE realization topology rejected")
+        return self
+
+    def project(self, scope: ProfiledPopulationScope):
+        by_identity = {f"netbox:dcim.device:{a.device_id}": a for a in self.anchors}
+        for member in scope.members:
+            if member not in self.scope.members:
+                raise ValueError("LIVE realization scope projection rejected")
+        names = {m.logical_name for m in scope.members}
+        return ProfiledLiveRealizationCatalog(
+            scope=scope,
+            anchors=tuple(by_identity[i] for i in scope.identities),
+            data_links=tuple(
+                (a, b) for a, b in self.data_links if a in names and b in names
+            ),
+        )
+
+    @property
+    def expected_node_ids(self):
+        return frozenset(
+            (
+                EXTERNAL_CONNECTOR_ID,
+                MANAGEMENT_SWITCH_ID,
+                *(a.cml_node_id for a in self.anchors),
+            )
+        )
+
+    @property
+    def expected_link_count(self):
+        return 1 + len(self.anchors) + len(self.data_links)
+
+
+def _lab_anchor(member, node_id, label, address):
+    profile = CML_REALIZATION_PROFILE_CATALOG[member.cml_realization_profile_id]
+    return ProfiledLiveAnchor(
+        logical_name=member.logical_name,
+        device_id=int(member.device_identity.rsplit(":", 1)[1]),
+        cml_node_id=node_id,
+        cml_label=label,
+        management_address=address,
+        management_port=get_automation_profile(member.automation_profile_id)
+        .readiness_services[0]
+        .port,
+        node_definition=profile.node_definition,
+        image_definition=profile.image_definition,
+        automation_profile_id=member.automation_profile_id,
+        cml_realization_profile_id=member.cml_realization_profile_id,
+    )
+
+
+# Current lab realization data, deliberately separate from admission algorithms.
+CURRENT_LIVE_REALIZATION = ProfiledLiveRealizationCatalog(
+    anchors=tuple(
+        _lab_anchor(member, *facts)
+        for member, facts in zip(
+            LIVE_REALIZATION_SCOPE.members,
+            (
+                (CORE_NODE_ID, "cat8000v-0", "192.168.4.14"),
+                (JUNOS_NODE_ID, "vjunos-router-0", "192.168.4.20"),
+                (TRANSIT_NODE_ID, "transit-ios-01", "192.168.4.16"),
+                (ACCESS_NODE_ID, "access-sw-01", "192.168.4.17"),
+            ),
+            strict=True,
+        )
+    ),
+    baseline_link_ids=tuple(sorted(_BASE_LINK_IDS)),
+    data_links=(
+        ("core-02", "edge-junos-01"),
+        ("core-02", "transit-ios-01"),
+        ("edge-junos-01", "transit-ios-01"),
+        ("core-02", "access-sw-01"),
+    ),
+)
 
 
 def ios_scrypt_password_hash(password: str, salt: str) -> str:
@@ -626,114 +762,61 @@ class ProfiledLiveCmlOperator:
     def anchor_profiled_live(
         self,
         *,
-        transit_node_id: str,
-        access_node_id: str,
+        catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION,
     ) -> tuple[ProfiledLiveAnchor, ...]:
-        """Admit exact CML identity/configuration before network key observation."""
-        if transit_node_id != TRANSIT_NODE_ID or access_node_id != ACCESS_NODE_ID:
-            raise ProfiledLiveCmlError("profiled LIVE CML node identity rejected")
-        node_ids, link_ids = self._preflight_lab()
-        expected_ids = _BASE_NODE_IDS | {transit_node_id, access_node_id}
-        if set(node_ids) != expected_ids or len(link_ids) != 9:
+        """Compare observed realization with the caller's reviewed exact catalog."""
+        lab = self._get(f"/api/v0/labs/{LIVE_LAB_ID}")
+        if (
+            not isinstance(lab, dict)
+            or (lab.get("lab_title") or lab.get("title")) != LIVE_LAB_TITLE
+            or lab.get("state") != "STARTED"
+        ):
+            raise ProfiledLiveCmlError("persistent CML lab identity/state rejected")
+        nodes = self._get(f"/api/v0/labs/{LIVE_LAB_ID}/nodes")
+        links = self._get(f"/api/v0/labs/{LIVE_LAB_ID}/links")
+        if (
+            not isinstance(nodes, list)
+            or not isinstance(links, list)
+            or len(nodes) != len(catalog.expected_node_ids)
+            or set(nodes) != catalog.expected_node_ids
+            or len(links) != catalog.expected_link_count
+            or len(set(links)) != len(links)
+            or not set(catalog.baseline_link_ids).issubset(links)
+        ):
             raise ProfiledLiveCmlError("persistent CML profiled population rejected")
-        specifications = (
-            (
-                "core-02",
-                1,
-                CORE_NODE_ID,
-                "cat8000v-0",
-                "cat8000v",
-                "cat8000v-17-18-02",
-                "192.168.4.14",
-                22,
-                AutomationProfileID.CAT8000V_IOSXE,
-                CmlRealizationProfileID.CAT8000V_17_18_02,
-            ),
-            (
-                "edge-junos-01",
-                2,
-                JUNOS_NODE_ID,
-                "vjunos-router-0",
-                "vjunos-router",
-                "vjunos-router-23-2r1-15",
-                "192.168.4.20",
-                830,
-                AutomationProfileID.VJUNOS_ROUTER,
-                CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15,
-            ),
-            (
-                "transit-ios-01",
-                8,
-                transit_node_id,
-                "transit-ios-01",
-                "iosv",
-                "iosv-159-3-m12",
-                "192.168.4.16",
-                22,
-                AutomationProfileID.IOSV_159_3_M12,
-                CmlRealizationProfileID.IOSV_159_3_M12,
-            ),
-            (
-                "access-sw-01",
-                9,
-                access_node_id,
-                "access-sw-01",
-                "iosvl2",
-                "iosvl2-2020",
-                "192.168.4.17",
-                22,
-                AutomationProfileID.IOSVL2_2020,
-                CmlRealizationProfileID.IOSVL2_2020,
-            ),
-        )
-        anchors: list[ProfiledLiveAnchor] = []
-        for (
-            logical_name,
-            device_id,
-            node_id,
-            label,
-            definition,
-            image,
-            address,
-            port,
-            automation_profile,
-            realization_profile,
-        ) in specifications:
+        for node_id, label, definition in (
+            (EXTERNAL_CONNECTOR_ID, "ext-conn-0", "external_connector"),
+            (MANAGEMENT_SWITCH_ID, "unmanaged-switch-0", "unmanaged_switch"),
+        ):
             node = self._node(node_id)
-            configuration = self._configuration(node_id)
-            actual_image = node.get("image_definition") or node.get(
-                "image_definition_id"
-            )
+            if node.get("label") != label or node.get("node_definition") != definition:
+                raise ProfiledLiveCmlError("persistent CML infrastructure rejected")
+        for anchor in catalog.anchors:
+            node = self._node(anchor.cml_node_id)
+            configuration = self._configuration(anchor.cml_node_id)
+            image = node.get("image_definition") or node.get("image_definition_id")
             if (
-                node.get("label") != label
-                or node.get("node_definition") != definition
-                or actual_image != image
+                node.get("label") != anchor.cml_label
+                or node.get("node_definition") != anchor.node_definition
+                or image != anchor.image_definition
                 or node.get("state") != "BOOTED"
-                or logical_name not in configuration
-                or address not in configuration
+                or anchor.logical_name not in configuration
+                or anchor.management_address not in configuration
             ):
                 raise ProfiledLiveCmlError("profiled LIVE CML anchor rejected")
-            if device_id in {8, 9} and (
+            if anchor.automation_profile_id in {
+                AutomationProfileID.IOSV_159_3_M12,
+                AutomationProfileID.IOSVL2_2020,
+            } and (
                 " privilege 15 secret 9 $9$" not in configuration
                 or " privilege 15 secret 0 " in configuration
             ):
                 raise ProfiledLiveCmlError("profiled LIVE hashed bootstrap rejected")
-            if device_id == 9 and " no switchport" not in configuration:
+            if (
+                anchor.automation_profile_id == AutomationProfileID.IOSVL2_2020
+                and " no switchport" not in configuration
+            ):
                 raise ProfiledLiveCmlError(
                     "profiled LIVE routed management anchor rejected"
                 )
-            anchors.append(
-                ProfiledLiveAnchor(
-                    logical_name=logical_name,
-                    device_id=device_id,
-                    cml_node_id=node_id,
-                    cml_label=label,
-                    node_definition=definition,
-                    image_definition=image,
-                    management_address=address,
-                    management_port=port,
-                    automation_profile_id=automation_profile,
-                    cml_realization_profile_id=realization_profile,
-                )
-            )
-        return tuple(anchors)
+        return catalog.anchors

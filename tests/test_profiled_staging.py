@@ -15,6 +15,7 @@ from network_change_delivery.architecture_contracts import (
 from network_change_delivery.models import InterfaceState
 from network_change_delivery.profiled_realization import EvidenceReference
 from network_change_delivery.profiled_staging import (
+    CURRENT_STAGING_TOPOLOGY,
     PROFILED_STAGING_DEVICE_NAMES,
     PROFILED_STAGING_LINK_COUNT,
     PROFILED_STAGING_NODE_COUNT,
@@ -22,11 +23,12 @@ from network_change_delivery.profiled_staging import (
     PROFILED_STAGING_TERRAFORM_ADDRESSES,
     ProfiledStagingAmbiguousError,
     ProfiledStagingError,
-    ProfiledStagingEvidence,
+    ProfiledStagingEvidenceV2,
     ProfiledStagingLifecycle,
     ProfiledStagingOutcome,
     ProfiledStagingReadinessEvidence,
     ProfiledStagingReadinessOutcome,
+    ProfiledStagingRecycleEvidence,
     load_recovery_inputs,
     profiled_staging_topology,
     terraform_profiled_device_variables,
@@ -80,7 +82,7 @@ def test_terraform_graph_is_profiled_management_only_and_exact() -> None:
     )
     assert source.count('resource "cml2_lab"') == 1
     assert source.count('resource "cml2_node"') == 3
-    assert source.count('resource "cml2_link"') == 9
+    assert source.count('resource "cml2_link"') == 3
     assert source.count('resource "cml2_lifecycle"') == 1
     assert "wait   = true" in source
     assert (
@@ -180,25 +182,25 @@ def test_iosv_bootstrap_disables_dynamic_management_before_static_binding() -> N
 def test_profiled_staging_device_positions_are_unique() -> None:
     source = (TERRAFORM / "topology.tf").read_text(encoding="utf-8")
 
-    matches = re.findall(
-        r"^\s*(core_02|edge_junos_01|transit_ios_01|access_sw_01)"
-        r"\s*=\s*\{\s*x\s*=\s*(-?\d+),\s*y\s*=\s*(-?\d+)\s*\}",
-        source,
-        re.MULTILINE,
-    )
+    from test_profiled_realization import inventory_devices
 
-    positions = {name: (int(x), int(y)) for name, x, y in matches}
-
-    assert positions == {
-        "core_02": (100, -400),
-        "edge_junos_01": (400, -200),
-        "transit_ios_01": (150, 100),
-        "access_sw_01": (450, 100),
+    devices = inventory_devices()
+    credentials = {
+        d.logical_name: DeviceCredentials(username="operator", password="unused")
+        for d in devices
     }
-
-    assert len(set(positions.values())) == 4
-    assert "x    = local.profiled_staging_positions[each.key].x" in source
-    assert "y    = local.profiled_staging_positions[each.key].y" in source
+    verifiers = {
+        d.logical_name: "$6$salt$hash"
+        if d.automation_profile_id is AutomationProfileID.VJUNOS_ROUTER
+        else "$9$salt$hash"
+        for d in devices
+    }
+    values = terraform_profiled_device_variables(devices, credentials, verifiers)
+    positions = tuple((v["layout_x"], v["layout_y"]) for v in values.values())
+    assert positions == ((100, -400), (400, -400), (100, 100), (400, 100))
+    assert len(set(positions)) == len(devices)
+    assert "var.devices[each.key].layout_x" in source
+    assert "var.devices[each.key].layout_y" in source
 
 
 def test_vjunos_bootstrap_restores_accepted_first_boot_guard_only() -> None:
@@ -276,7 +278,7 @@ def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
         cml_node_state="BOOTED",
         first_booted_seconds=175,
     )
-    evidence = ProfiledStagingEvidence(
+    evidence = ProfiledStagingEvidenceV2(
         staging_run_id="run-001",
         orchestrator="local",
         lab_title="NCDP Staging run-001",
@@ -290,7 +292,7 @@ def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
     assert '"elapsed_seconds":180.0' in rendered
     assert '"first_booted_seconds":175.0' in rendered
     assert (
-        ProfiledStagingEvidence(
+        ProfiledStagingEvidenceV2(
             staging_run_id="run-extended",
             orchestrator="local",
             lab_title="NCDP Staging run-extended",
@@ -299,7 +301,7 @@ def test_profiled_staging_evidence_is_schema_v2_and_secret_free() -> None:
         == 300
     )
     with pytest.raises(ValueError):
-        ProfiledStagingEvidence(
+        ProfiledStagingEvidenceV2(
             staging_run_id="run-invalid",
             orchestrator="local",
             lab_title="NCDP Staging run-invalid",
@@ -338,7 +340,7 @@ def test_transit_recycle_evidence_is_exact_run_bound() -> None:
         digest="sha256:" + ("1" * 64),
     )
 
-    accepted = ProfiledStagingEvidence(
+    accepted = ProfiledStagingEvidenceV2(
         staging_run_id="run-001",
         orchestrator="local",
         lab_title="NCDP Staging run-001",
@@ -348,7 +350,7 @@ def test_transit_recycle_evidence_is_exact_run_bound() -> None:
     assert accepted.transit_recycle_evidence == good
 
     with pytest.raises(ValueError, match="identity rejected"):
-        ProfiledStagingEvidence(
+        ProfiledStagingEvidenceV2(
             staging_run_id="run-001",
             orchestrator="local",
             lab_title="NCDP Staging run-001",
@@ -360,7 +362,7 @@ def test_transit_recycle_evidence_is_exact_run_bound() -> None:
         )
 
     with pytest.raises(ValueError, match="outcome rejected"):
-        ProfiledStagingEvidence(
+        ProfiledStagingEvidenceV2(
             staging_run_id="run-001",
             orchestrator="local",
             lab_title="NCDP Staging run-001",
@@ -437,8 +439,7 @@ class Operations:
         self.exists = False
         self.readiness_deadline_seconds = 180
         self.readiness_evidence: tuple[ProfiledStagingReadinessEvidence, ...] = ()
-        self.transit_recycle_outcome = "not_attempted"
-        self.transit_recycle_evidence: EvidenceReference | None = None
+        self.recycles = ()
 
     @property
     def managed_resources_exist(self) -> bool:
@@ -458,11 +459,7 @@ class Operations:
             staging_context,
         )
 
-        self.transit_recycle_outcome = "succeeded"
-        self.transit_recycle_evidence = EvidenceReference(
-            identity="staging-transit-recycle:run-1:transit-ios-01",
-            digest="sha256:" + ("8" * 64),
-        )
+        self.recycles = (recycle_evidence("run-1"),)
 
         self.readiness_evidence = tuple(
             ProfiledStagingReadinessEvidence(
@@ -646,8 +643,8 @@ def test_successful_lifecycle_evidence_binds_context_topology_and_trust() -> Non
     assert evidence.trust_generation is not None
     assert evidence.create_outcome == "succeeded"
     assert evidence.start_outcome == "succeeded"
-    assert evidence.transit_recycle_outcome == "succeeded"
-    assert evidence.transit_recycle_evidence is not None
+    assert evidence.recycles[0].outcome == "succeeded"
+    assert evidence.recycles[0].evidence is not None
     assert evidence.read_only_outcome == "succeeded"
 
 
@@ -717,6 +714,7 @@ def test_recovery_inputs_are_private_exact_and_contain_only_verifiers(
         "staging_run_id": "run-001",
         "lifecycle_state": "DEFINED_ON_CORE",
         "devices": devices,
+        "data_links": CURRENT_STAGING_TOPOLOGY.terraform_links(),
     }
     write_recovery_inputs(path, payload)
     assert path.stat().st_mode & 0o777 == 0o600
@@ -859,3 +857,18 @@ def test_recovery_entry_point_is_exact_destroy_only() -> None:
     assert '"-destroy"' in source
     assert '"create"' not in source
     assert '"STARTED"' not in source
+
+
+def recycle_evidence(run_id, *, outcome="succeeded"):
+    return ProfiledStagingRecycleEvidence(
+        device_identity="netbox:dcim.device:8",
+        logical_name="transit-ios-01",
+        policy="iosv_first_boot_hold_60_stop_start",
+        outcome=outcome,
+        evidence=EvidenceReference(
+            identity=f"staging-profile-recycle:{run_id}:transit-ios-01",
+            digest="sha256:" + "8" * 64,
+        )
+        if outcome == "succeeded"
+        else None,
+    )

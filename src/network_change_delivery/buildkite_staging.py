@@ -13,6 +13,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from network_change_delivery.buildkite_identity import BuildkiteOIDCJWT
+from network_change_delivery.profile_inventory import STAGING_REALIZATION_SCOPE
 from network_change_delivery.secrets import (
     CredentialReference,
     DeviceCredentials,
@@ -24,7 +25,9 @@ from network_change_delivery.secrets import (
 
 OPENBAO_STAGING_AUDIENCE = "urn:ncdp:openbao:staging"
 OPENBAO_STAGING_MAX_LEASE_SECONDS = 300
-STAGING_DEVICE_IDS = frozenset({1, 2, 8, 9})
+STAGING_DEVICE_IDS = frozenset(
+    int(identity.rsplit(":", 1)[1]) for identity in STAGING_REALIZATION_SCOPE.identities
+)
 _REJECTED_STAGING_ENVIRONMENT = frozenset(
     {
         "NCDP_OPENBAO_ROLE_ID",

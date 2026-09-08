@@ -267,3 +267,38 @@ def test_reconciler_does_not_duplicate_fixed_docker_executable() -> None:
         Path(__file__).parents[1] / "src/network_change_delivery/oxidized_reconciler.py"
     ).read_text()
     assert "_docker(*arguments[1:])" in source
+
+
+def test_installed_wheel_uses_scoped_current_reconciliation_contract():
+    import inspect
+
+    from network_change_delivery import oxidized_reconciler, oxidized_source
+    from network_change_delivery.profile_inventory import (
+        OXIDIZED_COLLECTION_SCOPE,
+        oxidized_scope_nodes,
+    )
+
+    assert (
+        "--no-deps dist/network_change_delivery-*.whl"
+        in (
+            Path(__file__).parents[1] / "scripts/oxidized/update_service_runtime.sh"
+        ).read_text()
+    )
+    assert (
+        inspect.signature(oxidized_reconciler._wait_nodes).parameters["scope"].default
+        == OXIDIZED_COLLECTION_SCOPE
+    )
+    assert (
+        inspect.signature(oxidized_source.materialize_oxidized_source)
+        .parameters["scope"]
+        .default
+        == OXIDIZED_COLLECTION_SCOPE
+    )
+    assert oxidized_scope_nodes() == (
+        "netbox-device-1",
+        "netbox-device-2",
+        "netbox-device-8",
+        "netbox-device-9",
+    )
+    assert "NetBoxProfileInventoryProvider" in inspect.getsource(oxidized_reconciler)
+    assert "NetBoxInventoryProvider" not in inspect.getsource(oxidized_reconciler)

@@ -24,6 +24,7 @@ from network_change_delivery.audit import (
     Sha256,
     canonical_json_bytes,
 )
+from network_change_delivery.inventory import InventoryError
 from network_change_delivery.observability_private_paths import (
     ObservabilityPrivatePathError,
     ensure_private_tree,
@@ -31,8 +32,11 @@ from network_change_delivery.observability_private_paths import (
     validate_private_file,
 )
 from network_change_delivery.profile_inventory import (
-    PROFILED_POPULATION_IDENTITIES,
+    OBSERVABILITY_SCOPE,
+    PROFILED_MANAGED_POPULATION,
     NetBoxProfileInventoryProvider,
+    ProfiledPopulationDeclaration,
+    ProfiledPopulationScope,
     admit_profiled_subject,
 )
 
@@ -65,6 +69,7 @@ class ObservabilityTarget(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     inventory_object_id: NetBoxDeviceIdentity
     device_name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
     platform_slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -84,6 +89,7 @@ class ObservabilityTarget(BaseModel):
             raise ValueError("observability target address rejected") from None
         try:
             admit_profiled_subject(
+                declaration=self.declaration,
                 device_identity=self.inventory_object_id,
                 logical_name=self.device_name,
                 platform_slug=self.platform_slug,
@@ -131,6 +137,7 @@ class TargetGeneration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal["2"] = "2"
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE
     state: TargetGenerationState
     generated_at: datetime
     expires_at: datetime | None = None
@@ -155,7 +162,7 @@ class TargetGeneration(BaseModel):
                 or self.realization_lab_id is None
                 or self.realization_digest is None
                 or tuple(item.inventory_object_id for item in self.targets)
-                != PROFILED_POPULATION_IDENTITIES
+                != self.scope.identities
                 or self.failure_classification is not None
             ):
                 raise ValueError("active target generation rejected")
@@ -175,6 +182,20 @@ class TargetGeneration(BaseModel):
             )
         ):
             raise ValueError("inactive target generation rejected")
+        if active:
+            for target, member in zip(self.targets, self.scope.members, strict=True):
+                if (
+                    target.device_name,
+                    target.platform_slug,
+                    target.network_os,
+                    target.automation_profile_id,
+                ) != (
+                    member.logical_name,
+                    member.platform_slug,
+                    member.network_os,
+                    member.automation_profile_id,
+                ):
+                    raise ValueError("observability target differs from declared scope")
         if self.digest != self.calculated_digest():
             raise ValueError("target-generation digest rejected")
         return self
@@ -201,12 +222,8 @@ class ObservabilityReady(BaseModel):
         pattern=r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
     )
     realization_digest: Sha256
-    targets: tuple[
-        NetBoxDeviceIdentity,
-        NetBoxDeviceIdentity,
-        NetBoxDeviceIdentity,
-        NetBoxDeviceIdentity,
-    ]
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE
+    targets: tuple[NetBoxDeviceIdentity, ...] = Field(min_length=1)
     prometheus_container_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     blackbox_container_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
@@ -217,7 +234,7 @@ class ObservabilityReady(BaseModel):
             self.refreshed_at.tzinfo is None
             or self.refreshed_at.utcoffset() is None
             or self.expires_at <= self.refreshed_at
-            or self.targets != PROFILED_POPULATION_IDENTITIES
+            or self.targets != self.scope.identities
         ):
             raise ValueError("observability readiness rejected")
         return self
@@ -225,19 +242,18 @@ class ObservabilityReady(BaseModel):
 
 def targets_from_inventory(
     inventory: NetBoxProfileInventoryProvider,
-) -> tuple[
-    ObservabilityTarget,
-    ObservabilityTarget,
-    ObservabilityTarget,
-    ObservabilityTarget,
-]:
+    *,
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE,
+) -> tuple[ObservabilityTarget, ...]:
     """Project exact profiled LIVE management endpoints into reachability targets."""
-    population = inventory.resolve_profiled_population()
-    devices = population.devices
-    if (
-        tuple(item.inventory_object_id for item in devices)
-        != PROFILED_POPULATION_IDENTITIES
-    ):
+    try:
+        population = inventory.resolve_profiled_population()
+        devices = population.project(scope).devices
+    except (InventoryError, ValueError):
+        raise ObservabilityTargetError(
+            "observability inventory population rejected"
+        ) from None
+    if tuple(item.inventory_object_id for item in devices) != scope.identities:
         raise ObservabilityTargetError("observability inventory population rejected")
     targets: list[ObservabilityTarget] = []
     for device in devices:
@@ -250,6 +266,7 @@ def targets_from_inventory(
             raise ObservabilityTargetError("observability management service rejected")
         targets.append(
             ObservabilityTarget(
+                declaration=population.declaration,
                 inventory_object_id=device.inventory_object_id,
                 device_name=device.logical_name,
                 platform_slug=device.platform.slug,
@@ -260,7 +277,7 @@ def targets_from_inventory(
                 management_service=service.service,
             )
         )
-    return (targets[0], targets[1], targets[2], targets[3])
+    return tuple(targets)
 
 
 def render_file_sd(targets: tuple[ObservabilityTarget, ...]) -> bytes:
@@ -323,10 +340,12 @@ def _generation(
     realization: RealizationReference | None = None,
     failure: TargetFailureClassification | None = None,
     now: datetime | None = None,
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE,
 ) -> TargetGeneration:
     generated = (now or datetime.now(UTC)).astimezone(UTC)
     unsigned = TargetGeneration.model_construct(
         schema_version="2",
+        scope=scope,
         state=state,
         generated_at=generated,
         expires_at=generated + READINESS_TTL
@@ -355,6 +374,7 @@ def publish_generation(
     realization: RealizationReference | None = None,
     failure: TargetFailureClassification | None = None,
     now: datetime | None = None,
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE,
 ) -> TargetGeneration:
     """Atomically publish targets first and status second under an ambiguity guard."""
     validate_observability_root(root)
@@ -373,6 +393,7 @@ def publish_generation(
         _publish(discovery / "targets.json", target_file)
         generation = _generation(
             state=state,
+            scope=scope,
             target_file=target_file,
             targets=targets,
             realization=realization,
@@ -394,7 +415,12 @@ def publish_generation(
     return generation
 
 
-def read_generation(root: Path, *, now: datetime | None = None) -> TargetGeneration:
+def read_generation(
+    root: Path,
+    *,
+    now: datetime | None = None,
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE,
+) -> TargetGeneration:
     """Read and verify one generation, its target bytes, guard, digest and freshness."""
     if (root / "control/target-publication-ambiguous").exists():
         raise ObservabilityTargetError("observability target publication ambiguous")
@@ -407,6 +433,8 @@ def read_generation(root: Path, *, now: datetime | None = None) -> TargetGenerat
         raise ObservabilityTargetError(
             "observability target generation rejected"
         ) from None
+    if generation.scope != scope:
+        raise ObservabilityTargetError("observability generation scope rejected")
     if generation.target_file_sha256 != _publication_digest(target_bytes):
         raise ObservabilityTargetError("observability target generation rejected")
     expected = (

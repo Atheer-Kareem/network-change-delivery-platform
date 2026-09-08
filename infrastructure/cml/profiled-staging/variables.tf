@@ -23,20 +23,39 @@ variable "devices" {
   sensitive   = true
   nullable    = false
   type = map(object({
-    hostname          = string
-    management_cidr   = string
-    username          = string
-    password_verifier = string
-    node_definition   = string
-    image_definition  = string
-    cpu_cores         = number
-    ram_mb            = number
-    management_port   = number
-    bootstrap_profile = string
+    hostname               = string
+    management_cidr        = string
+    username               = string
+    password_verifier      = string
+    node_definition        = string
+    image_definition       = string
+    cpu_cores              = number
+    ram_mb                 = number
+    management_port        = number
+    bootstrap_profile      = string
+    management_slot        = number
+    management_switch_slot = number
+    layout_x               = number
+    layout_y               = number
   }))
 
   validation {
-    condition     = toset(keys(var.devices)) == toset(["core_02", "edge_junos_01", "transit_ios_01", "access_sw_01"])
-    error_message = "devices must be the exact profiled exact-four population."
+    condition     = length(var.devices) > 0
+    error_message = "devices must contain the Python-admitted nonempty scope."
+  }
+}
+
+variable "data_links" {
+  description = "Exact reviewed topology, admitted by Python against the device scope."
+  nullable    = false
+  type = map(object({
+    node_a = string
+    slot_a = number
+    node_b = string
+    slot_b = number
+  }))
+  validation {
+    condition     = alltrue([for link in values(var.data_links) : contains(keys(var.devices), link.node_a) && contains(keys(var.devices), link.node_b) && link.node_a != link.node_b && link.slot_a >= 0 && link.slot_b >= 0])
+    error_message = "Data links must reference admitted device-map endpoints."
   }
 }

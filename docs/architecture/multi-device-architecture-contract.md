@@ -6,8 +6,9 @@ acceptance](../acceptance/profiled-main-delivery.md)
 distinguishes demonstrated delivery from proposed service writes. Historical
 “additive”, “parallel” and v1 compatibility statements below describe migration
 stages. Profiled inventory/execution now replace the retired v1 runtime.
-Current scope membership remains explicitly closed in code; population-count
-generalization is CAP-POPULATION-SCOPES, not a claim of this documentation update.
+Current membership remains explicitly Git-declared; cardinality-independent
+resolution and typed consumer admission are defined in the
+[population scope contract](population-scopes.md).
 
 ## Status and compatibility boundary
 

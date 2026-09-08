@@ -24,7 +24,10 @@ from network_change_delivery.observability_targets import (
     ObservabilityReady,
     TargetGeneration,
 )
-from network_change_delivery.profile_inventory import PROFILED_POPULATION_IDENTITIES
+from network_change_delivery.profile_inventory import (
+    OBSERVABILITY_SCOPE,
+    ProfiledPopulationScope,
+)
 
 SERVICE_LABEL = "com.ncdp.observability"
 PROJECT_NAME = "ncdp-observability"
@@ -126,6 +129,7 @@ def publish_readiness(
     blackbox_container_id: str,
     source_commit: str,
     now: datetime | None = None,
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE,
 ) -> ObservabilityReady:
     if (
         generation.expires_at is None
@@ -133,6 +137,8 @@ def publish_readiness(
         or generation.realization_digest is None
     ):
         raise ObservabilityServiceError("observability readiness rejected")
+    if generation.scope != scope:
+        raise ObservabilityServiceError("observability generation scope rejected")
     refreshed = (now or datetime.now(UTC)).astimezone(UTC)
     expires = min(
         generation.expires_at,
@@ -145,7 +151,8 @@ def publish_readiness(
         target_file_sha256=generation.target_file_sha256,
         realization_lab_id=generation.realization_lab_id,
         realization_digest=generation.realization_digest,
-        targets=PROFILED_POPULATION_IDENTITIES,
+        scope=scope,
+        targets=scope.identities,
         prometheus_container_id=prometheus_container_id,
         blackbox_container_id=blackbox_container_id,
         source_commit=source_commit,
@@ -174,7 +181,10 @@ def read_readiness(
     blackbox_container_id: str,
     source_commit: str,
     now: datetime | None = None,
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE,
 ) -> ObservabilityReady:
+    if generation.scope != scope:
+        raise ObservabilityServiceError("observability generation scope rejected")
     if re.fullmatch(r"[0-9a-f]{40}", source_commit) is None:
         raise ObservabilityServiceError("observability readiness rejected")
     try:
@@ -187,7 +197,8 @@ def read_readiness(
         raise ObservabilityServiceError("observability readiness rejected") from None
     current = (now or datetime.now(UTC)).astimezone(UTC)
     if (
-        marker.expires_at <= current
+        marker.scope != scope
+        or marker.expires_at <= current
         or marker.target_generation_digest != generation.digest
         or marker.target_file_sha256 != generation.target_file_sha256
         or marker.realization_lab_id != generation.realization_lab_id
@@ -424,7 +435,12 @@ def verify_container_definitions(
     return identifiers[PROMETHEUS_CONTAINER], identifiers[BLACKBOX_CONTAINER]
 
 
-def wait_service_health(*, require_device_targets: bool, attempts: int = 30) -> None:
+def wait_service_health(
+    *,
+    require_device_targets: bool,
+    attempts: int = 30,
+    scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE,
+) -> None:
     with httpx.Client(timeout=2, follow_redirects=False, trust_env=False) as client:
         for _ in range(attempts):
             try:
@@ -446,7 +462,7 @@ def wait_service_health(*, require_device_targets: bool, attempts: int = 30) -> 
                     ]
                     target_ok = {
                         item.get("labels", {}).get("instance") for item in active
-                    } == set(PROFILED_POPULATION_IDENTITIES)
+                    } == set(scope.identities) and len(active) == len(scope.members)
                 if (
                     ready.status_code == 200
                     and len(results) == 1

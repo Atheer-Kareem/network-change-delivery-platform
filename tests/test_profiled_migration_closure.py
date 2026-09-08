@@ -162,7 +162,7 @@ def test_retained_runtime_consumers_have_no_legacy_population_dependency() -> No
         assert "NetBoxInventoryProvider" not in source
     verifier = (ROOT / retained[0]).read_text(encoding="utf-8")
     assert "legacy population exact-two" not in verifier
-    assert "profiled population exact-four PASS" in verifier
+    assert "profiled LIVE scope exact membership" in verifier
 
 
 def test_profiled_execution_remains_outside_b5_acceptance() -> None:

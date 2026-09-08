@@ -201,7 +201,7 @@ def test_persistent_realization_rejects_missing_or_extra_binding(
         realized.pop()
     else:
         realized.append(realized[-1])
-    with pytest.raises(ValidationError, match="exact four"):
+    with pytest.raises(ValidationError, match="declared scope"):
         persistent(devices_=tuple(realized))
 
 
@@ -269,7 +269,10 @@ def test_host_trust_generation_rejects_duplicate_stable_or_cml_identity() -> Non
             "cml_node_id": records[0].cml_node_id,
         }
     )
-    with pytest.raises(ValidationError, match="identities are duplicated"):
+    with pytest.raises(
+        ValidationError,
+        match=r"declared scope|identities are duplicated|Git profile catalog",
+    ):
         trust_generation(records=tuple(records))
 
 

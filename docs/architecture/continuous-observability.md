@@ -1,5 +1,11 @@
 # Continuous observability
 
+Current target generation uses the explicit observability scope after full
+managed-population resolution. A managed member outside that scope does not
+become an observability target. Management services remain profile-derived;
+readiness requires exact scoped target membership. See the
+[population scope contract](population-scopes.md).
+
 Current management observability is independent of delivery and projects the
 admitted proof population. Historical 11A/11C acceptance below remains evidence;
 it does not imply current SNMP provisioning or persistent live SNMP polling.

@@ -1,4 +1,4 @@
-"""CML admission plus one narrowly fenced transit-IOSv recycle boundary."""
+"""CML scope admission and profile-required bounded disposable-node recycling."""
 
 from __future__ import annotations
 
@@ -18,30 +18,26 @@ from pydantic import TypeAdapter
 
 from network_change_delivery.architecture_contracts import (
     CML_REALIZATION_PROFILE_CATALOG,
+    CmlBootPolicy,
     CmlRealizationProfileID,
 )
 from network_change_delivery.profile_inventory import (
-    PROFILED_POPULATION_CATALOG,
+    STAGING_REALIZATION_SCOPE,
     ProfiledInventoryDevice,
+    ProfiledPopulationScope,
 )
 from network_change_delivery.profiled_realization import EvidenceReference, StagingRunID
 from network_change_delivery.profiled_staging import (
-    PROFILED_STAGING_DEVICE_NAMES,
-    PROFILED_STAGING_LINK_COUNT,
-    PROFILED_STAGING_NODE_COUNT,
+    CURRENT_STAGING_TOPOLOGY,
     ProfiledStagingAmbiguousError,
     ProfiledStagingError,
+    ProfiledStagingTopology,
+    realization_interface_slot,
     record_staging_duration,
     validate_management_only_bootstrap,
 )
 
 STAGING_TITLE_PREFIX = "NCDP Staging"
-STAGING_MANAGEMENT_ADDRESSES = {
-    "core-02": "192.168.4.30",
-    "edge-junos-01": "192.168.4.40",
-    "transit-ios-01": "192.168.4.31",
-    "access-sw-01": "192.168.4.32",
-}
 
 
 @dataclass(frozen=True)
@@ -54,6 +50,7 @@ class ObservedStagingRealization:
     link_ids: dict[str, str]
     topology_evidence: EvidenceReference
     cml_anchors: dict[str, EvidenceReference]
+    topology: ProfiledStagingTopology = CURRENT_STAGING_TOPOLOGY
 
 
 class ProfiledStagingCmlReader:
@@ -256,9 +253,9 @@ class ProfiledStagingCmlLabStarter:
         node_ids = self._reader.ids(observed.lab_id, "nodes")
         link_ids = self._reader.ids(observed.lab_id, "links")
         if (
-            len(node_ids) != 6
+            len(node_ids) != len(observed.node_ids)
             or set(node_ids) != set(observed.node_ids.values())
-            or len(link_ids) != 9
+            or len(link_ids) != len(observed.link_ids)
             or set(link_ids) != set(observed.link_ids.values())
         ):
             raise ProfiledStagingError(
@@ -327,19 +324,13 @@ class ProfiledStagingCmlLabStarter:
             raise ProfiledStagingError(
                 "profiled staging lab start identity rejected"
             ) from None
-        fields = (
-            "device_identity",
-            "logical_name",
-            "automation_profile_id",
-            "cml_realization_profile_id",
-        )
-        if tuple(
-            tuple(getattr(device, field) for field in fields) for device in devices
-        ) != tuple(
-            tuple(getattr(member, field) for field in fields)
-            for member in PROFILED_POPULATION_CATALOG
-        ):
-            raise ProfiledStagingError("profiled staging lab start population rejected")
+        try:
+            observed.topology.scope.require_bindings(devices)
+        except ValueError:
+            raise ProfiledStagingError(
+                "profiled staging lab start population rejected"
+            ) from None
+        links = staging_link_slots(devices, observed.topology)
         if (
             observed.lab_title != f"NCDP Staging {run_id}"
             or observed.topology_evidence.identity != f"staging-topology:{run_id}"
@@ -349,9 +340,9 @@ class ProfiledStagingCmlLabStarter:
                 "management_switch",
                 *(str(device.logical_name).replace("-", "_") for device in devices),
             }
-            or len(set(observed.node_ids.values())) != 6
-            or set(observed.link_ids) != set(_LINK_SLOTS)
-            or len(set(observed.link_ids.values())) != 9
+            or len(set(observed.node_ids.values())) != len(devices) + 2
+            or set(observed.link_ids) != set(links)
+            or len(set(observed.link_ids.values())) != len(links)
             or any(
                 observed.cml_anchors.get(str(device.logical_name))
                 != EvidenceReference(
@@ -406,8 +397,8 @@ class ProfiledStagingCmlLabStarter:
         return EvidenceReference(identity=f"staging-lab-start:{run_id}", digest=digest)
 
 
-class ProfiledStagingCmlTransitRecycler:
-    """One exact run-scoped CML recycle boundary for transit IOSv only."""
+class ProfiledStagingCmlProfileRecycler:
+    """One exact run-scoped CML recycle boundary selected by realization policy."""
 
     _FIRST_BOOT_PERSISTENCE_SECONDS = 60
     _STOP_TIMEOUT_SECONDS = 180
@@ -421,7 +412,7 @@ class ProfiledStagingCmlTransitRecycler:
     @classmethod
     def from_environment(
         cls, *, token: str | None = None
-    ) -> ProfiledStagingCmlTransitRecycler:
+    ) -> ProfiledStagingCmlProfileRecycler:
         address = os.environ.get("CML2_ADDRESS")
         token = os.environ.get("CML2_TOKEN") if token is None else token
         certificate = os.environ.get("CML2_CACERT")
@@ -481,7 +472,7 @@ class ProfiledStagingCmlTransitRecycler:
     def _node(self, lab_id: str, node_id: str) -> dict[str, object]:
         return self._get(f"/api/v0/labs/{lab_id}/nodes/{node_id}")
 
-    def _admit_exact_transit(
+    def _admit_profile_node(
         self,
         *,
         run_id: str,
@@ -494,15 +485,16 @@ class ProfiledStagingCmlTransitRecycler:
         title = lab.get("lab_title") or lab.get("title")
 
         if title != f"NCDP Staging {run_id}":
-            raise ProfiledStagingError("profiled staging transit recycle lab rejected")
+            raise ProfiledStagingError("profiled staging profile recycle lab rejected")
 
         if (
-            str(device.logical_name) != "transit-ios-01"
-            or device.cml_realization_profile_id
-            != CmlRealizationProfileID.IOSV_159_3_M12
+            CML_REALIZATION_PROFILE_CATALOG[
+                device.cml_realization_profile_id
+            ].boot_policy
+            != CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
         ):
             raise ProfiledStagingError(
-                "profiled staging transit recycle profile rejected"
+                "profiled staging profile recycle profile rejected"
             )
 
         profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
@@ -511,12 +503,12 @@ class ProfiledStagingCmlTransitRecycler:
         image = node.get("image_definition") or node.get("image_definition_id")
 
         if (
-            node.get("label") != "transit-ios-01"
+            node.get("label") != str(device.logical_name)
             or node.get("node_definition") != profile.node_definition
             or image != profile.image_definition
         ):
             raise ProfiledStagingError(
-                "profiled staging transit recycle identity rejected"
+                "profiled staging profile recycle identity rejected"
             )
 
         state = node.get("state")
@@ -528,7 +520,7 @@ class ProfiledStagingCmlTransitRecycler:
         )
         if not isinstance(state, str) or state not in accepted:
             raise ProfiledStagingError(
-                "profiled staging transit recycle state rejected"
+                "profiled staging profile recycle state rejected"
             )
 
         return state
@@ -545,7 +537,7 @@ class ProfiledStagingCmlTransitRecycler:
         # on every observation; unknown/stopped states never grant a recycle.
         deadline = time.monotonic() + self._START_TIMEOUT_SECONDS
         while True:
-            state = self._admit_exact_transit(
+            state = self._admit_profile_node(
                 run_id=run_id,
                 lab_id=lab_id,
                 node_id=node_id,
@@ -634,7 +626,7 @@ class ProfiledStagingCmlTransitRecycler:
                 state = self._node(lab_id, node_id).get("state")
             except ProfiledStagingError:
                 raise ProfiledStagingAmbiguousError(
-                    "profiled staging transit recycle completion is ambiguous"
+                    "profiled staging profile recycle completion is ambiguous"
                 ) from None
 
             if state == expected:
@@ -642,7 +634,7 @@ class ProfiledStagingCmlTransitRecycler:
 
             if time.monotonic() >= deadline:
                 raise ProfiledStagingAmbiguousError(
-                    "profiled staging transit recycle completion is ambiguous"
+                    "profiled staging profile recycle completion is ambiguous"
                 )
 
             time.sleep(self._POLL_SECONDS)
@@ -652,36 +644,34 @@ class ProfiledStagingCmlTransitRecycler:
         *,
         run_id: str,
         observed: ObservedStagingRealization,
-        devices: tuple[ProfiledInventoryDevice, ...],
+        device: ProfiledInventoryDevice,
     ) -> EvidenceReference:
-        """Recycle only the admitted IOSv transit node exactly once."""
-
-        by_name = {str(device.logical_name): device for device in devices}
-
-        if tuple(by_name) != PROFILED_STAGING_DEVICE_NAMES:
-            raise ProfiledStagingError(
-                "profiled staging transit recycle population rejected"
-            )
-
+        """Recycle the exact scoped subject once under its reviewed boot policy."""
+        member = observed.topology.scope.declaration.member(device.logical_name)
+        if member not in observed.topology.scope.members or (
+            member.device_identity != device.device_identity
+            or member.automation_profile_id != device.automation_profile_id
+            or member.cml_realization_profile_id != device.cml_realization_profile_id
+            or CML_REALIZATION_PROFILE_CATALOG[
+                device.cml_realization_profile_id
+            ].boot_policy
+            != CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
+        ):
+            raise ProfiledStagingError("profiled staging recycle scope rejected")
         if observed.lab_title != f"NCDP Staging {run_id}":
-            raise ProfiledStagingError(
-                "profiled staging transit recycle realization rejected"
-            )
-
-        node_id = observed.node_ids.get("transit_ios_01")
-
+            raise ProfiledStagingError("profiled staging recycle realization rejected")
+        node_id = observed.node_ids.get(device.logical_name.replace("-", "_"))
         if not isinstance(node_id, str) or not node_id:
-            raise ProfiledStagingError("profiled staging transit recycle node rejected")
+            raise ProfiledStagingError("profiled staging recycle node rejected")
+        subject = device
 
-        transit = by_name["transit-ios-01"]
-
-        # Observe transit independently of the other nodes' initial boot.
-        with record_staging_duration(self.timings_seconds, "transit_first_boot"):
+        # Observe subject independently of the other nodes' initial boot.
+        with record_staging_duration(self.timings_seconds, "recycle_first_boot"):
             self._wait_first_boot(
                 run_id=run_id,
                 lab_id=observed.lab_id,
                 node_id=node_id,
-                device=transit,
+                device=subject,
             )
 
         # Real IOSv diagnosis established that CML Day-0 reaches
@@ -691,19 +681,19 @@ class ProfiledStagingCmlTransitRecycler:
         # at this node's first observed BOOTED, not whole-lab convergence.
         # Give that first boot one bounded persistence interval before
         # recycling only this already-admitted disposable node.
-        with record_staging_duration(self.timings_seconds, "transit_persistence"):
+        with record_staging_duration(self.timings_seconds, "recycle_persistence"):
             time.sleep(self._FIRST_BOOT_PERSISTENCE_SECONDS)
 
-        self._admit_exact_transit(
+        self._admit_profile_node(
             run_id=run_id,
             lab_id=observed.lab_id,
             node_id=node_id,
-            device=transit,
+            device=subject,
             required_state="BOOTED",
         )
 
         # Exactly one STOP request. No blind retry.
-        with record_staging_duration(self.timings_seconds, "transit_stop"):
+        with record_staging_duration(self.timings_seconds, "recycle_stop"):
             self._put_state_once(
                 lab_id=observed.lab_id,
                 node_id=node_id,
@@ -718,16 +708,16 @@ class ProfiledStagingCmlTransitRecycler:
                 timeout_seconds=self._STOP_TIMEOUT_SECONDS,
             )
 
-        self._admit_exact_transit(
+        self._admit_profile_node(
             run_id=run_id,
             lab_id=observed.lab_id,
             node_id=node_id,
-            device=transit,
+            device=subject,
             required_state="STOPPED",
         )
 
         # Exactly one START request. No blind retry.
-        with record_staging_duration(self.timings_seconds, "transit_second_boot"):
+        with record_staging_duration(self.timings_seconds, "recycle_second_boot"):
             self._put_state_once(
                 lab_id=observed.lab_id,
                 node_id=node_id,
@@ -744,11 +734,11 @@ class ProfiledStagingCmlTransitRecycler:
                 timeout_seconds=self._START_TIMEOUT_SECONDS,
             )
 
-        self._admit_exact_transit(
+        self._admit_profile_node(
             run_id=run_id,
             lab_id=observed.lab_id,
             node_id=node_id,
-            device=transit,
+            device=subject,
             required_state="BOOTED",
         )
 
@@ -756,9 +746,9 @@ class ProfiledStagingCmlTransitRecycler:
             "run_id": run_id,
             "lab_id": observed.lab_id,
             "node_id": node_id,
-            "device_identity": transit.device_identity,
-            "logical_name": str(transit.logical_name),
-            "cml_realization_profile_id": (transit.cml_realization_profile_id),
+            "device_identity": subject.device_identity,
+            "logical_name": str(subject.logical_name),
+            "cml_realization_profile_id": (subject.cml_realization_profile_id),
             "first_boot_persistence_seconds": (self._FIRST_BOOT_PERSISTENCE_SECONDS),
             "stop_state": stopped,
             "start_state": booted,
@@ -778,7 +768,7 @@ class ProfiledStagingCmlTransitRecycler:
         )
 
         return EvidenceReference(
-            identity=(f"staging-transit-recycle:{run_id}:transit-ios-01"),
+            identity=f"staging-profile-recycle:{run_id}:{device.logical_name}",
             digest=digest,
         )
 
@@ -803,8 +793,10 @@ def admit_no_staging_collision(
     devices: tuple[ProfiledInventoryDevice, ...],
     *,
     probe_timeout: float = 0.5,
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE,
 ) -> None:
-    """Reject an existing staging lab or active fixed management endpoint."""
+    """Reject an existing staging lab or occupied admitted management endpoint."""
+    scope.require_bindings(devices)
     for lab_id in reader.lab_ids():
         lab = reader.lab(lab_id)
         title = (lab or {}).get("lab_title") or (lab or {}).get("title")
@@ -812,10 +804,6 @@ def admit_no_staging_collision(
             raise ProfiledStagingError("existing NCDP Staging lab rejected")
     for device in devices:
         endpoint = device.management_endpoints.staging.binding.l3_endpoint
-        if str(endpoint.address.ip) != STAGING_MANAGEMENT_ADDRESSES.get(
-            str(device.logical_name)
-        ):
-            raise ProfiledStagingError("profiled staging management endpoint rejected")
         if _icmp_address_is_active(str(endpoint.address.ip), timeout=probe_timeout):
             raise ProfiledStagingError(
                 "profiled staging management endpoint is occupied"
@@ -833,17 +821,24 @@ def admit_no_staging_collision(
             )
 
 
-_LINK_SLOTS = {
-    "system_bridge_management": (("system_bridge", 0), ("management_switch", 0)),
-    "management_core": (("management_switch", 1), ("core_02", 0)),
-    "management_junos": (("management_switch", 2), ("edge_junos_01", 0)),
-    "management_transit": (("management_switch", 3), ("transit_ios_01", 0)),
-    "management_access": (("management_switch", 4), ("access_sw_01", 0)),
-    "core_junos": (("core_02", 3), ("edge_junos_01", 1)),
-    "core_transit": (("core_02", 1), ("transit_ios_01", 1)),
-    "junos_transit": (("edge_junos_01", 2), ("transit_ios_01", 2)),
-    "core_access": (("core_02", 2), ("access_sw_01", 1)),
-}
+def staging_link_slots(devices, topology: ProfiledStagingTopology):
+    """Resolve exact admitted topology and management slots before CML comparison."""
+    topology.scope.require_bindings(devices)
+    links = {
+        "system_bridge_management": (("system_bridge", 0), ("management_switch", 0))
+    }
+    for index, device in enumerate(devices):
+        key = device.logical_name.replace("-", "_")
+        profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+        attachment = device.management_endpoints.staging.binding.physical_attachment
+        slot = realization_interface_slot(profile, attachment.interface.name)
+        links[f"management_{key}"] = (("management_switch", index + 1), (key, slot))
+    for key, link in topology.terraform_links().items():
+        links[key] = (
+            (link["node_a"], link["slot_a"]),
+            (link["node_b"], link["slot_b"]),
+        )
+    return links
 
 
 def admit_created_realization(
@@ -851,8 +846,11 @@ def admit_created_realization(
     run_id: str,
     outputs: dict[str, object],
     devices: tuple[ProfiledInventoryDevice, ...],
+    *,
+    topology: ProfiledStagingTopology = CURRENT_STAGING_TOPOLOGY,
 ) -> ObservedStagingRealization:
     """Independently bind Terraform outputs to actual CML GET observations."""
+    links = staging_link_slots(devices, topology)
     lab_id = outputs.get("lab_id")
     node_ids = outputs.get("node_ids")
     link_ids = outputs.get("link_ids")
@@ -866,12 +864,9 @@ def admit_created_realization(
     expected_node_keys = {
         "system_bridge",
         "management_switch",
-        "core_02",
-        "edge_junos_01",
-        "transit_ios_01",
-        "access_sw_01",
+        *(device.logical_name.replace("-", "_") for device in devices),
     }
-    if set(node_ids) != expected_node_keys or set(link_ids) != set(_LINK_SLOTS):
+    if set(node_ids) != expected_node_keys or set(link_ids) != set(links):
         raise ProfiledStagingError("profiled staging output population rejected")
     if not all(
         isinstance(value, str) and value
@@ -883,13 +878,9 @@ def admit_created_realization(
         raise ProfiledStagingError("profiled staging observed lab rejected")
     actual_nodes = set(reader.ids(lab_id, "nodes"))
     actual_links = set(reader.ids(lab_id, "links"))
-    if len(actual_nodes) != PROFILED_STAGING_NODE_COUNT or actual_nodes != set(
-        node_ids.values()
-    ):
+    if len(actual_nodes) != len(devices) + 2 or actual_nodes != set(node_ids.values()):
         raise ProfiledStagingError("profiled staging observed node population rejected")
-    if len(actual_links) != PROFILED_STAGING_LINK_COUNT or actual_links != set(
-        link_ids.values()
-    ):
+    if len(actual_links) != len(links) or actual_links != set(link_ids.values()):
         raise ProfiledStagingError("profiled staging observed link population rejected")
 
     for key, label, definition in (
@@ -918,18 +909,20 @@ def admit_created_realization(
         configuration = reader.configuration(lab_id, str(node_ids[key]))
         validate_management_only_bootstrap(configuration)
         endpoint = device.management_endpoints.staging.binding.l3_endpoint
-        management_marker = {
-            "core-02": "interface GigabitEthernet1",
-            "edge-junos-01": "fxp0",
-            "transit-ios-01": "interface GigabitEthernet0/0",
-            "access-sw-01": "interface GigabitEthernet0/0",
-        }[str(device.logical_name)]
+        management_marker = (
+            device.management_endpoints.staging.binding.l3_endpoint.interface.name
+        )
+        if (
+            device.cml_realization_profile_id
+            != CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15
+        ):
+            management_marker = "interface " + management_marker
         if (
             str(device.expected_hostname) not in configuration
             or str(endpoint.address.ip) not in configuration
             or management_marker not in configuration
             or (
-                str(device.logical_name) == "access-sw-01"
+                device.cml_realization_profile_id == CmlRealizationProfileID.IOSVL2_2020
                 and " no switchport" not in configuration
             )
         ):
@@ -946,12 +939,12 @@ def admit_created_realization(
                 device.cml_realization_profile_id
             ].physical_interface_slots
         }
-        if catalog_slots != set(range(4)) or not catalog_slots.issubset(slots[key]):
+        if not catalog_slots.issubset(slots[key]):
             raise ProfiledStagingError(
                 "profiled staging observed device slots rejected"
             )
     observed_links: dict[str, tuple[str, str]] = {}
-    for key, ((left_node, left_slot), (right_node, right_slot)) in _LINK_SLOTS.items():
+    for key, ((left_node, left_slot), (right_node, right_slot)) in links.items():
         link = reader.item(lab_id, "links", str(link_ids[key]))
         actual = {str(link.get("interface_a")), str(link.get("interface_b"))}
         try:
@@ -989,7 +982,9 @@ def admit_created_realization(
             ).encode()
         ).hexdigest()
     )
-    topology = EvidenceReference(identity=f"staging-topology:{run_id}", digest=digest)
+    topology_evidence = EvidenceReference(
+        identity=f"staging-topology:{run_id}", digest=digest
+    )
     anchors = {
         str(device.logical_name): EvidenceReference(
             identity=f"cml-anchor:{lab_id}:{node_ids[key]}", digest=digest
@@ -1001,6 +996,7 @@ def admit_created_realization(
         lab_title=title,
         node_ids={key: str(value) for key, value in node_ids.items()},
         link_ids={key: str(value) for key, value in link_ids.items()},
-        topology_evidence=topology,
+        topology_evidence=topology_evidence,
+        topology=topology,
         cml_anchors=anchors,
     )

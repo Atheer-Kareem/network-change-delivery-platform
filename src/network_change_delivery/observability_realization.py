@@ -16,7 +16,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from network_change_delivery.architecture_contracts import (
     CmlRealizationProfileID,
-    get_cml_realization_profile,
 )
 from network_change_delivery.audit import Sha256, canonical_json_bytes
 from network_change_delivery.observability_private_paths import (
@@ -25,70 +24,40 @@ from network_change_delivery.observability_private_paths import (
     validate_observability_root,
     validate_private_file,
 )
+from network_change_delivery.profile_inventory import OBSERVABILITY_SCOPE
 from network_change_delivery.profiled_live_cml import (
-    ACCESS_NODE_ID,
-    CORE_NODE_ID,
-    JUNOS_NODE_ID,
-    TRANSIT_NODE_ID,
+    CURRENT_LIVE_REALIZATION,
+    LIVE_LAB_ID,
+    LIVE_LAB_TITLE,
+    ProfiledLiveRealizationCatalog,
 )
 
-LIVE_LAB_ID = "09605569-0468-4fc4-8684-beb5a1342b9c"
-LIVE_LAB_TITLE = "NCDP Live"
+CURRENT_OBSERVABILITY_REALIZATION = CURRENT_LIVE_REALIZATION.project(
+    OBSERVABILITY_SCOPE
+)
+
 ADMISSION_TTL = timedelta(minutes=15)
 
 
-def _expected_node(
-    *,
-    name: str,
-    cml_node_id: str,
-    cml_label: str,
-    address: str,
-    realization_profile_id: CmlRealizationProfileID,
-    required_configuration: tuple[str, ...] = (),
-) -> dict[str, str | tuple[str, ...]]:
-    profile = get_cml_realization_profile(realization_profile_id)
+def realization_nodes(catalog: ProfiledLiveRealizationCatalog):
     return {
-        "name": name,
-        "cml_node_id": cml_node_id,
-        "cml_label": cml_label,
-        "address": address,
-        "definition": profile.node_definition,
-        "image": profile.image_definition,
-        "required_configuration": required_configuration,
+        f"netbox:dcim.device:{a.device_id}": {
+            "name": a.logical_name,
+            "cml_node_id": a.cml_node_id,
+            "cml_label": a.cml_label,
+            "address": a.management_address,
+            "definition": a.node_definition,
+            "image": a.image_definition,
+            "required_configuration": ("no switchport",)
+            if a.cml_realization_profile_id == CmlRealizationProfileID.IOSVL2_2020
+            else (),
+        }
+        for a in catalog.anchors
     }
 
 
-EXPECTED_NODES = {
-    "netbox:dcim.device:1": _expected_node(
-        name="core-02",
-        cml_node_id=CORE_NODE_ID,
-        cml_label="cat8000v-0",
-        address="192.168.4.14",
-        realization_profile_id=CmlRealizationProfileID.CAT8000V_17_18_02,
-    ),
-    "netbox:dcim.device:2": _expected_node(
-        name="edge-junos-01",
-        cml_node_id=JUNOS_NODE_ID,
-        cml_label="vjunos-router-0",
-        address="192.168.4.20",
-        realization_profile_id=CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15,
-    ),
-    "netbox:dcim.device:8": _expected_node(
-        name="transit-ios-01",
-        cml_node_id=TRANSIT_NODE_ID,
-        cml_label="transit-ios-01",
-        address="192.168.4.16",
-        realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
-    ),
-    "netbox:dcim.device:9": _expected_node(
-        name="access-sw-01",
-        cml_node_id=ACCESS_NODE_ID,
-        cml_label="access-sw-01",
-        address="192.168.4.17",
-        realization_profile_id=CmlRealizationProfileID.IOSVL2_2020,
-        required_configuration=("no switchport",),
-    ),
-}
+# Current catalog projection retained for local operator configuration consumers.
+EXPECTED_NODES = realization_nodes(CURRENT_OBSERVABILITY_REALIZATION)
 _UUID_PATTERN = r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
 
 
@@ -109,31 +78,33 @@ class RealizationNode(BaseModel):
 
 
 class RealizationAdmission(BaseModel):
-    """Private exact-four target admission from the profiled LIVE lab."""
+    """Private scope-bound target admission from the profiled LIVE lab."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal["3"] = "3"
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_OBSERVABILITY_REALIZATION
     lab_id: Literal["09605569-0468-4fc4-8684-beb5a1342b9c"] = LIVE_LAB_ID
     lab_title: Literal["NCDP Live"] = LIVE_LAB_TITLE
     lab_state: Literal["STARTED"] = "STARTED"
     admitted_at: datetime
     expires_at: datetime
-    nodes: tuple[RealizationNode, RealizationNode, RealizationNode, RealizationNode]
+    nodes: tuple[RealizationNode, ...] = Field(min_length=1)
     digest: Sha256
 
     @model_validator(mode="after")
     def exact_admission(self) -> RealizationAdmission:
+        expected_nodes = realization_nodes(self.catalog)
         identities = tuple(item.inventory_object_id for item in self.nodes)
         if (
             self.admitted_at.tzinfo is None
             or self.admitted_at.utcoffset() is None
             or self.expires_at <= self.admitted_at
-            or identities != tuple(EXPECTED_NODES)
+            or identities != tuple(expected_nodes)
         ):
             raise ValueError("observability realization admission rejected")
         for node in self.nodes:
-            expected = EXPECTED_NODES[node.inventory_object_id]
+            expected = expected_nodes[node.inventory_object_id]
             if (
                 node.stable_name != expected["name"]
                 or node.cml_node_id != expected["cml_node_id"]
@@ -270,9 +241,11 @@ class CmlRealizationAuthority:
         node_ids: dict[str, str],
         *,
         now: datetime | None = None,
+        catalog: ProfiledLiveRealizationCatalog = CURRENT_OBSERVABILITY_REALIZATION,
     ) -> RealizationAdmission:
         """Validate exact profiled LIVE identity and target readiness."""
-        if lab_id != LIVE_LAB_ID or set(node_ids) != set(EXPECTED_NODES):
+        expected_nodes = realization_nodes(catalog)
+        if lab_id != LIVE_LAB_ID or set(node_ids) != set(expected_nodes):
             raise ObservabilityRealizationError("CML node population rejected")
         lab_ids = self._get("/api/v0/labs")
         if (
@@ -315,7 +288,7 @@ class CmlRealizationAuthority:
                 configuration = self._configuration(candidate, foreign_node_id)
                 if any(
                     expected["address"] in configuration
-                    for expected in EXPECTED_NODES.values()
+                    for expected in expected_nodes.values()
                 ):
                     raise ObservabilityRealizationError(
                         "CML address ownership ambiguous"
@@ -329,7 +302,10 @@ class CmlRealizationAuthority:
         if not isinstance(actual_ids, list):
             raise ObservabilityRealizationError("CML node population rejected")
         for actual_id in actual_ids:
-            if actual_id in node_ids.values():
+            if (
+                actual_id in node_ids.values()
+                or actual_id in CURRENT_LIVE_REALIZATION.expected_node_ids
+            ):
                 continue
             node = self._get(f"/api/v0/labs/{lab_id}/nodes/{actual_id}")
             if not isinstance(node, dict):
@@ -340,7 +316,7 @@ class CmlRealizationAuthority:
             }:
                 raise ObservabilityRealizationError("CML node population rejected")
         nodes: list[RealizationNode] = []
-        for identity, expected in EXPECTED_NODES.items():
+        for identity, expected in expected_nodes.items():
             node_id = node_ids[identity]
             if node_id != expected["cml_node_id"] or node_id not in actual_ids:
                 raise ObservabilityRealizationError("CML node identity rejected")
@@ -375,6 +351,7 @@ class CmlRealizationAuthority:
         admitted = (now or datetime.now(UTC)).astimezone(UTC)
         unsigned = RealizationAdmission.model_construct(
             schema_version="3",
+            catalog=catalog,
             lab_id=lab_id,
             lab_title=LIVE_LAB_TITLE,
             lab_state="STARTED",
@@ -426,11 +403,18 @@ def publish_admission(root: Path, admission: RealizationAdmission) -> Path:
     return path
 
 
-def read_admission(root: Path, *, now: datetime | None = None) -> RealizationAdmission:
+def read_admission(
+    root: Path,
+    *,
+    now: datetime | None = None,
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_OBSERVABILITY_REALIZATION,
+) -> RealizationAdmission:
     try:
         content = validate_private_file(root / "operator/realization.json")
         assert content is not None
         admission = RealizationAdmission.model_validate_json(content)
+        if admission.catalog != catalog:
+            raise ValueError("observability realization scope rejected")
     except (ValueError, ObservabilityPrivatePathError):
         raise ObservabilityRealizationError("realization admission rejected") from None
     current = (now or datetime.now(UTC)).astimezone(UTC)

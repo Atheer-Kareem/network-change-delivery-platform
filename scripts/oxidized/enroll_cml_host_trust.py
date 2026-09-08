@@ -21,20 +21,15 @@ from network_change_delivery.oxidized_host_trust import (
     publish_host_trust,
 )
 from network_change_delivery.profiled_live_cml import (
-    ACCESS_NODE_ID,
-    CORE_NODE_ID,
-    JUNOS_NODE_ID,
+    CURRENT_LIVE_REALIZATION,
     LIVE_LAB_ID,
-    TRANSIT_NODE_ID,
     ProfiledLiveCmlOperator,
 )
 
 LIVE_LAB = LIVE_LAB_ID
 EXPECTED_CML_NODE_IDS = {
-    "netbox-device-1": CORE_NODE_ID,
-    "netbox-device-2": JUNOS_NODE_ID,
-    "netbox-device-8": TRANSIT_NODE_ID,
-    "netbox-device-9": ACCESS_NODE_ID,
+    f"netbox-device-{a.device_id}": a.cml_node_id
+    for a in CURRENT_LIVE_REALIZATION.anchors
 }
 
 
@@ -81,10 +76,7 @@ def _anchor(client: httpx.Client, lab_id: str, node_ids: dict[str, str]):
     if node_ids != EXPECTED_CML_NODE_IDS:
         raise EnrollmentError("CML enrollment node identities rejected")
     try:
-        return ProfiledLiveCmlOperator(client).anchor_profiled_live(
-            transit_node_id=node_ids["netbox-device-8"],
-            access_node_id=node_ids["netbox-device-9"],
-        )
+        return ProfiledLiveCmlOperator(client).anchor_profiled_live()
     except (KeyError, ValueError, RuntimeError):
         raise EnrollmentError("CML enrollment anchor rejected") from None
 
@@ -146,21 +138,9 @@ def enroll(lab_id: str, node_ids: dict[str, str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lab-id", required=True)
-    parser.add_argument("--core-id", default=CORE_NODE_ID)
-    parser.add_argument("--junos-id", default=JUNOS_NODE_ID)
-    parser.add_argument("--transit-id", default=TRANSIT_NODE_ID)
-    parser.add_argument("--access-id", default=ACCESS_NODE_ID)
     arguments = parser.parse_args()
     try:
-        enroll(
-            arguments.lab_id,
-            {
-                "netbox-device-1": arguments.core_id,
-                "netbox-device-2": arguments.junos_id,
-                "netbox-device-8": arguments.transit_id,
-                "netbox-device-9": arguments.access_id,
-            },
-        )
+        enroll(arguments.lab_id, EXPECTED_CML_NODE_IDS)
     except (EnrollmentError, OxidizedHostTrustError) as error:
         print(f"Oxidized CML host-trust enrollment failed: {error}", file=sys.stderr)
         return 2

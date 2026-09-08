@@ -1,4 +1,4 @@
-"""Private exact-four host trust for the persistent profiled LIVE realization."""
+"""Private scope-bound host trust for the persistent profiled LIVE realization."""
 
 from __future__ import annotations
 
@@ -12,13 +12,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from network_change_delivery.profile_inventory import PROFILED_POPULATION_CATALOG
 from network_change_delivery.profiled_live_cml import (
-    ACCESS_NODE_ID,
-    CORE_NODE_ID,
-    JUNOS_NODE_ID,
+    CURRENT_LIVE_REALIZATION,
     LIVE_LAB_ID,
-    TRANSIT_NODE_ID,
+    ProfiledLiveRealizationCatalog,
 )
 from network_change_delivery.profiled_realization import (
     CmlAnchoredHostTrustGeneration,
@@ -31,25 +28,15 @@ KNOWN_HOSTS_NAME = "known_hosts"
 METADATA_NAME = "host-trust.json"
 AMBIGUITY_NAME = "host-trust-publication-ambiguous"
 MAX_TRUST_BYTES = 32 * 1024
-EXPECTED_LIVE_ENDPOINTS = (
-    ("192.168.4.14", 22),
-    ("192.168.4.20", 830),
-    ("192.168.4.16", 22),
-    ("192.168.4.17", 22),
+# Compatibility exports derived from reviewed realization data, not admission logic.
+EXPECTED_LIVE_ENDPOINTS = tuple(
+    (a.management_address, a.management_port) for a in CURRENT_LIVE_REALIZATION.anchors
 )
-EXPECTED_LIVE_DEVICE_IDENTITIES = (
-    "netbox:dcim.device:1",
-    "netbox:dcim.device:2",
-    "netbox:dcim.device:8",
-    "netbox:dcim.device:9",
+EXPECTED_LIVE_DEVICE_IDENTITIES = CURRENT_LIVE_REALIZATION.scope.identities
+EXPECTED_LIVE_NODE_IDS = tuple(a.cml_node_id for a in CURRENT_LIVE_REALIZATION.anchors)
+EXPECTED_LIVE_ADDRESSES = tuple(
+    a.management_address for a in CURRENT_LIVE_REALIZATION.anchors
 )
-EXPECTED_LIVE_NODE_IDS = (
-    CORE_NODE_ID,
-    JUNOS_NODE_ID,
-    TRANSIT_NODE_ID,
-    ACCESS_NODE_ID,
-)
-EXPECTED_LIVE_ADDRESSES = tuple(address for address, _port in EXPECTED_LIVE_ENDPOINTS)
 SUPPORTED_KEY_ALGORITHMS = frozenset(
     {
         "ssh-rsa",
@@ -122,7 +109,9 @@ def _fingerprint(encoded_key: str) -> str:
     return f"SHA256:{digest}"
 
 
-def parse_profiled_live_known_hosts(value: bytes) -> dict[str, tuple[str, str]]:
+def parse_profiled_live_known_hosts(
+    value: bytes, *, catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION
+) -> dict[str, tuple[str, str]]:
     """Return exact address to algorithm/fingerprint metadata without key bytes."""
     try:
         lines = value.decode("ascii").splitlines()
@@ -130,6 +119,7 @@ def parse_profiled_live_known_hosts(value: bytes) -> dict[str, tuple[str, str]]:
         raise ProfiledLiveHostTrustError(
             "profiled LIVE known-host file rejected"
         ) from None
+    expected_addresses = tuple(a.management_address for a in catalog.anchors)
     parsed: dict[str, tuple[str, str]] = {}
     for line in lines:
         fields = line.split()
@@ -137,7 +127,7 @@ def parse_profiled_live_known_hosts(value: bytes) -> dict[str, tuple[str, str]]:
             raise ProfiledLiveHostTrustError("profiled LIVE known-host file rejected")
         host, algorithm, encoded = fields
         if (
-            host not in EXPECTED_LIVE_ADDRESSES
+            host not in expected_addresses
             or algorithm not in SUPPORTED_KEY_ALGORITHMS
             or host in parsed
         ):
@@ -145,7 +135,7 @@ def parse_profiled_live_known_hosts(value: bytes) -> dict[str, tuple[str, str]]:
                 "profiled LIVE known-host identity rejected"
             )
         parsed[host] = (algorithm, _fingerprint(encoded))
-    if tuple(parsed) != EXPECTED_LIVE_ADDRESSES:
+    if tuple(parsed) != expected_addresses:
         raise ProfiledLiveHostTrustError("profiled LIVE known-host population rejected")
     return parsed
 
@@ -153,20 +143,21 @@ def parse_profiled_live_known_hosts(value: bytes) -> dict[str, tuple[str, str]]:
 def _validate_generation(
     known_hosts: bytes,
     generation: CmlAnchoredHostTrustGeneration,
+    *,
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION,
 ) -> None:
-    parsed = parse_profiled_live_known_hosts(known_hosts)
-    expected_names = tuple(
-        member.logical_name for member in PROFILED_POPULATION_CATALOG
-    )
+    parsed = parse_profiled_live_known_hosts(known_hosts, catalog=catalog)
+    expected_names = tuple(member.logical_name for member in catalog.scope.members)
     if (
-        generation.environment.value != "LIVE"
+        generation.scope != catalog.scope
+        or generation.environment.value != "LIVE"
         or generation.realization_identity != "ncdp-live"
         or generation.cml_lab_id != LIVE_LAB_ID
         or tuple(record.logical_name for record in generation.records) != expected_names
         or tuple(record.device_identity for record in generation.records)
-        != EXPECTED_LIVE_DEVICE_IDENTITIES
+        != catalog.scope.identities
         or tuple(record.cml_node_id for record in generation.records)
-        != EXPECTED_LIVE_NODE_IDS
+        != tuple(a.cml_node_id for a in catalog.anchors)
     ):
         raise ProfiledLiveHostTrustError(
             "profiled LIVE trust metadata population rejected"
@@ -175,7 +166,9 @@ def _validate_generation(
     if generation.generation_evidence.digest != known_hosts_digest:
         raise ProfiledLiveHostTrustError("profiled LIVE trust digest rejected")
     for record, (address, port) in zip(
-        generation.records, EXPECTED_LIVE_ENDPOINTS, strict=True
+        generation.records,
+        tuple((a.management_address, a.management_port) for a in catalog.anchors),
+        strict=True,
     ):
         if (
             str(record.management_address) != address
@@ -217,16 +210,18 @@ def publish_profiled_live_host_trust(
     known_hosts: bytes,
     generation: CmlAnchoredHostTrustGeneration,
     root: Path = DEFAULT_PROFILED_LIVE_TRUST_ROOT,
+    *,
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION,
 ) -> CmlAnchoredHostTrustGeneration:
-    """Atomically publish one already CML-anchored exact-four generation."""
+    """Atomically publish one already CML-anchored scope-bound generation."""
     _validate_root(root, create=True)
-    _validate_generation(known_hosts, generation)
+    _validate_generation(known_hosts, generation, catalog=catalog)
     ambiguity = root / AMBIGUITY_NAME
     _publish(ambiguity, b"AMBIGUOUS\n")
     try:
         _publish(root / KNOWN_HOSTS_NAME, known_hosts)
         _publish(root / METADATA_NAME, generation.model_dump_json().encode() + b"\n")
-        validate_profiled_live_host_trust(root, reject_ambiguity=False)
+        validate_profiled_live_host_trust(root, reject_ambiguity=False, catalog=catalog)
         ambiguity.unlink()
         directory = os.open(root, os.O_RDONLY)
         try:
@@ -244,6 +239,7 @@ def validate_profiled_live_host_trust(
     root: Path = DEFAULT_PROFILED_LIVE_TRUST_ROOT,
     *,
     reject_ambiguity: bool = True,
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION,
 ) -> CmlAnchoredHostTrustGeneration:
     """Validate private rendering material and its secret-free B3 metadata."""
     _validate_root(root)
@@ -262,5 +258,5 @@ def validate_profiled_live_host_trust(
         raise ProfiledLiveHostTrustError(
             "profiled LIVE host-trust metadata rejected"
         ) from None
-    _validate_generation(known_hosts, generation)
+    _validate_generation(known_hosts, generation, catalog=catalog)
     return generation

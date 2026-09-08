@@ -44,7 +44,8 @@ from network_change_delivery.assurance import (
 from network_change_delivery.audit import canonical_json_bytes, sha256_identity
 from network_change_delivery.junos_adapter import JunosPyEZAdapter
 from network_change_delivery.profile_inventory import (
-    PROFILED_POPULATION_CATALOG,
+    OSPF_SERVICE_SCOPE,
+    REFERENCE_ASSURANCE_SCOPE,
     ProfiledInventoryDevice,
     ProfiledInventoryPopulation,
     ProfileReadOnlyTarget,
@@ -656,14 +657,10 @@ def collect_ospf_observation(
     observed_at: datetime | None = None,
 ) -> OspfObservation:
     """Collect a fresh exact-three managed OSPF observation with no writes."""
-    devices = {device.device_identity: device for device in population.devices}
-    if set(devices) != {
-        "netbox:dcim.device:1",
-        "netbox:dcim.device:2",
-        "netbox:dcim.device:8",
-        "netbox:dcim.device:9",
-    }:
-        raise ProviderError("profiled OSPF inventory population is not exact")
+    devices = {
+        device.device_identity: device
+        for device in population.project(OSPF_SERVICE_SCOPE).devices
+    }
     observations: list[ObservedOspfRouterState] = []
     for router in intent.routers:
         device = devices[router.device_identity]
@@ -817,8 +814,8 @@ def build_ospf_triangle_candidate_snapshot(
     if underlay_intent.source_allocation != ospf_intent.source_underlay:
         raise ValueError("combined candidate source authority is inconsistent")
     catalog = tuple(
-        (item.logical_name.value, item.automation_profile_id)
-        for item in PROFILED_POPULATION_CATALOG
+        (item.logical_name, item.automation_profile_id)
+        for item in REFERENCE_ASSURANCE_SCOPE.members
     )
     if tuple(name for name, _profile in catalog) != EXPECTED_PROFILED_NAMES:
         raise ValueError("combined candidate population is not exact")

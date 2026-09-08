@@ -152,7 +152,15 @@ class NetBoxReferenceRoutingIdentityProvider(NetBoxReadOnlyAPI):
             self._DEVICE_PATH,
             params={"tag": "ncdp-profiled-inventory", "ordering": "id"},
         )
-        if len(prefixes) != 1 or len(ips) != 3 or len(devices) != 4:
+        # This vertical owns router-ID subjects, not every managed member.
+        # Full managed admission is performed by the profiled inventory resolver.
+        subjects = {facts[0] for facts in _ROUTER_IDENTITIES.values()}
+        devices = [device for device in devices if device.get("id") in subjects]
+        if (
+            len(prefixes) != 1
+            or len(ips) != len(subjects)
+            or len(devices) != len(subjects)
+        ):
             raise InventoryError("NetBox routing-identity population is not exact")
         prefix = prefixes[0]
         if (
@@ -163,7 +171,7 @@ class NetBoxReferenceRoutingIdentityProvider(NetBoxReadOnlyAPI):
         ):
             raise InventoryError("NetBox routing-identity pool conflicts")
 
-        expected_primary = {1: 1, 2: 2, 8: 13, 9: 15}
+        expected_primary = {1: 1, 2: 2, 8: 13}
         device_facts: dict[int, tuple[str, int]] = {}
         for device in devices:
             device_id = _positive_id(device.get("id"), "device")
@@ -181,7 +189,6 @@ class NetBoxReferenceRoutingIdentityProvider(NetBoxReadOnlyAPI):
             1: ("core-02", 1),
             2: ("edge-junos-01", 2),
             8: ("transit-ios-01", 13),
-            9: ("access-sw-01", 15),
         } or {value[1] for value in device_facts.values()} != set(
             expected_primary.values()
         ):

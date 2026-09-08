@@ -334,10 +334,16 @@ cisco_ip=$(docker inspect "${project}-test-cisco" --format '{{range .NetworkSett
 junos_ip=$(docker inspect "${project}-test-junos" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
 NCDP_TEST_CISCO_IP=${cisco_ip} NCDP_TEST_JUNOS_IP=${junos_ip} quality_python -c '
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from network_change_delivery.architecture_contracts import AutomationProfileID, NetworkOS
 from network_change_delivery.observability_targets import TargetGenerationState, publish_generation, targets_from_inventory
+
+# This isolated quality-image fixture resolves the same typed population contract.
+# It never queries the real inventory or publishes to the installed service root.
+sys.path.insert(0, "/app/tests")
+from profiled_population_fixtures import typed_population_from_subjects
 
 class Device(SimpleNamespace):
     def live_read_only_target(self):
@@ -349,7 +355,7 @@ devices = (
     Device(inventory_object_id="netbox:dcim.device:8", logical_name="transit-ios-01", platform=SimpleNamespace(slug="cisco-ios"), network_os=NetworkOS.IOS, automation_profile_id=AutomationProfileID.IOSV_159_3_M12, host=os.environ["NCDP_TEST_CISCO_IP"], port=22),
     Device(inventory_object_id="netbox:dcim.device:9", logical_name="access-sw-01", platform=SimpleNamespace(slug="cisco-ios"), network_os=NetworkOS.IOS, automation_profile_id=AutomationProfileID.IOSVL2_2020, host=os.environ["NCDP_TEST_CISCO_IP"], port=22),
 )
-inventory = SimpleNamespace(resolve_profiled_population=lambda: SimpleNamespace(devices=devices))
+inventory = SimpleNamespace(resolve_profiled_population=lambda: typed_population_from_subjects(devices))
 realization = SimpleNamespace(lab_id="11111111-1111-1111-1111-111111111111", digest="sha256:" + "a" * 64)
 publish_generation(Path(os.environ["NCDP_TEST_STATE_ROOT"]), state=TargetGenerationState.ACTIVE, targets=targets_from_inventory(inventory), realization=realization)
 '

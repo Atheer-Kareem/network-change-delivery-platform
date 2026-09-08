@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one explicitly authorized profiled exact-four CML staging lifecycle.
+"""Run one explicitly authorized profiled scope-bound CML staging lifecycle.
 
 The local entry point requires ``--execute`` for a private run directory.
 Buildkite injects its own providers into these same lifecycle operations.
@@ -19,10 +19,16 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from network_change_delivery.architecture_contracts import get_automation_profile
+from network_change_delivery.architecture_contracts import (
+    CML_REALIZATION_PROFILE_CATALOG,
+    CmlBootPolicy,
+    get_automation_profile,
+)
 from network_change_delivery.profile_inventory import (
+    STAGING_REALIZATION_SCOPE,
     NetBoxProfileInventoryProvider,
     ProfiledInventoryDevice,
+    ProfiledPopulationScope,
 )
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
 from network_change_delivery.profiled_live_cml import ios_scrypt_password_hash
@@ -33,16 +39,19 @@ from network_change_delivery.profiled_realization import (
     StagingRealizedDevice,
 )
 from network_change_delivery.profiled_staging import (
-    PROFILED_STAGING_TERRAFORM_ADDRESSES,
+    CURRENT_STAGING_TOPOLOGY,
     ProfiledStagingAmbiguousError,
     ProfiledStagingDeviceEvidence,
     ProfiledStagingError,
     ProfiledStagingLifecycle,
     ProfiledStagingReadinessEvidence,
     ProfiledStagingReadinessOutcome,
+    ProfiledStagingRecycleEvidence,
+    ProfiledStagingTopology,
     load_recovery_inputs,
     record_staging_duration,
     retire_profiled_staging_run_directory,
+    staging_terraform_addresses,
     terraform_managed_state_addresses,
     terraform_profiled_device_variables,
     validate_destroy_only_plan,
@@ -58,8 +67,8 @@ from network_change_delivery.profiled_staging import (
 )
 from network_change_delivery.profiled_staging_cml import (
     ProfiledStagingCmlLabStarter,
+    ProfiledStagingCmlProfileRecycler,
     ProfiledStagingCmlReader,
-    ProfiledStagingCmlTransitRecycler,
     admit_created_realization,
     admit_no_staging_collision,
 )
@@ -92,7 +101,12 @@ class LocalTerraformOperations:
         inventory: NetBoxProfileInventoryProvider | None = None,
         secrets: SecretProvider | None = None,
         cml_token: str | None = None,
+        scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE,
+        topology: ProfiledStagingTopology = CURRENT_STAGING_TOPOLOGY,
     ) -> None:
+        self.scope = scope
+        self.topology = topology
+        self._expected_addresses = staging_terraform_addresses(scope, topology)
         self._run_id = run_id
         self._run_directory = run_directory
         self._state_path = run_directory / "terraform.tfstate"
@@ -114,8 +128,7 @@ class LocalTerraformOperations:
         self.readiness_deadline_seconds = _READINESS_NORMAL_TIMEOUT_SECONDS
         self.topology_digest: str | None = None
         self.trust_generation: EvidenceReference | None = None
-        self.transit_recycle_outcome = "not_attempted"
-        self.transit_recycle_evidence: EvidenceReference | None = None
+        self.recycles: tuple[ProfiledStagingRecycleEvidence, ...] = ()
         self.device_evidence: tuple[ProfiledStagingDeviceEvidence, ...] = ()
         self.create_stage = "not_attempted"
         self.start_stage = "not_attempted"
@@ -156,7 +169,12 @@ class LocalTerraformOperations:
         return values
 
     def _var_file_arguments(self) -> list[str]:
-        load_recovery_inputs(self._recovery_inputs, self._run_id)
+        load_recovery_inputs(
+            self._recovery_inputs,
+            self._run_id,
+            scope=self.scope,
+            topology=self.topology,
+        )
         return [f"-var-file={self._recovery_inputs}"]
 
     @staticmethod
@@ -220,7 +238,7 @@ class LocalTerraformOperations:
                     raise ProfiledStagingAmbiguousError(
                         f"profiled staging Terraform {phase} ownership is ambiguous"
                     ) from None
-                if not addresses.issubset(PROFILED_STAGING_TERRAFORM_ADDRESSES):
+                if not addresses.issubset(self._expected_addresses):
                     raise ProfiledStagingAmbiguousError(
                         f"profiled staging Terraform {phase} ownership is ambiguous"
                     )
@@ -298,9 +316,9 @@ class LocalTerraformOperations:
         )
         self._secure_file(plan)
         actions = self._planned_actions(plan)
-        if set(actions) != PROFILED_STAGING_TERRAFORM_ADDRESSES or set(
-            actions.values()
-        ) != {"create"}:
+        if set(actions) != self._expected_addresses or set(actions.values()) != {
+            "create"
+        }:
             raise ProfiledStagingError("profiled staging create graph rejected")
         self._terraform(["apply", "-input=false", str(plan)], phase="create")
         if self._state_path.exists():
@@ -395,11 +413,15 @@ class LocalTerraformOperations:
         return verifier
 
     def admit(self) -> None:
-        self._devices = validate_profiled_staging_population(self._inventory)
-        validate_profiled_staging_physical_topology(self._inventory, self._devices)
+        self._devices = validate_profiled_staging_population(
+            self._inventory, scope=self.scope
+        )
+        validate_profiled_staging_physical_topology(
+            self._inventory, self._devices, topology=self.topology
+        )
         reader = ProfiledStagingCmlReader.from_environment(token=self._cml_token)
         try:
-            admit_no_staging_collision(reader, self._devices)
+            admit_no_staging_collision(reader, self._devices, scope=self.scope)
         finally:
             reader.close()
         for device in self._devices:
@@ -417,7 +439,7 @@ class LocalTerraformOperations:
 
     def create(self) -> StagingRealizationContext:
         credentials = self._credentials
-        if len(credentials) != 4:
+        if tuple(credentials) != tuple(m.logical_name for m in self.scope.members):
             raise ProfiledStagingError(
                 "profiled staging credential population rejected"
             )
@@ -434,7 +456,7 @@ class LocalTerraformOperations:
                     device.device_identity.rsplit(":", 1)[1].zfill(14),
                 )
         variables = terraform_profiled_device_variables(
-            self._devices, credentials, password_verifiers
+            self._devices, credentials, password_verifiers, scope=self.scope
         )
         self._variables = variables
         write_recovery_inputs(
@@ -443,6 +465,7 @@ class LocalTerraformOperations:
                 "staging_run_id": self._run_id,
                 "lifecycle_state": "DEFINED_ON_CORE",
                 "devices": variables,
+                "data_links": self.topology.terraform_links(),
             },
         )
         for template in (TERRAFORM_ROOT / "bootstrap").glob("*.tftpl"):
@@ -453,7 +476,7 @@ class LocalTerraformOperations:
         reader = ProfiledStagingCmlReader.from_environment(token=self._cml_token)
         try:
             observed = admit_created_realization(
-                reader, self._run_id, outputs, self._devices
+                reader, self._run_id, outputs, self._devices, topology=self.topology
             )
             self.topology_digest = observed.topology_evidence.digest
         finally:
@@ -473,20 +496,41 @@ class LocalTerraformOperations:
             finally:
                 starter.close()
 
-        self.transit_recycle_outcome = "attempted"
-        recycler = ProfiledStagingCmlTransitRecycler.from_environment(
-            token=self._cml_token
-        )
-        try:
-            self.transit_recycle_evidence = recycler.recycle(
-                run_id=self._run_id,
-                observed=observed,
-                devices=self._devices,
+        for device in self._devices:
+            policy = CML_REALIZATION_PROFILE_CATALOG[
+                device.cml_realization_profile_id
+            ].boot_policy
+            if policy != CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE:
+                continue
+            attempt = ProfiledStagingRecycleEvidence(
+                device_identity=device.device_identity,
+                logical_name=device.logical_name,
+                policy=policy,
+                outcome="attempted",
             )
-            self.transit_recycle_outcome = "succeeded"
-        finally:
-            self.timings_seconds.update(recycler.timings_seconds)
-            recycler.close()
+            self.recycles += (attempt,)
+            recycler = ProfiledStagingCmlProfileRecycler.from_environment(
+                token=self._cml_token
+            )
+            try:
+                evidence = recycler.recycle(
+                    run_id=self._run_id, observed=observed, device=device
+                )
+                self.recycles = (
+                    *self.recycles[:-1],
+                    ProfiledStagingRecycleEvidence(
+                        **(
+                            attempt.model_dump()
+                            | {"outcome": "succeeded", "evidence": evidence}
+                        )
+                    ),
+                )
+            finally:
+                for phase, duration in recycler.timings_seconds.items():
+                    self.timings_seconds[phase] = (
+                        self.timings_seconds.get(phase, 0) + duration
+                    )
+                recycler.close()
 
         with record_staging_duration(self.timings_seconds, "readiness"):
             self._readiness = self._wait_readiness(observed.node_ids, observed.lab_id)
@@ -496,6 +540,7 @@ class LocalTerraformOperations:
             raise ProfiledStagingError("profiled staging node outputs rejected")
         provisional = tuple(
             StagingRealizedDevice(
+                declaration=self.scope.declaration,
                 device_identity=device.device_identity,
                 logical_name=device.logical_name,
                 operational_role=device.operational_role,
@@ -512,6 +557,7 @@ class LocalTerraformOperations:
             for device in self._devices
         )
         context = StagingRealizationContext(
+            scope=self.scope,
             staging_run_id=self._run_id,
             cml_lab_id=observed.lab_id,
             cml_lab_title=observed.lab_title,
@@ -781,7 +827,7 @@ class LocalTerraformOperations:
             )
 
     def _record_readiness(self, evidence: ProfiledStagingReadinessEvidence) -> None:
-        """Publish each bounded readiness fact immediately in exact-four order."""
+        """Publish each bounded readiness fact immediately in canonical scope order."""
         self._readiness_results[evidence.logical_name] = evidence
         self.readiness_evidence = tuple(
             self._readiness_results[name]
@@ -821,7 +867,10 @@ class LocalTerraformOperations:
         )
         self._secure_file(plan)
         validate_destroy_only_plan(
-            state, self._planned_actions(plan), require_complete=require_complete
+            state,
+            self._planned_actions(plan),
+            require_complete=require_complete,
+            expected_addresses=self._expected_addresses,
         )
         try:
             self._terraform(["apply", "-input=false", str(plan)], phase="destroy apply")

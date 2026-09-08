@@ -15,6 +15,10 @@ from pathlib import Path
 
 import httpx
 
+from network_change_delivery.architecture_contracts import (
+    CML_REALIZATION_PROFILE_CATALOG,
+    CmlBootPolicy,
+)
 from network_change_delivery.buildkite_identity import read_buildkite_oidc_jwt
 from network_change_delivery.buildkite_staging import (
     OPENBAO_STAGING_AUDIENCE,
@@ -24,9 +28,11 @@ from network_change_delivery.buildkite_staging import (
     staging_context_from_environment,
     validate_staging_state_root,
 )
-from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
+from network_change_delivery.profile_inventory import (
+    STAGING_REALIZATION_SCOPE,
+    NetBoxProfileInventoryProvider,
+)
 from network_change_delivery.profiled_staging import (
-    PROFILED_STAGING_DEVICE_NAMES,
     ProfiledStagingError,
     ProfiledStagingEvidence,
     ProfiledStagingLifecycle,
@@ -56,7 +62,6 @@ _REQUIRED_NAMES = (
 _PHASES = (
     "create_outcome",
     "start_outcome",
-    "transit_recycle_outcome",
     "read_only_outcome",
     "destroy_outcome",
     "absence_verification",
@@ -149,7 +154,7 @@ def authenticate_cml(*, transport: httpx.BaseTransport | None = None) -> str:
 def evidence_succeeded(
     evidence: ProfiledStagingEvidence, context: BuildkiteStagingContext
 ) -> bool:
-    """Require all authoritative schema-v2 success facts, not just an outcome label."""
+    """Require all authoritative schema-v3 success facts, not just an outcome label."""
     return (
         evidence.final_outcome is ProfiledStagingOutcome.SUCCEEDED
         and evidence.source_commit == context.commit
@@ -166,19 +171,25 @@ def evidence_succeeded(
         and evidence.trust_generation is not None
         and evidence.trust_generation.identity
         == f"staging-trust:{context.staging_run_id}"
-        and evidence.transit_recycle_evidence is not None
-        and evidence.transit_recycle_evidence.identity
-        == f"staging-transit-recycle:{context.staging_run_id}:transit-ios-01"
+        and evidence.scope == STAGING_REALIZATION_SCOPE
+        and tuple(r.device_identity for r in evidence.recycles)
+        == tuple(
+            m.device_identity
+            for m in evidence.scope.members
+            if CML_REALIZATION_PROFILE_CATALOG[m.cml_realization_profile_id].boot_policy
+            is CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
+        )
+        and all(item.outcome == "succeeded" for item in evidence.recycles)
         and all(getattr(evidence, phase) == "succeeded" for phase in _PHASES)
         and evidence.primary_failure is None
         and evidence.cleanup_failure is None
         and tuple(item.logical_name for item in evidence.readiness)
-        == PROFILED_STAGING_DEVICE_NAMES
+        == tuple(m.logical_name for m in evidence.scope.members)
         and all(item.outcome.value == "READY" for item in evidence.readiness)
         and tuple(item.device_identity for item in evidence.devices)
-        == tuple(f"netbox:dcim.device:{number}" for number in (1, 2, 8, 9))
+        == evidence.scope.identities
         and tuple(item.logical_name for item in evidence.devices)
-        == PROFILED_STAGING_DEVICE_NAMES
+        == tuple(m.logical_name for m in evidence.scope.members)
         and all(item.read_only_collection == "succeeded" for item in evidence.devices)
         and all(
             ready.device_identity == device.device_identity
@@ -194,10 +205,10 @@ def evidence_succeeded(
 _TIMING_LABELS = {
     "create": "Infrastructure create",
     "start": "CML lab start",
-    "transit_first_boot": "Transit first boot",
-    "transit_persistence": "Day-0 persistence hold",
-    "transit_stop": "Transit stop",
-    "transit_second_boot": "Transit second boot",
+    "recycle_first_boot": "Profile-required first boot",
+    "recycle_persistence": "Day-0 persistence hold",
+    "recycle_stop": "Profile-required stop",
+    "recycle_second_boot": "Profile-required second boot",
     "readiness": "Service readiness",
     "read_only": "Read-only validation",
     "cleanup": "Cleanup",
@@ -216,9 +227,9 @@ def failed_phase(evidence: ProfiledStagingEvidence) -> str:
         return "infrastructure create"
     if evidence.start_outcome != "succeeded":
         return "CML lab start"
-    if evidence.transit_recycle_outcome != "succeeded":
-        return "transit recycle"
-    if len(evidence.readiness) != 4 or any(
+    if any(item.outcome != "succeeded" for item in evidence.recycles):
+        return "profile-required recycle"
+    if len(evidence.readiness) != len(evidence.scope.members) or any(
         item.outcome.value != "READY" for item in evidence.readiness
     ):
         return "service readiness"
@@ -230,7 +241,7 @@ def failed_phase(evidence: ProfiledStagingEvidence) -> str:
 def summary(evidence: ProfiledStagingEvidence, *, succeeded: bool) -> str:
     """Render only closed labels and counts; never render raw failure/provider text."""
     lines = [
-        "Profiled exact-four CML staging: " + ("SUCCEEDED" if succeeded else "FAILED"),
+        "Profiled scoped CML staging: " + ("SUCCEEDED" if succeeded else "FAILED"),
         "",
     ]
     if evidence.primary_failure:
@@ -249,7 +260,7 @@ def summary(evidence: ProfiledStagingEvidence, *, succeeded: bool) -> str:
     validated = sum(
         item.read_only_collection == "succeeded" for item in evidence.devices
     )
-    for name in PROFILED_STAGING_DEVICE_NAMES:
+    for name in tuple(m.logical_name for m in evidence.scope.members):
         observation = next(
             (item for item in evidence.readiness if item.logical_name == name), None
         )
@@ -265,10 +276,19 @@ def summary(evidence: ProfiledStagingEvidence, *, succeeded: bool) -> str:
         )
     lines.extend(
         (
-            f"- READY: {ready}/4; READ-ONLY validated: {validated}/4",
+            f"- READY: {ready}/{len(evidence.scope.members)}; "
+            f"READ-ONLY validated: {validated}/{len(evidence.scope.members)}",
             f"- primary failure: {'present' if evidence.primary_failure else 'none'}",
             f"- cleanup failure: {'present' if evidence.cleanup_failure else 'none'}",
-            "- CML recycle scope: transit-ios-01 only; no device CLI writes",
+            "- CML profile-required recycle subjects: "
+            + (
+                ", ".join(
+                    item.logical_name + ": " + item.outcome
+                    for item in evidence.recycles
+                )
+                or "none attempted"
+            )
+            + "; no device CLI writes",
         )
     )
     if evidence.timings_seconds:
@@ -362,7 +382,7 @@ def run(context: BuildkiteStagingContext, root: Path) -> int:
     rendered = summary(evidence, succeeded=succeeded)
     print(rendered, end="")
     try:
-        # Publish the bounded summary only. Full schema-v2 evidence remains in
+        # Publish the bounded summary only. Full schema-v3 evidence remains in
         # the agent-owned external evidence directory, never the run/state tree.
         command(
             [
@@ -382,7 +402,7 @@ def run(context: BuildkiteStagingContext, root: Path) -> int:
         from network_change_delivery.profiled_promotion import digest_bytes
 
         try:
-            # Successful schema-v2 bytes only; never Terraform state/Day-0.
+            # Successful schema-v3 bytes only; never Terraform state/Day-0.
             command(
                 ["buildkite-agent", "artifact", "upload", evidence_path.name],
                 cwd=evidence_path.parent,

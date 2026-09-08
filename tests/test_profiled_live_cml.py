@@ -77,11 +77,22 @@ def test_accepted_profiled_node_identity_cannot_be_silently_recreated(
     with pytest.raises(ProfiledLiveCmlError, match="missing"):
         operator._admit_node(spec, "hostname transit-ios-01\n", [])
 
-    with pytest.raises(ProfiledLiveCmlError, match="identity rejected"):
-        operator.anchor_profiled_live(
-            transit_node_id="33333333-3333-4333-8333-333333333333",
-            access_node_id=ACCESS_NODE_ID,
-        )
+    # Observed nodes cannot replace the reviewed catalog's stable CML anchors.
+    from network_change_delivery.profiled_live_cml import (
+        CURRENT_LIVE_REALIZATION,
+        LIVE_LAB_ID,
+    )
+
+    def get(path):
+        if path == f"/api/v0/labs/{LIVE_LAB_ID}":
+            return {"lab_title": "NCDP Live", "state": "STARTED"}
+        if path.endswith("/nodes"):
+            return ["33333333-3333-4333-8333-333333333333"]
+        return list(CURRENT_LIVE_REALIZATION.baseline_link_ids)
+
+    monkeypatch.setattr(operator, "_get", get)
+    with pytest.raises(ProfiledLiveCmlError, match="population rejected"):
+        operator.anchor_profiled_live()
 
 
 def test_extracted_bootstrap_must_retain_the_exact_openbao_derived_verifier(

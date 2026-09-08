@@ -22,14 +22,16 @@ from network_change_delivery.oxidized_private_paths import (
     validate_private_file,
 )
 from network_change_delivery.profile_inventory import (
-    PROFILED_POPULATION_IDENTITIES,
+    OXIDIZED_COLLECTION_SCOPE,
+    PROFILED_MANAGED_POPULATION,
     ProfiledInventoryDevice,
     ProfiledInventoryPopulation,
+    ProfiledPopulationDeclaration,
+    ProfiledPopulationScope,
     admit_profiled_subject,
 )
 from network_change_delivery.secrets import SecretError, SecretProvider
 
-EXPECTED_IDENTITIES = frozenset(PROFILED_POPULATION_IDENTITIES)
 OXIDIZED_MODEL_BY_PROFILE = {
     AutomationProfileID.CAT8000V_IOSXE: "ios",
     AutomationProfileID.VJUNOS_ROUTER: "junos",
@@ -85,16 +87,17 @@ class _ProfileInventory(Protocol):
 
 def _device_id(device: ProfiledInventoryDevice) -> int:
     identity = device.device_identity
-    if identity not in EXPECTED_IDENTITIES:
-        raise OxidizedSourceError("Oxidized managed population is not exact")
     return int(identity.rsplit(":", maxsplit=1)[1])
 
 
 def _source_node(
-    device: ProfiledInventoryDevice, provider: SecretProvider
+    device: ProfiledInventoryDevice,
+    provider: SecretProvider,
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION,
 ) -> _PrivateSourceNode:
     try:
         admit_profiled_subject(
+            declaration=declaration,
             device_identity=device.device_identity,
             logical_name=device.logical_name,
             platform_slug=device.platform.slug,
@@ -182,6 +185,8 @@ def materialize_oxidized_source(
     inventory: _ProfileInventory,
     secrets: SecretProvider,
     root: Path,
+    *,
+    scope: ProfiledPopulationScope = OXIDIZED_COLLECTION_SCOPE,
 ) -> MaterializedOxidizedSource:
     """Resolve both authorities completely, then atomically publish one source."""
     try:
@@ -190,18 +195,20 @@ def materialize_oxidized_source(
         raise OxidizedSourceError("Oxidized runtime root rejected") from error
     try:
         population = inventory.resolve_profiled_population()
-        devices = population.devices
-    except InventoryError as error:
+        devices = population.project(scope).devices
+    except (InventoryError, ValueError) as error:
         raise OxidizedSourceError(
             "Oxidized managed inventory resolution failed"
         ) from error
     identities = tuple(device.device_identity for device in devices)
-    if len(identities) != 4 or set(identities) != EXPECTED_IDENTITIES:
+    if identities != scope.identities:
         raise OxidizedSourceError("Oxidized managed population is not exact")
     if len(set(identities)) != len(identities):
         raise OxidizedSourceError("Oxidized managed population contains duplicates")
-    ordered = tuple(sorted(devices, key=_device_id))
-    nodes = tuple(_source_node(device, secrets) for device in ordered)
+    ordered = devices
+    nodes = tuple(
+        _source_node(device, secrets, population.declaration) for device in ordered
+    )
     names = tuple(node.name for node in nodes)
     if len(set(names)) != len(names):
         raise OxidizedSourceError("Oxidized node population contains duplicates")

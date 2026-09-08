@@ -14,17 +14,9 @@ output "node_ids" {
 }
 
 output "link_ids" {
-  value = {
-    for name, link in {
-      system_bridge_management = cml2_link.system_bridge_management
-      management_core          = cml2_link.management_core
-      management_junos         = cml2_link.management_junos
-      management_transit       = cml2_link.management_transit
-      management_access        = cml2_link.management_access
-      core_junos               = cml2_link.core_junos
-      core_transit             = cml2_link.core_transit
-      junos_transit            = cml2_link.junos_transit
-      core_access              = cml2_link.core_access
-    } : name => link.id
-  }
+  value = merge(
+    { system_bridge_management = cml2_link.system_bridge_management.id },
+    { for name, link in cml2_link.management : "management_${name}" => link.id },
+    { for name, link in cml2_link.data : name => link.id },
+  )
 }

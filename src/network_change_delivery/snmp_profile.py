@@ -12,8 +12,12 @@ from network_change_delivery.architecture_contracts import (
     get_automation_profile,
 )
 from network_change_delivery.profile_inventory import (
+    PROFILED_MANAGED_POPULATION,
     PROFILED_POPULATION_CATALOG,
     ProfiledInventoryDevice,
+    ProfiledInventoryPopulation,
+    ProfiledPopulationDeclaration,
+    ProfiledPopulationScope,
     admit_profiled_subject,
 )
 
@@ -46,9 +50,14 @@ def profile_supports_snmp(profile_id: AutomationProfileID) -> bool:
     )
 
 
-def eligible_profiled_subject(device: ProfiledInventoryDevice) -> bool:
+def eligible_profiled_subject(
+    device: ProfiledInventoryDevice,
+    *,
+    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION,
+) -> bool:
     """Validate the complete profiled subject before applying capability policy."""
     admit_profiled_subject(
+        declaration=declaration,
         device_identity=device.device_identity,
         logical_name=device.logical_name,
         platform_slug=device.platform.slug,
@@ -64,4 +73,15 @@ def snmp_capable_profiles(
     """Return the capability projection in canonical profile-catalog order."""
     return tuple(
         profile_id for profile_id in profiles if profile_supports_snmp(profile_id)
+    )
+
+
+def snmp_scope_devices(
+    population: ProfiledInventoryPopulation, scope: ProfiledPopulationScope
+) -> tuple[ProfiledInventoryDevice, ...]:
+    """Intersect exact read scope with closed profile capability admission."""
+    return tuple(
+        d
+        for d in population.project(scope).devices
+        if eligible_profiled_subject(d, declaration=population.declaration)
     )

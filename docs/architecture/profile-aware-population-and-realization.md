@@ -1,12 +1,11 @@
 # Profile-aware population and realization contracts
 
-The governing contract is managed population → profile/capability projection →
-applicable assurance → operation-specific execution authority. Exact selected
-membership is required; permanent population size is not the design goal.
-Current code still enforces a closed name/identity catalog and several fixed
-counts, documented below as implementation limits. CAP-POPULATION-SCOPES owns
-their generalization. Historical B3/B4 sections record what was accepted at each
-milestone; they do not create another roadmap.
+The governing contract is Git-declared managed population → exact typed consumer
+scope → profile/capability projection → applicable assurance → operation-specific
+write authority. Exact membership is required; permanent population size is not.
+The [population and scope contract](population-scopes.md) describes current
+implementation and synthetic proof. Historical B3/B4 sections below record their
+milestones; they do not create another roadmap.
 
 ## Current population boundary
 
@@ -43,7 +42,7 @@ The final inventory authority is:
 
 The current proof population comprises NetBox devices 1/2/8/9. Each consumer admits only
 the profiles and capabilities appropriate to
-its operation; fleet membership never grants every device identical router,
+its operation; managed membership never grants every device identical router,
 write, or service behavior. The old `ncdp-managed` tag has zero legitimate
 runtime consumers. Its external assignments were removed during the
 [PR #133 closure acceptance](../acceptance/profiled-migration-closure-pr133.md);
@@ -80,7 +79,7 @@ or generic IOS fallback.
 profiled tag, and returns an immutable tuple in the table order. Missing,
 extra, inactive, duplicated, mistagged, or mismatched members fail closed.
 Per-device profiled resolution uses the same tag and the same name-to-facts
-catalog check: a name outside the exact four, or an admitted name with mismatched
+declaration check: a name outside the declared population, or an admitted name with mismatched
 stable identity, role, platform, device type, NOS, automation profile, or CML
 profile, fails closed. It has no `ncdp-managed` fallback.
 
@@ -100,7 +99,7 @@ StagingRealizationContext.staging_read_only_target(profiled_device)
 ```
 
 The context must be `READY`, fresh, and bound to one staging run and CML lab.
-It contains the exact four logical devices. Each device binding carries the
+It contains exactly the run’s declared staging scope. Each device binding carries the
 stable NetBox identity, exact automation and CML profiles, exact CML node UUID,
 the explicit NetBox STAGING endpoint, identical physical/L3 management
 interface identities, and typed readiness and trust evidence references.
@@ -131,8 +130,8 @@ It binds:
 It contains no CML client or mutation method. Missing or extra members,
 duplicate identities, wrong profile pairs, cross-device management bindings,
 or STAGING endpoints fail validation. Management-service observability consumes
-the same profiled managed population for its target projection, deriving the
-service from each automation profile; its separate bounded readiness/admission
+its explicit observability scope, projected from the resolved managed population,
+deriving the service from each automation profile; its separate bounded readiness/admission
 artifact does not use this model directly. Local runtime quality validation is
 active; protected schema-v1 delivery is retired. The profiled
 disposable staging implementation is a required main assurance step; see the
@@ -140,7 +139,7 @@ user-supplied current acceptance. PR/development staging remains temporarily ski
 
 ## CML-anchored host trust
 
-`CmlAnchoredHostTrustRecord` and its exact four-record generation are the
+`CmlAnchoredHostTrustRecord` and its exact realization-scope generation are the
 secret-free evidence contracts used by the private B3-4 enrollment path. A
 record binds:
 

@@ -45,7 +45,8 @@ from network_change_delivery.assurance import (
 )
 from network_change_delivery.audit import canonical_json_bytes, sha256_identity
 from network_change_delivery.profile_inventory import (
-    PROFILED_POPULATION_CATALOG,
+    REFERENCE_ASSURANCE_SCOPE,
+    ROUTED_SERVICE_SCOPE,
     ProfiledInventoryDevice,
     ProfiledInventoryPopulation,
 )
@@ -390,12 +391,8 @@ def collect_routed_underlay_observation(
     observed_at: datetime | None = None,
 ) -> RoutedUnderlayObservation:
     """Collect O through exact LIVE targets; no target or adapter can write."""
-    by_identity = {device.device_identity: device for device in population.devices}
-    if (
-        tuple(device.logical_name for device in population.devices)
-        != EXPECTED_PROFILED_NAMES
-    ):
-        raise ValueError("profiled inventory population is not exact")
+    selected = population.project(ROUTED_SERVICE_SCOPE)
+    by_identity = {device.device_identity: device for device in selected.devices}
     observed: list[ObservedRoutedInterfaceState] = []
     for device_identity in UNDERLAY_DEVICE_IDENTITIES:
         device = by_identity.get(device_identity)
@@ -610,9 +607,9 @@ def render_routed_underlay(
             device.logical_name,
             device.automation_profile_id,
         )
-        for device in population.devices
+        for device in population.project(ROUTED_SERVICE_SCOPE).devices
     )
-    if facts != _PROFILED_BINDINGS:
+    if facts != _RENDER_BINDINGS:
         raise ValueError("routed-underlay rendered population is not exact")
     return _render_change_exact(observation, desired)
 
@@ -641,8 +638,8 @@ def build_routed_underlay_candidate_snapshot(
     if desired != build_routed_underlay_desired_state(intent):
         raise ValueError("routed-underlay desired state is detached from intent")
     candidate_catalog = tuple(
-        (member.logical_name.value, member.automation_profile_id)
-        for member in PROFILED_POPULATION_CATALOG
+        (member.logical_name, member.automation_profile_id)
+        for member in REFERENCE_ASSURANCE_SCOPE.members
     )
     if tuple(name for name, _profile in candidate_catalog) != EXPECTED_PROFILED_NAMES:
         raise ValueError("routed-underlay candidate population is not exact")

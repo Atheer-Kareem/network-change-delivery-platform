@@ -100,7 +100,9 @@ class Inventory:
         self.devices = devices
 
     def resolve_profiled_population(self):
-        return SimpleNamespace(devices=self.devices)
+        from profiled_population_fixtures import typed_population_from_subjects
+
+        return typed_population_from_subjects(self.devices)
 
 
 def realization():

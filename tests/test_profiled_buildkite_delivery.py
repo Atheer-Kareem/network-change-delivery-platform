@@ -755,3 +755,57 @@ def test_audit_root_may_be_absent_for_planning_but_cannot_be_injected(tmp_path):
 def test_ambient_audit_root_rejected_before_protected_settings(tmp_path):
     result, marker = run_hook(tmp_path, {"NCDP_AUDIT_STORE_ROOT": "/ambient"})
     assert result.returncode == 2 and not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        None,
+        "ungrouped",
+        "extra-group",
+        "nested",
+        "duplicate",
+        "reordered",
+        "group-skip",
+        "group-if",
+        "block-fields",
+        "block-skip",
+        "deploy-dependency",
+    ],
+)
+def test_runtime_delivery_group_preserves_exact_human_authority(
+    driver, tmp_path, monkeypatch, mutation
+):
+    import yaml
+
+    graph = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
+    group = graph["steps"][-1]
+    children = group["steps"]
+    if mutation == "ungrouped":
+        graph["steps"] = graph["steps"][:-1] + children
+    elif mutation == "extra-group":
+        graph["steps"].append({"key": "other", "group": "other", "steps": []})
+    elif mutation == "nested":
+        children[0]["steps"] = []
+    elif mutation == "duplicate":
+        graph["steps"].insert(0, dict(children[2]))
+    elif mutation == "reordered":
+        children.reverse()
+    elif mutation == "group-skip":
+        group["skip"] = True
+    elif mutation == "group-if":
+        group["if"] = "true"
+    elif mutation == "block-fields":
+        children[2]["fields"] = []
+    elif mutation == "block-skip":
+        children[2]["skip"] = True
+    elif mutation == "deploy-dependency":
+        children[3]["depends_on"] = "profiled-promotion"
+    (tmp_path / ".buildkite").mkdir()
+    (tmp_path / ".buildkite/pipeline.yml").write_text(yaml.safe_dump(graph))
+    monkeypatch.setattr(driver, "ROOT", tmp_path)
+    if mutation is None:
+        driver.verify_human_dependency()
+    else:
+        with pytest.raises(ValueError, match="human"):
+            driver.verify_human_dependency()

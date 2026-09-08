@@ -113,6 +113,17 @@ steps:
 
   - label: ":terraform: Profiled staging Terraform static validation"
     key: quality-terraform-profiled-staging
+    # One shared scheduling boundary: skipped receipts always skip delivery too.
+    if_changed: &runtime_changes
+      include: "**"
+      exclude:
+        - "docs/**"
+        - "README.md"
+        - "AGENTS.md"
+        - ".github/CODEOWNERS"
+        - ".github/pull_request_template.md"
+        - "tests/**"
+        - ".gitignore"
     soft_fail: true
     command: |
       set -euo pipefail
@@ -127,6 +138,7 @@ steps:
 
   - label: ":gear: SNMP module reproducibility"
     key: quality-snmp-generator
+    if_changed: *runtime_changes
     soft_fail: true
     command: |
       set -euo pipefail
@@ -141,6 +153,7 @@ steps:
 
   - label: ":chart_with_upwards_trend: Observability runtime validation"
     key: quality-observability-runtime
+    if_changed: *runtime_changes
     soft_fail: true
     depends_on: quality-env
     command: |
@@ -156,6 +169,7 @@ steps:
 
   - label: ":satellite: Synthetic SNMPv3 validation"
     key: quality-snmpv3-synthetic
+    if_changed: *runtime_changes
     soft_fail: true
     depends_on: quality-env
     command: |
@@ -206,6 +220,7 @@ steps:
 
   - label: ":batfish: Profiled Batfish · four-device assurance"
     key: pr-batfish-assurance
+    if_changed: *runtime_changes
     soft_fail: true
     depends_on: validation-complete
     if: build.pull_request.id != null || build.branch == "main"
@@ -222,6 +237,7 @@ steps:
 
   - label: "Ephemeral/Profiled CML staging · create → read-only validate → destroy"
     key: cml-staging
+    if_changed: *runtime_changes
     # Temporary PR/development exception: docs/roadmap.md. Main authority unchanged.
     if: build.branch == "main" && build.pull_request.id == null
     soft_fail: true
@@ -239,68 +255,73 @@ steps:
         allowed: false
         reason: "A new commit/build and explicit recovery of retained state are required."
 
-  - label: "Profiled plan · live read-only preflight"
-    key: profiled-live-plan
-    depends_on: cml-staging
-    if: build.branch == "main" && build.pull_request.id == null
-    command: .buildkite/scripts/profiled_delivery.sh
-    soft_fail: true
-    agents:
-      queue: ncdp-deploy
-    retry:
-      automatic: false
-      manual:
-        allowed: false
-    concurrency: 1
-    concurrency_group: ncdp/profiled-live-delivery
+  # if_changed is evaluated on groups/commands, not bare human blocks.
+  - group: "Intent-selected delivery"
+    key: runtime-delivery
+    if_changed: *runtime_changes
+    steps:
+      - label: "Profiled plan · live read-only preflight"
+        key: profiled-live-plan
+        depends_on: cml-staging
+        if: build.branch == "main" && build.pull_request.id == null
+        command: .buildkite/scripts/profiled_delivery.sh
+        soft_fail: true
+        agents:
+          queue: ncdp-deploy
+        retry:
+          automatic: false
+          manual:
+            allowed: false
+        concurrency: 1
+        concurrency_group: ncdp/profiled-live-delivery
 
-  - label: "Delivery decision · promotion or compliance"
-    key: profiled-promotion
-    depends_on: profiled-live-plan
-    if: build.branch == "main" && build.pull_request.id == null
-    command: .buildkite/scripts/profiled_delivery.sh
-    soft_fail: true
-    agents:
-      queue: ncdp-validation
-    retry:
-      automatic: false
-      manual:
-        allowed: false
+      - label: "Delivery decision · promotion or compliance"
+        key: profiled-promotion
+        depends_on: profiled-live-plan
+        if: build.branch == "main" && build.pull_request.id == null
+        command: .buildkite/scripts/profiled_delivery.sh
+        soft_fail: true
+        agents:
+          queue: ncdp-validation
+        retry:
+          automatic: false
+          manual:
+            allowed: false
 
-  - block: "Human continuation · promoted change or compliance"
-    key: profiled-human-authorization
-    depends_on: profiled-promotion
-    if: build.branch == "main" && build.pull_request.id == null
-    prompt: >-
-      For a real promotion, review the promoted schema-v2 plan; unblocking
-      authorizes only this exact build/promotion. For COMPLIANT, no plan or
-      promotion exists and continuation grants no write authority.
-      Human continuation never repairs failed prerequisites.
+      - block: "Human continuation · promoted change or compliance"
+        key: profiled-human-authorization
+        depends_on: profiled-promotion
+        if: build.branch == "main" && build.pull_request.id == null
+        prompt: >-
+          For a real promotion, review the promoted schema-v2 plan; unblocking
+          authorizes only this exact build/promotion. For COMPLIANT, no plan or
+          promotion exists and continuation grants no write authority.
+          Human continuation never repairs failed prerequisites.
 
-  - label: "Profiled delivery · authorized execution or compliant no-write"
-    key: profiled-deploy
-    depends_on: profiled-human-authorization
-    if: build.branch == "main" && build.pull_request.id == null
-    command: .buildkite/scripts/profiled_delivery.sh
-    soft_fail: true
-    agents:
-      queue: ncdp-deploy
-    retry:
-      automatic: false
-      manual:
-        allowed: false
-    concurrency: 1
-    concurrency_group: ncdp/profiled-live-delivery
+      - label: "Profiled delivery · authorized execution or compliant no-write"
+        key: profiled-deploy
+        depends_on: profiled-human-authorization
+        if: build.branch == "main" && build.pull_request.id == null
+        command: .buildkite/scripts/profiled_delivery.sh
+        soft_fail: true
+        agents:
+          queue: ncdp-deploy
+        retry:
+          automatic: false
+          manual:
+            allowed: false
+        concurrency: 1
+        concurrency_group: ncdp/profiled-live-delivery
 
-  - label: "Deployment evidence · final outcome"
-    key: profiled-deployment-evidence
-    depends_on: profiled-deploy
-    if: build.branch == "main" && build.pull_request.id == null
-    command: .buildkite/scripts/profiled_delivery.sh
-    soft_fail: true
-    agents:
-      queue: ncdp-validation
-    retry:
-      automatic: false
-      manual:
-        allowed: false
+      - label: "Deployment evidence · final outcome"
+        key: profiled-deployment-evidence
+        depends_on: profiled-deploy
+        if: build.branch == "main" && build.pull_request.id == null
+        command: .buildkite/scripts/profiled_delivery.sh
+        soft_fail: true
+        agents:
+          queue: ncdp-validation
+        retry:
+          automatic: false
+          manual:
+            allowed: false

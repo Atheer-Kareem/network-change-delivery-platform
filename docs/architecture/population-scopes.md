@@ -183,7 +183,7 @@ historical or service facts mechanically.
 | `profiled_promotion.py` and Buildkite delivery target literal | Explicit current operation/delivery authority, intentionally unchanged. CAP-INTENT-DELIVERY owns broader target selection. |
 | `openbao_profiled_config.py` device IDs | Current operator credential configuration data; permission changes are excluded. |
 | `observability_realization.EXPECTED_NODES`, staging credential IDs, SNMP eligible IDs | Derived compatibility projections of reviewed scope/catalog/capabilities, not independent membership tables. |
-| `scripts/observability/verify_runtime.sh` named endpoints and count assertions | Isolated current-proof-population Docker fixture, not service admission logic. It now resolves a real typed fixture population; synthetic consumer tests separately cover other scope sizes. |
+| `scripts/observability/verify_runtime.sh` named endpoints and count assertions | Isolated current-proof-population Docker fixture, not service admission logic. It publishes production-typed targets directly from the reviewed observability scope and profile services, without inventory or test-tree imports; synthetic consumer tests separately cover other scope sizes. |
 | Parser lengths, UUID/hash lengths, four B5 verticals, four profile interface slots | Protocol/format/profile or service contracts, not managed-population cardinality. |
 
 Generic fixed-population checks were replaced in inventory, realization/trust,

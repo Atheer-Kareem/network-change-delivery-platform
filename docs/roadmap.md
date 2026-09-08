@@ -87,7 +87,7 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation | ACCEPTED |
 | CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | ACCEPTED |
 | CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | ACCEPTED |
-| CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | USER APPROVED |
+| CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | IN PROGRESS |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | USER APPROVED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | USER APPROVED |
 | CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | USER APPROVED |
@@ -95,8 +95,8 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
 CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH and CAP-DURABLE-EVIDENCE
-are accepted. Other approved capabilities await their own tasks; this acceptance
-closeout does not start CAP-CONFIG-CHRONOLOGY.
+are accepted. CAP-CONFIG-CHRONOLOGY is the only capability in implementation
+scope; other approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -265,7 +265,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-CONFIG-CHRONOLOGY — Independent PRE/write/POST chronology
 
-- **State:** USER APPROVED.
+- **State:** IN PROGRESS.
 - **Target/value:** restore independent configuration-history correlation around
   current schema-v2 delivery once durable current parent evidence exists.
 - **Acceptance criteria:** required PRE failure blocks before write; POST is
@@ -278,6 +278,22 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   no-retry/no-speculative-recovery semantics.
 - **Origin/population effect:** restores chronology for explicit delivery
   subjects, not automatically the entire managed population.
+
+- **Implementation evidence:** separate current profiled chronology envelope and
+  deterministic parent-derived identity; optional `profiled-observation-records/`
+  namespace with exact current EXECUTION parent revalidation. The existing deploy
+  boundary admits chronology storage and successful target-bound PRE before its
+  single device command, attempts POST immediately even after command failure or
+  uncertain start, and publishes the child only after durable parent readback.
+  Exact PRE-after/POST-before binding rejects intervening history. Closed
+  SUCCEEDED/PARTIAL/AMBIGUOUS status retains `NOT_PROVEN` causality. Same-build
+  receipts and the existing viewer expose metadata only; COMPLIANCE performs no
+  chronology access and reports NOT REQUIRED. See the
+  [current chronology contract](architecture/audit-and-configuration-history.md#current-profiled-configuration-chronology).
+- **Acceptance/sign-off:** pending user review and appropriate acceptance evidence;
+  synthetic/offline validation does not confer acceptance. No live write is
+  performed or manufactured in this increment. Existing controller/readiness
+  population constraints and fixed promotion authority remain unchanged.
 
 ### CAP-POPULATION-SCOPES — Population-derived admission and realization
 

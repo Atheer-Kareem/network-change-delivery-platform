@@ -267,7 +267,9 @@ def _detail(
     )
 
 
-def _profiled_detail(record: ProfiledDeliveryAuditRecord) -> RecordDetailPresentation:
+def _profiled_detail(
+    record: ProfiledDeliveryAuditRecord, observations=()
+) -> RecordDetailPresentation:
     return RecordDetailPresentation(
         record_id=record.record_id,
         generated_at=record.generated_at,
@@ -285,7 +287,7 @@ def _profiled_detail(record: ProfiledDeliveryAuditRecord) -> RecordDetailPresent
             ArtifactPresentation(str(ref.kind), ref.sha256, ref.schema_version)
             for ref in record.artifacts
         ),
-        observations=(),
+        observations=tuple(_observation(item) for item in observations),
         profiled=ProfiledDeliveryPresentation(
             delivery_kind=record.delivery_kind.value,
             pipeline_id=record.buildkite.pipeline_id,
@@ -567,7 +569,18 @@ def render_record(value: RecordDetailPresentation) -> bytes:
             )
             + "</dl><p>Original artifact-byte hashes are distinct from canonical AuditStore identities. Assurance digests are prerequisites, not candidate-write proof.</p></section>"
         )
-        observations = "<section><h2>Configuration observations</h2><p>Current PRE/write/POST delivery correlation not connected yet.</p></section>"
+        if current.delivery_kind == "COMPLIANCE":
+            observations = "<section><p>Configuration chronology: NOT REQUIRED — COMPLIANT</p></section>"
+        elif not value.observations:
+            observations = (
+                "<section><p>Configuration chronology: NOT ESTABLISHED</p></section>"
+            )
+        else:
+            observations = (
+                "<section><h2>Independent configuration chronology</h2>"
+                + "".join(_observation_block(item) for item in value.observations)
+                + "</section>"
+            )
     body = f"""<a class="back" href="/">← All durable evidence</a>
 <section>
   <h2>Audit identity · {_badge(value.final_outcome)}</h2>
@@ -646,7 +659,17 @@ class EvidenceViewerApplication:
                 current = self.store.read_profiled_record(record_id)
             except AuditStoreError:
                 return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
-            return HTTPStatus.OK, render_record(_profiled_detail(current))
+            try:
+                observations = (
+                    self.store.find_by_profiled_parent(record_id)
+                    if current.delivery_kind.value == "EXECUTION"
+                    else ()
+                )
+            except (OSError, ValueError):
+                # The parent is independently valid. Refuse all child fields;
+                # render NOT ESTABLISHED without weakening store validation.
+                observations = ()
+            return HTTPStatus.OK, render_record(_profiled_detail(current, observations))
         prefix = "/records/"
         if parsed.path.startswith(prefix) and parsed.path.count("/") == 2:
             identity = parsed.path.removeprefix(prefix)

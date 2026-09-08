@@ -109,6 +109,10 @@ def driver(monkeypatch, tmp_path):
             "unmocked external helper forbidden in delivery tests"
         ),
     )
+    from profiled_chronology_fixtures import capture
+
+    tmp_path.chmod(0o700)
+    monkeypatch.setattr(module, "capture_profiled_attempt", capture)
     return module
 
 
@@ -662,7 +666,7 @@ def test_execution_publication_and_final_render_require_exact_plan_binding(
         "download",
         lambda c, d, n, step: (
             (tmp_path / n).read_bytes()
-            if n.endswith("-durable-publication.json")
+            if n.endswith(("-durable-publication.json", "-chronology.json"))
             else old_download(c, d, n, step)
         ),
     )
@@ -681,7 +685,7 @@ def test_execution_publication_and_final_render_require_exact_plan_binding(
     monkeypatch.setattr(driver, "command", command)
     assert driver.deploy_step(context, tmp_path) == (3 if mismatch else 0)
     assert len(commands) == 1  # Publication failure never retries execution.
-    assert len(uploaded) == (0 if mismatch else 2)
+    assert len(uploaded) == (0 if mismatch else 3)
     assert driver.evidence_step(context, tmp_path) == (2 if mismatch else 0)
     assert ("Outcome: SUCCEEDED" in annotations[-1]) is not mismatch
 

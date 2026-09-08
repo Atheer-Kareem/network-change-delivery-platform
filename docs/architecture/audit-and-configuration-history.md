@@ -7,10 +7,90 @@
 > COMPLIANT durable publication end to end. EXECUTION remains comprehensively
 > offline-validated; supplemental runtime evidence will accompany the next
 > legitimate write, without manufacturing a change for acceptance. Current
-> PRE/write/POST remains CAP-CONFIG-CHRONOLOGY, USER APPROVED and not started.
+> PRE/write/POST is implemented offline under CAP-CONFIG-CHRONOLOGY, IN PROGRESS
+> pending acceptance; COMPLIANCE requires no chronology.
 >
 > Historical schema-v1 records remain unchanged and readable. The Increment 10
 > inventory and chronology below remain historical evidence.
+
+## Current profiled configuration chronology
+
+`ProfiledChangeRecord` describes operation-specific device lifecycle state.
+Independent Oxidized revision metadata brackets the delivery window; it is not
+candidate validation, whole-configuration atomicity or proof of causation.
+`causality = NOT_PROVEN` remains mandatory: another actor or independent
+collection can affect the full-device history within that window.
+
+Current chronology uses `ProfiledConfigurationObservationRecord`, explicit
+`record_type=profiled_configuration_observation_record`, schema version 1 of this
+current envelope. `ProfiledDeliveryAuditReference` binds one exact current durable
+EXECUTION parent UUID/digest. PRE and POST are required typed `OxidizedObservation`
+attempts; revision metadata reuses `OxidizedRevision`. Successful PRE (CHANGED or
+UNCHANGED) must have complete before/after metadata. PRE CHANGED means Oxidized
+advanced its prior history before NCDP execution, not that NCDP already wrote.
+
+```text
+authorize exact plan → LIVE trust → durable destination and plan/promotion inputs
+→ chronology destination → successful PRE → one profiled-deploy command
+→ POST attempt → typed report → durable parent/readback/receipt
+→ chronology child/readback/receipt → final evidence
+```
+
+The stable target `netbox:dcim.device:<N>` derives `netbox-device-<N>` through
+existing typed identities; no new instance mapping grants authority. The retained
+controller still admits its current fixed population and enforces readiness,
+verified container, host trust, loopback API and private metadata-only history.
+An existing baseline is mandatory. Before a possible write, PRE's private
+canonical attempt is create-only, mode 0600, bounded, re-read and target-validated.
+Any PRE/destination failure blocks the device command. No ambient credential or
+new OpenBao identity is introduced.
+
+POST is attempted immediately after the one command returns or raises with
+uncertain start, before report upload/rendering. Successful POST must begin at
+exactly `pre.after_revision`; an intervening revision is ambiguous evidence,
+never a silently adopted baseline. PRE completion must precede POST request;
+relationship is always TEMPORALLY_BRACKETED. Successful POST gives SUCCEEDED;
+failed/timed-out POST gives PARTIAL; ambiguous POST gives AMBIGUOUS. This describes
+chronology quality, not the parent's device outcome.
+
+Current APIs on the observation-store architecture are
+`prepare_profiled_observation_publication`, `persist_profiled_observation_record`,
+`read_profiled_observation_record`, `iter_profiled_observation_records` and
+`find_by_profiled_parent`. They use the same AuditStore root and optional
+`profiled-observation-records/`. Child UUID is UUIDv5 with fixed namespace
+`e6821f34-c371-518e-911e-413f24b7d572` and the canonical parent UUID string as name.
+This admits at most one immutable child per parent. Reads/persistence revalidate
+the current parent's digest, target, EXECUTION family and bound execution artifact;
+COMPLIANCE and historical parents cannot be substituted. Existing stores need no
+migration; missing current namespace means no child. Historical record schemas,
+`observation-records/`, `find_by_parent()` and historical viewer routes are unchanged.
+
+Parent publication remains independent of child success. No child failure deletes
+or rewrites a committed parent or retained attempts. Device nonzero exit takes
+precedence; successful device execution plus chronology/publication failure returns
+nonzero evidence failure. Missing typed execution evidence cannot fabricate a
+parent or child. No failure retries the command, and missing evidence never proves
+no write.
+
+`ProfiledChronologyPublicationReceipt` binds build/commit/deploy job, exact parent
+UUID/digest, deterministic child UUID/digest, target, EXECUTION kind, PRE/POST
+statuses, overall status, relationship and NOT_PROVEN causality, with a canonical
+self-digest. It is emitted only after equal child readback. Metadata key
+`profiled-configuration-chronology` binds the exact receipt JSON-byte hash.
+The receipt is a same-build pointer; the stored child is durable authority.
+Final evidence has no AuditStore access: it verifies the receipt against the exact
+plan and durable-parent receipt, preserving the device outcome when chronology
+is PARTIAL, AMBIGUOUS or NOT ESTABLISHED.
+
+COMPLIANCE opens no chronology store and performs no Oxidized/PRE/POST/receipt
+operation. Delivery, final evidence and viewer state
+`Configuration chronology: NOT REQUIRED — COMPLIANT`. Build 420 remains valid,
+unchanged and migration-free. Current EXECUTION viewer pages show the child's
+statuses, commit/blob IDs, collected timestamps, relationship and causality;
+missing children say NOT ESTABLISHED. No raw configuration, credential reference
+or private repository path is exposed. Loopback, CSP, no-store and bounded reads
+remain in force. This implementation has offline evidence only; capability
+acceptance remains pending in the ledger.
 
 ## Current profiled durable foundation
 
@@ -179,8 +259,9 @@ kind/digests, original-byte hashes and applicable authorization/assurance metada
 Compliance displays `NOT REQUIRED — COMPLIANT` for human write authorization.
 Credential references, artifact locators, raw configurations and environment data
 remain excluded. CSP, no-store, HTML escaping and GET/HEAD-only behavior remain.
-Current pages state: **Current PRE/write/POST delivery correlation not connected
-yet.** No historical observation child is attached to a profiled parent.
+Current EXECUTION pages show current chronology metadata or NOT ESTABLISHED;
+COMPLIANCE says NOT REQUIRED — COMPLIANT. No historical observation child is
+attached to a profiled parent.
 
 ## Purpose and boundary
 

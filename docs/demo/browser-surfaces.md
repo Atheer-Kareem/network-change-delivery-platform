@@ -17,12 +17,12 @@ public GitHub material is suitable for an unauthenticated portfolio visitor.
 | CML `NCDP Live` | The distinct persistent, operator-owned current proof population | Lab topology canvas and node-state summary | Consoles, Day-0 configuration, API credentials, node definitions, or edit controls |
 | Grafana `NCDP Management Reachability` | Pipeline-independent, read-only management-service visibility | Provisioned dashboard at `http://127.0.0.1:3000` | Datasource settings, user/admin pages, or unrelated dashboards |
 | Buildkite Build #275 | Historical accepted Junos protected write with fresh validation and vendor-specific safety | Build timeline, approval boundary, deploy-gate result, and bounded logs/metadata | Raw artifacts or unrelated environment data |
-| NCDP durable evidence viewer | Historical audit/chronology and current profiled durable envelopes; Buildkite integration implemented, runtime acceptance pending | Index and exact record detail on `http://127.0.0.1:8765` | The private store itself; no raw/download route exists |
+| NCDP durable evidence viewer | Historical audit/chronology and current profiled durable envelopes; COMPLIANT durability accepted; current chronology implemented offline | Index and exact record detail on `http://127.0.0.1:8765` | The private store itself; no raw/download route exists |
 
 Current profiled details use `/profiled-records/<uuid>`; historical URLs remain
 `/records/<uuid>`. The index distinguishes both families and sorts them by time.
-Profiled COMPLIANCE has no human write authorization. Current PRE/write/POST is
-not connected. Current Buildkite delivery now publishes profiled envelopes through
+Profiled COMPLIANCE has no human write authorization and requires no chronology.
+Current EXECUTION chronology is implemented offline (see below). Current Buildkite delivery now publishes profiled envelopes through
 its deploy boundary; publication requires protected operator store configuration.
 Implementation tests use synthetic temporary stores. No new runtime acceptance is
 claimed, and earlier accepted builds are not retroactively persisted. Do not
@@ -72,3 +72,14 @@ identity or reachability.
 
 The catalog does not create a new control plane: navigation never authorizes a
 deployment, collection, recovery, or reconciliation action.
+
+## Current profiled chronology boundary
+
+Current EXECUTION detail shows PRE/POST statuses, commit/blob IDs, collected
+timestamps, relationship and NOT_PROVEN causality, or NOT ESTABLISHED when no
+child exists. COMPLIANCE shows NOT REQUIRED — COMPLIANT and does not access
+chronology. Historical routes remain unchanged. No raw configuration, credential
+reference or private filesystem path is displayed.
+
+CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
+acceptance. See the [current chronology contract](../architecture/audit-and-configuration-history.md#current-profiled-configuration-chronology).

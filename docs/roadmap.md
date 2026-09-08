@@ -427,19 +427,226 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 ### CAP-PROFILED-ROLLOUT — Bounded profiled multi-target rollout
 
 - **State:** USER APPROVED.
-- **Target/value:** restore mature fleet safety through schema-v2 child plans.
-- **Acceptance criteria:** freeze selected membership and compliant members;
-  complete preflight before any write; deterministic canaries/cohorts/waves;
-  controlled sequential exposure; stop on every non-success; explicit untouched
-  members and partial outcomes; final validation of the frozen rollout population;
-  accurately scoped overlap admission.
-- **Dependencies/scope:** CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE,
-  CAP-POPULATION-SCOPES; profiled selector/plan/coordinator/evidence and fault tests.
-- **Must not change:** child transaction/no-retry semantics or operation authority.
-  Do not restore retired `fleet-deploy`; do not claim distributed locking or
-  fleet-wide atomicity; earlier successes are not automatically rolled back.
-- **Origin/population effect:** restores controlled exposure over explicit frozen
-  subsets of the admitted population without a magic count.
+- **Scope approval:** the previous USER APPROVED contract was materially amended;
+  the user explicitly approved the amended scope below, including the exact
+  current-lab protected credential expansion. Implementation has not started.
+  Passing documentation validation does not move this capability to IN PROGRESS
+  or ACCEPTED. This governance amendment applies no runtime or credential change.
+- **Target/value:** restore controlled multi-target delivery through the current
+  schema-v2 profiled architecture. A reviewed rollout intent selects a bounded
+  subset of the Git-declared managed population. Resolution freezes exact device
+  and interface identities, child planning/compliance results, rollout policy,
+  canaries, waves and execution order before any write. The rollout layer owns
+  **who and when**; existing profile-specific child lifecycles own **how**.
+  Schema-v1 fleet execution remains historical.
+
+#### Selection and independent authority
+
+The reviewed rollout intent may contain an explicit target/interface set and/or
+a closed typed selector resolved through current Git-declared population and
+NetBox authority. It must not permit arbitrary NetBox queries, unrestricted
+selector expressions, environment-selected or free-text targets, human-block
+target selection, or discovery-driven authority. NetBox discovery alone never
+admits a member.
+
+Resolution must produce a non-empty exact frozen set with unique stable device
+identities and unique stable interface identities. Unknown, ambiguous, protected,
+mismatched or unsupported members block the whole rollout; they are never
+silently removed. Every selected member independently requires:
+
+1. Reviewed managed-population membership.
+2. Explicit profile/operation admission for `interface_description`.
+3. Explicit protected credential availability for that exact stable device.
+
+```text
+managed membership != protected credential authority != operation authority != rollout authorization
+```
+
+#### Explicit protected credential amendment
+
+For the current four-device personal lab, future implementation is explicitly
+approved to expand `ncdp-buildkite-profiled-deploy` from exact credential reads
+**1 / 2** to **1 / 2 / 8 / 9**, with the expected repository policy:
+
+```python
+DEVICE_IDS = (1, 2, 8, 9)
+```
+
+This is an explicit reviewed current-lab authority set. It must not be derived
+automatically from managed population, observability scope, CML scope, Cisco
+family, profile catalog or selector results. A future fifth managed device
+receives no protected credential authority automatically.
+
+The OpenBao policy must remain exact-path read-only: no wildcard, list, secret
+write, auth-management or administrative capability. The existing persistent
+deploy-agent identity may be reused if verification passes. The current
+implementation and external role remain at `DEVICE_IDS = (1, 2)` until the
+approved implementation applies and verifies the expansion; this docs mission
+does not apply it.
+
+#### Complete planning and immutable rollout artifact
+
+Before any write, planning covers the entire frozen selected population. Every
+member is positively represented as either **DEPLOYABLE**, with one exact current
+schema-v2 `ProfiledDeploymentPlan`, or **COMPLIANT**, with one exact current
+schema-v2 `ProfiledComplianceRecord` and no write authority. Artifact absence
+never means compliance. Any member failure blocks creation of a deployable
+rollout artifact.
+
+Each result binds exact device/interface identity, profile/NOS, endpoint,
+operation admission, protection, credential provenance/reference, current
+observation, desired state, child plan/compliance digest and exact child artifact
+bytes. The future immutable profiled rollout artifact must bind:
+
+- Source commit, rollout change identity and typed intent/selector.
+- Exact frozen membership/order and stable device/interface identities.
+- All child plan/compliance artifacts, their digests and exact bytes.
+- Exact canaries, waves/execution order, rollout policy and parent canonical digest.
+
+Unselected managed devices must not affect this digest. Moving a member between
+COMPLIANT and DEPLOYABLE after approval invalidates the rollout. An all-compliant
+rollout has positive typed compliance, no rollout promotion, no write
+authorization, no execution, no recovery and no chronology.
+
+#### Canary and wave policy
+
+Canaries and waves are frozen before approval and never recomputed during
+execution. Explicit reviewed canary selection is validated against the frozen
+deployable population. At minimum, canaries represent each distinct
+execution/recovery family present among deployable members. For the current lab,
+when possible retain at least one deployable member outside the canary set so
+the demo can show `canary → wave`.
+
+Remaining deployable members use deterministic stable ordering and an explicit
+bounded wave size. COMPLIANT members remain in the frozen population and final
+validation but never enter write cohorts. Initial execution is sequential;
+parallel device writes are not required.
+
+#### Promotion, human authorization and pre-write admission
+
+If any member is DEPLOYABLE, promotion binds the entire immutable rollout, all
+exact child artifacts and current same-build prerequisites. One fieldless human
+authorization approves **this exact membership, canaries, waves and child plans**.
+It cannot select or change targets, interfaces, desired state, profiles, device
+IDs, canaries, waves or credential scope. Any such change requires a new rollout
+plan/promotion; credential-scope changes also require their own explicit authority.
+
+Before the first write, independently revalidate intent/selector and frozen
+membership; verify protected credential availability for every selected member;
+complete read-only preflight for the entire selected population; and require
+existing engineering/Batfish/CML same-build prerequisites, exact rollout
+promotion, fieldless human authorization and durable evidence destination
+readiness. Complete population preflight does not replace each child's fresh
+just-in-time prewrite validation.
+
+CML must publish its real same-build success receipt. Aggregate Buildkite
+soft-fail presentation cannot substitute for CML success. Batfish remains
+existing B4 service/network assurance, not exact candidate-write rehearsal.
+CAP-OP-ASSURANCE remains DEFERRED.
+
+#### Execution, parent outcomes and final validation
+
+```text
+approved frozen rollout
+→ complete population preflight
+→ canaries sequentially
+→ waves sequentially
+→ stop on every child non-success
+→ final whole-population read-only validation
+→ durable parent rollout evidence
+```
+
+Use current schema-v2 child transaction semantics. Each child receives its exact
+approved plan/digest: one forward invocation maximum, no retry after uncertain
+execution, independent POST, existing vendor-specific recovery eligibility and
+no speculative recovery after ambiguity. Only child **SUCCEEDED** advances
+exposure. Every other child outcome stops later exposure, including RECOVERED,
+BLOCKED, FAILED, STALE, AMBIGUOUS and any other non-SUCCEEDED result. Earlier
+successful members are not automatically rolled back.
+
+The future parent must distinguish at least **COMPLIANT**, **SUCCEEDED**,
+**STOPPED**, **PARTIAL** and **FINAL_VALIDATION_FAILED**. It must explicitly
+identify attempted, successful and compliant members; stopping member/outcome;
+untouched/unattempted members; completed canaries/waves; and remaining waves.
+Stopped/partial execution still requires truthful parent evidence. It never
+automatically resumes: continuation requires a new reviewed change and fresh
+planning.
+
+After all deployable children succeed, independently re-resolve and validate the
+entire frozen population, including original COMPLIANT members. Failure produces
+FINAL_VALIDATION_FAILED, with no automatic rollback and no additional write
+authority.
+
+#### Durable evidence and chronology
+
+Preserve current child durable evidence and chronology. Executed children retain
+schema-v2 execution evidence and applicable PRE/write/POST chronology; COMPLIANT
+children retain compliance evidence and require no chronology. A future top-level
+rollout evidence record references and verifies current child evidence rather
+than duplicating child payloads.
+
+Parent evidence binds rollout plan/promotion/authorization, selected population,
+cohort order, child evidence identities/digests and parent outcome. Parent evidence
+failure after possible child execution must never replay a child command.
+Historical schema-v1 fleet models, commands and evidence remain historical only;
+do not revive `fleet-plan`, `fleet-deploy` or legacy schema-v1 fleet execution.
+
+#### Overlap admission
+
+Future execution reserves exact stable device identities for the frozen
+population before device activity. Reservation is device-based, not based on
+interface, hostname or address. COMPLIANT members remain reserved because they
+participate in complete preflight/final validation. Admission fails closed;
+reservations release on every result/exception. No reservation is held across
+the human-approval pause, so fresh revalidation remains required. Do not claim
+distributed locking, cross-run atomicity or fleet-wide transactions.
+
+#### Acceptance criteria
+
+Eventual acceptance must prove:
+
+- Deterministic exact frozen membership for explicit and selector-derived
+  populations; protected, unsupported, unknown, ambiguous or mismatched members
+  block the whole rollout.
+- Positive COMPLIANT representation and reuse of current schema-v2 child plans;
+  exact child bytes/digests are transitively approval-bound, with immutable
+  canaries, waves and execution order.
+- Complete preflight before the first write, with fresh child prewrite validation
+  retained; every non-SUCCEEDED child stops later exposure.
+- Explicit untouched members and partial outcomes, final frozen-population
+  validation, and parent durable evidence binding child evidence/chronology.
+- Exact overlap admission, no retry after child uncertainty, no automatic rollback
+  of earlier successes, and zero write authority for an all-compliant rollout.
+- Protected credential availability is explicit rather than inherited. For this
+  lab, exact protected credential reads for **1 / 2 / 8 / 9** must be established
+  while arbitrary devices remain denied.
+
+A controlled real multi-target rollout is desirable for the final demo. Do not
+manufacture unsafe/ambiguous failure on real devices to satisfy evidence;
+fault injection/offline tests prove dangerous stop, partial and uncertainty paths.
+
+#### Dependencies, implementation scope and exclusions
+
+Dependencies are CAP-OUTCOME-TRUTH — ACCEPTED; CAP-DURABLE-EVIDENCE — ACCEPTED;
+CAP-CONFIG-CHRONOLOGY — ACCEPTED; CAP-POPULATION-SCOPES — ACCEPTED;
+CAP-INTENT-DELIVERY — ACCEPTED; and CAP-PROFILE-REUSE-WRITE — ACCEPTED.
+
+Future implementation may include profiled rollout intent/selector, immutable
+rollout planning artifact, explicit current device-1/2/8/9 protected credential
+expansion, promotion/human-authorization composition, deterministic canary/wave
+coordination, parent durable evidence, exact overlap admission, Buildkite
+integration, tests and documentation. It restores controlled exposure over
+explicit frozen subsets without a fixed population count.
+
+Preserve independent operation authority and child transaction/no-retry
+semantics. Managed membership never grants write authority. No wildcard
+credentials, all-Cisco automatic admission, new write operation beyond current
+admission, speculative retry, fleet-wide automatic rollback, distributed-locking
+or fleet-atomicity claim, retired fleet runtime revival, historical evidence
+rewrite, or false Batfish/CML candidate-assurance claim is permitted.
+CAP-OP-ASSURANCE remains DEFERRED. The temporary PR/development CML exception
+remains ACTIVE until its existing exit condition. Observability and CML repair
+are not part of this governance amendment.
 
 ### CAP-OP-ASSURANCE — Operation-bound service assurance
 

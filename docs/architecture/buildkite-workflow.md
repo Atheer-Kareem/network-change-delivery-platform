@@ -80,16 +80,18 @@ The [deployment runbook](buildkite-profiled-delivery-operations.md) describes
 agent-owned authority and artifact handling. This is not restored schema-v1
 protected delivery or the historical cryptographic deployment JWT boundary.
 
-1. `profiled-live-plan` on `ncdp-deploy` validates current profiled LIVE trust,
-   uses current NetBox/OpenBao providers and read-only collection, and plans the
-   current fixed demo target: device 1, core-02, interface 2/GigabitEthernet2.
-   `deployments/live/profiled-demo.yaml` requests one interface description.
+1. `profiled-live-plan` on `ncdp-deploy` loads the fixed committed typed intent
+   from `deployments/live/profiled-demo.yaml`, validates LIVE trust and resolves
+   its logical target through Git/NetBox profile and operation admission. Current
+   data still selects core-02/GigabitEthernet2; control code also admits vJunos
+   intents. Current providers and read-only collection produce the exact result.
    Successful planning publishes exactly one typed plan or compliant record,
    plus `profiled-planning-result` metadata selecting its kind, build/commit,
    canonical result digest and exact artifact-byte digest. An already-compliant
    target produces no plan. Missing/failed publication cannot mean compliance.
 2. `profiled-promotion` on `ncdp-validation` independently downloads the exact
-   same-build planning result from its producer and verifies its receipt. For a
+   same-build planning result from its producer, reloads committed intent and
+   verifies receipt plus exact intent/result equality. For a
    real plan, the strict, self-digested
    `ProfiledPromotion` schema-v2 binds build UUID, commit, change, target/device,
    current plan digest, byte-level artifact hash, all validation receipts and
@@ -100,7 +102,8 @@ protected delivery or the historical cryptographic deployment JWT boundary.
 4. `profiled-deploy` on `ncdp-deploy` independently verifies canonical non-PR
    main/retry-zero/checkout identity, exact block DAG and Buildkite unblocker
    UUID, same-build downloads, manifest, plan/artifact/digests, all receipts,
-   fixed current write projection and LIVE trust before device access. It then
+   independently reloaded intent/result equality, current operation admission
+   and LIVE trust before device access. It then
    admits the protected external AuditStore, prepares the current namespaces and
    persists/re-reads canonical plan/promotion inputs. Only then
    it invokes current `ncdp profiled-deploy --plan ... --approve-digest ...`
@@ -132,9 +135,11 @@ lookups or device access; final presentation requires its receipt. The receipt i
 only a same-build pointer, while the AuditStore envelope is durable authority.
 The static DAG, PR CML exception and real-plan assurance prerequisites are unchanged.
 
-The CLI write projection remains devices 1/2 only; this automation narrows it to
-one device-1 target. Devices 8/9, B4 service changes, fleet deployment and SNMP
-provisioning remain write-denied. No automatic recovery/replay is added.
+The interface-description projection remains CAT8000V/vJunos (current devices
+1/2). The [committed intent](intent-delivery.md) selects one exact target; the
+active file still selects core-02. Devices 8/9, B4 service changes, fleet and SNMP
+provisioning remain write-denied. Batfish and CML remain prerequisite assurance,
+not exact intent-candidate validation or write rehearsal. No replay is added.
 
 ## Trust and acceptance limits
 

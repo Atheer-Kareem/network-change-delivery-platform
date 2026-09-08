@@ -80,6 +80,13 @@ and Oxidized read-only collection consume all four.
 
 ## Current change boundary
 
+Protected main delivery reads one fixed committed `InterfaceDescriptionIntent`
+from `deployments/live/profiled-demo.yaml`. Its logical target resolves through
+Git/NetBox and profile/operation admission. Plan/compliance, promotion and deploy
+are bound to those exact semantics; a fieldless unblock selects nothing. The
+active intent remains core-02, while CAT8000V and vJunos use the same generic
+protected control path. IOSv/IOSvL2 remain write-denied. See [intent delivery](intent-delivery.md).
+
 `ncdp profiled-plan` is the sole ordinary planner. `ncdp profiled-deploy` is the
 sole current device-write entry point and requires a schema-v2 plan, exact
 canonical digest approval, explicit `--live`, fresh complete preflight, and

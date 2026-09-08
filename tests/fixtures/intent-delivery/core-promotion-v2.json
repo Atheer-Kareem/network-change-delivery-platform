@@ -1,0 +1,15 @@
+{
+  "schema_version": "2",
+  "promotion_type": "profiled_buildkite_promotion",
+  "build_id": "11111111-1111-4111-8111-111111111111",
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "change_id": "CHG-PROFILED-LAB-DEMO",
+  "target": "core-02",
+  "device_identity": "netbox:dcim.device:1",
+  "plan_digest": "sha256:b2d82a05a31631631764fb7f2b37e235d0eec2d2c47be59009c3384c5c36c389",
+  "plan_artifact_digest": "sha256:a806aa1caa8bbc443e5c992f8f158d8e7935c11a8da632db10df2e6076177b40",
+  "validation_digest": "sha256:3086ef9599e273a9187c6eacc852de4fc556d217f1ee4bbca4da843c0d06d373",
+  "batfish_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "cml_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "digest": "sha256:4aac9415f7c4856985e957158718a72a743c9b507827fc0476116a544a4d7d54"
+}

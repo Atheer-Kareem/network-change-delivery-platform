@@ -43,10 +43,15 @@ def mutate(data, path, value):
         data[keys[-1]] = value
 
 
+@pytest.mark.parametrize(
+    "profile", [AutomationProfileID.CAT8000V_IOSXE, AutomationProfileID.VJUNOS_ROUTER]
+)
 @pytest.mark.parametrize("compliant", [False, True])
-def test_current_envelope_canonical_and_original_bytes_round_trip(tmp_path, compliant):
+def test_current_envelope_canonical_and_original_bytes_round_trip(
+    tmp_path, compliant, profile
+):
     store = make_store(tmp_path)
-    record, raw, artifacts = bundle(store, compliant=compliant)
+    record, raw, artifacts = bundle(store, compliant=compliant, profile=profile)
     assert not (store.root / "profiled-records").exists()
     assert store.iter_profiled_records() == ()  # artifacts alone are never an envelope
     path = store.persist_profiled_record(record, artifact_bytes=raw)
@@ -277,7 +282,7 @@ def test_new_envelope_is_frozen_and_extra_forbid(tmp_path):
         )
 
 
-def test_junos_artifact_durability_preserves_current_promotion_authority_boundary(
+def test_junos_artifact_durability_still_rejects_wrong_population_pairing(
     tmp_path,
 ):
     from profiled_audit_fixtures import BUILD, COMMIT, execution_pair, raw_bytes
@@ -303,19 +308,14 @@ def test_junos_artifact_durability_preserves_current_promotion_authority_boundar
         "commit": COMMIT,
         "change_id": plan.change_id,
         "target": plan.target,
-        "device_identity": plan.device_identity,
+        "device_identity": "netbox:dcim.device:1",
         "plan_digest": plan.digest,
         "plan_artifact_digest": sha256_identity(raw_bytes(plan)),
         "validation_digest": ASSURANCE,
         "batfish_digest": ASSURANCE,
         "cml_digest": ASSURANCE,
     }
-    # Junos artifacts are supported; promoted Junos EXECUTION is outside current
-    # authority. Validate rejected input normally, never manufacture a promotion.
-    with pytest.raises(ValidationError) as rejected:
+    # Intent-selected Junos is admitted; a Junos/core stable-ID pairing is not.
+    with pytest.raises(ValidationError, match="population pairing"):
         ProfiledPromotion.model_validate(rehash(rejected_payload))
-    assert {(error["loc"], error["type"]) for error in rejected.value.errors()} == {
-        (("target",), "literal_error"),
-        (("device_identity",), "literal_error"),
-    }
     assert store.iter_profiled_records() == ()

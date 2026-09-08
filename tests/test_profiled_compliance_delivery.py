@@ -4,9 +4,8 @@ import json
 from dataclasses import replace
 
 import pytest
+from profiled_intent_fixtures import CHANGE_ID, DESCRIPTION
 from test_profiled_buildkite_delivery import (
-    CHANGE_ID,
-    DESCRIPTION,
     PLANNING_METADATA,
 )
 from test_profiled_buildkite_delivery import (

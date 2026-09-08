@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from profiled_intent_fixtures import CHANGE_ID, DESCRIPTION
 from test_profiled_execution import Cisco, Collector, Inventory, Junos, Secrets, writer
 from test_profiled_planning import (
     FakeCollector,
@@ -34,8 +35,6 @@ from network_change_delivery.profiled_audit import (
 from network_change_delivery.profiled_execution import execute_profiled_plan
 from network_change_delivery.profiled_planning import plan_profiled_change
 from network_change_delivery.profiled_promotion import (
-    CHANGE_ID,
-    DESCRIPTION,
     VALIDATION_KEYS,
     ProfiledBuildContext,
     promote,
@@ -104,6 +103,13 @@ def execution_artifacts(profile=AutomationProfileID.CAT8000V_IOSXE):
         {key: validation_receipt(str(BUILD), COMMIT, key) for key in VALIDATION_KEYS},
         ASSURANCE,
         ASSURANCE,
+        intent=InterfaceDescriptionIntent(
+            change_id=CHANGE_ID,
+            kind="interface_description",
+            target=plan.target,
+            interface=plan.interface.name,
+            desired={"description": DESCRIPTION},
+        ),
     )
     return {
         Kind.PROFILED_DEPLOYMENT_PLAN: plan,

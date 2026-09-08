@@ -408,11 +408,8 @@ def test_read_only_scopes_never_grant_write_authority():
 
     _, scope, provider, _ = declared_population(5)
     population = provider.resolve_profiled_population()
-    assert (
-        ProfiledPromotion.model_fields["device_identity"].default
-        == "netbox:dcim.device:1"
-    )
-    assert ProfiledPromotion.model_fields["target"].default == "core-02"
+    assert ProfiledPromotion.model_fields["device_identity"].is_required()
+    assert ProfiledPromotion.model_fields["target"].is_required()
     assert {profile for profile, _ in PROFILED_OPERATION_ADMISSIONS} == {
         AutomationProfileID.CAT8000V_IOSXE,
         AutomationProfileID.VJUNOS_ROUTER,

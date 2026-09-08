@@ -10,11 +10,19 @@ from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from network_change_delivery.architecture_contracts import Sha256Digest
+from network_change_delivery.architecture_contracts import (
+    NetBoxDeviceIdentity,
+    Sha256Digest,
+)
+from network_change_delivery.models import CliBoundString, InterfaceDescriptionIntent
+from network_change_delivery.profile_inventory import (
+    PROFILED_MANAGED_POPULATION,
+    ProfiledLogicalName,
+)
+from network_change_delivery.profiled_intent import admit_intent_result
 from network_change_delivery.profiled_planning import (
-    ProfiledComplianceRecord,
     ProfiledDeploymentPlan,
 )
 
@@ -47,8 +55,6 @@ CANONICAL_REPOSITORIES = {
 BATFISH_METADATA = "profiled-batfish-success"
 CML_METADATA = "profiled-cml-success"
 PROMOTION_METADATA = "profiled-promotion-digest"
-CHANGE_ID = "CHG-PROFILED-LAB-DEMO"
-DESCRIPTION = "managed-by-ncdp-profiled-demo"
 
 
 def digest_bytes(value: bytes) -> str:
@@ -126,20 +132,6 @@ def verify_validation(
     return digest_bytes(json.dumps(dict(receipts), sort_keys=True).encode())
 
 
-def admit_demo_plan(plan: ProfiledDeploymentPlan | ProfiledComplianceRecord) -> None:
-    # Further narrows the current CLI's 1/2 projection to the reviewed PR132 target.
-    if (
-        plan.change_id != CHANGE_ID
-        or plan.target != "core-02"
-        or plan.device_identity != "netbox:dcim.device:1"
-        or plan.interface.interface != "netbox:dcim.interface:2"
-        or plan.interface.name != "GigabitEthernet2"
-        or plan.desired_description != DESCRIPTION
-        or plan.automation_profile_id.value != "cat8000v_iosxe"
-    ):
-        raise ValueError("reviewed profiled demo target rejected")
-
-
 class ProfiledPromotion(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: Literal["2"] = "2"
@@ -148,9 +140,9 @@ class ProfiledPromotion(BaseModel):
     )
     build_id: str
     commit: str
-    change_id: Literal["CHG-PROFILED-LAB-DEMO"] = CHANGE_ID
-    target: Literal["core-02"] = "core-02"
-    device_identity: Literal["netbox:dcim.device:1"] = "netbox:dcim.device:1"
+    change_id: CliBoundString = Field(max_length=255)
+    target: ProfiledLogicalName
+    device_identity: NetBoxDeviceIdentity
     plan_digest: Sha256Digest
     plan_artifact_digest: Sha256Digest
     validation_digest: Sha256Digest
@@ -170,6 +162,9 @@ class ProfiledPromotion(BaseModel):
     @model_validator(mode="after")
     def verified(self):
         checked_uuid(self.build_id)
+        member = PROFILED_MANAGED_POPULATION.member(self.target)
+        if member.device_identity != self.device_identity:
+            raise ValueError("promotion population pairing rejected")
         if (
             not re.fullmatch(r"[0-9a-f]{40}", self.commit)
             or self.digest != self.calculated_digest()
@@ -184,12 +179,18 @@ def promote(
     receipts: Mapping[str, str],
     batfish: str,
     cml: str,
+    *,
+    intent: InterfaceDescriptionIntent,
 ) -> ProfiledPromotion:
+    intent = InterfaceDescriptionIntent.model_validate(intent.model_dump())
     plan = ProfiledDeploymentPlan.model_validate_json(plan_bytes)
-    admit_demo_plan(plan)
+    admit_intent_result(intent, plan)
     values = {
         "build_id": context.build_id,
         "commit": context.commit,
+        "change_id": plan.change_id,
+        "target": plan.target,
+        "device_identity": plan.device_identity,
         "plan_digest": plan.digest,
         "plan_artifact_digest": digest_bytes(plan_bytes),
         "validation_digest": verify_validation(context, receipts),
@@ -211,12 +212,14 @@ def authorize(
     cml: str,
     promoted_digest: str,
     unblocker_id: str,
+    *,
+    intent: InterfaceDescriptionIntent,
 ) -> ProfiledDeploymentPlan:
     if context.step != "profiled-deploy":
         raise ValueError("deployment step rejected")
     checked_uuid(unblocker_id)
     promotion = ProfiledPromotion.model_validate_json(promotion_bytes)
-    expected = promote(context, plan_bytes, receipts, batfish, cml)
+    expected = promote(context, plan_bytes, receipts, batfish, cml, intent=intent)
     if promotion != expected or promotion.digest != checked_digest(promoted_digest):
         raise ValueError("same-build promotion authorization rejected")
     return ProfiledDeploymentPlan.model_validate_json(plan_bytes)

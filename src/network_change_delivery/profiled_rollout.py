@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Literal, Protocol
 
 from pydantic import (
@@ -366,8 +366,10 @@ def plan_profiled_rollout(
     """
     intent = ProfiledRolloutIntent.model_validate(intent.model_dump())
     source_commit = TypeAdapter(GitCommit).validate_python(source_commit)
-    observation_time = TypeAdapter(AwareDatetime).validate_python(
-        created_at or datetime.now(UTC)
+    observation_time = (
+        TypeAdapter(AwareDatetime).validate_python(created_at)
+        if created_at is not None
+        else None
     )
     population = ProfiledInventoryPopulation.model_validate(
         inventory.resolve_profiled_population().model_dump()

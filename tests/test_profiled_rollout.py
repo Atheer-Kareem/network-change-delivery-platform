@@ -3,7 +3,7 @@
 import ast
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -511,7 +511,13 @@ def forbid_execution(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "field,value", [("source_commit", "invalid"), ("created_at", datetime(2026, 9, 9))]
+    "field,value",
+    [
+        ("source_commit", "invalid"),
+        ("created_at", datetime(2026, 9, 9)),
+        ("created_at", "invalid"),
+        ("created_at", ""),
+    ],
 )
 def test_invalid_parent_inputs_rejected_before_any_provider(context, field, value):
     args = {"source_commit": COMMIT, "created_at": NOW, field: value}
@@ -527,6 +533,7 @@ def test_invalid_parent_inputs_rejected_before_any_provider(context, field, valu
     assert not context.inventory.calls
     assert not context.authority.calls
     assert not context.collector.calls
+    assert context.secrets.reference_calls == context.secrets.load_calls == 0
 
 
 @pytest.mark.parametrize(
@@ -603,3 +610,71 @@ def test_positive_authority_is_mandatory():
             credential_reference="openbao:kv-v2:ncdp/devices/8/ssh",
             permitted=False,
         )
+
+
+@pytest.mark.parametrize("compliant", [False, True])
+def test_default_timestamps_belong_to_each_child_after_collection(
+    context, monkeypatch, compliant
+):
+    from network_change_delivery import profiled_planning
+
+    if compliant:
+        context.collector.compliant = tuple(context.inventory.pairs)
+    timestamps = []
+    overrides = []
+    original_planner = rollout.plan_profiled_change
+
+    class ChildClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is UTC
+            # Any timestamp generated before its own observation fails here.
+            assert len(context.collector.calls) == len(timestamps) + 1
+            assert len(context.authority.calls) == 4
+            value = NOW + timedelta(seconds=len(timestamps) + 1)
+            timestamps.append(value)
+            return value
+
+    def child_planner(*args, **kwargs):
+        overrides.append(kwargs["created_at"])
+        assert kwargs["created_at"] is None
+        return original_planner(*args, **kwargs)
+
+    monkeypatch.setattr(profiled_planning, "datetime", ChildClock)
+    monkeypatch.setattr(rollout, "plan_profiled_change", child_planner)
+    result = rollout.plan_profiled_rollout(
+        intent_for(context.inventory),
+        context.inventory,
+        context.authority,
+        context.secrets,
+        context.collector,
+        source_commit=COMMIT,
+    )
+    field = "observed_at" if compliant else "created_at"
+    assert [getattr(child.result(), field) for child in result.children] == timestamps
+    assert len(timestamps) == len(set(timestamps)) == 4
+    assert overrides == [None] * 4
+    assert type(result).model_validate_json(result.model_dump_json()) == result
+
+
+@pytest.mark.parametrize("compliant", [False, True])
+def test_explicit_timestamp_override_remains_deterministic(
+    context, monkeypatch, compliant
+):
+    from network_change_delivery import profiled_planning
+
+    if compliant:
+        context.collector.compliant = tuple(context.inventory.pairs)
+
+    class UnusedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            del tz
+            pytest.fail("explicit override must not generate a child timestamp")
+
+    monkeypatch.setattr(profiled_planning, "datetime", UnusedClock)
+    first, second = plan(context), plan(context)
+    field = "observed_at" if compliant else "created_at"
+    assert all(getattr(child.result(), field) == NOW for child in first.children)
+    assert first.model_dump_json() == second.model_dump_json()
+    assert first.digest == second.digest

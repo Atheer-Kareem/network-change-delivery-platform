@@ -88,8 +88,13 @@ cohorts. Semantic intent/result binding covers every supported child intent
 field. Whitespace-only changes to child bytes change the parent digest even when
 the child's semantic digest is unchanged. Reordering selection or changing a
 child between DEPLOYABLE and COMPLIANT also changes or rejects the binding.
-Determinism means identical input facts, decisions and observation timestamps;
-a new observation timestamp intentionally changes the artifact.
+Deterministic equality requires identical input facts, decisions and explicit
+observation timestamps. An explicit `created_at` override is validated before
+provider access and passed to every child for deterministic tests. Normal planning
+passes `created_at=None`: each existing child planner assigns its own timestamp
+after that child's read-only observation. There is no parent observation timestamp.
+The exact child artifacts bind these individual timestamps; a new observation
+timestamp intentionally changes the artifact.
 
 Full managed declaration is admission context, not parent content. Selected
 resolved facts are frozen, but adding/changing an unselected managed member does

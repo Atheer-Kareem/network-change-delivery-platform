@@ -138,6 +138,21 @@ class ProfiledLiveAnchor(BaseModel):
         return str(ipaddress.IPv4Address(value))
 
 
+class ProfiledLiveInterfaceSlot(BaseModel):
+    """Reviewed physical endpoint, resolved to an observed interface UUID by slot."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    node_id: str = Field(pattern=r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
+    slot: int = Field(ge=0, le=255, strict=True)
+
+
+class ProfiledLivePhysicalLink(BaseModel):
+    """One exact undirected physical link in the reviewed full LIVE lab."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    endpoints: tuple[ProfiledLiveInterfaceSlot, ProfiledLiveInterfaceSlot]
+
+
 class ProfiledLiveRealizationCatalog(BaseModel):
     """Explicit LIVE lab data bound to an exact Git-admitted realization scope."""
 
@@ -146,6 +161,7 @@ class ProfiledLiveRealizationCatalog(BaseModel):
     anchors: tuple[ProfiledLiveAnchor, ...] = Field(min_length=1)
     data_links: tuple[tuple[ProfiledLogicalName, ProfiledLogicalName], ...]
     baseline_link_ids: tuple[str, ...] = ()
+    physical_links: tuple[ProfiledLivePhysicalLink, ...] = ()
 
     @model_validator(mode="after")
     def exact_scope(self):
@@ -186,9 +202,47 @@ class ProfiledLiveRealizationCatalog(BaseModel):
             a not in names or b not in names or a == b for a, b in self.data_links
         ):
             raise ValueError("LIVE realization topology rejected")
+        if self.physical_links:
+            self._validate_physical_links()
         return self
 
+    def _validate_physical_links(self) -> None:
+        anchors = {a.cml_node_id: a for a in self.anchors}
+        occupied: set[tuple[str, int]] = set()
+        actual_pairs: list[frozenset[str]] = []
+        for link in self.physical_links:
+            pair = frozenset(e.node_id for e in link.endpoints)
+            if len(pair) != 2 or not pair <= self.expected_node_ids:
+                raise ValueError("LIVE physical endpoint is outside the reviewed lab")
+            actual_pairs.append(pair)
+            for endpoint in link.endpoints:
+                identity = (endpoint.node_id, endpoint.slot)
+                if identity in occupied:
+                    raise ValueError("LIVE physical endpoint is reused")
+                occupied.add(identity)
+                if endpoint.node_id in anchors:
+                    profile = CML_REALIZATION_PROFILE_CATALOG[
+                        anchors[endpoint.node_id].cml_realization_profile_id
+                    ]
+                    if endpoint.slot not in {
+                        item.cml_slot for item in profile.physical_interface_slots
+                    }:
+                        raise ValueError("LIVE physical slot is not profile-admitted")
+        by_name = {a.logical_name: a.cml_node_id for a in self.anchors}
+        expected_pairs = [
+            frozenset((EXTERNAL_CONNECTOR_ID, MANAGEMENT_SWITCH_ID)),
+            *(frozenset((MANAGEMENT_SWITCH_ID, node)) for node in anchors),
+            *(frozenset((by_name[a], by_name[b])) for a, b in self.data_links),
+        ]
+        if (
+            len(actual_pairs) != len(expected_pairs)
+            or len(set(actual_pairs)) != len(actual_pairs)
+            or set(actual_pairs) != set(expected_pairs)
+        ):
+            raise ValueError("LIVE physical links differ from the reviewed topology")
+
     def project(self, scope: ProfiledPopulationScope):
+        """Select passive subjects; a projection cannot admit a full physical lab."""
         by_identity = {f"netbox:dcim.device:{a.device_id}": a for a in self.anchors}
         for member in scope.members:
             if member not in self.scope.members:
@@ -251,6 +305,27 @@ CURRENT_LIVE_REALIZATION = ProfiledLiveRealizationCatalog(
         )
     ),
     baseline_link_ids=tuple(sorted(_BASE_LINK_IDS)),
+    # Accepted read-only discovery of the persistent, manually owned LIVE lab.
+    # Its management-switch ports are 3..7, not the separate Terraform twin's 0..4.
+    physical_links=tuple(
+        ProfiledLivePhysicalLink(
+            endpoints=(
+                ProfiledLiveInterfaceSlot(node_id=a, slot=slot_a),
+                ProfiledLiveInterfaceSlot(node_id=b, slot=slot_b),
+            )
+        )
+        for a, slot_a, b, slot_b in (
+            (EXTERNAL_CONNECTOR_ID, 0, MANAGEMENT_SWITCH_ID, 3),
+            (MANAGEMENT_SWITCH_ID, 4, CORE_NODE_ID, 0),
+            (MANAGEMENT_SWITCH_ID, 5, JUNOS_NODE_ID, 0),
+            (MANAGEMENT_SWITCH_ID, 6, TRANSIT_NODE_ID, 0),
+            (MANAGEMENT_SWITCH_ID, 7, ACCESS_NODE_ID, 0),
+            (CORE_NODE_ID, 3, JUNOS_NODE_ID, 1),
+            (CORE_NODE_ID, 1, TRANSIT_NODE_ID, 1),
+            (JUNOS_NODE_ID, 2, TRANSIT_NODE_ID, 2),
+            (CORE_NODE_ID, 2, ACCESS_NODE_ID, 1),
+        )
+    ),
     data_links=(
         ("core-02", "edge-junos-01"),
         ("core-02", "transit-ios-01"),
@@ -765,6 +840,8 @@ class ProfiledLiveCmlOperator:
         catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION,
     ) -> tuple[ProfiledLiveAnchor, ...]:
         """Compare observed realization with the caller's reviewed exact catalog."""
+        if not catalog.physical_links:
+            raise ProfiledLiveCmlError("full reviewed LIVE physical topology required")
         lab = self._get(f"/api/v0/labs/{LIVE_LAB_ID}")
         if (
             not isinstance(lab, dict)
@@ -791,6 +868,7 @@ class ProfiledLiveCmlOperator:
             node = self._node(node_id)
             if node.get("label") != label or node.get("node_definition") != definition:
                 raise ProfiledLiveCmlError("persistent CML infrastructure rejected")
+        self._verify_profiled_physical_links(catalog, links)
         for anchor in catalog.anchors:
             node = self._node(anchor.cml_node_id)
             configuration = self._configuration(anchor.cml_node_id)
@@ -820,3 +898,26 @@ class ProfiledLiveCmlOperator:
                     "profiled LIVE routed management anchor rejected"
                 )
         return catalog.anchors
+
+    def _verify_profiled_physical_links(
+        self, catalog: ProfiledLiveRealizationCatalog, link_ids: list[str]
+    ) -> None:
+        """Compare exact observed interface pairs without creating or adopting links."""
+        interfaces = {
+            node_id: self._interfaces(node_id)
+            for node_id in sorted(catalog.expected_node_ids)
+        }
+        expected: set[frozenset[str]] = set()
+        occupied: set[str] = set()
+        for link in catalog.physical_links:
+            pair = frozenset(
+                self._interface_id(interfaces[e.node_id], e.slot)
+                for e in link.endpoints
+            )
+            if len(pair) != 2 or occupied & pair:
+                raise ProfiledLiveCmlError("LIVE physical interface identity rejected")
+            occupied.update(pair)
+            expected.add(pair)
+        observed = self._links()
+        if set(observed) != expected or set(observed.values()) != set(link_ids):
+            raise ProfiledLiveCmlError("persistent CML physical topology rejected")

@@ -77,6 +77,33 @@ and observability compare against an expected catalog, rather than allowing an
 observed key or CML node to authorize itself. The LIVE verifier resolves the
 managed population then projects the expected realization scope.
 
+Full LIVE admission resolves reviewed node/slot endpoints into CML interface IDs,
+then compares the complete observed undirected interface-pair set through the
+existing read-only link boundary. Node membership, link counts and retained
+baseline link IDs are additional checks, not substitutes for physical topology
+proof. Missing, extra, replaced, swapped or duplicate physical links fail closed.
+A passive catalog projection omits physical-link authority and cannot be used to
+admit a smaller physical LIVE lab.
+
+The persistent `NCDP Live` management wiring comes from accepted read-only CML
+discovery, with the original switch slots explicitly reconfirmed during PR #149
+review. It is distinct from the separate Terraform twin/staging switch slots.
+
+| Reviewed persistent LIVE endpoint | Management-switch slot |
+|---|---|
+| `ext-conn-0:port` (external connector slot 0) | 3 |
+| `core-02:GigabitEthernet1` (device slot 0) | 4 |
+| `edge-junos-01:fxp0` (device slot 0) | 5 |
+| `transit-ios-01:GigabitEthernet0/0` (device slot 0) | 6 |
+| `access-sw-01:GigabitEthernet0/0` (device slot 0) | 7 |
+
+The four reviewed data links remain core slot 3 ↔ Junos slot 1,
+core slot 1 ↔ transit slot 1, Junos slot 2 ↔ transit slot 2, and
+core slot 2 ↔ access slot 1. The actual LIVE graph remains six nodes and nine
+links. This admission change neither rewires CML nor rewrites historical B3
+realization evidence. The disposable staging topology and its accepted digest
+remain unchanged.
+
 Current LIVE verification and trust-enrollment commands use these reviewed
 anchors directly, without per-instance node-ID arguments. Oxidized enrollment
 and observability admission retain their explicit lab-ID argument. Changing an

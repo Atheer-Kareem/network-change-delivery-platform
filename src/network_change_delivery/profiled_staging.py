@@ -1051,6 +1051,7 @@ def load_recovery_inputs(
             or type(item.get("management_slot")) is not int
             or item["management_slot"]
             not in {s.cml_slot for s in profile.physical_interface_slots}
+            or type(item.get("management_switch_slot")) is not int
             or item.get("management_switch_slot") != tuple(expected).index(name) + 1
             or item.get("management_port") != port
             or not isinstance(item.get("username"), str)

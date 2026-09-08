@@ -139,6 +139,15 @@ def test_management_slot_comes_from_resolved_attachment_and_survives_recovery(
             load_recovery_inputs(
                 candidate, "slot-proof", scope=scope, topology=topology
             )
+    for name, slot in (("synthetic_14", 1), ("transit_ios_01", True)):
+        tampered = json.loads(json.dumps(payload))
+        tampered["devices"][name]["management_switch_slot"] = slot
+        candidate = tmp_path / f"bad-switch-{name}.json"
+        write_recovery_inputs(candidate, tampered)
+        with pytest.raises(ProfiledStagingError):
+            load_recovery_inputs(
+                candidate, "slot-proof", scope=scope, topology=topology
+            )
     assert len(staging_terraform_addresses()) == 17
     assert len(CURRENT_STAGING_TOPOLOGY.scope.members) + 2 == 6
     assert (

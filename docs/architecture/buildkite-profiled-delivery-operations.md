@@ -218,7 +218,7 @@ Protect Buildkite administration, reviewed main and agent-owned files. Do not
 claim isolation from a malicious administrator or compromised trusted main.
 
 The fixed intent uses the already accepted PR #132 target, device 1/core-02,
-interface 2/GigabitEthernet2, with description `managed-by-ncdp-profiled-demo`.
+interface 2/GigabitEthernet2, with description `ncdp-demo-reviewed-20260909`.
 The existing CLI still admits only interface-description writes on profiles
 1/2; the committed intent currently selects device 1, without a code-level target restriction. Devices 8/9, B4 D1, fleet and
 SNMP writes are not enabled. Already compliant means no plan and no write; do

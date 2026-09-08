@@ -28,9 +28,9 @@ all fields. The logical target must be Git-declared. No environment override,
 metadata selector, arbitrary path, discovery, fallback or default target exists.
 The existing trusted hook/driver owns clean checkout and exact commit admission.
 
-The file still selects `CHG-PROFILED-LAB-DEMO`, core-02, GigabitEthernet2 and
-`managed-by-ncdp-profiled-demo`. These are reviewed data, not control-plane
-constants. No active production intent changed to manufacture a network write.
+The file selects `CHG-NCDP-DEMO-20260909`, core-02, GigabitEthernet2 and
+`ncdp-demo-reviewed-20260909`. These are reviewed intent data; the control plane
+continues to resolve and authorize the exact committed proposal independently.
 
 The only supported kind is `interface_description`. The planner resolves logical
 name to the exact population member and stable device/interface before operation
@@ -106,7 +106,8 @@ The audit searched active `src/`, `scripts/` and `deployments/` for
 `netbox:dcim.device:1`, `netbox:dcim.interface:2`, `GigabitEthernet2`,
 `cat8000v_iosxe`, `cisco_targeted_inverse`, `profiled-demo.yaml`,
 `admit_demo_plan`, `CHANGE_ID` and `DESCRIPTION`. Prefix matches such as interface
-22 are included. The table accounts for every remaining matching file.
+22 are included. The table records the CAP-INTENT-DELIVERY implementation audit;
+its counts are a historical snapshot, not a live scan of the current intent.
 
 | Files / matching-line counts | Classification and retained meaning |
 |---|---|

@@ -10,6 +10,7 @@ from uuid import UUID
 import pytest
 import yaml
 from profiled_chronology_fixtures import observation
+from profiled_intent_fixtures import historical_core_intent
 from test_profiled_buildkite_delivery import DIGEST, JOB, ROOT
 from test_profiled_buildkite_delivery import context as context_fixture
 from test_profiled_buildkite_delivery import driver as driver_fixture
@@ -36,6 +37,7 @@ from network_change_delivery.profiled_execution import execute_profiled_plan
 from network_change_delivery.profiled_intent import (
     ACTIVE_INTENT_PATH,
     MAX_INTENT_BYTES,
+    admit_intent_result,
     load_committed_intent,
 )
 from network_change_delivery.profiled_planning import (
@@ -552,7 +554,8 @@ def test_deploy_independently_reloads_mutated_intent_before_any_command(
         values[Kind.PROFILED_DEPLOYMENT_PLAN],
         values[Kind.PROFILED_PROMOTION],
     )
-    original = load_committed_intent(ROOT)
+    original = historical_core_intent()
+    admit_intent_result(original, plan)
     data = original.model_dump()
     if field == "description":
         data["desired"]["description"] = "changed after promotion"

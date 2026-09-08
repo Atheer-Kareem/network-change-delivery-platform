@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from profiled_intent_fixtures import CHANGE_ID, DESCRIPTION
+from profiled_intent_fixtures import CHANGE_ID, DESCRIPTION, historical_core_intent
 from test_profiled_planning import (
     FakeCollector,
     FakeInventory,
@@ -102,6 +102,16 @@ def driver(monkeypatch, tmp_path):
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # Historical artifacts must use their own intent, not the mutable active proposal.
+    checkout = tmp_path / "historical-checkout"
+    intent_path = checkout / "deployments/live/profiled-demo.yaml"
+    intent_path.parent.mkdir(parents=True)
+    intent_path.write_text(historical_core_intent().model_dump_json())
+    (checkout / ".buildkite").mkdir()
+    (checkout / ".buildkite/pipeline.yml").write_bytes(
+        (ROOT / ".buildkite/pipeline.yml").read_bytes()
+    )
+    monkeypatch.setattr(module, "ROOT", checkout)
     monkeypatch.setattr(
         module,
         "checked_command",
@@ -130,7 +140,7 @@ def planning_receipt(context, value):
 def test_current_promotion_round_trip_and_authorization(context, plan, receipts):
     raw = plan.model_dump_json().encode()
     promotion = promote(
-        context, raw, receipts, DIGEST, DIGEST, intent=load_committed_intent(ROOT)
+        context, raw, receipts, DIGEST, DIGEST, intent=historical_core_intent()
     )
     assert promotion.schema_version == "2"
     assert promotion.plan_artifact_digest == digest_bytes(raw)
@@ -149,7 +159,7 @@ def test_current_promotion_round_trip_and_authorization(context, plan, receipts)
             DIGEST,
             promotion.digest,
             JOB,
-            intent=load_committed_intent(ROOT),
+            intent=historical_core_intent(),
         )
         == plan
     )
@@ -197,7 +207,7 @@ def test_each_validation_failure_blocks_promotion(context, plan, receipts, missi
             receipts,
             DIGEST,
             DIGEST,
-            intent=load_committed_intent(ROOT),
+            intent=historical_core_intent(),
         )
 
 
@@ -212,7 +222,7 @@ def test_assurance_failure_cannot_mint_promotion(context, plan, receipts, batfis
             receipts,
             batfish,
             cml,
-            intent=load_committed_intent(ROOT),
+            intent=historical_core_intent(),
         )
 
 
@@ -237,7 +247,7 @@ def test_authorization_independently_rejects_every_binding(
 ):
     raw = plan.model_dump_json().encode()
     promotion = promote(
-        context, raw, receipts, DIGEST, DIGEST, intent=load_committed_intent(ROOT)
+        context, raw, receipts, DIGEST, DIGEST, intent=historical_core_intent()
     )
     serialized = promotion.model_dump_json().encode()
     digest, human, batfish, cml = promotion.digest, JOB, DIGEST, DIGEST
@@ -277,7 +287,7 @@ def test_authorization_independently_rejects_every_binding(
             cml,
             digest,
             human,
-            intent=load_committed_intent(ROOT),
+            intent=historical_core_intent(),
         )
 
 
@@ -348,7 +358,7 @@ def test_valid_authorization_calls_only_current_cli_once(
 ):
     raw = plan.model_dump_json().encode()
     promotion = promote(
-        context, raw, receipts, DIGEST, DIGEST, intent=load_committed_intent(ROOT)
+        context, raw, receipts, DIGEST, DIGEST, intent=historical_core_intent()
     )
     monkeypatch.setattr(
         driver,
@@ -406,20 +416,19 @@ def test_planning_reuses_current_read_only_implementation(
     ):
         monkeypatch.setattr(driver, name, lambda **_k: object())
     device, interface = profiled_device(AutomationProfileID.CAT8000V_IOSXE)
-    intent = InterfaceDescriptionIntent(
-        kind="interface_description",
-        change_id=CHANGE_ID,
-        target=device.logical_name,
-        interface=interface.name,
-        desired={"description": DESCRIPTION},
-    )
+    monkeypatch.setattr(driver, "ROOT", ROOT)
+    intent = load_committed_intent(ROOT)
     result = plan_profiled_change(
         intent,
         FakeInventory(device, interface),
         FakeSecrets(),
         FakeCollector(
             observed(device, interface).model_copy(
-                update={"description": DESCRIPTION if no_change else "previous"}
+                update={
+                    "description": intent.desired.description
+                    if no_change
+                    else "previous"
+                }
             )
         ),
     )
@@ -433,7 +442,7 @@ def test_planning_reuses_current_read_only_implementation(
     assert driver.plan_step(context, tmp_path) == 0
     assert len(uploaded) == 1 and len(published) == 1
     assert ("already compliant" in messages[0]) is no_change
-    assert (DESCRIPTION if no_change else "previous") in messages[0]
+    assert (intent.desired.description if no_change else "previous") in messages[0]
 
 
 @pytest.mark.parametrize("mode", [0o755, 0o770, 0o777])
@@ -677,7 +686,7 @@ def test_execution_publication_and_final_render_require_exact_plan_binding(
         record = record.model_copy(update={"change_id": "CHG-DIFFERENT"})
     raw = plan.model_dump_json().encode()
     promotion = promote(
-        context, raw, receipts, DIGEST, DIGEST, intent=load_committed_intent(ROOT)
+        context, raw, receipts, DIGEST, DIGEST, intent=historical_core_intent()
     )
     monkeypatch.setattr(
         driver,

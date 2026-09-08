@@ -89,14 +89,14 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | ACCEPTED |
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | ACCEPTED |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | ACCEPTED |
-| CAP-INTENT-DELIVERY | Intent-selected generic delivery | IN PROGRESS |
+| CAP-INTENT-DELIVERY | Intent-selected generic delivery | ACCEPTED |
 | CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | USER APPROVED |
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
 CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE,
-CAP-CONFIG-CHRONOLOGY and CAP-POPULATION-SCOPES are accepted;
-CAP-INTENT-DELIVERY is in implementation; other approved capabilities await their own tasks.
+CAP-CONFIG-CHRONOLOGY, CAP-POPULATION-SCOPES and CAP-INTENT-DELIVERY are accepted;
+other approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -349,7 +349,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-INTENT-DELIVERY — Intent-selected generic delivery
 
-- **State:** IN PROGRESS.
+- **State:** ACCEPTED.
 - **Target/value:** a reviewed committed typed intent selects an explicit
   delivery target and binds it into planning/promotion. Generic control-plane
   and promotion types no longer encode the current demo target.
@@ -371,8 +371,19 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   derives target/device/change from the plan; dynamic annotations. Offline tests
   cover alternative Cisco/Junos intents, both compliant paths, mutation rejection,
   promoted Junos durable EXECUTION and chronology. The committed core intent,
-  operation admissions, credentials and pipeline remain unchanged. User review
-  and acceptance remain pending. See the [intent contract and coupling audit](architecture/intent-delivery.md).
+  operation admissions, credentials and pipeline remain unchanged. See the
+  [intent contract and coupling audit](architecture/intent-delivery.md).
+- **Acceptance/sign-off:** explicitly USER ACCEPTED after review of merged
+  PR #151, main commit `67fb65478337dd53879b20b2f1ca16d335866d22`, and natural
+  main build 439 (`01a080f0-ebcb-4e49-873d-d0ef5779f123`). The merged focused
+  suite passed 380 tests, including alternative Cisco/Junos selection and
+  promoted Junos durable EXECUTION/chronology offline. Real planning was
+  COMPLIANT; all engineering stages, Batfish and real CML staging passed.
+  Human continuation and device writes were absent; AuditStore hashes remained
+  unchanged. Passing tests and merge did not confer acceptance; explicit user
+  sign-off did. A LIVE Junos write is not required. See the
+  [acceptance record](acceptance/profiled-intent-delivery.md) for exact evidence
+  and preserved authority boundaries.
 
 ### CAP-PROFILE-REUSE-WRITE — Profile-reuse interface-description admission
 

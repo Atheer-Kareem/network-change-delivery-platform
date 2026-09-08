@@ -91,7 +91,7 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | ACCEPTED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | ACCEPTED |
 | CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | ACCEPTED |
-| CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
+| CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | IN PROGRESS |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
 CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE,
@@ -426,12 +426,11 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-PROFILED-ROLLOUT — Bounded profiled multi-target rollout
 
-- **State:** USER APPROVED.
+- **State:** IN PROGRESS.
 - **Scope approval:** the previous USER APPROVED contract was materially amended;
   the user explicitly approved the amended scope below, including the exact
-  current-lab protected credential expansion. Implementation has not started.
-  Passing documentation validation does not move this capability to IN PROGRESS
-  or ACCEPTED. This governance amendment applies no runtime or credential change.
+  current-lab protected credential expansion. The approved scope is unchanged.
+  Increment 1 begins implementation; tests and merge do not confer acceptance.
 - **Target/value:** restore controlled multi-target delivery through the current
   schema-v2 profiled architecture. A reviewed rollout intent selects a bounded
   subset of the Git-declared managed population. Resolution freezes exact device
@@ -439,6 +438,20 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   canaries, waves and execution order before any write. The rollout layer owns
   **who and when**; existing profile-specific child lifecycles own **how**.
   Schema-v1 fleet execution remains historical.
+
+#### Increment 1 implementation checkpoint
+
+The [read-only planning foundation](architecture/profiled-rollout-planning.md)
+implements explicit-set selection, independent injectable credential admission,
+complete current schema-v2 child planning, exact child-byte/result binding and
+immutable canaries/waves/order. It returns a parent planning artifact or positive
+all-compliant result, with no execution surface. No real network operation or
+protected credential expansion was performed.
+
+Closed typed selectors, protected runtime integration, the approved credential
+expansion, promotion, human authorization, overlap locking, execution, final
+validation, parent durable evidence and runtime acceptance remain pending.
+CAP-PROFILED-ROLLOUT remains IN PROGRESS; the approved contract below is unchanged.
 
 #### Selection and independent authority
 
@@ -481,8 +494,8 @@ The OpenBao policy must remain exact-path read-only: no wildcard, list, secret
 write, auth-management or administrative capability. The existing persistent
 deploy-agent identity may be reused if verification passes. The current
 implementation and external role remain at `DEVICE_IDS = (1, 2)` until the
-approved implementation applies and verifies the expansion; this docs mission
-does not apply it.
+later protected-runtime integration applies and verifies the expansion;
+Increment 1 does not apply it.
 
 #### Complete planning and immutable rollout artifact
 

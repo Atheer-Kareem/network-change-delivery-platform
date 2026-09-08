@@ -32,9 +32,10 @@ from network_change_delivery.profiled_staging import (
     ProfiledStagingAmbiguousError,
     ProfiledStagingError,
     ProfiledStagingTopology,
-    realization_interface_slot,
     record_staging_duration,
+    staging_management_slot,
     validate_management_only_bootstrap,
+    validate_staging_management_links,
 )
 
 STAGING_TITLE_PREFIX = "NCDP Staging"
@@ -647,7 +648,7 @@ class ProfiledStagingCmlProfileRecycler:
         device: ProfiledInventoryDevice,
     ) -> EvidenceReference:
         """Recycle the exact scoped subject once under its reviewed boot policy."""
-        member = observed.topology.scope.declaration.member(device.logical_name)
+        member = observed.topology.scope.member(device.logical_name)
         if member not in observed.topology.scope.members or (
             member.device_identity != device.device_identity
             or member.automation_profile_id != device.automation_profile_id
@@ -823,15 +824,13 @@ def admit_no_staging_collision(
 
 def staging_link_slots(devices, topology: ProfiledStagingTopology):
     """Resolve exact admitted topology and management slots before CML comparison."""
-    topology.scope.require_bindings(devices)
+    validate_staging_management_links(devices, topology)
     links = {
         "system_bridge_management": (("system_bridge", 0), ("management_switch", 0))
     }
     for index, device in enumerate(devices):
         key = device.logical_name.replace("-", "_")
-        profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
-        attachment = device.management_endpoints.staging.binding.physical_attachment
-        slot = realization_interface_slot(profile, attachment.interface.name)
+        slot = staging_management_slot(device)
         links[f"management_{key}"] = (("management_switch", index + 1), (key, slot))
     for key, link in topology.terraform_links().items():
         links[key] = (

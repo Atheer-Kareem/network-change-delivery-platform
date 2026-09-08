@@ -334,7 +334,7 @@ class ProfiledStagingEvidence(BaseModel):
         ) != len(set(ready_names)):
             raise ValueError("profiled staging readiness population rejected")
         for d in (*self.readiness, *self.devices):
-            member = self.scope.declaration.member(d.logical_name)
+            member = self.scope.member(d.logical_name)
             if member not in self.scope.members or (
                 d.device_identity,
                 d.automation_profile_id,
@@ -435,6 +435,31 @@ def realization_interface_slot(profile, name: str) -> int:
     return matches[0]
 
 
+def staging_management_slot(device: ProfiledInventoryDevice) -> int:
+    """Resolve management only from the admitted STAGING physical attachment."""
+    profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+    return realization_interface_slot(
+        profile,
+        device.management_endpoints.staging.binding.physical_attachment.interface.name,
+    )
+
+
+def validate_staging_management_links(
+    devices, topology: ProfiledStagingTopology
+) -> None:
+    """Reject data/management collisions using resolved inventory authority."""
+    topology.scope.require_bindings(devices)
+    management = {
+        d.logical_name.replace("-", "_"): staging_management_slot(d) for d in devices
+    }
+    for link in topology.terraform_links().values():
+        if any(
+            link[f"slot_{side}"] == management[link[f"node_{side}"]]
+            for side in ("a", "b")
+        ):
+            raise ValueError("staging data link reuses resolved management slot")
+
+
 class ProfiledStagingLink(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     identity: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=100)
@@ -475,9 +500,7 @@ class ProfiledStagingTopology(BaseModel):
                     member.cml_realization_profile_id
                 ]
                 slot = realization_interface_slot(profile, interface)
-                if (name, slot) in seen or slot == profile.physical_interface_slots[
-                    0
-                ].cml_slot:
+                if (name, slot) in seen:
                     raise ValueError("staging topology physical endpoint reused")
                 seen.add((name, slot))
                 nodes.append(name)
@@ -569,7 +592,7 @@ def validate_profiled_staging_physical_topology(
 ) -> None:
     """Require each reviewed CML data link to match one exact NetBox cable."""
     by_name = {str(device.logical_name): device for device in devices}
-    topology.scope.require_bindings(devices)
+    validate_staging_management_links(devices, topology)
     for link in topology.links:
         left, right = link.endpoints
         left_device, left_name = left.split(":", maxsplit=1)
@@ -621,10 +644,7 @@ def terraform_profiled_device_variables(
             "ram_mb": profile.resources.ram_mb,
             "management_port": endpoint.port,
             "bootstrap_profile": profile.bootstrap_profile.value,
-            "management_slot": realization_interface_slot(
-                profile,
-                device.management_endpoints.staging.binding.physical_attachment.interface.name,
-            ),
+            "management_slot": staging_management_slot(device),
             "management_switch_slot": index + 1,
             "layout_x": 100 + (index % 2) * 300,
             "layout_y": -400 + (index // 2) * 500,
@@ -1028,8 +1048,9 @@ def load_recovery_inputs(
             or item.get("cpu_cores") != profile.resources.cpu_cores
             or item.get("ram_mb") != profile.resources.ram_mb
             or item.get("bootstrap_profile") != profile.bootstrap_profile.value
-            or item.get("management_slot")
-            != profile.physical_interface_slots[0].cml_slot
+            or type(item.get("management_slot")) is not int
+            or item["management_slot"]
+            not in {s.cml_slot for s in profile.physical_interface_slots}
             or item.get("management_switch_slot") != tuple(expected).index(name) + 1
             or item.get("management_port") != port
             or not isinstance(item.get("username"), str)
@@ -1038,6 +1059,15 @@ def load_recovery_inputs(
             or not item["password_verifier"].startswith(verifier_prefix)
         ):
             raise ProfiledStagingError("profiled staging recovery inputs rejected")
+    for link in payload["data_links"].values():
+        for side in ("a", "b"):
+            if (
+                link[f"slot_{side}"]
+                == payload["devices"][link[f"node_{side}"]]["management_slot"]
+            ):
+                raise ProfiledStagingError(
+                    "recovery data link reuses retained management slot"
+                )
     return payload
 
 

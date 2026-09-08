@@ -82,7 +82,7 @@ class RealizationAdmission(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     catalog: ProfiledLiveRealizationCatalog = CURRENT_OBSERVABILITY_REALIZATION
     lab_id: Literal["09605569-0468-4fc4-8684-beb5a1342b9c"] = LIVE_LAB_ID
     lab_title: Literal["NCDP Live"] = LIVE_LAB_TITLE
@@ -350,7 +350,7 @@ class CmlRealizationAuthority:
             )
         admitted = (now or datetime.now(UTC)).astimezone(UTC)
         unsigned = RealizationAdmission.model_construct(
-            schema_version="3",
+            schema_version="4",
             catalog=catalog,
             lab_id=lab_id,
             lab_title=LIVE_LAB_TITLE,

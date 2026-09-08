@@ -103,7 +103,6 @@ def enroll() -> CmlAnchoredHostTrustGeneration:
     now = datetime.now(UTC)
     records = tuple(
         CmlAnchoredHostTrustRecord(
-            declaration=CURRENT_LIVE_REALIZATION.scope.declaration,
             environment=RealizationEnvironment.LIVE,
             realization_identity="ncdp-live",
             cml_lab_id=LIVE_LAB_ID,

@@ -107,7 +107,7 @@ def test_repeated_snmp_profile_naturally_joins_projection(index):
     "change", ["empty", "duplicate", "unknown", "profile", "order"]
 )
 def test_scope_cannot_claim_unreviewed_membership(change):
-    _declaration, scope, _, _ = declared_population(5)
+    _declaration, scope, provider, _ = declared_population(5)
     data = scope.model_dump(mode="json")
     if change == "empty":
         data["members"] = []
@@ -120,6 +120,8 @@ def test_scope_cannot_claim_unreviewed_membership(change):
     else:
         data["members"].reverse()
     with pytest.raises(ValueError):
-        ProfiledPopulationScope.model_validate(data)
+        provider.resolve_profiled_population().project(
+            ProfiledPopulationScope.model_validate(data)
+        )
     with pytest.raises(ValueError):
         ProfiledPopulationDeclaration(members=())

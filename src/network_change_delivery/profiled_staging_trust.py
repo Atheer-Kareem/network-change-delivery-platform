@@ -127,7 +127,6 @@ def establish_profiled_staging_trust(
             raise ProfiledStagingTrustError("staging CML anchor evidence missing")
         records.append(
             CmlAnchoredHostTrustRecord(
-                declaration=context.scope.declaration,
                 environment=RealizationEnvironment.STAGING,
                 realization_identity=f"staging:{context.staging_run_id}",
                 cml_lab_id=context.cml_lab_id,

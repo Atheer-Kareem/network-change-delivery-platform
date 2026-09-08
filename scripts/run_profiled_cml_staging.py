@@ -540,7 +540,6 @@ class LocalTerraformOperations:
             raise ProfiledStagingError("profiled staging node outputs rejected")
         provisional = tuple(
             StagingRealizedDevice(
-                declaration=self.scope.declaration,
                 device_identity=device.device_identity,
                 logical_name=device.logical_name,
                 operational_role=device.operational_role,

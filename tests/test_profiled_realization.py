@@ -214,18 +214,19 @@ def test_persistent_realization_rejects_duplicate_cml_node() -> None:
 
 def test_realized_device_rejects_wrong_name_profile_and_management_binding() -> None:
     core, edge, *_ = inventory_devices()
-    with pytest.raises(ValidationError, match="Git profile catalog"):
-        ProfiledRealizedDevice(
-            device_identity=core.device_identity,
-            logical_name=core.logical_name,
-            operational_role=core.operational_role,
-            automation_profile_id=AutomationProfileID.IOSV_159_3_M12,
-            cml_realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
-            cml_node_id=NODE_IDS[0],
-            lifecycle_state=RealizationLifecycleState.READY,
-            readiness_evidence=evidence("wrong-profile-ready", "9"),
-            management_endpoint=core.management_endpoints.live,
-        )
+    wrong = ProfiledRealizedDevice(
+        device_identity=core.device_identity,
+        logical_name=core.logical_name,
+        operational_role=core.operational_role,
+        automation_profile_id=AutomationProfileID.IOSV_159_3_M12,
+        cml_realization_profile_id=CmlRealizationProfileID.IOSV_159_3_M12,
+        cml_node_id=NODE_IDS[0],
+        lifecycle_state=RealizationLifecycleState.READY,
+        readiness_evidence=evidence("wrong-profile-ready", "9"),
+        management_endpoint=core.management_endpoints.live,
+    )
+    with pytest.raises(ValidationError, match="declared scope"):
+        persistent(devices_=(wrong, *live_devices()[1:]))
     with pytest.raises(ValidationError, match="wrong stable device"):
         ProfiledRealizedDevice(
             device_identity=core.device_identity,

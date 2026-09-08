@@ -253,3 +253,17 @@ failed closed before credential read or device access and was never retried.
 Persistent exporter materialization, Docker-to-live-router UDP/161 acceptance,
 and polling remain deferred to 11C-4. The persistent five-service 11A/11B
 runtime remains SNMP-free.
+
+## Scoped private runtime versions
+
+Current `TargetGeneration` v3 includes the exact selected observability scope;
+`RealizationAdmission` v4 includes its reviewed realization catalog;
+`ObservabilityReady` v3 binds the selected scope. Scope identity excludes
+unselected managed members. Targets carry only their structural/profile facts;
+the aggregate and caller-owned expected scope establish membership authority.
+
+The preceding v2/v3/v2 artifacts are explicitly stale and rejected by current
+readers. Their bytes are not reinterpreted as the new contracts or migrated.
+Normal reconciliation republishes current short-lived evidence. Tests retain
+synthetic canonical old target-generation v2 and realization-admission v3 bytes
+with their original valid digests. See [population scopes](population-scopes.md).

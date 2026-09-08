@@ -26,17 +26,22 @@ profile. `ProfiledPopulationDeclaration` requires nonempty ordered membership,
 unique IDs/names and exact existing profile admission. Multiple members can
 reuse a profile; the automation and CML profile vocabularies remain closed.
 
-`ProfiledPopulationScope` binds a stable scope identity, declaration and exact
-ordered members. Its canonical SHA-256 identity includes those facts. Unknown,
-duplicate, reordered or mismatched members fail. Runtime callers supply their
-reviewed expected scope; receiving an artifact that declares a different scope
-does not grant authority.
+`ProfiledPopulationScope` binds only a stable scope identity and exact ordered
+selected member facts. Its canonical serialization and SHA-256 identity exclude
+unselected managed members. Adding an unrelated member to the full declaration
+therefore leaves an unchanged service scope byte-for-byte identical. The
+`population_scope(..., declaration=...)` factory validates selection against the
+Git declaration; the declaration is admission context, not intrinsic scope content.
+Runtime callers still supply their reviewed expected scope. A structurally valid
+serialized scope cannot authorize itself or replace that expected scope.
 
 The GET-only NetBox resolver checks the complete tagged population against Git,
 including inactive tagged records so they cannot disappear behind an active-only
 query. Missing, unexpected, duplicated or mismatched members fail. Only after
 full resolution does `ProfiledInventoryPopulation.project()` select a consumer
-scope. NetBox discovery alone cannot authorize a new member.
+scope, verifying exact selected facts and canonical order against the resolved
+declaration. Unknown, duplicate, reordered or mismatched members fail. NetBox
+discovery alone cannot authorize a new member.
 
 | Consumer | Current reviewed scope/projection |
 |---|---|
@@ -61,7 +66,10 @@ service scope. B5 ownership and historical D0 evidence are unchanged.
 Realization, trust and staging context models require exact scoped membership,
 unique stable/name/CML identities, profile pairing and purpose-specific
 management bindings. The coordinator checks the expected staging scope before
-read-only validation. READY/freshness and no-LIVE-fallback rules remain.
+read-only validation. Leaf realized-device, trust, staging-device and observability
+target records retain structural/profile/NOS/service validation without embedding
+the full declaration. Their aggregates enforce exact expected scope membership.
+READY/freshness and no-LIVE-fallback rules remain.
 
 `CURRENT_LIVE_REALIZATION` separates reviewed CML node identities, labels,
 management endpoints and topology data from admission algorithms. LIVE trust
@@ -87,13 +95,32 @@ stable targets. Current real outputs retain their existing order and services.
 SNMP remains capability-derived; IOSv and IOSvL2 remain ineligible. Existing
 credential permission and role/policy configuration are unchanged.
 
+The scoped private runtime contracts are `TargetGeneration` v3,
+`RealizationAdmission` v4 and `ObservabilityReady` v3. Their former v2/v3/v2
+forms lacked the current scope/catalog content and are explicitly rejected as
+stale, rather than reinterpreted under their old version labels. The normal
+reconciler must republish current evidence; this implementation performs no
+runtime migration. Synthetic old canonical fixtures preserve the original
+self-digest semantics for regression checks.
+
 ## Disposable graph and evidence
 
 Python admits an exact device map and `ProfiledStagingTopology` before Terraform.
 Each data link binds endpoint logical names and exact interface names; NetBox
 resolves stable interface/cable identities and the profile resolves CML slots.
 Unknown endpoints, duplicate link identities/endpoints and wrong physical slots
-fail. Terraform does not discover or select membership.
+fail. Management slots come from each resolved NetBox STAGING physical attachment
+through its realization profile interface-to-slot map, never the first profile
+slot. The same derivation feeds Terraform, management links and data-link
+collision admission. The static topology model validates profile interfaces;
+collision checks occur where resolved management bindings are available.
+Terraform does not discover or select membership.
+
+Delete-only recovery uses retained private inputs without fresh authority reads.
+It requires a valid reviewed profile management slot, canonical unique switch
+slots, the exact run/device/topology/profile/bootstrap bindings and no retained
+data-link collision with management. A valid non-first management slot survives
+recovery unchanged; create-only owner-private file protections remain.
 
 For N devices and L data links, expected ownership is N+2 nodes, N+L+1 links,
 and 2N+L+5 resources including lab and lifecycle. Every owned resource must be

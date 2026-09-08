@@ -34,11 +34,9 @@ from network_change_delivery.architecture_contracts import (
 from network_change_delivery.profile_inventory import (
     LIVE_REALIZATION_SCOPE,
     PROFILE_ADMISSION_CATALOG,
-    PROFILED_MANAGED_POPULATION,
     STAGING_REALIZATION_SCOPE,
     ProfiledInventoryDevice,
     ProfiledLogicalName,
-    ProfiledPopulationDeclaration,
     ProfiledPopulationScope,
     ProfileReadOnlyTarget,
 )
@@ -174,7 +172,6 @@ class ProfiledRealizedDevice(BaseModel):
     """One secret-free stable-device to exact CML-node realization binding."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     device_identity: NetBoxDeviceIdentity
     logical_name: ProfiledLogicalName
     operational_role: OperationalRole
@@ -187,22 +184,6 @@ class ProfiledRealizedDevice(BaseModel):
 
     @model_validator(mode="after")
     def exact_identity_and_profile(self) -> ProfiledRealizedDevice:
-        member = self.declaration.member(self.logical_name)
-        if (
-            self.device_identity,
-            self.automation_profile_id,
-            self.cml_realization_profile_id,
-        ) != (
-            member.device_identity,
-            member.automation_profile_id,
-            member.cml_realization_profile_id,
-        ):
-            raise ValueError("realized device does not match the Git profile catalog")
-        if (
-            hasattr(self, "operational_role")
-            and self.operational_role is not member.operational_role
-        ):
-            raise ValueError("realized device role does not match the Git catalog")
         _validate_profile_pairing(
             automation_profile_id=self.automation_profile_id,
             cml_realization_profile_id=self.cml_realization_profile_id,
@@ -257,7 +238,6 @@ class CmlAnchoredHostTrustRecord(BaseModel):
     realization_identity: StableReferenceIdentity
     cml_lab_id: CmlUUID
     cml_node_id: CmlUUID
-    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     device_identity: NetBoxDeviceIdentity
     logical_name: ProfiledLogicalName
     management_address: IPvAnyAddress
@@ -272,22 +252,6 @@ class CmlAnchoredHostTrustRecord(BaseModel):
 
     @model_validator(mode="after")
     def exact_realization_bound_trust(self) -> CmlAnchoredHostTrustRecord:
-        member = self.declaration.member(self.logical_name)
-        if (
-            self.device_identity,
-            self.automation_profile_id,
-            self.cml_realization_profile_id,
-        ) != (
-            member.device_identity,
-            member.automation_profile_id,
-            member.cml_realization_profile_id,
-        ):
-            raise ValueError("realized device does not match the Git profile catalog")
-        if (
-            hasattr(self, "operational_role")
-            and self.operational_role is not member.operational_role
-        ):
-            raise ValueError("realized device role does not match the Git catalog")
         _validate_profile_pairing(
             automation_profile_id=self.automation_profile_id,
             cml_realization_profile_id=self.cml_realization_profile_id,
@@ -333,7 +297,6 @@ class StagingRealizedDevice(BaseModel):
     """One exact STAGING binding with readiness and trust evidence references."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     device_identity: NetBoxDeviceIdentity
     logical_name: ProfiledLogicalName
     operational_role: OperationalRole
@@ -346,22 +309,6 @@ class StagingRealizedDevice(BaseModel):
 
     @model_validator(mode="after")
     def exact_staging_binding(self) -> StagingRealizedDevice:
-        member = self.declaration.member(self.logical_name)
-        if (
-            self.device_identity,
-            self.automation_profile_id,
-            self.cml_realization_profile_id,
-        ) != (
-            member.device_identity,
-            member.automation_profile_id,
-            member.cml_realization_profile_id,
-        ):
-            raise ValueError("realized device does not match the Git profile catalog")
-        if (
-            hasattr(self, "operational_role")
-            and self.operational_role is not member.operational_role
-        ):
-            raise ValueError("realized device role does not match the Git catalog")
         _validate_profile_pairing(
             automation_profile_id=self.automation_profile_id,
             cml_realization_profile_id=self.cml_realization_profile_id,

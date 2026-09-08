@@ -33,11 +33,9 @@ from network_change_delivery.observability_private_paths import (
 )
 from network_change_delivery.profile_inventory import (
     OBSERVABILITY_SCOPE,
-    PROFILED_MANAGED_POPULATION,
+    PROFILE_ADMISSION_CATALOG,
     NetBoxProfileInventoryProvider,
-    ProfiledPopulationDeclaration,
     ProfiledPopulationScope,
-    admit_profiled_subject,
 )
 
 MAX_PUBLICATION_BYTES = 64 * 1024
@@ -69,7 +67,6 @@ class ObservabilityTarget(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     inventory_object_id: NetBoxDeviceIdentity
     device_name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
     platform_slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -87,17 +84,12 @@ class ObservabilityTarget(BaseModel):
             ipaddress.IPv4Address(self.host)
         except ValueError:
             raise ValueError("observability target address rejected") from None
-        try:
-            admit_profiled_subject(
-                declaration=self.declaration,
-                device_identity=self.inventory_object_id,
-                logical_name=self.device_name,
-                platform_slug=self.platform_slug,
-                network_os=self.network_os,
-                automation_profile_id=self.automation_profile_id,
-            )
-        except ValueError:
-            raise ValueError("observability target subject rejected") from None
+        if not any(
+            platform == self.platform_slug
+            and rule.automation_profile_id == self.automation_profile_id
+            for (platform, _device_type), rule in PROFILE_ADMISSION_CATALOG.items()
+        ):
+            raise ValueError("observability target profile/platform rejected")
         profile = get_automation_profile(self.automation_profile_id)
         if (
             profile.network_os is not self.network_os
@@ -136,7 +128,7 @@ class TargetGeneration(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     scope: ProfiledPopulationScope = OBSERVABILITY_SCOPE
     state: TargetGenerationState
     generated_at: datetime
@@ -210,7 +202,7 @@ class ObservabilityReady(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     service_contract: Literal["management-service-reachability"] = (
         "management-service-reachability"
     )
@@ -266,7 +258,6 @@ def targets_from_inventory(
             raise ObservabilityTargetError("observability management service rejected")
         targets.append(
             ObservabilityTarget(
-                declaration=population.declaration,
                 inventory_object_id=device.inventory_object_id,
                 device_name=device.logical_name,
                 platform_slug=device.platform.slug,
@@ -344,7 +335,7 @@ def _generation(
 ) -> TargetGeneration:
     generated = (now or datetime.now(UTC)).astimezone(UTC)
     unsigned = TargetGeneration.model_construct(
-        schema_version="2",
+        schema_version="3",
         scope=scope,
         state=state,
         generated_at=generated,

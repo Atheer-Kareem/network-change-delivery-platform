@@ -293,21 +293,15 @@ class ProfiledPopulationScope(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     identity: Slug
-    declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION
     members: tuple[ProfiledPopulationMember, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
     def admitted_members(self) -> ProfiledPopulationScope:
         ProfiledPopulationDeclaration(members=self.members)
-        for member in self.members:
-            if member != self.declaration.member(member.logical_name):
-                raise ValueError("scope member differs from Git declaration")
-        selected = set(self.identities)
-        if self.members != tuple(
-            m for m in self.declaration.members if m.device_identity in selected
-        ):
-            raise ValueError("scope order differs from Git declaration")
         return self
+
+    def member(self, name: str) -> ProfiledPopulationMember:
+        return ProfiledPopulationDeclaration(members=self.members).member(name)
 
     @property
     def identities(self) -> tuple[str, ...]:
@@ -352,7 +346,6 @@ def population_scope(
         raise ValueError("scope identities are missing, duplicate or unknown")
     return ProfiledPopulationScope(
         identity=identity,
-        declaration=declaration,
         members=tuple(
             m for m in declaration.members if m.device_identity in identities
         ),
@@ -571,6 +564,10 @@ class ProfiledInventoryPopulation(BaseModel):
         for member in scope.members:
             if self.declaration.member(member.logical_name) != member:
                 raise ValueError("scope differs from resolved managed declaration")
+        if scope.members != tuple(
+            m for m in self.declaration.members if m.device_identity in scope.identities
+        ):
+            raise ValueError("scope order differs from resolved managed declaration")
         by_id = {d.device_identity: d for d in self.devices}
         return ProfiledInventoryScope(
             scope=scope, devices=tuple(by_id[m.device_identity] for m in scope.members)
@@ -588,7 +585,9 @@ class ProfiledInventoryScope(BaseModel):
     def exact_scope(self) -> ProfiledInventoryScope:
         self.scope.require_bindings(self.devices)
         for device in self.devices:
-            _admit_profiled_device(device, self.scope.declaration)
+            _admit_profiled_device(
+                device, ProfiledPopulationDeclaration(members=self.scope.members)
+            )
         return self
 
 

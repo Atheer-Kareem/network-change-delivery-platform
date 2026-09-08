@@ -52,7 +52,6 @@ def test_realization_and_trust_are_exact_scope_bound(size):
                 if d.automation_profile_id == device.automation_profile_id
             )
             values = template.model_dump(mode="python") | {
-                "declaration": declaration,
                 "device_identity": device.device_identity,
                 "logical_name": device.logical_name,
                 "cml_node_id": f"10000000-0000-4000-8000-{index + 1:012d}",
@@ -165,7 +164,7 @@ def test_oxidized_scope_controls_source_readiness_and_api(tmp_path, monkeypatch,
     marker = publish_readiness(marker_path, "a" * 64, scope=scope)
     assert read_collection_ready(marker_path, "a" * 64, scope=scope) == marker
     other = population_scope(
-        "wrong", scope.identities[:1], declaration=scope.declaration
+        "wrong", scope.identities[:1], declaration=provider.declaration
     )
     if size > 1:
         with pytest.raises(OxidizedControlError):
@@ -507,7 +506,7 @@ def test_live_known_hosts_generation_requires_reviewed_realization_scope(
     )
     from network_change_delivery.profiled_realization import EvidenceReference
 
-    declaration, scope, provider, _ = declared_population(size)
+    _declaration, scope, provider, _ = declared_population(size)
     devices = provider.resolve_profiled_population().devices
     anchors = tuple(
         ProfiledLiveAnchor(
@@ -550,7 +549,6 @@ def test_live_known_hosts_generation_requires_reviewed_realization_scope(
             CmlAnchoredHostTrustRecord.model_validate(
                 original.model_dump()
                 | {
-                    "declaration": declaration,
                     "device_identity": f"netbox:dcim.device:{anchor.device_id}",
                     "logical_name": anchor.logical_name,
                     "cml_node_id": anchor.cml_node_id,
@@ -686,7 +684,7 @@ def test_same_cml_admission_and_lab_start_code_accepts_scoped_graph(size):
 
 
 def test_topology_rejects_physical_alias_duplicate_and_management_links():
-    _, scope, _, _ = declared_population(5)
+    _, scope, provider, _ = declared_population(5)
     for endpoints in (
         ("core-02:GigabitEthernet1", "synthetic-14:Gi0/1"),
         ("core-02:GigabitEthernet3", "transit-ios-01:Gi0/1"),
@@ -701,8 +699,13 @@ def test_topology_rejects_physical_alias_duplicate_and_management_links():
             ),
             ProfiledStagingLink(identity="two", endpoints=endpoints),
         )
-        with pytest.raises(ValueError, match="physical endpoint reused"):
-            ProfiledStagingTopology(scope=scope, links=links)
+        with pytest.raises(
+            ValueError, match=r"physical endpoint reused|resolved management slot"
+        ):
+            staging_link_slots(
+                provider.resolve_profiled_population().devices,
+                ProfiledStagingTopology(scope=scope, links=links),
+            )
 
 
 @pytest.mark.parametrize("name", ["system-bridge", "management-switch"])

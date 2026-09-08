@@ -59,7 +59,7 @@ def verify(
     finally:
         operator.close()
     profiled = (
-        NetBoxProfileInventoryProvider(declaration=catalog.scope.declaration)
+        NetBoxProfileInventoryProvider()
         .resolve_profiled_population()
         .project(catalog.scope)
     )
@@ -74,7 +74,6 @@ def verify(
 
     realized = tuple(
         ProfiledRealizedDevice(
-            declaration=catalog.scope.declaration,
             device_identity=device.device_identity,
             logical_name=device.logical_name,
             operational_role=device.operational_role,

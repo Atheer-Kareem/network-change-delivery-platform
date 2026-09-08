@@ -7,6 +7,28 @@ records positive and negative main outcomes. Main planning
 is read-only; execution requires same-build promotion and explicit human unblock.
 Never run a live plan or deploy as an implementation/unit-test gate.
 
+## Committed intent selection
+
+The fixed `deployments/live/profiled-demo.yaml` is the only protected-main intent
+source. Its `InterfaceDescriptionIntent` selects one logical device/interface;
+Git/NetBox resolves stable identity and the planner applies operation admission.
+The loader requires one bounded regular YAML document and rejects symlinks,
+unknown fields/kinds/targets and missing input. There is no environment, metadata,
+unblock-field or arbitrary-path selector and no fallback target.
+
+Planning, promotion and deployment independently bind change ID, kind, target,
+interface and desired description to that intent. Schema-v2 promotion keeps its
+canonical field shape and derives target/device/change from the plan. Existing
+core promotion bytes remain valid; alternative vJunos promotion, authorization,
+durable EXECUTION and chronology are proven offline. The human block remains
+fieldless and cannot select a target or repair failed prerequisites.
+
+The active file still selects core-02. Only CAT8000V and vJunos admit description
+writes; IOSv/IOSvL2 remain denied. Dedicated deploy credentials still permit only
+devices 1/2. No local installer or credential update is required. Batfish remains
+B4 assurance and CML remains realization/integration assurance; neither proves
+or rehearses the exact description candidate. See the [intent contract](intent-delivery.md).
+
 ## Deployment runtime prerequisite — CAP-RUNTIME-VERIFY
 
 Current `ncdp profiled-deploy` calls `execute_profiled_plan`. After exact plan
@@ -196,7 +218,7 @@ claim isolation from a malicious administrator or compromised trusted main.
 The fixed intent uses the already accepted PR #132 target, device 1/core-02,
 interface 2/GigabitEthernet2, with description `managed-by-ncdp-profiled-demo`.
 The existing CLI still admits only interface-description writes on profiles
-1/2; this wrapper narrows to one device-1 target. Devices 8/9, B4 D1, fleet and
+1/2; the committed intent currently selects device 1, without a code-level target restriction. Devices 8/9, B4 D1, fleet and
 SNMP writes are not enabled. Already compliant means no plan and no write; do
 not reset device state to manufacture a demonstration.
 

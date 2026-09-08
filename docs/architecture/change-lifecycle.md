@@ -36,6 +36,14 @@ The `iosv_159_3_m12` and `iosvl2_2020` profiles remain managed
 members but fail before secret or transport access for this operation. No
 routed-underlay, OSPF, VLAN/trunk, ACL, or SNMP device-write authority is added.
 
+Protected main delivery selects the same typed intent from the fixed committed
+`deployments/live/profiled-demo.yaml`. The [intent boundary](intent-delivery.md)
+independently binds every supported intent field to the plan/compliance result
+at promotion and deployment. The active intent still selects core-02; the same
+control path also admits vJunos. Human authorization is fieldless and applies
+only to the already-minted immutable promotion. Batfish/CML receipts remain
+prerequisites, not exact description-candidate assurance or write rehearsal.
+
 ## Planning and approval
 
 `profiled-plan` resolves the exact Git-owned profiled subject, admits the

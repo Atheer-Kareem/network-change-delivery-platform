@@ -34,7 +34,7 @@ trust, realization and applicable operation admission.
 | Current proof population | Profile/platform | Interface-description write admission |
 |---|---|---|
 | `core-02` · NetBox 1 | CAT8000V IOS-XE | Admitted; current main demo target |
-| `edge-junos-01` · NetBox 2 | vJunos | Admitted through the current CLI |
+| `edge-junos-01` · NetBox 2 | vJunos | Admitted through CLI or committed intent |
 | `transit-ios-01` · NetBox 8 | IOSv | Managed/read-only; operation denied |
 | `access-sw-01` · NetBox 9 | IOSvL2 | Managed/read-only; operation denied |
 
@@ -53,6 +53,8 @@ and have no delivery tail. Main still requires real same-build CML success.
 Soft failure preserves downstream visibility; it grants no deployment authority.
 Human unblock cannot repair missing prerequisites.
 
+Protected main delivery selects its single target from a reviewed committed
+[typed intent](docs/architecture/intent-delivery.md), currently core-02.
 `ncdp profiled-plan` freezes exact identity, intent and execution/recovery
 artifacts into a digest-bound schema-v2 plan. `ncdp profiled-deploy` requires that
 exact approval, explicit LIVE authority and fresh preflight. Python owns policy;

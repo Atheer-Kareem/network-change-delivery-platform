@@ -21,7 +21,7 @@ from network_change_delivery.audit import AuditArtifactKind as Kind
 from network_change_delivery.audit import BuildkiteCorrelation
 from network_change_delivery.audit_store import AuditStore
 from network_change_delivery.inventory import InventoryError
-from network_change_delivery.models import FinalOutcome, InterfaceDescriptionIntent
+from network_change_delivery.models import FinalOutcome
 from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
 from network_change_delivery.profiled_audit import (
@@ -49,6 +49,10 @@ from network_change_delivery.profiled_execution import (
     ProfiledChangeRecord,
     verify_profiled_record_plan,
 )
+from network_change_delivery.profiled_intent import (
+    admit_intent_result,
+    load_committed_intent,
+)
 from network_change_delivery.profiled_live_host_trust import (
     DEFAULT_PROFILED_LIVE_TRUST_ROOT,
     KNOWN_HOSTS_NAME,
@@ -61,9 +65,7 @@ from network_change_delivery.profiled_planning import (
 )
 from network_change_delivery.profiled_promotion import (
     BATFISH_METADATA,
-    CHANGE_ID,
     CML_METADATA,
-    DESCRIPTION,
     MAIN_KEYS,
     PLANNING_METADATA,
     PROMOTION_METADATA,
@@ -71,7 +73,6 @@ from network_change_delivery.profiled_promotion import (
     ProfiledBuildContext,
     ProfiledPlanningPublication,
     ProfiledPromotion,
-    admit_demo_plan,
     authorize,
     digest_bytes,
     promote,
@@ -285,16 +286,7 @@ def verify_human_dependency():
 
 def plan_step(context, directory):
     with plan_boundary("commit/context"):
-        intent = InterfaceDescriptionIntent.model_validate(
-            yaml.safe_load((ROOT / "deployments/live/profiled-demo.yaml").read_text())
-        )
-    if (
-        intent.change_id,
-        intent.target,
-        intent.interface,
-        intent.desired.description,
-    ) != (CHANGE_ID, "core-02", "GigabitEthernet2", DESCRIPTION):
-        raise PlanPhaseError("commit/context")
+        intent = load_committed_intent(ROOT)
     with plan_boundary("LIVE trust"):
         validate_profiled_live_host_trust()
     with plan_boundary("NetBox inventory"):
@@ -324,25 +316,30 @@ def plan_step(context, directory):
 
 def publish_plan(context, directory, intent, result):
     plan = result.plan
-    facts = {
-        "Change": intent.change_id,
-        "Target": intent.target,
-        "Device identity": "netbox:dcim.device:1",
-        "Automation profile": "cat8000v_iosxe",
-        "Interface": intent.interface,
-        "Current description": result.state.description,
-        "Desired description": intent.desired.description,
-        "Transaction strategy": "cisco_targeted_inverse",
-        "Plan digest": plan.digest if plan else "none — already compliant",
-        "Change required": plan is not None,
-    }
     value = plan if plan is not None else result.compliance
     if value is None or (plan is not None and result.compliance is not None):
         raise ValueError("planning must produce exactly one typed result")
     # Revalidate before publication, even if a caller supplied an unvalidated copy.
     model = ProfiledDeploymentPlan if plan is not None else ProfiledComplianceRecord
     value = model.model_validate(value.model_dump())
-    admit_demo_plan(value)
+    admit_intent_result(intent, value)
+    facts = {
+        "Change": value.change_id,
+        "Target": value.target,
+        "Device identity": value.device_identity,
+        "Automation profile": value.automation_profile_id.value,
+        "Interface": value.interface.name,
+        "Interface identity": value.interface.interface,
+        "Current description": value.current_description
+        if plan
+        else value.observed_description,
+        "Desired description": value.desired_description,
+        "Operation": value.kind if plan else value.operation.value,
+        "Plan digest": value.digest if plan else "none — already compliant",
+        "Change required": plan is not None,
+    }
+    if plan is not None:
+        facts["Transaction strategy"] = value.operation_admission.transaction_strategy
     kind = "plan" if plan is not None else "compliance"
     name = artifact_name(context, kind)
     raw = value.model_dump_json(indent=2).encode() + b"\n"
@@ -370,7 +367,8 @@ def publish_plan(context, directory, intent, result):
 
 
 def planning_result(context, directory):
-    """Require successful publication; never infer compliance from absence."""
+    """Require successful publication bound to the independently read Git intent."""
+    intent = load_committed_intent(ROOT)
     receipt = ProfiledPlanningPublication.model_validate_json(
         metadata(context, PLANNING_METADATA)
     )
@@ -392,7 +390,7 @@ def planning_result(context, directory):
         or value.digest != receipt.result_digest
     ):
         raise ValueError("planning publication digest rejected")
-    admit_demo_plan(value)
+    admit_intent_result(intent, value)
     return value, raw
 
 
@@ -420,7 +418,9 @@ def promotion_step(context, directory):
     value, plan_bytes = planning_result(context, directory)
     if isinstance(value, ProfiledComplianceRecord):
         return compliant_annotation(context, value)
-    value = promote(context, plan_bytes, *prerequisites(context))
+    value = promote(
+        context, plan_bytes, *prerequisites(context), intent=load_committed_intent(ROOT)
+    )
     name = artifact_name(context, "promotion")
     write_new(directory / name, value.model_dump_json(indent=2).encode() + b"\n")
     upload(context, directory, name)
@@ -563,6 +563,7 @@ def deploy_step(context, directory):
             *prerequisites(context),
             metadata(context, PROMOTION_METADATA),
             unblocker,
+            intent=load_committed_intent(ROOT),
         )
         validate_profiled_live_host_trust()
         promotion = ProfiledPromotion.model_validate_json(promotion_bytes)

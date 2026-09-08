@@ -89,14 +89,14 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | ACCEPTED |
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | ACCEPTED |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | ACCEPTED |
-| CAP-INTENT-DELIVERY | Intent-selected generic delivery | USER APPROVED |
+| CAP-INTENT-DELIVERY | Intent-selected generic delivery | IN PROGRESS |
 | CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | USER APPROVED |
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
 CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE,
 CAP-CONFIG-CHRONOLOGY and CAP-POPULATION-SCOPES are accepted;
-other approved capabilities await their own tasks.
+CAP-INTENT-DELIVERY is in implementation; other approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -226,12 +226,11 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   canonical artifact persistence/readback and exact `verify_profiled_record_plan()`
   binding with current lifecycle semantics; and Cisco and Junos COMPLIANCE
   envelopes without promotion, authorization or execution claims.
-- **Promotion authority boundary:** the user confirmed that `ProfiledPromotion`
-  continues to admit only the existing core-02/device-1 main target. Promoted
-  Junos EXECUTION is **NOT CURRENTLY REPRESENTABLE**, not an incomplete vendor
-  implementation. Its durable-envelope proof is deferred until
-  CAP-INTENT-DELIVERY legitimately broadens promotion/intent admission. Evidence
-  support must not broaden delivery authority to construct a proof fixture.
+- **Foundation-era promotion boundary:** at foundation acceptance, promotion
+  admitted only core-02/device 1, so promoted Junos EXECUTION was not representable.
+  CAP-INTENT-DELIVERY now supplies intent-bound selection and an offline promoted
+  Junos durable-envelope proof. This does not rewrite the foundation evidence or
+  claim a runtime Junos deployment.
 - **Acceptance/sign-off:** explicitly USER ACCEPTED based on controlled
   [build 420](https://buildkite.com/atheer-kareem/network-change-delivery-platform/builds/420)
   on `main`, build UUID `01a07d93-7fe6-4064-8533-f79f427b5cca`, commit
@@ -350,7 +349,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-INTENT-DELIVERY — Intent-selected generic delivery
 
-- **State:** USER APPROVED.
+- **State:** IN PROGRESS.
 - **Target/value:** a reviewed committed typed intent selects an explicit
   delivery target and binds it into planning/promotion. Generic control-plane
   and promotion types no longer encode the current demo target.
@@ -360,12 +359,20 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 - **Dependencies/scope:** CAP-OUTCOME-TRUTH and population-contract alignment;
   intent/promotion models, delivery driver, demo data and tests.
 - **Durable-evidence prerequisite:** broader promoted target selection under this
-  capability is required before a valid promoted Junos EXECUTION durable-envelope
-  proof can exist. The CAP-DURABLE-EVIDENCE foundation preserves current admission.
+  capability now permits the offline Junos promoted EXECUTION proof with exact
+  plan/promotion/authorization, durable byte correlation and chronology. The
+  durable envelope remains schema v1 and promotion remains schema v2.
 - **Must not change:** write eligibility, credential architecture or human
   approval into an unrestricted free-text target selector.
 - **Origin/population effect:** generalizes delivery selection, independently of
   total managed membership; the existing demo can remain one committed intent.
+- **Implementation checkpoint:** fixed-path bounded typed intent loading; exact
+  intent/result binding at planning, promotion and deployment; schema-v2 promotion
+  derives target/device/change from the plan; dynamic annotations. Offline tests
+  cover alternative Cisco/Junos intents, both compliant paths, mutation rejection,
+  promoted Junos durable EXECUTION and chronology. The committed core intent,
+  operation admissions, credentials and pipeline remain unchanged. User review
+  and acceptance remain pending. See the [intent contract and coupling audit](architecture/intent-delivery.md).
 
 ### CAP-PROFILE-REUSE-WRITE — Profile-reuse interface-description admission
 

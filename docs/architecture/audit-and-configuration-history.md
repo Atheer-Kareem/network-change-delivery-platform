@@ -181,7 +181,7 @@ by the envelope digest; the reader cannot independently infer their external tru
 Batfish and CML hashes remain prerequisite assurance, not proof that either system
 rehearsed the exact interface-description write.
 
-The confirmed foundation proof boundary covers every currently representable
+The confirmed foundation proof boundary covered every then-representable
 delivery family:
 
 - Cisco/core-02 promoted EXECUTION: full plan → promotion → execution-record →
@@ -192,12 +192,13 @@ delivery family:
 - Cisco and Junos COMPLIANCE envelopes: no promotion, authorization or execution
   claim.
 
-Current `ProfiledPromotion` intentionally admits only core-02/device 1. Promoted
-Junos EXECUTION is **NOT CURRENTLY REPRESENTABLE** under that authority, not an
-incomplete vendor implementation. Its durable-envelope proof is deferred until
-[CAP-INTENT-DELIVERY](../roadmap.md#cap-intent-delivery--intent-selected-generic-delivery)
-legitimately changes promotion/intent admission. This foundation changes no
-promotion model or delivery authority and claims no new live acceptance.
+At foundation acceptance, promotion admitted only core-02/device 1. The current
+[intent-selected delivery contract](intent-delivery.md) now permits promoted
+Junos EXECUTION through existing operation admission. Offline tests cover the
+same schema-v2 promotion and schema-v1 durable envelope, exact byte/plan binding,
+human provenance and a Junos chronology child. Historical core evidence and
+COMPLIANCE remain valid. This closes the earlier representability limitation;
+it claims no new LIVE Junos execution acceptance.
 
 ### Current Buildkite publication integration
 

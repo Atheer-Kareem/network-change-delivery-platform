@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from profiled_intent_fixtures import CHANGE_ID, DESCRIPTION
 from test_profiled_planning import (
     FakeCollector,
     FakeInventory,
@@ -18,10 +19,9 @@ from test_profiled_planning import (
 
 from network_change_delivery.architecture_contracts import AutomationProfileID
 from network_change_delivery.models import InterfaceDescriptionIntent
+from network_change_delivery.profiled_intent import load_committed_intent
 from network_change_delivery.profiled_planning import plan_profiled_change
 from network_change_delivery.profiled_promotion import (
-    CHANGE_ID,
-    DESCRIPTION,
     PLANNING_METADATA,
     VALIDATION_KEYS,
     ProfiledBuildContext,
@@ -129,7 +129,9 @@ def planning_receipt(context, value):
 
 def test_current_promotion_round_trip_and_authorization(context, plan, receipts):
     raw = plan.model_dump_json().encode()
-    promotion = promote(context, raw, receipts, DIGEST, DIGEST)
+    promotion = promote(
+        context, raw, receipts, DIGEST, DIGEST, intent=load_committed_intent(ROOT)
+    )
     assert promotion.schema_version == "2"
     assert promotion.plan_artifact_digest == digest_bytes(raw)
     assert promotion.plan_digest == plan.digest
@@ -147,6 +149,7 @@ def test_current_promotion_round_trip_and_authorization(context, plan, receipts)
             DIGEST,
             promotion.digest,
             JOB,
+            intent=load_committed_intent(ROOT),
         )
         == plan
     )
@@ -176,14 +179,26 @@ def test_context_rejects_before_any_helper(driver, monkeypatch, field, value):
         "checked_command",
         lambda *_a, **_k: pytest.fail("helper before admission"),
     )
-    assert driver.main() == 2
+    previous_umask = driver.os.umask(0o077)
+    try:
+        assert driver.main() == 2
+    finally:
+        # main owns process policy; this in-process test must not leak it.
+        driver.os.umask(previous_umask)
 
 
 @pytest.mark.parametrize("missing", VALIDATION_KEYS)
 def test_each_validation_failure_blocks_promotion(context, plan, receipts, missing):
     receipts.pop(missing)
     with pytest.raises(ValueError):
-        promote(context, plan.model_dump_json().encode(), receipts, DIGEST, DIGEST)
+        promote(
+            context,
+            plan.model_dump_json().encode(),
+            receipts,
+            DIGEST,
+            DIGEST,
+            intent=load_committed_intent(ROOT),
+        )
 
 
 @pytest.mark.parametrize(
@@ -191,7 +206,14 @@ def test_each_validation_failure_blocks_promotion(context, plan, receipts, missi
 )
 def test_assurance_failure_cannot_mint_promotion(context, plan, receipts, batfish, cml):
     with pytest.raises(ValueError):
-        promote(context, plan.model_dump_json().encode(), receipts, batfish, cml)
+        promote(
+            context,
+            plan.model_dump_json().encode(),
+            receipts,
+            batfish,
+            cml,
+            intent=load_committed_intent(ROOT),
+        )
 
 
 @pytest.mark.parametrize(
@@ -214,7 +236,9 @@ def test_authorization_independently_rejects_every_binding(
     context, plan, receipts, case
 ):
     raw = plan.model_dump_json().encode()
-    promotion = promote(context, raw, receipts, DIGEST, DIGEST)
+    promotion = promote(
+        context, raw, receipts, DIGEST, DIGEST, intent=load_committed_intent(ROOT)
+    )
     serialized = promotion.model_dump_json().encode()
     digest, human, batfish, cml = promotion.digest, JOB, DIGEST, DIGEST
     if case == "build":
@@ -244,7 +268,17 @@ def test_authorization_independently_rejects_every_binding(
     elif case == "human":
         human = ""
     with pytest.raises(ValueError):
-        authorize(context, serialized, raw, receipts, batfish, cml, digest, human)
+        authorize(
+            context,
+            serialized,
+            raw,
+            receipts,
+            batfish,
+            cml,
+            digest,
+            human,
+            intent=load_committed_intent(ROOT),
+        )
 
 
 @pytest.mark.parametrize(
@@ -305,7 +339,9 @@ def test_valid_authorization_calls_only_current_cli_once(
     driver, context, plan, receipts, tmp_path, monkeypatch, returncode
 ):
     raw = plan.model_dump_json().encode()
-    promotion = promote(context, raw, receipts, DIGEST, DIGEST)
+    promotion = promote(
+        context, raw, receipts, DIGEST, DIGEST, intent=load_committed_intent(ROOT)
+    )
     monkeypatch.setattr(
         driver,
         "download",
@@ -632,7 +668,9 @@ def test_execution_publication_and_final_render_require_exact_plan_binding(
         # Coherent record with matching digests but belonging to a different change.
         record = record.model_copy(update={"change_id": "CHG-DIFFERENT"})
     raw = plan.model_dump_json().encode()
-    promotion = promote(context, raw, receipts, DIGEST, DIGEST)
+    promotion = promote(
+        context, raw, receipts, DIGEST, DIGEST, intent=load_committed_intent(ROOT)
+    )
     monkeypatch.setattr(
         driver,
         "metadata",

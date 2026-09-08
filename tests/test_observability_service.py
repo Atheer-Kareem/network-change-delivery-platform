@@ -1015,7 +1015,9 @@ def test_refresh_stage_failure_remains_realization_rejected_and_stops_progressio
 
     monkeypatch.setattr(observability_reconciler, "STATE_ROOT", state)
     monkeypatch.setattr(observability_reconciler, "_settings", settings_operation)
-    monkeypatch.setattr(observability_reconciler, "read_admission", admission_read)
+    monkeypatch.setattr(
+        observability_reconciler, "read_admission_for_refresh", admission_read
+    )
     monkeypatch.setattr(observability_reconciler, "CmlRealizationAuthority", Authority)
     monkeypatch.setattr(
         observability_reconciler, "publish_admission", admission_publication
@@ -1115,7 +1117,7 @@ def test_successful_refresh_preserves_settings_validation_and_publication_order(
     )
     monkeypatch.setattr(
         observability_reconciler,
-        "read_admission",
+        "read_admission_for_refresh",
         lambda _root: calls.append("admission_read") or previous,
     )
 

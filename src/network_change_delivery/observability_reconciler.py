@@ -12,13 +12,16 @@ from enum import StrEnum
 from pathlib import Path
 
 from network_change_delivery.inventory import InventoryError
-from network_change_delivery.observability_private_paths import validate_private_file
+from network_change_delivery.observability_private_paths import (
+    ObservabilityPrivatePathError,
+    validate_private_file,
+)
 from network_change_delivery.observability_realization import (
     CmlRealizationAuthority,
     ObservabilityRealizationError,
     RealizationAdmission,
     publish_admission,
-    read_admission,
+    read_admission_for_refresh,
 )
 from network_change_delivery.observability_service import (
     ObservabilityServiceError,
@@ -137,7 +140,7 @@ def _refresh_admission() -> tuple[dict[str, str], RealizationAdmission]:
     except ObservabilityServiceError:
         raise AdmissionRefreshError(AdmissionRefreshStage.SETTINGS) from None
     try:
-        previous = read_admission(STATE_ROOT)
+        previous = read_admission_for_refresh(STATE_ROOT)
     except ObservabilityRealizationError:
         raise AdmissionRefreshError(AdmissionRefreshStage.ADMISSION_READ) from None
     node_ids = {item.inventory_object_id: item.cml_node_id for item in previous.nodes}
@@ -167,10 +170,19 @@ def _reconcile_locked() -> str:
     readiness = STATE_ROOT / "runtime/observability-ready.json"
     invalidate_readiness(readiness)
     source_commit = _runtime_source_commit()
-    admission_exists = (
-        validate_private_file(STATE_ROOT / "operator/realization.json", missing_ok=True)
-        is not None
-    )
+    try:
+        path = STATE_ROOT / "operator/realization.json"
+        # A dangling link is invalid retained state, not intentional retirement.
+        if any(p.is_symlink() for p in (STATE_ROOT, path.parent, path)):
+            raise ObservabilityPrivatePathError("realization path rejected")
+        admission_exists = validate_private_file(path, missing_ok=True) is not None
+    except ObservabilityPrivatePathError:
+        publish_generation(
+            STATE_ROOT,
+            state=TargetGenerationState.FAILED,
+            failure=TargetFailureClassification.REALIZATION_REJECTED,
+        )
+        raise AdmissionRefreshError(AdmissionRefreshStage.ADMISSION_READ) from None
     if admission_exists:
         try:
             settings, admission = _refresh_admission()

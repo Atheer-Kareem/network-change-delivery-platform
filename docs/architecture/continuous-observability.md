@@ -96,6 +96,23 @@ history while publishing RETIRED empty discovery. NetBox or CML failure
 invalidates readiness and removes live targets. A changed realization cannot
 inherit prior authorization: a new admission and generation are required.
 
+Realization admission lasts 15 minutes; normal reconciliation runs every five
+minutes. Expiry after downtime does not permanently strand reconciliation.
+`read_admission()` continues to reject expired evidence as current authority.
+Only the reconciler uses `read_admission_for_refresh()` to obtain a retained
+identity seed: private regular file/directory checks, current v4 schema, typed
+fields, canonical digest, exact expected catalog, lab and node bindings must
+all validate. Only freshness may have elapsed. The expired seed itself grants
+no target or readiness authority.
+
+Fresh `CmlRealizationAuthority.admit(...)` revalidation is mandatory before
+publishing a new admission, resolving the managed population and publishing
+ACTIVE scoped targets/readiness. Invalid retained state, including old schema,
+wrong catalog, corruption or unsafe paths, fails closed; it never silently
+recreates authority. A genuinely absent admission still means RETIRED. Failed
+CML revalidation invalidates readiness and publishes FAILED / REALIZATION_REJECTED
+with empty discovery and bounded diagnostic staging.
+
 Safe retirement remains independently testable and its order is
 safety-significant:
 

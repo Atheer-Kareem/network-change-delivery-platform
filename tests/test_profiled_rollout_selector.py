@@ -1,21 +1,14 @@
-"""Closed selector WHO agrees exactly with reviewed WHAT; no runtime providers."""
+"""Composable reviewed selection, versioned byte truth; offline providers only."""
 
 import hashlib
+import json
+from functools import partial
 
 import pytest
 from profiled_population_fixtures import declared_population
-from test_profiled_rollout import (
-    Authority,
-    intent_for,
-    plan,
-    rehash,
-)
-from test_profiled_rollout import (
-    context as context,
-)
-from test_profiled_rollout import (
-    forbid_execution as forbid_execution,
-)
+from test_profiled_rollout import Authority, intent_for, plan, rehash
+from test_profiled_rollout import context as context
+from test_profiled_rollout import forbid_execution as forbid_execution
 
 from network_change_delivery import profiled_rollout as rollout
 from network_change_delivery.architecture_contracts import (
@@ -32,16 +25,30 @@ from network_change_delivery.profile_inventory import (
 IOS_NAMES = ("transit-ios-01", "access-sw-01")
 
 
-def selected_intent(context, selector=None, names=IOS_NAMES):
-    values = intent_for(context.inventory, names).model_dump()
-    values["selector"] = selector if selector is not None else {"network_oses": ["ios"]}
-    return rollout.ProfiledRolloutIntent.model_validate(values)
+def clause(selector=None, interface="GigabitEthernet0/1", description="NEW"):
+    return rollout.ProfiledRolloutSelectorClause(
+        selector=selector if selector is not None else {"network_oses": ["ios"]},
+        interface=interface,
+        desired={"description": description},
+    )
+
+
+def selected_intent(context, selector=None, *, explicit=(), clauses=None, **policy):
+    return rollout.ProfiledRolloutSelectionIntent(
+        change_id="CHG-ROLLOUT-OFFLINE-001",
+        operation="interface_description",
+        explicit_members=intent_for(context.inventory, explicit).members
+        if explicit
+        else (),
+        selectors=(clause(selector),) if clauses is None else clauses,
+        policy=rollout.ProfiledRolloutPolicy(wave_size=1, **policy),
+    )
 
 
 def assert_no_child_activity(context):
     assert context.secrets.reference_calls == context.secrets.load_calls == 0
     assert context.collector.calls == []
-    # Writer/deployer methods are traps in every test through forbid_execution.
+    # Every test also installs writer/deployer traps through forbid_execution.
 
 
 @pytest.mark.parametrize(
@@ -59,25 +66,38 @@ def assert_no_child_activity(context):
         ),
     ],
 )
-def test_increment1_explicit_artifact_bytes_and_digests_unchanged(
+def test_increment1_exact_v1_bytes_digest_and_dispatch(
     context, compliant, parent_digest, byte_digest
 ):
-    # Captured by running merged 97e8749 before introducing the selector field.
+    # Golden hashes captured from merged Increment 1 (97e8749).
     names = ("core-02", "edge-junos-01")
     if compliant:
         context.collector.compliant = names
-    intent = intent_for(context.inventory, names)
-    explicit_none = rollout.ProfiledRolloutIntent.model_validate(
-        {**intent.model_dump(), "selector": None}
-    )
-    assert explicit_none == intent
-    assert "selector" not in intent.model_dump()
-    result = plan(context, intent)
-    original_bytes = result.model_dump_json().encode()
+    original_intent = intent_for(context.inventory, names)
+    result = plan(context, original_intent)
+    raw = result.model_dump_json().encode()
+    assert result.schema_version == "1"
     assert result.digest == parent_digest
-    assert hashlib.sha256(original_bytes).hexdigest() == byte_digest
-    assert type(result).model_validate_json(original_bytes) == result
-    assert plan(context, explicit_none).model_dump_json().encode() == original_bytes
+    assert hashlib.sha256(raw).hexdigest() == byte_digest
+    assert rollout.read_profiled_rollout(raw) == result
+    assert type(rollout.read_profiled_rollout(raw)) is type(result)
+    assert rollout.read_profiled_rollout(raw).model_dump_json().encode() == raw
+    # New explicit-only source API still emits the exact old artifact.
+    assert (
+        plan(context, selected_intent(context, explicit=names, clauses=()))
+        .model_dump_json()
+        .encode()
+        == raw
+    )
+    for field, value in (
+        ("selector", None),
+        ("selectors", []),
+        ("explicit_members", []),
+    ):
+        with pytest.raises(ValueError, match="extra_forbidden"):
+            rollout.ProfiledRolloutIntent.model_validate(
+                {**original_intent.model_dump(), field: value}
+            )
 
 
 @pytest.mark.parametrize(
@@ -87,10 +107,9 @@ def test_increment1_explicit_artifact_bytes_and_digests_unchanged(
         ({"network_oses": ["ios"]}, IOS_NAMES),
         ({"automation_profile_ids": ["iosv_159_3_m12"]}, ("transit-ios-01",)),
         ({"operational_roles": ["access", "transit"]}, IOS_NAMES),
-        ({"network_oses": ["junos", "iosxe"]}, ("core-02", "edge-junos-01")),
         (
-            {"automation_profile_ids": ["iosv_159_3_m12", "cat8000v_iosxe"]},
-            ("core-02", "transit-ios-01"),
+            {"network_oses": ["iosxe"], "operational_roles": ["core", "edge"]},
+            ("core-02",),
         ),
         (
             {"network_oses": ["ios"], "operational_roles": ["transit", "access"]},
@@ -98,31 +117,31 @@ def test_increment1_explicit_artifact_bytes_and_digests_unchanged(
         ),
         (
             {
-                "network_oses": ["ios"],
-                "operational_roles": ["access", "transit"],
-                "automation_profile_ids": ["iosvl2_2020", "iosv_159_3_m12"],
+                "automation_profile_ids": ["iosv_159_3_m12"],
+                "operational_roles": ["transit", "access"],
             },
-            IOS_NAMES,
+            ("transit-ios-01",),
         ),
     ],
 )
-def test_closed_dimensions_fixed_or_and_declaration_order(context, selector, names):
-    intent = selected_intent(context, selector, names)
+def test_closed_or_and_and_filtered_alternatives(context, selector, names):
+    interface = context.inventory.pairs[names[0]][1].name
+    intent = selected_intent(context, clauses=(clause(selector, interface),))
     assert (
         tuple(
-            m.logical_name for m in intent.selector.select(PROFILED_MANAGED_POPULATION)
+            m.logical_name
+            for m in intent.selectors[0].selector.select(PROFILED_MANAGED_POPULATION)
         )
         == names
     )
     result = plan(context, intent)
     assert tuple(c.device.logical_name for c in result.children) == names
-    assert result.intent.selector == intent.selector
-    assert "selector" in result.model_dump()["intent"]
+    assert tuple(e.target for e in result.expansion) == names
     assert result == plan(context, intent)
-    assert type(result).model_validate_json(result.model_dump_json()) == result
+    assert rollout.read_profiled_rollout(result.model_dump_json().encode()) == result
 
 
-def test_selector_fields_use_existing_closed_enums():
+def test_selector_fields_are_frozen_existing_enums():
     selector = rollout.ProfiledRolloutSelector(
         operational_roles=["transit"],
         network_oses=["ios"],
@@ -135,88 +154,363 @@ def test_selector_fields_use_existing_closed_enums():
         selector.network_oses = (NetworkOS.JUNOS,)
 
 
-@pytest.mark.parametrize("compliant", [(), ("transit-ios-01",), IOS_NAMES])
-def test_selector_preserves_deployable_mixed_and_positive_compliance(
-    context, compliant
-):
-    context.collector.compliant = compliant
-    intent = selected_intent(context)
-    result = plan(context, intent)
-    assert [child.kind for child in result.children] == [
-        "COMPLIANT" if name in compliant else "DEPLOYABLE" for name in IOS_NAMES
-    ]
-    if compliant == IOS_NAMES:
-        assert isinstance(result, rollout.ProfiledRolloutCompliance)
-        assert result.plan is None
-        assert not result.promotion_minted
-        assert not result.execution_attempted
-        assert not result.recovery_attempted
-        assert not result.chronology_required
-    else:
-        assert isinstance(result, rollout.ProfiledRolloutPlan)
-        explicit = plan(context, intent_for(context.inventory, IOS_NAMES))
-        assert (result.canaries, result.waves) == (explicit.canaries, explicit.waves)
-        assert result.children == explicit.children
-
-
-def test_same_current_members_different_reviewed_selection_rules_change_digest(context):
-    rules = [
-        None,
-        {"network_oses": ["ios"]},
-        {"operational_roles": ["transit", "access"]},
-        {"automation_profile_ids": ["iosv_159_3_m12", "iosvl2_2020"]},
-        {"network_oses": ["ios"], "operational_roles": ["transit", "access"]},
-        {"operational_roles": ["access", "transit"]},
-    ]
-    results = [
-        plan(
-            context,
-            selected_intent(context, rule)
-            if rule is not None
-            else intent_for(context.inventory, IOS_NAMES),
-        )
-        for rule in rules
-    ]
-    assert len({result.digest for result in results}) == len(rules)
-    assert all(result.children == results[0].children for result in results)
-    assert all(
-        (result.canaries, result.waves) == (results[0].canaries, results[0].waves)
-        for result in results
+def test_multiple_clauses_supply_distinct_exact_payloads(context):
+    intent = selected_intent(
+        context,
+        clauses=(
+            clause({"network_oses": ["junos"]}, "ge-0/0/0", "JUNOS-REVIEWED"),
+            clause(description="IOS-REVIEWED"),
+        ),
     )
-    changed = results[1].model_dump(mode="json")
-    changed["intent"]["selector"] = rollout.ProfiledRolloutSelector.model_validate(
-        rules[2]
-    ).model_dump(mode="json")
-    with pytest.raises(ValueError, match="parent digest"):
-        rollout.ProfiledRolloutPlan.model_validate(changed)
-    assert rehash(rollout.ProfiledRolloutPlan, changed).digest == results[2].digest
+    result = plan(context, intent)
+    assert tuple(e.target for e in result.expansion) == ("edge-junos-01", *IOS_NAMES)
+    assert [e.source_index for e in result.expansion] == [0, 1, 1]
+    assert [c.result().desired_description for c in result.children] == [
+        "JUNOS-REVIEWED",
+        "IOS-REVIEWED",
+        "IOS-REVIEWED",
+    ]
+    assert [c.interface.name for c in result.children] == [
+        "ge-0/0/0",
+        "GigabitEthernet0/1",
+        "GigabitEthernet0/1",
+    ]
+    assert result.canaries == ("netbox:dcim.device:2", "netbox:dcim.device:8")
+    assert result.waves == (("netbox:dcim.device:9",),)
+
+
+def test_explicit_first_reviewed_order_then_clauses_and_git_order(context):
+    intent = selected_intent(context, explicit=("edge-junos-01", "core-02"))
+    result = plan(context, intent)
+    assert tuple(e.target for e in result.expansion) == (
+        "edge-junos-01",
+        "core-02",
+        *IOS_NAMES,
+    )
+    assert [(e.source_kind, e.source_index) for e in result.expansion] == [
+        ("explicit", 0),
+        ("explicit", 1),
+        ("selector", 0),
+        ("selector", 0),
+    ]
+    assert rollout.read_profiled_rollout(result.model_dump_json().encode()) == result
+
+
+def test_canaries_can_reference_expanded_members(context):
+    result = plan(
+        context,
+        selected_intent(
+            context,
+            explicit=("core-02", "edge-junos-01"),
+            canaries=("transit-ios-01", "edge-junos-01"),
+        ),
+    )
+    assert result.canaries == ("netbox:dcim.device:8", "netbox:dcim.device:2")
+    assert result.waves == (("netbox:dcim.device:1",), ("netbox:dcim.device:9",))
+
+
+@pytest.mark.parametrize("compliant", [(), ("transit-ios-01",), IOS_NAMES])
+def test_v2_deployable_mixed_compliant_exact_dispatch(context, compliant):
+    context.collector.compliant = compliant
+    result = plan(context, selected_intent(context))
+    assert result.schema_version == "2"
+    assert [c.kind for c in result.children] == [
+        "COMPLIANT" if n in compliant else "DEPLOYABLE" for n in IOS_NAMES
+    ]
+    expected = (
+        rollout.ProfiledRolloutComplianceV2
+        if compliant == IOS_NAMES
+        else rollout.ProfiledRolloutPlanV2
+    )
+    assert type(result) is expected
+    assert (
+        type(rollout.read_profiled_rollout(result.model_dump_json().encode()))
+        is expected
+    )
+    explicit = plan(context, intent_for(context.inventory, IOS_NAMES))
+    assert explicit.children == result.children
+    if compliant == IOS_NAMES:
+        assert result.plan is None
+        assert not any(
+            (
+                result.promotion_minted,
+                result.execution_attempted,
+                result.recovery_attempted,
+                result.chronology_required,
+            )
+        )
+    else:
+        assert (result.canaries, result.waves) == (explicit.canaries, explicit.waves)
+    v1_model = (
+        rollout.ProfiledRolloutCompliance
+        if compliant == IOS_NAMES
+        else rollout.ProfiledRolloutPlan
+    )
+    with pytest.raises(ValueError):
+        v1_model.model_validate_json(result.model_dump_json())
+    data = result.model_dump(mode="json")
+    data["schema_version"] = "1"
+    with pytest.raises(ValueError):
+        rollout.read_profiled_rollout(json.dumps(data).encode())
+
+
+def test_same_members_different_instructions_change_digest(context):
+    results = [
+        plan(context, selected_intent(context, selector))
+        for selector in (
+            {"network_oses": ["ios"]},
+            {"operational_roles": ["transit", "access"]},
+            {"operational_roles": ["access", "transit"]},
+        )
+    ]
+    results.append(plan(context, intent_for(context.inventory, IOS_NAMES)))
+    assert len({r.digest for r in results}) == 4
+    assert all(r.children == results[0].children for r in results)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "none",
+        "explicit-duplicate",
+        "explicit-selector",
+        "selector-selector",
+        "zero-match",
+    ],
+)
+def test_selection_errors_precede_all_member_and_credential_activity(context, failure):
+    with pytest.raises(ValueError):
+        if failure == "none":
+            intent = selected_intent(context, clauses=())
+        elif failure == "explicit-duplicate":
+            intent = selected_intent(context).model_dump()
+            member = intent_for(context.inventory, IOS_NAMES).members[0].model_dump()
+            intent["explicit_members"] = [member, member]
+            intent = rollout.ProfiledRolloutSelectionIntent.model_validate(intent)
+        elif failure == "explicit-selector":
+            intent = selected_intent(context, explicit=(IOS_NAMES[0],))
+        elif failure == "selector-selector":
+            intent = selected_intent(context, clauses=(clause(), clause()))
+        else:
+            intent = selected_intent(
+                context, {"network_oses": ["ios"], "operational_roles": ["core"]}
+            )
+        plan(context, intent)
+    assert context.inventory.calls in ([], ["population"])
+    assert not context.authority.calls
+    assert_no_child_activity(context)
+
+
+@pytest.mark.parametrize("field", ["interface", "desired", "selector"])
+def test_clause_requires_reviewed_payload(context, field):
+    data = clause().model_dump()
+    data.pop(field)
+    with pytest.raises(ValueError):
+        rollout.ProfiledRolloutSelectorClause.model_validate(data)
+    assert_no_child_activity(context)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "malformed-population",
+        "identity",
+        "credential",
+        "operation",
+        "protected",
+        "missing-interface",
+        "child",
+    ],
+)
+def test_expansion_preserves_whole_population_admission(context, monkeypatch, failure):
+    intent = selected_intent(context)
+    if failure == "malformed-population":
+        p = context.inventory.population
+        context.inventory.population = p.model_copy(update={"devices": p.devices[:-1]})
+    elif failure == "identity":
+        context.inventory.pairs[IOS_NAMES[0]] = context.inventory.pairs["core-02"]
+    elif failure == "credential":
+        context.authority = Authority(
+            (1, 2, 8)
+        )  # last member denies ALL child activity
+    elif failure == "operation":
+        from network_change_delivery import profiled_planning
+
+        monkeypatch.setattr(profiled_planning, "PROFILED_OPERATION_ADMISSIONS", {})
+    elif failure == "protected":
+        device, _ = context.inventory.pairs[IOS_NAMES[0]]
+        context.inventory.pairs[IOS_NAMES[0]] = device, device.protected_interfaces[0]
+        intent = selected_intent(
+            context, clauses=(clause(interface="GigabitEthernet0/0"),)
+        )
+    elif failure == "missing-interface":
+        original = context.inventory.resolve_interface
+
+        def missing_interface(device, name):
+            if device.logical_name == IOS_NAMES[-1]:
+                raise ValueError("selected interface does not exist")
+            return original(device, name)
+
+        monkeypatch.setattr(context.inventory, "resolve_interface", missing_interface)
+    else:
+        context.collector.fail = IOS_NAMES[-1]
+    with pytest.raises(ValueError):
+        plan(context, intent)
+    if failure != "child":
+        assert_no_child_activity(context)
+    else:
+        assert context.collector.calls == list(IOS_NAMES)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "source-kind",
+        "source-index",
+        "target",
+        "interface",
+        "desired",
+        "order",
+        "payload",
+        "missing-child",
+        "population-extra",
+    ],
+)
+def test_rehashed_v2_provenance_payload_and_membership_tampering(context, mutation):
+    result = plan(context, selected_intent(context))
+    data = result.model_dump(mode="json")
+    if mutation == "source-kind":
+        data["expansion"][0]["source_kind"] = "explicit"
+    elif mutation == "source-index":
+        data["expansion"][0]["source_index"] = 1
+    elif mutation == "target":
+        data["expansion"][0]["target"] = "core-02"
+    elif mutation == "interface":
+        data["expansion"][0]["interface"] = "GigabitEthernet0/2"
+    elif mutation == "desired":
+        data["expansion"][0]["desired"]["description"] = "OTHER"
+    elif mutation == "order":
+        data["expansion"].reverse()
+    elif mutation == "payload":
+        data["intent"]["selectors"][0]["desired"]["description"] = "OTHER"
+    elif mutation == "missing-child":
+        data["children"].pop()
+    else:
+        data["selected_population"]["members"].append(
+            PROFILED_MANAGED_POPULATION.members[0].model_dump(mode="json")
+        )
+    with pytest.raises(ValueError):
+        rehash(type(result), data)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"null",
+        b"[]",
+        b"{",
+        b"{}",
+        b'{"schema_version":"3","result_type":"profiled_rollout_plan"}',
+        b'{"schema_version":2,"result_type":"profiled_rollout_plan"}',
+        b'{"schema_version":"1","schema_version":"2"}',
+    ],
+)
+def test_version_dispatch_fails_closed(raw):
+    with pytest.raises(ValueError):
+        rollout.read_profiled_rollout(raw)
+
+
+def test_declaration_order_is_not_alphabetical(context):
+    p = context.inventory.population
+    context.inventory.population = ProfiledInventoryPopulation(
+        declaration=ProfiledPopulationDeclaration(
+            members=tuple(reversed(p.declaration.members))
+        ),
+        devices=tuple(reversed(p.devices)),
+    )
+    result = plan(context, selected_intent(context))
+    assert tuple(e.target for e in result.expansion) == tuple(reversed(IOS_NAMES))
+    assert result.canaries == ("netbox:dcim.device:9",)
+    assert result.waves == (("netbox:dcim.device:8",),)
 
 
 @pytest.mark.parametrize("matching", [False, True])
-def test_population_growth_never_invents_reviewed_payload(context, matching):
+def test_git_population_growth_requires_new_parent_only_when_matching(
+    context, monkeypatch, matching
+):
+    from network_change_delivery import profiled_planning
+
     intent = selected_intent(context)
     before = plan(context, intent)
     larger = declared_population(5, repeated_profile_index=2 if matching else 0)[
         2
     ].resolve_profiled_population()
+    future = larger.devices[-1]
     context.inventory.population = ProfiledInventoryPopulation(
         declaration=larger.declaration,
-        devices=(*context.inventory.population.devices, larger.devices[-1]),
+        devices=(*context.inventory.population.devices, future),
     )
-    context.inventory.calls.clear()
-    context.authority.calls.clear()
+    if matching:
+        # Simulate a reviewed future Git declaration through the unchanged exact
+        # child validators; never weaken profile admission or infer credentials.
+        monkeypatch.setattr(
+            profiled_planning,
+            "admit_profiled_subject",
+            partial(
+                profiled_planning.admit_profiled_subject, declaration=larger.declaration
+            ),
+        )
+        monkeypatch.setattr(
+            rollout,
+            "_admit_profiled_device",
+            partial(rollout._admit_profiled_device, declaration=larger.declaration),
+        )
+        original_interface = context.inventory.pairs[IOS_NAMES[0]][1]
+        future_interface = original_interface.model_copy(
+            update={
+                "device": future.device_identity,
+                "interface": "netbox:dcim.interface:9914",
+            }
+        )
+        context.inventory.pairs[future.logical_name] = future, future_interface
+        context.authority = Authority((1, 2, 8, 9, 14))
+    after = plan(context, intent)
+    if matching:
+        assert len(after.children) == 3
+        assert after.expansion[-1].target == future.logical_name
+        assert after.expansion[-1].interface == "GigabitEthernet0/1"
+        assert after.expansion[-1].desired.description == "NEW"
+        assert after.digest != before.digest
+        assert rollout.read_profiled_rollout(after.model_dump_json().encode()) == after
+    else:
+        assert after.model_dump_json() == before.model_dump_json()
+
+
+def test_netbox_only_device_cannot_create_membership(context):
+    before = plan(context, selected_intent(context))
+    larger = declared_population(5, repeated_profile_index=2)[
+        2
+    ].resolve_profiled_population()
+    context.inventory.pairs[larger.devices[-1].logical_name] = (
+        larger.devices[-1],
+        context.inventory.pairs[IOS_NAMES[0]][1],
+    )
+    assert plan(context, selected_intent(context)) == before
+    p = context.inventory.population
+    context.inventory.population = p.model_copy(
+        update={"devices": (*p.devices, larger.devices[-1])}
+    )
     context.secrets.reference_calls = context.secrets.load_calls = 0
     context.collector.calls.clear()
-    if matching:
-        with pytest.raises(ValueError, match="selector and reviewed member sequence"):
-            plan(context, intent)
-        assert context.inventory.calls == ["population"]
-        assert not context.authority.calls
-        assert_no_child_activity(context)
-    else:
-        after = plan(context, intent)
-        assert after.digest == before.digest
-        assert after.model_dump_json() == before.model_dump_json()
+    with pytest.raises(ValueError):
+        plan(context, selected_intent(context))
+    assert_no_child_activity(context)
+
+
+def test_protected_credential_scope_unchanged():
+    from network_change_delivery.openbao_profiled_deploy_config import DEVICE_IDS
+
+    assert DEVICE_IDS == (1, 2)
 
 
 @pytest.mark.parametrize(
@@ -252,161 +546,6 @@ def test_invalid_selector_rejected_before_any_provider(context, selector):
     assert not context.inventory.calls
     assert not context.authority.calls
     assert_no_child_activity(context)
-
-
-@pytest.mark.parametrize(
-    "selector",
-    [
-        {"network_oses": ["ios"], "operational_roles": ["core"]},
-        {
-            "operational_roles": ["transit", "access"],
-            "automation_profile_ids": ["iosv_159_3_m12"],
-        },
-        {"network_oses": ["ios", "iosxe"], "operational_roles": ["transit"]},
-        {
-            "automation_profile_ids": ["iosv_159_3_m12", "iosvl2_2020"],
-            "operational_roles": ["transit"],
-        },
-    ],
-)
-def test_contradictions_and_nonparticipating_values_rejected(context, selector):
-    with pytest.raises(ValueError, match=r"matches no|nonparticipating"):
-        plan(context, selected_intent(context, selector))
-    assert context.inventory.calls == ["population"]
-    assert not context.authority.calls
-    assert_no_child_activity(context)
-
-
-def test_stale_profile_value_absent_from_declared_population(context):
-    current = context.inventory.population
-    context.inventory.population = ProfiledInventoryPopulation(
-        declaration=ProfiledPopulationDeclaration(
-            members=current.declaration.members[:2]
-        ),
-        devices=current.devices[:2],
-    )
-    with pytest.raises(ValueError, match="matches no"):
-        plan(
-            context,
-            selected_intent(context, {"automation_profile_ids": ["iosv_159_3_m12"]}),
-        )
-    assert context.inventory.calls == ["population"]
-    assert not context.authority.calls
-    assert_no_child_activity(context)
-
-
-@pytest.mark.parametrize(
-    "names", [("transit-ios-01",), ("core-02", *IOS_NAMES), tuple(reversed(IOS_NAMES))]
-)
-def test_selector_payload_missing_extra_or_wrong_order_fails_before_members(
-    context, names
-):
-    with pytest.raises(ValueError, match="selector and reviewed member sequence"):
-        plan(context, selected_intent(context, names=names))
-    assert context.inventory.calls == ["population"]
-    assert not context.authority.calls
-    assert_no_child_activity(context)
-
-
-def test_selector_cannot_create_operation_payloads(context):
-    data = selected_intent(context).model_dump()
-    for field in ("members",):
-        missing = {key: value for key, value in data.items() if key != field}
-        with pytest.raises(ValueError):
-            rollout.ProfiledRolloutIntent.model_validate(missing)
-    for field in ("interface", "desired"):
-        data = selected_intent(context).model_dump()
-        data["members"][0].pop(field)
-        with pytest.raises(ValueError):
-            rollout.ProfiledRolloutIntent.model_validate(data)
-    assert_no_child_activity(context)
-
-
-@pytest.mark.parametrize(
-    "failure",
-    [
-        "malformed-population",
-        "identity",
-        "credential",
-        "operation",
-        "protected",
-        "child",
-    ],
-)
-def test_selector_does_not_bypass_existing_admission(context, monkeypatch, failure):
-    intent = selected_intent(context)
-    if failure == "malformed-population":
-        population = context.inventory.population
-        context.inventory.population = population.model_copy(
-            update={"devices": population.devices[:-1]}
-        )
-    elif failure == "identity":
-        context.inventory.pairs[IOS_NAMES[0]] = context.inventory.pairs["core-02"]
-    elif failure == "credential":
-        context.authority = Authority((1, 2))
-    elif failure == "operation":
-        from network_change_delivery import profiled_planning
-
-        monkeypatch.setattr(profiled_planning, "PROFILED_OPERATION_ADMISSIONS", {})
-    elif failure == "protected":
-        device, _ = context.inventory.pairs[IOS_NAMES[0]]
-        context.inventory.pairs[IOS_NAMES[0]] = device, device.protected_interfaces[0]
-        intent = selected_intent(context)
-    else:
-        context.collector.fail = IOS_NAMES[-1]
-    with pytest.raises(ValueError):
-        plan(context, intent)
-    if failure != "child":
-        assert_no_child_activity(context)
-    else:
-        assert context.collector.calls == list(IOS_NAMES)
-
-
-def test_rehashed_selector_contradicting_frozen_children_rejected(context):
-    result = plan(context, selected_intent(context))
-    data = result.model_dump(mode="json")
-    data["intent"]["selector"] = rollout.ProfiledRolloutSelector(
-        network_oses=["junos"]
-    ).model_dump(mode="json")
-    with pytest.raises(ValueError, match="matches no"):
-        rehash(rollout.ProfiledRolloutPlan, data)
-
-
-def test_selector_all_compliant_cannot_hide_missing_artifact(context):
-    context.collector.compliant = IOS_NAMES
-    result = plan(context, selected_intent(context))
-    data = result.model_dump(mode="json")
-    data["children"].pop()
-    with pytest.raises(ValueError, match="positively represent every"):
-        rehash(rollout.ProfiledRolloutCompliance, data)
-
-
-def test_protected_credential_scope_remains_exact():
-    from network_change_delivery.openbao_profiled_deploy_config import DEVICE_IDS
-
-    assert DEVICE_IDS == (1, 2)
-
-
-def test_declaration_order_is_authority_even_when_it_is_not_alphabetical(context):
-    original = context.inventory.population
-    context.inventory.population = ProfiledInventoryPopulation(
-        declaration=ProfiledPopulationDeclaration(
-            members=tuple(reversed(original.declaration.members))
-        ),
-        devices=tuple(reversed(original.devices)),
-    )
-    names = tuple(reversed(IOS_NAMES))
-    result = plan(context, selected_intent(context, names=names))
-    assert tuple(child.device.logical_name for child in result.children) == names
-    assert context.inventory.calls == [
-        "population",
-        names[0],
-        context.inventory.pairs[names[0]][1].name,
-        names[1],
-        context.inventory.pairs[names[1]][1].name,
-    ]
-    assert result.canaries == ("netbox:dcim.device:9",)
-    assert result.waves == (("netbox:dcim.device:8",),)
 
 
 def test_selector_default_path_preserves_child_timestamp_ownership(

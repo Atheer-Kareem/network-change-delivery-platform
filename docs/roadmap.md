@@ -450,14 +450,18 @@ protected credential expansion was performed.
 
 #### Increment 2 implementation checkpoint
 
-The planning foundation now also accepts a closed typed Git-population selector
-using OperationalRole, NetworkOS and AutomationProfileID. Matching is fixed OR
-within each dimension and AND across dimensions, in declaration order. The
-selector must match the exact ordered explicit member/interface/desired payload
-population; nonparticipating values fail closed. A future matching member without
-a reviewed payload blocks planning, while nonmatching population growth does not
-change the bounded parent digest. Explicit-only artifact bytes and child-owned
-observation timestamps remain unchanged. This is still planning only.
+The planning foundation accepts composable explicit members and closed typed
+Git-population selector clauses using OperationalRole, NetworkOS and
+AutomationProfileID. Each clause binds an exact reviewed interface and desired
+description. Matching is fixed OR within each dimension and AND across
+dimensions; filtered OR alternatives are valid, while zero-match clauses fail.
+Expansion follows explicit-member order, then clause order, then Git declaration
+order within each clause. Overlapping sources fail before child activity.
+Selector-capable parent v2 binds instructions and exact expansion provenance;
+merged explicit-only parent v1 bytes/digests and child-owned observation
+timestamps remain unchanged. Matching Git population growth requires new
+planning and independent admission, while nonmatching growth does not change
+the bounded parent digest. This is still planning only.
 
 Protected runtime integration, the approved credential expansion 1/2 → 1/2/8/9,
 parent promotion, fieldless human authorization, complete preflight/JIT

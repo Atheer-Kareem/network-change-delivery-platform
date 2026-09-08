@@ -3,18 +3,18 @@
 CAP-PROFILED-ROLLOUT is IN PROGRESS under its unchanged [approved
 contract](../roadmap.md#cap-profiled-rollout--bounded-profiled-multi-target-rollout).
 Increments 1 and 2 supply a read-only Python API, immutable planning artifacts
-and an optional closed Git-population selector.
+and composable closed Git-population selector clauses.
 There is no rollout CLI, promotion, authorization, execution or Buildkite path.
 The active single-target intent and current child commands remain unchanged.
 
 ```text
-reviewed ProfiledRolloutIntent with explicit operation payloads
+reviewed explicit members and/or selector clauses with exact operation payloads
 → full Git-declared managed population resolution
-→ optional closed selector + exact ordered payload agreement
+→ deterministic expansion + source provenance + overlap rejection
 → exact selected device/interface resolution and independent admission
 → current schema-v2 child planning for every selected member
 → exact child bytes/results + frozen canaries/waves
-→ ProfiledRolloutPlan OR ProfiledRolloutCompliance
+→ versioned profiled rollout PLAN OR COMPLIANCE
 ```
 
 ## Selection and independent authority
@@ -28,12 +28,11 @@ match the reviewed interface name; inventory-owned protection is enforced.
 Duplicate device/interface identities, unknown members, ambiguous resolution and
 unsupported operations block the whole operation.
 
-Without a selector, reviewed intent order is material and determines selected
-order. Inputs are frozen,
+Reviewed explicit-member order is material. Inputs are frozen,
 extra-forbid models, bounded to 100 members, bounded change/interface names and
 existing bounded logical names/descriptions. Only `interface_description` is
-admitted. The optional closed selector below governs membership only; arbitrary
-selector/query expressions remain rejected.
+admitted. Closed selector predicates govern membership; each clause supplies its
+reviewed operation payload. Arbitrary selector/query expressions remain rejected.
 There is no environment, free-text query, discovery or human-block selector.
 The API accepts reviewed data from its caller; it does not establish Git checkout
 or human authorization provenance. That protected integration is pending.
@@ -74,37 +73,63 @@ value order cannot choose execution order.
 
 Selection evaluates only the ordered Git `ProfiledPopulationDeclaration`
 associated with the fully admitted `ProfiledInventoryPopulation`. It adds no
-NetBox query. The result must be nonempty, and every supplied enum value must
-participate in at least one final result member. Contradictory predicates and
-values discarded by another dimension fail; they are not silently ignored.
+NetBox query. Every clause must match at least one member. OR alternatives may
+be filtered out by another dimension: roles `[core, edge]` AND NOS `[iosxe]`
+validly selects core alone. Zero-match clauses fail the whole operation.
 
-The selected logical-name sequence must equal `intent.members` exactly in
-**Git declaration order**. No union, missing/extra payload or reordered member
-list is allowed. A selector selects **who**, never **what**: every target still
-requires its own reviewed interface and desired-description payload. This check
-occurs after full population admission and before any selected-member resolution,
-credential-authority decision, child secret reference/load or collection.
+`ProfiledRolloutSelectionIntent` contains `explicit_members` and `selectors`,
+both defaulting to empty tuples, with at least one source required.
+Each `ProfiledRolloutSelectorClause` binds a closed selector, one exact interface
+and one exact desired description. The selector chooses **who**; its reviewed
+clause supplies **what** for every match. Interface names and descriptions are
+never inferred from profile, inventory or device facts. A missing or protected
+interface on any expanded member blocks all child collection.
 
-A new nonmatching managed member does not change this bounded result or digest
-when selected facts, decisions and explicit timestamps are identical. A new
-matching member expands the selector result and rejects the old intent before
-child activity because its reviewed payload is absent. Population growth cannot
-automatically create rollout authority.
+Expansion order is fixed:
 
-The complete supplied selector is canonical parent content through the typed
-intent. A different dimension, value combination or explicit/selector mode changes
-the parent digest even if current matching members are identical. Unselected
-population remains admission context outside the digest. Readback also verifies
-that selector predicates and participating values agree with frozen child facts;
-that local consistency check cannot establish complete current membership. The
-planning boundary must resolve the whole caller-owned population independently.
+1. Explicit members in their reviewed order.
+2. Selector clauses in their reviewed order.
+3. Each clause's matches in Git population declaration order.
 
-`selector=None` (including an omitted selector) retains explicit-only behavior.
-The optional field is omitted from serialization when None, preserving the exact
-Increment-1 canonical shape, bytes and digests. Golden hashes captured from
-merged Increment 1 cover both PLAN and COMPLIANT artifacts. Current profiled
-parent schema v1 and child schema v2 remain unchanged; selector-bearing artifacts
-use the newly supported optional field. No historical evidence is rewritten.
+Any repeated logical target, including explicit/selector or selector/selector
+overlap, is rejected without deduplication. Expansion and overlap checks occur
+after complete population admission and before selected-member resolution,
+credential-authority decisions, child secret reference/load or collection.
+`ProfiledRolloutExpandedMember` freezes source kind (`explicit` or `selector`),
+zero-based source index, target, interface and desired description. The index
+identifies the explicit member or selector clause in the reviewed instruction.
+
+A new nonmatching managed member leaves the bounded result/digest unchanged when
+selected facts, decisions and explicit timestamps are identical. A newly matching
+Git member expands the clause with its reviewed payload and requires independent
+member, interface, operation and credential admission. Successful replanning
+produces a different parent; the old frozen artifact does not expand itself or
+authorize the new member. NetBox-only discovery never adds a member.
+
+## Exact parent versions and readback
+
+Merged Increment-1 `ProfiledRolloutIntent`, `ProfiledRolloutPlan` and
+`ProfiledRolloutCompliance` retain their exact explicit-only **v1** shape.
+They reject selector fields, including an explicit null selector. Golden hashes
+captured from merged Increment 1 verify unchanged PLAN and COMPLIANT bytes and
+digests. The new selection intent with only explicit members also emits these
+exact v1 artifacts.
+
+Any selector or mixed-source planning emits **v2** through
+`ProfiledRolloutPlanV2` or `ProfiledRolloutComplianceV2`. V2 binds the reviewed
+selection instructions, exact expansion/provenance, selected-only Git facts,
+existing exact child bytes/results, policy and cohorts. The selected-only
+population snapshot retains Git declaration order without including unselected
+managed members. It lets readback reproduce each clause and validate provenance
+and payload against the frozen children. This is artifact consistency, not proof
+of current external authority: planning still admits the full population first.
+
+`read_profiled_rollout()` dispatches exact schema-version/result-type pairs.
+Unknown versions/types and duplicate JSON keys fail. V1 cannot consume v2
+selector content, even if its version label is changed. No historical bytes are
+reinterpreted. Changing selector instructions changes the v2 parent digest even
+when the current selected members happen to remain identical. Reordered or
+altered expansion/provenance must agree exactly with the bound instructions.
 
 ## Current child lifecycle reuse
 
@@ -132,10 +157,9 @@ bytes directly, rejects duplicate JSON keys, validates the current typed child,
 and compares child identity/profile/NOS/endpoint/reference/protection facts with
 the frozen selection. It does not regenerate JSON to claim byte equality.
 
-The new `ProfiledRolloutPlan` and `ProfiledRolloutCompliance` use schema v1 in
-**their own new profiled planning namespace**. This does not revive historical
-schema-v1 fleet plans or executors. Existing child schema v2 and all historical
-schemas/bytes remain unchanged.
+Both parent versions belong to the current profiled planning namespace; neither
+revives historical schema-v1 fleet plans or executors. Existing child schema v2
+and all historical schemas/bytes remain unchanged.
 
 The parent canonical digest covers the source commit, entire typed intent and
 policy, ordered children with exact JSON bytes and both digests, and frozen
@@ -173,9 +197,10 @@ COMPLIANT members appear in neither canaries nor waves. These are frozen plannin
 cohorts only, with no execution or dynamic redistribution.
 
 An all-compliant population produces distinct positive
-`ProfiledRolloutCompliance`, retaining every exact child compliance artifact.
+`ProfiledRolloutCompliance` (v1) or `ProfiledRolloutComplianceV2`, retaining every
+exact child compliance artifact.
 It has no plan, promotion, execution, recovery or chronology requirement. It
-cannot be parsed as `ProfiledRolloutPlan`.
+cannot be parsed as a rollout PLAN.
 
 ## Remaining increments
 

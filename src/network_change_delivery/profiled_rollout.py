@@ -137,16 +137,11 @@ class ProfiledRolloutSelector(_Frozen):
         )
         if not selected:
             raise ValueError("rollout selector matches no declared members")
-        for values, field in self._dimensions():
-            if values is not None and set(values) != {
-                getattr(member, field) for member in selected
-            }:
-                raise ValueError("rollout selector contains nonparticipating values")
         return selected
 
 
 class ProfiledRolloutIntent(_Frozen):
-    """Reviewed explicit payloads, optionally governed by a closed selector."""
+    """Explicit selection only; selectors and queries are intentionally rejected."""
 
     change_id: CliBoundString = Field(max_length=100)
     operation: Literal["interface_description"]
@@ -154,20 +149,6 @@ class ProfiledRolloutIntent(_Frozen):
         min_length=1, max_length=MAX_MEMBERS
     )
     policy: ProfiledRolloutPolicy
-    # Absent/None retains Increment-1 canonical bytes, including nested dumps.
-    selector: ProfiledRolloutSelector | None = Field(
-        default=None, exclude_if=lambda value: value is None
-    )
-
-    def require_selection(self, declaration: ProfiledPopulationDeclaration) -> None:
-        if self.selector is not None:
-            selected = self.selector.select(declaration)
-            if tuple(member.logical_name for member in selected) != tuple(
-                member.target for member in self.members
-            ):
-                raise ValueError(
-                    "rollout selector and reviewed member sequence disagree"
-                )
 
     @model_validator(mode="after")
     def unique_selection(self) -> ProfiledRolloutIntent:
@@ -180,6 +161,88 @@ class ProfiledRolloutIntent(_Frozen):
         ):
             raise ValueError("rollout canaries must be unique selected targets")
         return self
+
+
+class ProfiledRolloutSelectorClause(_Frozen):
+    """A closed WHO predicate with one exact reviewed WHAT payload."""
+
+    selector: ProfiledRolloutSelector
+    interface: CliBoundString = Field(max_length=100)
+    desired: DesiredDescription
+
+
+class ProfiledRolloutExpandedMember(ProfiledRolloutMemberIntent):
+    """Frozen payload with its exact zero-based instruction source index."""
+
+    source_kind: Literal["explicit", "selector"]
+    source_index: int = Field(strict=True, ge=0, lt=MAX_MEMBERS)
+
+    def member_intent(self) -> ProfiledRolloutMemberIntent:
+        return ProfiledRolloutMemberIntent(
+            target=self.target, interface=self.interface, desired=self.desired
+        )
+
+
+class ProfiledRolloutSelectionIntent(_Frozen):
+    """Composable explicit members and ordered closed selector clauses."""
+
+    change_id: CliBoundString = Field(max_length=100)
+    operation: Literal["interface_description"]
+    explicit_members: tuple[ProfiledRolloutMemberIntent, ...] = Field(
+        default=(), max_length=MAX_MEMBERS
+    )
+    selectors: tuple[ProfiledRolloutSelectorClause, ...] = Field(
+        default=(), max_length=MAX_MEMBERS
+    )
+    policy: ProfiledRolloutPolicy
+
+    @model_validator(mode="after")
+    def selection_sources(self) -> ProfiledRolloutSelectionIntent:
+        if not self.explicit_members and not self.selectors:
+            raise ValueError("rollout requires at least one selection source")
+        names = tuple(member.target for member in self.explicit_members)
+        if len(names) != len(set(names)):
+            raise ValueError("rollout explicit targets must be unique")
+        return self
+
+    def expand(
+        self, declaration: ProfiledPopulationDeclaration
+    ) -> tuple[ProfiledRolloutExpandedMember, ...]:
+        expanded = []
+        for index, member in enumerate(self.explicit_members):
+            declaration.member(member.target)
+            expanded.append(
+                ProfiledRolloutExpandedMember(
+                    **member.model_dump(), source_kind="explicit", source_index=index
+                )
+            )
+        for index, clause in enumerate(self.selectors):
+            expanded.extend(
+                ProfiledRolloutExpandedMember(
+                    source_kind="selector",
+                    source_index=index,
+                    target=member.logical_name,
+                    interface=clause.interface,
+                    desired=clause.desired,
+                )
+                for member in clause.selector.select(declaration)
+            )
+        names = tuple(member.target for member in expanded)
+        if len(names) != len(set(names)):
+            raise ValueError("rollout selection sources overlap")
+        if len(expanded) > MAX_MEMBERS:
+            raise ValueError("rollout expansion exceeds the bounded population")
+        return tuple(expanded)
+
+    def explicit_intent(
+        self, expansion: tuple[ProfiledRolloutExpandedMember, ...]
+    ) -> ProfiledRolloutIntent:
+        return ProfiledRolloutIntent(
+            change_id=self.change_id,
+            operation=self.operation,
+            members=tuple(member.member_intent() for member in expansion),
+            policy=self.policy,
+        )
 
 
 class RolloutCredentialAdmission(_Frozen):
@@ -348,9 +411,13 @@ class _RolloutResult(_Frozen):
             ).encode()
         )
 
+    def _member_intents(self) -> tuple[ProfiledRolloutMemberIntent, ...]:
+        return self.intent.members
+
     @model_validator(mode="after")
     def exact_population(self) -> _RolloutResult:
-        if len(self.children) != len(self.intent.members):
+        members = self._member_intents()
+        if len(self.children) != len(members):
             raise ValueError("rollout must positively represent every selected member")
         for identities in (
             tuple(child.device.device_identity for child in self.children),
@@ -358,19 +425,9 @@ class _RolloutResult(_Frozen):
         ):
             if len(identities) != len(set(identities)):
                 raise ValueError("rollout stable identities must be unique")
-        for member, child in zip(self.intent.members, self.children, strict=True):
+        for member, child in zip(members, self.children, strict=True):
             admit_intent_result(
                 member.child_intent(self.intent.change_id), child.result()
-            )
-        if self.intent.selector is not None:
-            # Artifact-local consistency only. Runtime planning separately proves
-            # completeness against the caller's entire admitted declaration.
-            self.intent.require_selection(
-                ProfiledPopulationDeclaration(
-                    members=tuple(
-                        _admit_profiled_device(child.device) for child in self.children
-                    )
-                )
             )
         if self.digest != self.calculated_digest():
             raise ValueError("rollout parent digest rejected")
@@ -411,6 +468,96 @@ class ProfiledRolloutCompliance(_RolloutResult):
         return self
 
 
+class _RolloutResultV2(_RolloutResult):
+    schema_version: Literal["2"] = "2"
+    intent: ProfiledRolloutSelectionIntent
+    selected_population: ProfiledPopulationDeclaration
+    expansion: tuple[ProfiledRolloutExpandedMember, ...] = Field(
+        min_length=1, max_length=MAX_MEMBERS
+    )
+
+    def _member_intents(self) -> tuple[ProfiledRolloutMemberIntent, ...]:
+        if not self.intent.selectors:
+            raise ValueError("selector-capable parent requires selector clauses")
+        if set(self.selected_population.identities) != {
+            child.device.device_identity for child in self.children
+        }:
+            raise ValueError("frozen selected population must equal child membership")
+        for child in self.children:
+            if self.selected_population.member(
+                child.device.logical_name
+            ) != _admit_profiled_device(child.device):
+                raise ValueError("frozen selected population facts disagree")
+        # This checks frozen evidence, not complete current external authority.
+        # The service must independently expand against the full admitted population.
+        expected = self.intent.expand(self.selected_population)
+        if expected != self.expansion:
+            raise ValueError("rollout expansion provenance or payload rejected")
+        return self.intent.explicit_intent(expected).members
+
+
+class ProfiledRolloutPlanV2(_RolloutResultV2):
+    """Selector-capable planning artifact; no promotion/execution authority."""
+
+    result_type: Literal["profiled_rollout_plan"] = "profiled_rollout_plan"
+    canaries: tuple[DeviceIdentity, ...] = Field(min_length=1)
+    waves: tuple[tuple[DeviceIdentity, ...], ...]
+
+    @model_validator(mode="after")
+    def exact_cohorts(self) -> ProfiledRolloutPlanV2:
+        if (self.canaries, self.waves) != _cohorts(self.intent, self.children):
+            raise ValueError("rollout cohorts differ from frozen policy and children")
+        return self
+
+
+class ProfiledRolloutComplianceV2(_RolloutResultV2):
+    """Positive selector-capable compliance, with no write cohorts or authority."""
+
+    result_type: Literal["profiled_rollout_compliance"] = "profiled_rollout_compliance"
+    outcome: Literal["COMPLIANT"] = "COMPLIANT"
+    plan: None = None
+    promotion_minted: Literal[False] = False
+    execution_attempted: Literal[False] = False
+    recovery_attempted: Literal[False] = False
+    chronology_required: Literal[False] = False
+
+    @model_validator(mode="after")
+    def all_compliant(self) -> ProfiledRolloutComplianceV2:
+        if any(child.kind != "COMPLIANT" for child in self.children):
+            raise ValueError("rollout compliance requires every child COMPLIANT")
+        if _cohorts(self.intent, self.children) != ((), ()):
+            raise ValueError("compliance cannot contain write cohorts")
+        return self
+
+
+ProfiledRolloutPlanningArtifact = (
+    ProfiledRolloutPlan
+    | ProfiledRolloutCompliance
+    | ProfiledRolloutPlanV2
+    | ProfiledRolloutComplianceV2
+)
+
+
+def read_profiled_rollout(raw: bytes) -> ProfiledRolloutPlanningArtifact:
+    """Dispatch exact version/type pairs; v1 is never interpreted as v2."""
+    value = json.loads(raw, object_pairs_hook=_unique_json_object)
+    if not isinstance(value, dict):
+        raise ValueError("rollout artifact must be an object")
+    models = {
+        ("1", "profiled_rollout_plan"): ProfiledRolloutPlan,
+        ("1", "profiled_rollout_compliance"): ProfiledRolloutCompliance,
+        ("2", "profiled_rollout_plan"): ProfiledRolloutPlanV2,
+        ("2", "profiled_rollout_compliance"): ProfiledRolloutComplianceV2,
+    }
+    version, kind = value.get("schema_version"), value.get("result_type")
+    if not isinstance(version, str) or not isinstance(kind, str):
+        raise ValueError("rollout artifact version/type required")
+    model = models.get((version, kind))
+    if model is None:
+        raise ValueError("unsupported rollout artifact version/type")
+    return model.model_validate(value)
+
+
 class _ResolvedInventory:
     """Use the exact admitted read-only resolution for the existing child planner."""
 
@@ -429,7 +576,7 @@ class _ResolvedInventory:
 
 
 def plan_profiled_rollout(
-    intent: ProfiledRolloutIntent,
+    intent: ProfiledRolloutIntent | ProfiledRolloutSelectionIntent,
     inventory: RolloutPlanningInventory,
     credential_authority: RolloutCredentialAuthority,
     secrets: ProfiledPlanningSecretProvider,
@@ -437,13 +584,18 @@ def plan_profiled_rollout(
     *,
     source_commit: str,
     created_at: datetime | None = None,
-) -> ProfiledRolloutPlan | ProfiledRolloutCompliance:
+) -> ProfiledRolloutPlanningArtifact:
     """Resolve/admit all members, reuse read-only child planning, then freeze.
 
     No partial parent is returned or published on any exception. Providers remain
     caller-owned; this module supplies no credentials, transports or writer.
     """
-    intent = ProfiledRolloutIntent.model_validate(intent.model_dump())
+    intent_model = (
+        ProfiledRolloutSelectionIntent
+        if isinstance(intent, ProfiledRolloutSelectionIntent)
+        else ProfiledRolloutIntent
+    )
+    intent = intent_model.model_validate(intent.model_dump())
     source_commit = TypeAdapter(GitCommit).validate_python(source_commit)
     observation_time = (
         TypeAdapter(AwareDatetime).validate_python(created_at)
@@ -453,11 +605,16 @@ def plan_profiled_rollout(
     population = ProfiledInventoryPopulation.model_validate(
         inventory.resolve_profiled_population().model_dump()
     )
-    intent.require_selection(population.declaration)
+    expansion = None
+    if isinstance(intent, ProfiledRolloutSelectionIntent):
+        expansion = intent.expand(population.declaration)
+        planning_intent = intent.explicit_intent(expansion)
+    else:
+        planning_intent = intent
     by_name = {device.logical_name: device for device in population.devices}
     admitted = []
     identities, interface_ids = set(), set()
-    for member in intent.members:
+    for member in planning_intent.members:
         declared = population.declaration.member(member.target)
         device = ProfiledInventoryDevice.model_validate(
             inventory.resolve(member.target).model_dump()
@@ -520,9 +677,23 @@ def plan_profiled_rollout(
     model = ProfiledRolloutPlan if canaries else ProfiledRolloutCompliance
     values = {
         "source_commit": source_commit,
-        "intent": intent,
+        "intent": planning_intent,
         "children": tuple(children),
     }
+    if isinstance(intent, ProfiledRolloutSelectionIntent) and intent.selectors:
+        model = ProfiledRolloutPlanV2 if canaries else ProfiledRolloutComplianceV2
+        selected_ids = {child.device.device_identity for child in children}
+        values.update(
+            intent=intent,
+            expansion=expansion,
+            selected_population=ProfiledPopulationDeclaration(
+                members=tuple(
+                    member
+                    for member in population.declaration.members
+                    if member.device_identity in selected_ids
+                )
+            ),
+        )
     if canaries:
         values.update(canaries=canaries, waves=waves)
     unsigned = model.model_construct(**values)

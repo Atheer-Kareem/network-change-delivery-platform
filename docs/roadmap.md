@@ -88,15 +88,15 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | ACCEPTED |
 | CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | ACCEPTED |
 | CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | ACCEPTED |
-| CAP-POPULATION-SCOPES | Population-derived admission and realization | IN PROGRESS |
+| CAP-POPULATION-SCOPES | Population-derived admission and realization | ACCEPTED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | USER APPROVED |
 | CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | USER APPROVED |
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
-CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE
-and CAP-CONFIG-CHRONOLOGY are accepted. CAP-POPULATION-SCOPES is in
-implementation; other approved capabilities await their own tasks.
+CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE,
+CAP-CONFIG-CHRONOLOGY and CAP-POPULATION-SCOPES are accepted;
+other approved capabilities await their own tasks.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -315,7 +315,8 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-POPULATION-SCOPES — Population-derived admission and realization
 
-- **State:** IN PROGRESS.
+- **State:** ACCEPTED; explicitly accepted by the user after implementation and
+  controlled runtime review.
 - **Target/value:** remove unnecessary permanent-cardinality assumptions and
   duplicated instance knowledge. Supported-device additions normally require
   onboarding/data/trust/realization changes, not control-plane redesign.
@@ -336,8 +337,16 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   profile-selected IOSv recycle behavior. Synthetic 1/2/4/5-member and repeated-
   profile coverage is recorded in the [contract and audit](architecture/population-scopes.md).
   Current staging evidence is v3; the historical v2 reader remains intact.
-  No real member, write admission or pipeline graph changed. Implementation
-  validation does not constitute user acceptance; state remains IN PROGRESS.
+  No real member, write admission or pipeline graph changed.
+- **Acceptance:** merged PR #149, main commit
+  `adb7532a0a52e07642d0aad1934b8f5e2cc20e1b`, and controlled main build 435
+  established real population/scope resolution, exact LIVE topology/trust,
+  reconciled Oxidized/observability and successful schema-v3 disposable staging.
+  Merged synthetic tests prove variable cardinality and repeated profiles.
+  Planning was COMPLIANT; no human continuation or device configuration write
+  occurred. The user explicitly accepted this capability; a fifth real device
+  is not required. See the [acceptance record](acceptance/profiled-population-scopes.md)
+  for runtime correlation, topology-digest distinctions and preserved authority.
 
 ### CAP-INTENT-DELIVERY — Intent-selected generic delivery
 

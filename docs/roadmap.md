@@ -87,16 +87,16 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-DOCS-TRUTH | Current architecture, acceptance and demo reconciliation | ACCEPTED |
 | CAP-OUTCOME-TRUTH | Truthful profiled delivery outcomes | ACCEPTED |
 | CAP-DURABLE-EVIDENCE | Durable schema-v2 delivery evidence | ACCEPTED |
-| CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | IN PROGRESS |
+| CAP-CONFIG-CHRONOLOGY | Independent PRE/write/POST chronology | ACCEPTED |
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | USER APPROVED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | USER APPROVED |
 | CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | USER APPROVED |
 | CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | USER APPROVED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
-CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH and CAP-DURABLE-EVIDENCE
-are accepted. CAP-CONFIG-CHRONOLOGY is the only capability in implementation
-scope; other approved capabilities await their own tasks.
+CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE
+and CAP-CONFIG-CHRONOLOGY are accepted. Other approved capabilities await their
+own tasks; no next capability is started by this acceptance closeout.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -265,7 +265,7 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-CONFIG-CHRONOLOGY — Independent PRE/write/POST chronology
 
-- **State:** IN PROGRESS.
+- **State:** ACCEPTED; explicitly reviewed and accepted by the user.
 - **Target/value:** restore independent configuration-history correlation around
   current schema-v2 delivery once durable current parent evidence exists.
 - **Acceptance criteria:** required PRE failure blocks before write; POST is
@@ -290,10 +290,28 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
   receipts and the existing viewer expose metadata only; COMPLIANCE performs no
   chronology access and reports NOT REQUIRED. See the
   [current chronology contract](architecture/audit-and-configuration-history.md#current-profiled-configuration-chronology).
-- **Acceptance/sign-off:** pending user review and appropriate acceptance evidence;
-  synthetic/offline validation does not confer acceptance. No live write is
-  performed or manufactured in this increment. Existing controller/readiness
-  population constraints and fixed promotion authority remain unchanged.
+- **Implementation acceptance:** merged PR #147, main commit
+  `77b5a768ba259e99e02866d525819bf73b05f4d0`. Final validation: full local pytest
+  **2,382 passed, 5 skipped**; focused chronology regressions **428 passed**;
+  Docker quality **2,340 passed, 47 skipped**; relevant Ruff/format/diff,
+  package, Ansible and static checks passed. The valid durable parent remains
+  readable when chronology is invalid/unavailable. The current plane is pinned
+  to repository `oxidized:ncdp-lab-actual-state`, group `managed`; historical
+  chronology schemas, bytes and routes remain unchanged.
+- **Runtime acceptance/sign-off:** the user explicitly accepted the capability
+  after one real metadata-only core-02 observation and real AuditStore/viewer
+  compatibility verification. See the
+  [canonical acceptance record](acceptance/profiled-configuration-chronology.md)
+  for exact observation identities, the supported stale-reconciler correction,
+  unchanged store counts and evidence boundaries. No device write occurred.
+- **Acceptance boundary:** the independent observation plane is runtime-verified;
+  coordinator ordering, failure precedence, durability, receipt binding and
+  no-replay behavior are comprehensively offline-validated in merged PR #147.
+  Full integrated EXECUTION chronology will receive supplemental runtime evidence
+  on the next legitimate network write. No device change is required or should
+  be manufactured solely for acceptance. Supplemental EXECUTION runtime evidence
+  is not a pending acceptance condition. Existing controller/readiness population
+  constraints and fixed promotion authority remain unchanged.
 
 ### CAP-POPULATION-SCOPES — Population-derived admission and realization
 

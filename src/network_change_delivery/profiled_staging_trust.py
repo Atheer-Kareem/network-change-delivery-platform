@@ -89,7 +89,7 @@ def establish_profiled_staging_trust(
     *,
     ttl: timedelta = timedelta(hours=1),
 ) -> CmlAnchoredHostTrustGeneration:
-    """Create one exact-four private known_hosts generation for a staging run."""
+    """Create one scope-bound private known_hosts generation for a staging run."""
     if context.lifecycle_state is not RealizationLifecycleState.PREPARING:
         raise ProfiledStagingTrustError("staging trust requires PREPARING realization")
     _private_directory(root)
@@ -98,6 +98,7 @@ def establish_profiled_staging_trust(
     path = root / KNOWN_HOSTS_NAME
     if path.exists() or path.is_symlink():
         raise ProfiledStagingTrustError("staging known_hosts already exists")
+    context.scope.require_bindings(devices)
     admitted = datetime.now(UTC)
     digest = "sha256:" + "0" * 64
     generation = EvidenceReference(
@@ -162,6 +163,7 @@ def establish_profiled_staging_trust(
     finally:
         os.close(descriptor)
     return CmlAnchoredHostTrustGeneration(
+        scope=context.scope,
         environment=RealizationEnvironment.STAGING,
         realization_identity=f"staging:{context.staging_run_id}",
         cml_lab_id=context.cml_lab_id,

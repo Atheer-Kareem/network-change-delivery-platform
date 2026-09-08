@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify exact-four profiled LIVE inventory, trust, and read-only collection."""
+"""Verify scope-bound profiled LIVE inventory, trust, and read-only collection."""
 
 from __future__ import annotations
 
@@ -9,13 +9,19 @@ import sys
 from datetime import UTC, datetime
 
 from network_change_delivery.ansible_adapter import ProviderError
+from network_change_delivery.architecture_contracts import (
+    CML_REALIZATION_PROFILE_CATALOG,
+    AutomationProfileID,
+)
 from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
 from network_change_delivery.profiled_live_cml import (
+    CURRENT_LIVE_REALIZATION,
     LIVE_LAB_ID,
     LIVE_LAB_TITLE,
     ProfiledLiveCmlError,
     ProfiledLiveCmlOperator,
+    ProfiledLiveRealizationCatalog,
 )
 from network_change_delivery.profiled_live_host_trust import (
     DEFAULT_PROFILED_LIVE_TRUST_ROOT,
@@ -43,20 +49,27 @@ def _digest(value: object) -> str:
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
-def verify(transit_node_id: str, access_node_id: str) -> PersistentProfiledRealization:
-    trust = validate_profiled_live_host_trust()
+def verify(
+    *, catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION
+) -> PersistentProfiledRealization:
+    trust = validate_profiled_live_host_trust(catalog=catalog)
     operator = ProfiledLiveCmlOperator.from_environment()
     try:
-        anchors = operator.anchor_profiled_live(
-            transit_node_id=transit_node_id,
-            access_node_id=access_node_id,
-        )
+        anchors = operator.anchor_profiled_live(catalog=catalog)
     finally:
         operator.close()
-    profiled = NetBoxProfileInventoryProvider().resolve_profiled_population()
+    profiled = (
+        NetBoxProfileInventoryProvider()
+        .resolve_profiled_population()
+        .project(catalog.scope)
+    )
     anchors_by_name = {anchor.logical_name: anchor for anchor in anchors}
     trust_by_name = {str(record.logical_name): record for record in trust.records}
-    if len(anchors_by_name) != 4 or len(trust_by_name) != 4:
+    expected_names = tuple(m.logical_name for m in catalog.scope.members)
+    if (
+        tuple(anchors_by_name) != expected_names
+        or tuple(trust_by_name) != expected_names
+    ):
         raise VerificationError("profiled LIVE evidence population is not exact")
 
     realized = tuple(
@@ -83,6 +96,7 @@ def verify(transit_node_id: str, access_node_id: str) -> PersistentProfiledReali
         for device in profiled.devices
     )
     realization = PersistentProfiledRealization(
+        scope=catalog.scope,
         realization_identity="ncdp-live",
         cml_lab_id=LIVE_LAB_ID,
         cml_lab_title=LIVE_LAB_TITLE,
@@ -116,22 +130,33 @@ def verify(transit_node_id: str, access_node_id: str) -> PersistentProfiledReali
             device.expected_hostname
         }:
             raise VerificationError("profiled LIVE hostname verification failed")
-        if device.logical_name in {"transit-ios-01", "access-sw-01"}:
+        if device.automation_profile_id in {
+            AutomationProfileID.IOSV_159_3_M12,
+            AutomationProfileID.IOSVL2_2020,
+        }:
             physical = {
                 state.interface
                 for state in states
                 if state.interface.startswith("GigabitEthernet0/")
             }
-            expected = {f"GigabitEthernet0/{slot}" for slot in range(4)}
+            expected = {
+                item.interface_name.replace("Gi0/", "GigabitEthernet0/")
+                for item in CML_REALIZATION_PROFILE_CATALOG[
+                    device.cml_realization_profile_id
+                ].physical_interface_slots
+            }
             if physical != expected:
                 raise VerificationError("profiled IOS interface population rejected")
-        if device.logical_name == "access-sw-01":
+        if device.automation_profile_id == AutomationProfileID.IOSVL2_2020:
             management = [
-                state for state in states if state.interface == "GigabitEthernet0/0"
+                state
+                for state in states
+                if state.interface
+                == device.management_endpoints.live.binding.l3_endpoint.interface.name
             ]
-            if len(management) != 1 or "192.168.4.17/24" not in set(
-                management[0].ipv4_addresses
-            ):
+            if len(management) != 1 or str(
+                device.management_endpoints.live.binding.l3_endpoint.address
+            ) not in set(management[0].ipv4_addresses):
                 raise VerificationError("IOSvL2 routed management verification failed")
         version = next(
             (state.software_version for state in states if state.software_version), None
@@ -141,7 +166,7 @@ def verify(transit_node_id: str, access_node_id: str) -> PersistentProfiledReali
             f"host={target.host} hostname={device.expected_hostname} "
             f"interfaces={len(states)} version={version or 'unreported'} PASS"
         )
-    print("profiled population exact-four PASS")
+    print(f"profiled LIVE scope exact membership ({len(profiled.devices)}) PASS")
     print(
         f"persistent realization digest: {_digest(realization.model_dump(mode='json'))}"
     )
@@ -150,14 +175,14 @@ def verify(transit_node_id: str, access_node_id: str) -> PersistentProfiledReali
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 1:
         print(
-            "usage: verify_profiled_live.py TRANSIT_NODE_UUID ACCESS_NODE_UUID",
+            "usage: verify_profiled_live.py",
             file=sys.stderr,
         )
         return 2
     try:
-        verify(sys.argv[1], sys.argv[2])
+        verify()
     except (
         ProfiledLiveCmlError,
         ProfiledLiveHostTrustError,

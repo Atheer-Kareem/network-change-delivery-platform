@@ -26,10 +26,10 @@ managed population → profile/capability projection
 NetBox owns stable device/interface and factual topology identities; CML owns
 realization identities. Git-owned typed catalogs select profiles from explicit
 platform/device-type facts, with no vendor-name guessing or fallback. Membership
-never grants writes. The current implementation still binds a closed catalog;
-[population
-generalization](docs/roadmap.md#cap-population-scopes--population-derived-admission-and-realization)
-is approved future work, not an already implemented onboarding promise.
+never grants writes. A Git-declared population is resolved before each consumer
+selects its [exact typed scope](docs/architecture/population-scopes.md). Supported
+profiles can serve multiple instances; onboarding still requires reviewed data,
+trust, realization and applicable operation admission.
 
 | Current proof population | Profile/platform | Interface-description write admission |
 |---|---|---|

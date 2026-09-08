@@ -25,7 +25,7 @@ agent_1_root=${test_root}/agent-1
 agent_2_root=${test_root}/agent-2
 # These two agents are a minimum disposable SNMPv3 protocol fixture. They do
 # not select, model, or limit the managed fleet; live SNMP migration remains a
-# separate profiled exact-four concern.
+# separate capability-projection concern for the declared managed population.
 evidence_root=${test_root}/evidence
 prometheus_port=$((29090 + run_id % 100))
 grafana_port=$((23000 + run_id % 100))

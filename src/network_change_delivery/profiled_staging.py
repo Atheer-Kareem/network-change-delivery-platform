@@ -1,4 +1,4 @@
-"""Profiled exact-four disposable CML staging lifecycle.
+"""Profiled scope-bound disposable CML staging lifecycle.
 
 This module deliberately contains no deployment, candidate application, or B5
 acceptance authority.  It composes only profiled inventory, realization-bound
@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from network_change_delivery.architecture_contracts import (
     CML_REALIZATION_PROFILE_CATALOG,
     AutomationProfileID,
+    CmlBootPolicy,
     CmlRealizationProfileID,
     ManagementService,
     NetBoxDeviceIdentity,
@@ -36,9 +37,11 @@ from network_change_delivery.architecture_contracts import (
     get_automation_profile,
 )
 from network_change_delivery.profile_inventory import (
-    PROFILED_POPULATION_CATALOG,
+    STAGING_REALIZATION_SCOPE,
     NetBoxProfileInventoryProvider,
     ProfiledInventoryDevice,
+    ProfiledLogicalName,
+    ProfiledPopulationScope,
 )
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
 from network_change_delivery.profiled_realization import (
@@ -48,31 +51,7 @@ from network_change_delivery.profiled_realization import (
 from network_change_delivery.secrets import DeviceCredentials
 
 PROFILED_STAGING_DEVICE_NAMES = tuple(
-    member.logical_name for member in PROFILED_POPULATION_CATALOG
-)
-PROFILED_STAGING_RESOURCE_COUNT = 17
-PROFILED_STAGING_NODE_COUNT = 6
-PROFILED_STAGING_LINK_COUNT = 9
-PROFILED_STAGING_TERRAFORM_ADDRESSES = frozenset(
-    {
-        "cml2_lab.profiled_staging",
-        "cml2_node.system_bridge",
-        "cml2_node.management_switch",
-        'cml2_node.device["core_02"]',
-        'cml2_node.device["edge_junos_01"]',
-        'cml2_node.device["transit_ios_01"]',
-        'cml2_node.device["access_sw_01"]',
-        "cml2_link.system_bridge_management",
-        "cml2_link.management_core",
-        "cml2_link.management_junos",
-        "cml2_link.management_transit",
-        "cml2_link.management_access",
-        "cml2_link.core_junos",
-        "cml2_link.core_transit",
-        "cml2_link.junos_transit",
-        "cml2_link.core_access",
-        "cml2_lifecycle.profiled_staging",
-    }
+    m.logical_name for m in STAGING_REALIZATION_SCOPE.members
 )
 
 
@@ -153,7 +132,7 @@ class ProfiledStagingDeviceEvidence(BaseModel):
     interface_count: int | None = Field(default=None, ge=1, le=4096)
 
 
-StagingTimingPhase = Literal[
+HistoricalStagingTimingPhase = Literal[
     "lifecycle_total",
     "create",
     "start",
@@ -161,6 +140,20 @@ StagingTimingPhase = Literal[
     "transit_persistence",
     "transit_stop",
     "transit_second_boot",
+    "readiness",
+    "read_only",
+    "cleanup",
+]
+
+
+StagingTimingPhase = Literal[
+    "lifecycle_total",
+    "create",
+    "start",
+    "recycle_first_boot",
+    "recycle_persistence",
+    "recycle_stop",
+    "recycle_second_boot",
     "readiness",
     "read_only",
     "cleanup",
@@ -177,7 +170,7 @@ def record_staging_duration(timings: dict[str, float], phase: StagingTimingPhase
         timings[phase] = round(time.monotonic() - started, 3)
 
 
-class ProfiledStagingEvidence(BaseModel):
+class ProfiledStagingEvidenceV2(BaseModel):
     """Schema-v2, secret-free evidence for one profiled staging lifecycle."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
@@ -204,7 +197,7 @@ class ProfiledStagingEvidence(BaseModel):
     # Optional diagnostic durations retain compatibility with existing v2 bytes.
     # lifecycle_total includes admission and cleanup; nested phases overlap it.
     timings_seconds: dict[
-        StagingTimingPhase, Annotated[float, Field(ge=0, allow_inf_nan=False)]
+        HistoricalStagingTimingPhase, Annotated[float, Field(ge=0, allow_inf_nan=False)]
     ] = Field(default_factory=dict)
     create_outcome: str = "not_attempted"
     start_outcome: str = "not_attempted"
@@ -217,7 +210,7 @@ class ProfiledStagingEvidence(BaseModel):
     final_outcome: ProfiledStagingOutcome = ProfiledStagingOutcome.FAILED
 
     @model_validator(mode="after")
-    def exact_four_when_ready(self) -> ProfiledStagingEvidence:
+    def exact_four_when_ready(self) -> ProfiledStagingEvidenceV2:
         # Optional for historical v2 bytes; present references must be exact.
         if self.lab_start_evidence is not None and (
             self.lab_start_evidence.identity
@@ -227,15 +220,18 @@ class ProfiledStagingEvidence(BaseModel):
             raise ValueError("profiled staging lab start evidence rejected")
         if self.schema_version != "2" or not self.lab_title.startswith("NCDP Staging "):
             raise ValueError("profiled staging evidence identity rejected")
-        if (
-            self.devices
-            and tuple(item.logical_name for item in self.devices)
-            != PROFILED_STAGING_DEVICE_NAMES
+        if self.devices and tuple(item.logical_name for item in self.devices) != (
+            "core-02",
+            "edge-junos-01",
+            "transit-ios-01",
+            "access-sw-01",
         ):
             raise ValueError("profiled staging evidence population rejected")
         readiness_names = tuple(item.logical_name for item in self.readiness)
         if readiness_names != tuple(
-            name for name in PROFILED_STAGING_DEVICE_NAMES if name in readiness_names
+            name
+            for name in ("core-02", "edge-junos-01", "transit-ios-01", "access-sw-01")
+            if name in readiness_names
         ) or len(set(readiness_names)) != len(readiness_names):
             raise ValueError("profiled staging readiness population rejected")
         expected_recycle_identity = (
@@ -255,7 +251,12 @@ class ProfiledStagingEvidence(BaseModel):
             )
 
         if self.final_outcome is ProfiledStagingOutcome.SUCCEEDED:
-            if readiness_names != PROFILED_STAGING_DEVICE_NAMES or any(
+            if readiness_names != (
+                "core-02",
+                "edge-junos-01",
+                "transit-ios-01",
+                "access-sw-01",
+            ) or any(
                 item.outcome is not ProfiledStagingReadinessOutcome.READY
                 for item in self.readiness
             ):
@@ -266,6 +267,130 @@ class ProfiledStagingEvidence(BaseModel):
             ):
                 raise ValueError("profiled staging successful transit recycle rejected")
         return self
+
+
+class ProfiledStagingRecycleEvidence(BaseModel):
+    """One scoped profile-required recycle, including bounded incomplete attempts."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    device_identity: NetBoxDeviceIdentity
+    logical_name: ProfiledLogicalName
+    policy: Literal[CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE] = (
+        CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
+    )
+    outcome: Literal["not_attempted", "attempted", "succeeded"] = "not_attempted"
+    evidence: EvidenceReference | None = None
+
+    @model_validator(mode="after")
+    def coherent(self):
+        if (self.outcome == "succeeded") != (self.evidence is not None):
+            raise ValueError("recycle evidence outcome rejected")
+        return self
+
+
+class ProfiledStagingEvidence(BaseModel):
+    """Current schema-v3 scope-bound staging evidence; v2 remains historical."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    schema_version: Literal["3"] = "3"
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE
+    staging_run_id: str
+    orchestrator: str
+    source_commit: str | None = None
+    build_id: str | None = None
+    lab_id: str | None = None
+    lab_title: str
+    topology_digest: Sha256Digest | None = None
+    context_digest: Sha256Digest | None = None
+    trust_generation: EvidenceReference | None = None
+    recycles: tuple[ProfiledStagingRecycleEvidence, ...] = ()
+    lab_start_evidence: EvidenceReference | None = None
+    readiness_deadline_seconds: Literal[180, 300] = 180
+    readiness: tuple[ProfiledStagingReadinessEvidence, ...] = ()
+    devices: tuple[ProfiledStagingDeviceEvidence, ...] = ()
+    # Optional diagnostic durations aggregate the selected profile-recycle subjects.
+    # lifecycle_total includes admission and cleanup; nested phases overlap it.
+    timings_seconds: dict[
+        StagingTimingPhase, Annotated[float, Field(ge=0, allow_inf_nan=False)]
+    ] = Field(default_factory=dict)
+    create_outcome: str = "not_attempted"
+    start_outcome: str = "not_attempted"
+    read_only_outcome: str = "not_attempted"
+    destroy_outcome: str = "not_attempted"
+    absence_verification: str = "not_attempted"
+    state_retirement: str = "not_attempted"
+    primary_failure: str | None = None
+    cleanup_failure: str | None = None
+    final_outcome: ProfiledStagingOutcome = ProfiledStagingOutcome.FAILED
+
+    @model_validator(mode="after")
+    def exact_scope_when_ready(self):
+        if self.lab_title != f"NCDP Staging {self.staging_run_id}":
+            raise ValueError("profiled staging evidence identity rejected")
+        names = tuple(m.logical_name for m in self.scope.members)
+        ready_names = tuple(d.logical_name for d in self.readiness)
+        if ready_names != tuple(n for n in names if n in ready_names) or len(
+            ready_names
+        ) != len(set(ready_names)):
+            raise ValueError("profiled staging readiness population rejected")
+        for d in (*self.readiness, *self.devices):
+            member = self.scope.member(d.logical_name)
+            if member not in self.scope.members or (
+                d.device_identity,
+                d.automation_profile_id,
+                d.cml_realization_profile_id,
+            ) != (
+                member.device_identity,
+                member.automation_profile_id,
+                member.cml_realization_profile_id,
+            ):
+                raise ValueError("profiled staging evidence binding rejected")
+        if self.devices and tuple(d.logical_name for d in self.devices) != names:
+            raise ValueError("profiled staging evidence population rejected")
+        subjects = tuple(
+            m
+            for m in self.scope.members
+            if CML_REALIZATION_PROFILE_CATALOG[m.cml_realization_profile_id].boot_policy
+            is CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
+        )
+        if tuple(r.device_identity for r in self.recycles) != tuple(
+            m.device_identity for m in subjects[: len(self.recycles)]
+        ):
+            raise ValueError("profiled staging recycle scope rejected")
+        for r, m in zip(self.recycles, subjects, strict=False):
+            if r.logical_name != m.logical_name or (
+                r.evidence is not None
+                and r.evidence.identity
+                != f"staging-profile-recycle:{self.staging_run_id}:{m.logical_name}"
+            ):
+                raise ValueError("profiled staging recycle identity rejected")
+        if self.lab_start_evidence is not None and (
+            self.lab_start_evidence.identity
+            != f"staging-lab-start:{self.staging_run_id}"
+            or self.start_outcome != "succeeded"
+        ):
+            raise ValueError("profiled staging lab start evidence rejected")
+        if self.final_outcome is ProfiledStagingOutcome.SUCCEEDED:
+            if ready_names != names or any(
+                d.outcome is not ProfiledStagingReadinessOutcome.READY
+                for d in self.readiness
+            ):
+                raise ValueError("profiled staging successful readiness rejected")
+            if len(self.recycles) != len(subjects) or any(
+                r.outcome != "succeeded" for r in self.recycles
+            ):
+                raise ValueError("profiled staging successful recycle rejected")
+        return self
+
+
+def read_profiled_staging_evidence(
+    content: bytes,
+) -> ProfiledStagingEvidence | ProfiledStagingEvidenceV2:
+    """Exact version dispatch; historical transit evidence is never rewritten."""
+    value = json.loads(content)
+    if value.get("schema_version") == "2":
+        return ProfiledStagingEvidenceV2.model_validate(value)
+    return ProfiledStagingEvidence.model_validate(value)
 
 
 def _sha256(value: object) -> str:
@@ -296,6 +421,157 @@ def topology_digest() -> str:
     return _sha256(profiled_staging_topology())
 
 
+def realization_interface_slot(profile, name: str) -> int:
+    def normalized(value):
+        return re.sub(r"^gi(?=\d)", "gigabitethernet", value.casefold())
+
+    matches = tuple(
+        s.cml_slot
+        for s in profile.physical_interface_slots
+        if normalized(s.interface_name) == normalized(name)
+    )
+    if len(matches) != 1:
+        raise ValueError("staging topology interface not profile-admitted")
+    return matches[0]
+
+
+def staging_management_slot(device: ProfiledInventoryDevice) -> int:
+    """Resolve management only from the admitted STAGING physical attachment."""
+    profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+    return realization_interface_slot(
+        profile,
+        device.management_endpoints.staging.binding.physical_attachment.interface.name,
+    )
+
+
+def validate_staging_management_links(
+    devices, topology: ProfiledStagingTopology
+) -> None:
+    """Reject data/management collisions using resolved inventory authority."""
+    topology.scope.require_bindings(devices)
+    management = {
+        d.logical_name.replace("-", "_"): staging_management_slot(d) for d in devices
+    }
+    for link in topology.terraform_links().values():
+        if any(
+            link[f"slot_{side}"] == management[link[f"node_{side}"]]
+            for side in ("a", "b")
+        ):
+            raise ValueError("staging data link reuses resolved management slot")
+
+
+class ProfiledStagingLink(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    identity: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=100)
+    endpoints: tuple[str, str]
+
+
+class ProfiledStagingTopology(BaseModel):
+    """Reviewed physical subjects and ports; Terraform does not choose membership."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE
+    links: tuple[ProfiledStagingLink, ...]
+
+    @model_validator(mode="after")
+    def exact_endpoints(self):
+        device_keys = {m.logical_name.replace("-", "_") for m in self.scope.members}
+        if device_keys & {"system_bridge", "management_switch"}:
+            raise ValueError("staging device key collides with infrastructure")
+        seen = set()
+        identities = {"system_bridge_management"} | {
+            f"management_{key}" for key in device_keys
+        }
+        for link in self.links:
+            if link.identity in identities:
+                raise ValueError("staging topology duplicate link")
+            identities.add(link.identity)
+            nodes = []
+            for endpoint in link.endpoints:
+                name, sep, interface = endpoint.partition(":")
+                member = next(
+                    (m for m in self.scope.members if m.logical_name == name), None
+                )
+                if not sep or member is None:
+                    raise ValueError(
+                        "staging topology endpoint outside scope or duplicate"
+                    )
+                profile = CML_REALIZATION_PROFILE_CATALOG[
+                    member.cml_realization_profile_id
+                ]
+                slot = realization_interface_slot(profile, interface)
+                if (name, slot) in seen:
+                    raise ValueError("staging topology physical endpoint reused")
+                seen.add((name, slot))
+                nodes.append(name)
+            if nodes[0] == nodes[1]:
+                raise ValueError("staging topology self link rejected")
+        return self
+
+    @property
+    def digest(self):
+        return _sha256({link.identity: link.endpoints for link in self.links})
+
+    def terraform_links(self):
+        by_name = {m.logical_name: m for m in self.scope.members}
+        links = {}
+        for link in self.links:
+            values = {}
+            for side, endpoint in zip(("a", "b"), link.endpoints, strict=True):
+                name, interface = endpoint.split(":", 1)
+                profile = CML_REALIZATION_PROFILE_CATALOG[
+                    by_name[name].cml_realization_profile_id
+                ]
+                slot = realization_interface_slot(profile, interface)
+                values[f"node_{side}"] = name.replace("-", "_")
+                values[f"slot_{side}"] = slot
+            links[link.identity] = values
+        return links
+
+
+CURRENT_STAGING_TOPOLOGY = ProfiledStagingTopology(
+    links=tuple(
+        ProfiledStagingLink(identity=k, endpoints=v)
+        for k, v in profiled_staging_topology().items()
+    )
+)
+
+
+def staging_terraform_addresses(
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE,
+    topology: ProfiledStagingTopology = CURRENT_STAGING_TOPOLOGY,
+) -> frozenset[str]:
+    if topology.scope != scope:
+        raise ValueError("staging topology scope rejected")
+    infrastructure = {
+        "cml2_lab.profiled_staging",
+        "cml2_node.system_bridge",
+        "cml2_node.management_switch",
+        "cml2_link.system_bridge_management",
+        "cml2_lifecycle.profiled_staging",
+    }
+    return frozenset(
+        infrastructure
+        | {
+            f'cml2_node.device["{m.logical_name.replace("-", "_")}"]'
+            for m in scope.members
+        }
+        | {
+            f'cml2_link.management["{m.logical_name.replace("-", "_")}"]'
+            for m in scope.members
+        }
+        | {f'cml2_link.data["{link.identity}"]' for link in topology.links}
+    )
+
+
+PROFILED_STAGING_TERRAFORM_ADDRESSES = staging_terraform_addresses()
+PROFILED_STAGING_RESOURCE_COUNT = len(PROFILED_STAGING_TERRAFORM_ADDRESSES)
+PROFILED_STAGING_NODE_COUNT = len(STAGING_REALIZATION_SCOPE.members) + 2
+PROFILED_STAGING_LINK_COUNT = (
+    len(STAGING_REALIZATION_SCOPE.members) + 1 + len(CURRENT_STAGING_TOPOLOGY.links)
+)
+
+
 class ProfiledTopologyResolver(Protocol):
     """GET-only physical topology authority required before CML creation."""
 
@@ -311,12 +587,14 @@ class ProfiledTopologyResolver(Protocol):
 def validate_profiled_staging_physical_topology(
     inventory: ProfiledTopologyResolver,
     devices: tuple[ProfiledInventoryDevice, ...],
+    *,
+    topology: ProfiledStagingTopology = CURRENT_STAGING_TOPOLOGY,
 ) -> None:
     """Require each reviewed CML data link to match one exact NetBox cable."""
     by_name = {str(device.logical_name): device for device in devices}
-    if tuple(by_name) != PROFILED_STAGING_DEVICE_NAMES:
-        raise ProfiledStagingError("profiled staging topology population rejected")
-    for left, right in profiled_staging_topology().values():
+    validate_staging_management_links(devices, topology)
+    for link in topology.links:
+        left, right = link.endpoints
         left_device, left_name = left.split(":", maxsplit=1)
         right_device, right_name = right.split(":", maxsplit=1)
         resolved_left = inventory.resolve_interface(by_name[left_device], left_name)
@@ -332,12 +610,13 @@ def terraform_profiled_device_variables(
     devices: tuple[ProfiledInventoryDevice, ...],
     credentials: dict[str, DeviceCredentials],
     password_verifiers: dict[str, str],
+    *,
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE,
 ) -> dict[str, object]:
     """Build sensitive Day-0 inputs from exact profiled staging authority."""
-    if tuple(item.logical_name for item in devices) != PROFILED_STAGING_DEVICE_NAMES:
-        raise ProfiledStagingError("profiled staging population rejected")
+    scope.require_bindings(devices)
     values: dict[str, object] = {}
-    for device in devices:
+    for index, device in enumerate(devices):
         profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
         endpoint = device.management_endpoints.staging.binding.l3_endpoint
         credential = credentials.get(str(device.logical_name))
@@ -365,21 +644,21 @@ def terraform_profiled_device_variables(
             "ram_mb": profile.resources.ram_mb,
             "management_port": endpoint.port,
             "bootstrap_profile": profile.bootstrap_profile.value,
+            "management_slot": staging_management_slot(device),
+            "management_switch_slot": index + 1,
+            "layout_x": 100 + (index % 2) * 300,
+            "layout_y": -400 + (index // 2) * 500,
         }
     return values
 
 
 def validate_profiled_staging_population(
     inventory: NetBoxProfileInventoryProvider,
+    *,
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE,
 ) -> tuple[ProfiledInventoryDevice, ...]:
-    """Resolve the sole exact-four staging population via GET-only inventory."""
-    population = inventory.resolve_profiled_population()
-    if (
-        tuple(item.logical_name for item in population.devices)
-        != PROFILED_STAGING_DEVICE_NAMES
-    ):
-        raise ProfiledStagingError("profiled staging population rejected")
-    return population.devices
+    """Resolve complete managed authority, then project the reviewed staging scope."""
+    return inventory.resolve_profiled_population().project(scope).devices
 
 
 def validate_management_only_bootstrap(value: str) -> None:
@@ -423,11 +702,13 @@ class ProfiledStagingLifecycle:
     run_id: str
     orchestrator: str
     operations: StagingOperations
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE
     evidence: ProfiledStagingEvidence = field(init=False)
 
     def __post_init__(self) -> None:
         self.evidence = ProfiledStagingEvidence(
             staging_run_id=self.run_id,
+            scope=self.scope,
             orchestrator=self.orchestrator,
             lab_title=f"NCDP Staging {self.run_id}",
         )
@@ -450,6 +731,8 @@ class ProfiledStagingLifecycle:
             self.operations.admit()
             create_outcome = "attempted"
             context = self.operations.create()
+            if context.scope != self.scope:
+                raise ProfiledStagingError("staging realization scope rejected")
             create_outcome = "succeeded"
             with record_staging_duration(timings, "read_only"):
                 devices = self.operations.validate(context)
@@ -501,6 +784,7 @@ class ProfiledStagingLifecycle:
         )
         self.evidence = ProfiledStagingEvidence(
             staging_run_id=self.run_id,
+            scope=self.scope,
             orchestrator=self.orchestrator,
             source_commit=getattr(self.operations, "source_commit", None),
             lab_id=(
@@ -526,16 +810,7 @@ class ProfiledStagingLifecycle:
                 if context
                 else getattr(self.operations, "trust_generation", None)
             ),
-            transit_recycle_outcome=getattr(
-                self.operations,
-                "transit_recycle_outcome",
-                "not_attempted",
-            ),
-            transit_recycle_evidence=getattr(
-                self.operations,
-                "transit_recycle_evidence",
-                None,
-            ),
+            recycles=getattr(self.operations, "recycles", ()),
             readiness_deadline_seconds=getattr(
                 self.operations, "readiness_deadline_seconds", 180
             ),
@@ -618,13 +893,12 @@ def validate_destroy_only_plan(
     planned_actions: dict[str, str],
     *,
     require_complete: bool = False,
+    expected_addresses: frozenset[str] = PROFILED_STAGING_TERRAFORM_ADDRESSES,
 ) -> None:
     """Permit only exact deletion of a known nonempty full graph or subset."""
-    if not state_addresses or not state_addresses.issubset(
-        PROFILED_STAGING_TERRAFORM_ADDRESSES
-    ):
+    if not state_addresses or not state_addresses.issubset(expected_addresses):
         raise ProfiledStagingError("profiled staging retained state is not admitted")
-    if require_complete and state_addresses != PROFILED_STAGING_TERRAFORM_ADDRESSES:
+    if require_complete and state_addresses != expected_addresses:
         raise ProfiledStagingError("profiled staging retained state is not complete")
     if set(planned_actions) != state_addresses or set(planned_actions.values()) != {
         "delete"
@@ -687,7 +961,13 @@ def write_recovery_inputs(path: Path, payload: dict[str, object]) -> None:
         os.close(descriptor)
 
 
-def load_recovery_inputs(path: Path, run_id: str) -> dict[str, object]:
+def load_recovery_inputs(
+    path: Path,
+    run_id: str,
+    *,
+    scope: ProfiledPopulationScope = STAGING_REALIZATION_SCOPE,
+    topology: ProfiledStagingTopology = CURRENT_STAGING_TOPOLOGY,
+) -> dict[str, object]:
     """Validate one private, secret-verifier-only retained Terraform input file."""
     metadata = path.lstat()
     if (
@@ -706,12 +986,15 @@ def load_recovery_inputs(path: Path, run_id: str) -> dict[str, object]:
         ) from None
     if (
         not isinstance(payload, dict)
-        or set(payload) != {"staging_run_id", "lifecycle_state", "devices"}
+        or set(payload)
+        != {"staging_run_id", "lifecycle_state", "devices", "data_links"}
         or payload["staging_run_id"] != run_id
         or payload["lifecycle_state"] != "DEFINED_ON_CORE"
         or not isinstance(payload["devices"], dict)
         or set(payload["devices"])
-        != {"core_02", "edge_junos_01", "transit_ios_01", "access_sw_01"}
+        != {m.logical_name.replace("-", "_") for m in scope.members}
+        or topology.scope != scope
+        or payload["data_links"] != topology.terraform_links()
     ):
         raise ProfiledStagingError("profiled staging recovery inputs rejected")
     forbidden = ("token", "role_id", "secret_id", "plaintext", "bao_token")
@@ -729,20 +1012,47 @@ def load_recovery_inputs(path: Path, run_id: str) -> dict[str, object]:
         "ram_mb",
         "management_port",
         "bootstrap_profile",
+        "management_slot",
+        "management_switch_slot",
+        "layout_x",
+        "layout_y",
     }
-    expected = {
-        "core_02": ("core-02", "192.168.4.30/24", 22, "$9$"),
-        "edge_junos_01": ("edge-junos-01", "192.168.4.40/24", 830, "$6$"),
-        "transit_ios_01": ("transit-ios-01", "192.168.4.31/24", 22, "$9$"),
-        "access_sw_01": ("access-sw-01", "192.168.4.32/24", 22, "$9$"),
-    }
+    expected = {m.logical_name.replace("-", "_"): m for m in scope.members}
     for name, item in payload["devices"].items():
-        hostname, address, port, verifier_prefix = expected[name]
+        member = expected[name]
+        profile = CML_REALIZATION_PROFILE_CATALOG[member.cml_realization_profile_id]
+        hostname = member.logical_name
+        service = get_automation_profile(
+            member.automation_profile_id
+        ).readiness_services[0]
+        port = service.port
+        verifier_prefix = (
+            "$6$"
+            if member.automation_profile_id is AutomationProfileID.VJUNOS_ROUTER
+            else "$9$"
+        )
+        from ipaddress import IPv4Interface
+
+        try:
+            IPv4Interface(item.get("management_cidr"))
+        except (ValueError, TypeError, AttributeError):
+            raise ProfiledStagingError(
+                "profiled staging recovery inputs rejected"
+            ) from None
         if (
             not isinstance(item, dict)
             or set(item) != device_fields
             or item.get("hostname") != hostname
-            or item.get("management_cidr") != address
+            or item.get("node_definition") != profile.node_definition
+            or item.get("image_definition") != profile.image_definition
+            or item.get("cpu_cores") != profile.resources.cpu_cores
+            or item.get("ram_mb") != profile.resources.ram_mb
+            or item.get("bootstrap_profile") != profile.bootstrap_profile.value
+            or type(item.get("management_slot")) is not int
+            or item["management_slot"]
+            not in {s.cml_slot for s in profile.physical_interface_slots}
+            or type(item.get("management_switch_slot")) is not int
+            or item.get("management_switch_slot") != tuple(expected).index(name) + 1
             or item.get("management_port") != port
             or not isinstance(item.get("username"), str)
             or not item["username"]
@@ -750,6 +1060,15 @@ def load_recovery_inputs(path: Path, run_id: str) -> dict[str, object]:
             or not item["password_verifier"].startswith(verifier_prefix)
         ):
             raise ProfiledStagingError("profiled staging recovery inputs rejected")
+    for link in payload["data_links"].values():
+        for side in ("a", "b"):
+            if (
+                link[f"slot_{side}"]
+                == payload["devices"][link[f"node_{side}"]]["management_slot"]
+            ):
+                raise ProfiledStagingError(
+                    "recovery data link reuses retained management slot"
+                )
     return payload
 
 
@@ -772,12 +1091,9 @@ def validate_read_only_collection(
             return re.sub(r"^gi(?=\d)", "gigabitethernet", name.casefold())
 
         names = {normalized(state.interface) for state in states}
-        management = {
-            "core-02": "GigabitEthernet1",
-            "edge-junos-01": "fxp0",
-            "transit-ios-01": "GigabitEthernet0/0",
-            "access-sw-01": "GigabitEthernet0/0",
-        }[str(device.logical_name)]
+        management = (
+            device.management_endpoints.staging.binding.l3_endpoint.interface.name
+        )
         management_state = next(
             (
                 state
@@ -789,8 +1105,12 @@ def validate_read_only_collection(
         expected_address = str(
             device.management_endpoints.staging.binding.l3_endpoint.address
         )
+        realization_profile = CML_REALIZATION_PROFILE_CATALOG[
+            device.cml_realization_profile_id
+        ]
         required_physical = {
-            normalized(f"GigabitEthernet0/{index}") for index in range(4)
+            normalized(slot.interface_name)
+            for slot in realization_profile.physical_interface_slots
         }
         if (
             not states
@@ -800,7 +1120,8 @@ def validate_read_only_collection(
             or management_state is None
             or expected_address not in management_state.ipv4_addresses
             or (
-                str(device.logical_name) in {"transit-ios-01", "access-sw-01"}
+                device.automation_profile_id
+                in {AutomationProfileID.IOSV_159_3_M12, AutomationProfileID.IOSVL2_2020}
                 and not required_physical.issubset(names)
             )
         ):

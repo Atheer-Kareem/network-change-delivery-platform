@@ -47,6 +47,7 @@ from network_change_delivery.ospf_triangle import (
     evaluate_ospf_triangle_invariants,
 )
 from network_change_delivery.profile_inventory import (
+    VLAN_SERVICE_SCOPE,
     ProfiledInventoryDevice,
     ProfiledInventoryPopulation,
 )
@@ -732,14 +733,9 @@ def collect_vlan_observation(
     secrets: VlanSecretProvider,
     adapter: ProfileVlanReadOnlyAdapter | None = None,
 ) -> VlanObservation:
-    all_devices = {item.logical_name: item for item in devices.devices}
-    if set(all_devices) != {
-        "core-02",
-        "edge-junos-01",
-        "transit-ios-01",
-        "access-sw-01",
-    }:
-        raise ProviderError("profiled VLAN inventory population is not exact")
+    all_devices = {
+        item.logical_name: item for item in devices.project(VLAN_SERVICE_SCOPE).devices
+    }
     by_name = {name: all_devices[name] for name in VLAN_NAMES}
     reader = adapter or ProfileVlanReadOnlyAdapter()
     core = reader.collect(by_name["core-02"], secrets.load(by_name["core-02"]), intent)

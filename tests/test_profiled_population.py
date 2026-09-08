@@ -13,7 +13,7 @@ from network_change_delivery.profile_inventory import (
     PROFILED_INVENTORY_TAG,
     PROFILED_POPULATION_CATALOG,
     NetBoxProfileInventoryProvider,
-    ProfiledDeviceName,
+    ProfiledPopulationDeclaration,
 )
 
 TOKEN = "opaque-profiled-population-token"
@@ -113,7 +113,11 @@ def interfaces(device: dict[str, object]) -> list[dict[str, object]]:
     return [
         {
             "id": interface_id,
-            "name": "Gi0/0" if name != "edge-junos-01" else "fxp0",
+            "name": {
+                "cisco-ios-xe": "GigabitEthernet1",
+                "juniper-junos": "fxp0",
+                "cisco-ios": "GigabitEthernet0/0",
+            }[device["platform"]["slug"]],
             "device": {"id": device_id, "name": name},
             "tags": [
                 tag("ncdp-management-attachment"),
@@ -157,6 +161,9 @@ def profiled_provider(
     device_payloads: list[dict[str, object]],
     *,
     requests: list[httpx.Request] | None = None,
+    declaration: ProfiledPopulationDeclaration = (
+        profile_inventory_module.PROFILED_MANAGED_POPULATION
+    ),
 ) -> NetBoxProfileInventoryProvider:
     by_id = {int(device["id"]): device for device in device_payloads}
 
@@ -183,6 +190,7 @@ def profiled_provider(
         "https://netbox.example",
         TOKEN,
         transport=httpx.MockTransport(handler),
+        declaration=declaration,
     )
 
 
@@ -208,21 +216,21 @@ def test_exact_four_profiled_population_is_deterministic_and_get_only() -> None:
         member.logical_name for member in PROFILED_POPULATION_CATALOG
     )
     assert tuple(device.logical_name for device in population.devices) == tuple(
-        ProfiledDeviceName
+        m.logical_name for m in PROFILED_POPULATION_CATALOG
     )
     assert all(request.method == "GET" for request in requests)
     first = requests[0]
     assert first.url.params["tag"] == PROFILED_INVENTORY_TAG
-    assert first.url.params["status"] == "active"
+    assert "status" not in first.url.params
     assert first.url.params["ordering"] == "id"
 
 
-def test_profiled_population_member_model_is_catalog_internal() -> None:
-    assert not hasattr(profile_inventory_module, "ProfiledPopulationMember")
+def test_profiled_population_member_model_is_public() -> None:
+    assert hasattr(profile_inventory_module, "ProfiledPopulationMember")
 
 
 @pytest.mark.parametrize("population_size", [3, 5])
-def test_profiled_population_requires_exactly_four_members(
+def test_profiled_population_requires_exact_declared_members(
     population_size: int,
 ) -> None:
     payloads = devices()
@@ -232,7 +240,7 @@ def test_profiled_population_requires_exactly_four_members(
         extra = dict(payloads[-1])
         extra.update(id=99, name="foreign-01")
         payloads.append(extra)
-    with pytest.raises(InventoryError, match="exactly four"):
+    with pytest.raises(InventoryError, match="declared managed membership"):
         profiled_provider(payloads).resolve_profiled_population()
 
 

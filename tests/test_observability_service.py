@@ -73,8 +73,10 @@ class Inventory:
                 port=port,
             )
 
-        return SimpleNamespace(
-            devices=(
+        from profiled_population_fixtures import typed_population_from_subjects
+
+        return typed_population_from_subjects(
+            (
                 device(
                     "netbox:dcim.device:1",
                     "core-02",
@@ -1277,3 +1279,108 @@ def test_reconciler_uses_no_openbao_ssh_or_configuration_collection() -> None:
         assert forbidden not in lowered
     assert "NetBoxProfileInventoryProvider" in source
     assert "CmlRealizationAuthority" in source
+
+
+def test_isolated_runtime_target_fixture_uses_production_scoped_targets(
+    tmp_path, monkeypatch
+):
+    import builtins
+    import re
+
+    from network_change_delivery import observability_targets
+    from network_change_delivery.architecture_contracts import get_automation_profile
+    from network_change_delivery.profile_inventory import OBSERVABILITY_SCOPE
+
+    script = (
+        Path(__file__).parents[1] / "scripts/observability/verify_runtime.sh"
+    ).read_text()
+    for forbidden in (
+        "profiled_population_fixtures",
+        "typed_population_from_subjects",
+        "/app/tests",
+        "sys.path",
+    ):
+        assert forbidden not in script
+    assert not re.search(r"(?:from|import)\s+tests(?:[.\s]|$)", script)
+    marker = (
+        "NCDP_TEST_CISCO_IP=${cisco_ip} NCDP_TEST_JUNOS_IP=${junos_ip} "
+        "quality_python -c '\n"
+    )
+    code = script.split(marker, 1)[1].split("\n'", 1)[0]
+    monkeypatch.setenv("NCDP_TEST_CISCO_IP", "192.0.2.100")
+    monkeypatch.setenv("NCDP_TEST_JUNOS_IP", "192.0.2.101")
+    monkeypatch.setenv("NCDP_TEST_STATE_ROOT", str(tmp_path))
+    publications = []
+    publish = observability_targets.publish_generation
+
+    def publication(root, **values):
+        publications.append((root, values))
+        return publish(root, **values)
+
+    def production_import(name, *args, **kwargs):
+        assert name.split(".")[0] in {
+            "os",
+            "pathlib",
+            "types",
+            "network_change_delivery",
+        }, f"unexpected runtime fixture import: {name}"
+        return builtins.__import__(name, *args, **kwargs)
+
+    monkeypatch.setattr(observability_targets, "publish_generation", publication)
+    monkeypatch.setattr(
+        observability_targets,
+        "targets_from_inventory",
+        lambda *_args, **_kwargs: pytest.fail(
+            "runtime fixture must not resolve inventory"
+        ),
+    )
+    exec(
+        compile(code, "isolated-observability-target-fixture", "exec"),
+        {"__builtins__": {**vars(builtins), "__import__": production_import}},
+    )
+    assert len(publications) == 1
+    root, values = publications[0]
+    assert root == tmp_path
+    assert values["scope"] is OBSERVABILITY_SCOPE
+    assert values["state"] is observability_targets.TargetGenerationState.ACTIVE
+    targets = values["targets"]
+    assert isinstance(targets, tuple) and len(targets) == 4
+    assert all(type(t) is observability_targets.ObservabilityTarget for t in targets)
+    assert (
+        tuple(t.inventory_object_id for t in targets) == OBSERVABILITY_SCOPE.identities
+    )
+    assert tuple((t.port, t.management_service.value) for t in targets) == (
+        (22, "ssh"),
+        (830, "netconf"),
+        (22, "ssh"),
+        (22, "ssh"),
+    )
+    for target, member in zip(targets, OBSERVABILITY_SCOPE.members, strict=True):
+        assert (
+            target.device_name,
+            target.platform_slug,
+            target.network_os,
+            target.automation_profile_id,
+        ) == (
+            member.logical_name,
+            member.platform_slug,
+            member.network_os,
+            member.automation_profile_id,
+        )
+        (service,) = get_automation_profile(
+            member.automation_profile_id
+        ).readiness_services
+        assert (target.management_service, target.port) == (
+            service.service,
+            service.port,
+        )
+        assert target.host == (
+            "192.0.2.101" if service.service.value == "netconf" else "192.0.2.100"
+        )
+        assert target.telemetry_source == "tcp_connect"
+    generation = observability_targets.read_generation(
+        tmp_path, scope=OBSERVABILITY_SCOPE
+    )
+    assert generation.schema_version == "3"
+    assert generation.scope == OBSERVABILITY_SCOPE
+    assert generation.targets == targets

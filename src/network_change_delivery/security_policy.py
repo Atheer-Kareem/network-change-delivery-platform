@@ -39,6 +39,7 @@ from network_change_delivery.assurance import (
 from network_change_delivery.audit import canonical_json_bytes, sha256_identity
 from network_change_delivery.ospf_triangle import OspfDesiredState, OspfTriangleIntent
 from network_change_delivery.profile_inventory import (
+    ACL_SERVICE_SCOPE,
     ProfiledInventoryDevice,
     ProfiledInventoryPopulation,
 )
@@ -517,9 +518,9 @@ def collect_acl_observation(
     secrets: AclSecretProvider,
     adapter: ProfileAclReadOnlyAdapter | None = None,
 ) -> AclObservation:
-    by_name = {item.logical_name: item for item in devices.devices}
-    if set(by_name) != set(MANAGED_NETWORK_NODES):
-        raise ProviderError("profiled ACL inventory population is not exact")
+    by_name = {
+        item.logical_name: item for item in devices.project(ACL_SERVICE_SCOPE).devices
+    }
     core = by_name["core-02"]
     return (adapter or ProfileAclReadOnlyAdapter()).collect(
         core, secrets.load(core), intent

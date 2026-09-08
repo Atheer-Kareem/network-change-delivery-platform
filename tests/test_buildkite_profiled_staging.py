@@ -23,6 +23,7 @@ from test_buildkite_staging import (
     profiled_target,
 )
 from test_profiled_realization import inventory_devices, staging_context
+from test_profiled_staging import recycle_evidence
 
 from network_change_delivery.buildkite_identity import BuildkiteOIDCJWT
 from network_change_delivery.buildkite_staging import BuildkiteStagingSecretProvider
@@ -69,15 +70,15 @@ def test_staging_summary_renders_only_closed_numeric_timings(driver):
         lab_title="NCDP Staging run-001",
         timings_seconds={
             "start": 4.123,
-            "transit_first_boot": 30,
-            "transit_persistence": 60,
+            "recycle_first_boot": 30,
+            "recycle_persistence": 60,
             "lifecycle_total": 410,
         },
         primary_failure="bearer-secret",
     )
     rendered = driver.summary(evidence, succeeded=False)
     assert "CML lab start: 4.1s" in rendered
-    assert "Transit first boot: 30.0s" in rendered
+    assert "Profile-required first boot: 30.0s" in rendered
     assert "Total lifecycle: 410.0s" in rendered
     assert "bearer-secret" not in rendered
 
@@ -88,7 +89,7 @@ def test_staging_summary_renders_only_closed_numeric_timings(driver):
         "admission",
         "infrastructure create",
         "CML lab start",
-        "transit recycle",
+        "profile-required recycle",
         "service readiness",
         "strict trust",
         "read-only validation",
@@ -102,7 +103,7 @@ def test_failed_phase_is_closed_state_derived_and_secret_safe(driver, phase):
         "admission",
         "infrastructure create",
         "CML lab start",
-        "transit recycle",
+        "profile-required recycle",
         "service readiness",
         "strict trust",
         "read-only validation",
@@ -121,12 +122,10 @@ def test_failed_phase_is_closed_state_derived_and_secret_safe(driver, phase):
         if index == 1
         else "succeeded",
         start_outcome="attempted" if index <= 2 else "succeeded",
-        transit_recycle_outcome="attempted" if index <= 3 else "succeeded",
-        transit_recycle_evidence=None
-        if index <= 3
-        else EvidenceReference(
-            identity="staging-transit-recycle:run-001:transit-ios-01",
-            digest="sha256:" + "d" * 64,
+        recycles=(
+            recycle_evidence(
+                "run-001", outcome="attempted" if index <= 3 else "succeeded"
+            ),
         ),
         readiness=operation.readiness_evidence if index > 4 else (),
         trust_generation=None
@@ -380,11 +379,8 @@ def fake_lifecycle_operations(driver, monkeypatch, *, cleanup_fails):
                 identity=f"staging-lab-start:{run_id}",
                 digest="sha256:" + "c" * 64,
             )
-            operation.transit_recycle_outcome = "succeeded"
-            operation.transit_recycle_evidence = EvidenceReference(
-                identity=f"staging-transit-recycle:{run_id}:transit-ios-01",
-                digest="sha256:" + "b" * 64,
-            )
+            operation.recycles = (recycle_evidence(run_id),)
+
             operation.readiness_evidence = tuple(
                 ProfiledStagingReadinessEvidence(
                     device_identity=item.device_identity,
@@ -524,7 +520,6 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
             "topology_digest",
             "context_digest",
             "trust_generation",
-            "transit_recycle_evidence",
             "lab_start_evidence",
         ):
             assert not driver.evidence_succeeded(
@@ -539,6 +534,7 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
             ("source_commit", "b" * 40),
             ("build_id", JOB_ID),
             ("staging_run_id", "wrong-run"),
+            ("recycles", ()),
             ("readiness", ()),
             ("devices", ()),
             ("primary_failure", "failure"),

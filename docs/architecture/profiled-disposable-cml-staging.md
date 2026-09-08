@@ -1,6 +1,8 @@
 # Profiled disposable CML staging
 
-Status: the lifecycle introduced in PR #134 and refined in #136 is current.
+Status: the lifecycle introduced in PR #134 and refined in #136 now consumes
+explicit typed staging scope and topology inputs; current evidence is schema v3.
+Historical schema-v2 evidence retains its exact reader and meaning.
 The user-supplied [main-delivery acceptance](../acceptance/profiled-main-delivery.md)
 records the successful chain requiring real CML success. PR/development staging
 is temporarily skipped under the ACTIVE [ledger
@@ -16,7 +18,8 @@ path, or candidate configuration application. The sole current configuration
 write surface remains `ncdp profiled-deploy`, also invoked by authorized main delivery,
 for its admitted operation.
 
-Its population is resolved only through `NetBoxProfileInventoryProvider` and
+Its scope is selected only after full managed resolution through
+`NetBoxProfileInventoryProvider` and
 `ncdp-profiled-inventory`: core-02 (CAT8000V IOS-XE), edge-junos-01 (vJunos),
 transit-ios-01 (IOSv), and access-sw-01 (IOSvL2). The profile catalog projects
 node definitions, images, device-side ports, readiness services, and CML
@@ -25,8 +28,9 @@ provider, multivendor adapter, planning function, or write adapter participates.
 
 ## Disposable realization
 
-The current declared realization scope creates `NCDP Staging <run-id>` with
-exactly six nodes, nine links, and
+The admitted scope of N devices and explicit topology of L data links creates
+`NCDP Staging <run-id>` with N+2 nodes, N+L+1 links and 2N+L+5 managed resources.
+The unchanged current proof graph (N=4, L=4) has six nodes, nine links and
 17 Terraform-managed resources: a CML lab, system bridge, unmanaged management
 switch, four profiled device nodes, nine links, and one lifecycle resource.
 Day-0 is management-only and derives each STAGING endpoint from NetBox. It sets
@@ -44,9 +48,11 @@ running management interface on a DHCP lease during that first boot. A second
 boot from the persisted startup configuration consistently restores the exact
 static STAGING binding. The lifecycle therefore gives the first IOSv boot a
 bounded 60-second persistence interval and then recycles only the independently
-admitted `transit-ios-01` CML node. CAT8000V, vJunos, and IOSvL2 are not
+admitted IOSv CML subjects selected by `CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE`.
+The current subject is `transit-ios-01`; multiple IOSv instances receive the same
+policy independently in canonical scope order. CAT8000V, vJunos, and IOSvL2 are not
 recycled. The existing CML reader remains GET-only; a separate run-scoped
-recycle boundary admits the exact lab UUID, transit node UUID, logical identity,
+recycle boundary admits the exact lab UUID, selected node UUID, logical identity,
 IOSv realization profile, and current CML state before issuing exactly one STOP
 and one START request. Uncertain mutation transport is independently reconciled
 and is never blindly replayed. This is CML realization lifecycle authority, not
@@ -68,9 +74,9 @@ DESTROY plans are used by the active lifecycle.
 
 `ProfiledStagingCmlLabStarter` is a separate, one-shot non-blocking lab mutation
 boundary with the same TLS/process-memory bearer model as the recycler. It
-re-admits the exact run, lab UUID/title, six-node and nine-link membership,
-node IDs/definitions/images, catalog device identities 1/2/8/9 and profile
-bindings. Lab and all six nodes must be `DEFINED_ON_CORE` before first START.
+re-admits the exact run, lab UUID/title, scope-derived node/link membership,
+node IDs/definitions/images, declared identities and profile bindings. The lab
+and every scoped/infrastructure node must be `DEFINED_ON_CORE` before first START.
 It follows pinned [gocmlclient v0.2.5 Lab.Start](https://github.com/rschmied/gocmlclient/blob/v0.2.5/internal/services/lab.go):
 one `PUT /api/v0/labs/<id>/start`; only a definitive 404 permits the legacy
 `/api/v0/labs/<id>/state/start` form. Transport failure, 408, or 5xx permits only
@@ -159,13 +165,13 @@ entries use the exact `[host]:830` known-hosts form.
 ## Failure, evidence, and recovery
 
 The one-shot lifecycle is admit → fenced create → admitted CML LAB START → exact
-transit-IOSv CML recycle → readiness/trust/read-only validate → fenced saved
+profile-required CML recycle → readiness/trust/read-only validate → fenced saved
 destroy plan → independent absence proof → state retirement. Cleanup authority
 derives from a nonempty known Terraform state,
 not from a returned READY context, so partial apply, start, readiness, CML
 admission, trust, context, and read-only failures remain cleanup-eligible. A
-normal successful realization requires the exact 17-address state and 17 exact
-deletes. Failed partial creation permits only a nonempty subset of those same
+normal successful realization requires the exact derived address set and its
+matching deletes (17 for the current proof graph). Failed partial creation permits only a nonempty subset of those same
 addresses and an exactly matching delete-only plan; unknown or empty state is
 never destructive authority.
 
@@ -178,11 +184,12 @@ input/state/lab binding, the known resource subset, and a saved exact-delete
 plan. It cannot create or start, and state, backup, plans, and recovery inputs
 are retired only after independent CML absence is proven.
 
-Schema-v2 `ProfiledStagingEvidence` preserves source commit, observed lab and
+Schema-v3 `ProfiledStagingEvidence` binds the typed scope and preserves source commit, observed lab and
 run-specific topology, final READY context digest, actual trust generation,
-per-device readiness and read-only facts, create/start/transit-recycle/
+per-device readiness and read-only facts, per-subject profile-required recycle
+attempts/references, create/start/
 destroy/absence/state retirement, and separate primary/cleanup failures. An
-uncertain Terraform, lab-start, or transit-recycle mutation is never replayed: known owned
+uncertain Terraform, lab-start, or profile-required recycle mutation is never replayed: known owned
 state may proceed only to bounded
 cleanup, while unprovable ownership is `AMBIGUOUS` and retained for review.
 
@@ -192,8 +199,8 @@ present only after start success. Historical schema-v2 success without this
 reference remains parseable; new Buildkite success additionally requires it.
 
 Optional `timings_seconds` adds only closed phase names and finite nonnegative
-monotonic durations to schema-v2, including failed phase durations. The phases
-are Terraform create (including its saved plan), admitted CML LAB START, transit first
+monotonic durations to current evidence, including failed phase durations. The phases
+are Terraform create (including its saved plan), admitted CML LAB START, profile-required first
 boot observation, persistence interval, STOP completion, second boot,
 SSH/NETCONF readiness, read-only validation, cleanup, and
 whole lifecycle total. Total includes admission, setup, trust, and nested phases; do
@@ -201,7 +208,19 @@ not sum it with those phases. The Buildkite sanitized summary displays these
 numbers; no provider text or secret is a timing payload. Compare total and
 per-phase durations with the former approximately 11-minute job, allowing for
 wrapper setup/publication time outside the lifecycle total. Existing evidence
-without timings remains valid; the schema-v2 success requirements are unchanged.
+without timings remains valid through `ProfiledStagingEvidenceV2`. Its
+transit-specific fields are never reinterpreted as multi-instance evidence.
+`read_profiled_staging_evidence()` dispatches exact versions; new Buildkite
+success requires schema v3 and every profile-required recycle subject.
+
+Terraform uses `for_each` over the Python-admitted device and data-link maps.
+Management switch slots and presentation coordinates derive from canonical
+scope order; device slots derive from the reviewed realization profile and
+NetBox management binding. The unchanged topology digest is
+`sha256:764405fa9a44d7c42ae402ec2fa1d03c2b7dd9ba0916954e03c7a7d5baf68064`.
+Historical Terraform resource addresses remain historical; old retained runs
+must be reconciled with their matching reviewed version, never fed to the new
+cleanup address contract. No runtime state migration is part of this change.
 
 ## Buildkite activation
 

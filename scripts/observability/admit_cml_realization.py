@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from network_change_delivery.observability_realization import (
+    CURRENT_OBSERVABILITY_REALIZATION,
     LIVE_LAB_ID,
     CmlRealizationAuthority,
     ObservabilityRealizationError,
@@ -21,8 +22,6 @@ STATE_ROOT = Path("/Users/netdevops/.local/state/ncdp/observability")
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lab-id", required=True, choices=(LIVE_LAB_ID,))
-    parser.add_argument("--core-id", required=True)
-    parser.add_argument("--junos-id", required=True)
     arguments = parser.parse_args()
     required = {
         "address": os.environ.get("NCDP_OBSERVABILITY_CML_ADDRESS"),
@@ -39,8 +38,8 @@ def main() -> int:
             admission = authority.admit(
                 arguments.lab_id,
                 {
-                    "netbox:dcim.device:1": arguments.core_id,
-                    "netbox:dcim.device:2": arguments.junos_id,
+                    f"netbox:dcim.device:{a.device_id}": a.cml_node_id
+                    for a in CURRENT_OBSERVABILITY_REALIZATION.anchors
                 },
             )
         finally:

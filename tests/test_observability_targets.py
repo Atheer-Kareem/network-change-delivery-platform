@@ -100,7 +100,9 @@ class Inventory:
         self.devices = devices
 
     def resolve_profiled_population(self):
-        return SimpleNamespace(devices=self.devices)
+        from profiled_population_fixtures import typed_population_from_subjects
+
+        return typed_population_from_subjects(self.devices)
 
 
 def realization():
@@ -157,10 +159,20 @@ def test_identity_and_platform_contract_fail_closed(changed) -> None:
         {"management_service": ManagementService.NETCONF, "port": 830},
     ],
 )
-def test_target_rejects_mismatched_profiled_subject_semantics(changed) -> None:
+def test_target_rejects_mismatched_profiled_subject_semantics(
+    changed, tmp_path
+) -> None:
     target = targets_from_inventory(Inventory())[0]
     with pytest.raises(ValueError):
-        ObservabilityTarget.model_validate({**target.model_dump(), **changed})
+        candidate = ObservabilityTarget.model_validate(
+            {**target.model_dump(), **changed}
+        )
+        publish_generation(
+            tmp_path / "scope",
+            state=TargetGenerationState.ACTIVE,
+            targets=(candidate, *targets_from_inventory(Inventory())[1:]),
+            realization=realization(),
+        )
 
 
 def test_file_sd_keeps_route_private_and_identity_stable() -> None:
@@ -201,7 +213,7 @@ def test_active_generation_is_canonical_private_and_digest_bound(
         now=now,
     )
     assert read_generation(root, now=now) == generation
-    assert generation.schema_version == "2"
+    assert generation.schema_version == "3"
     assert generation.expires_at == now + timedelta(minutes=15)
     assert generation.failure_classification is None
     for path in (

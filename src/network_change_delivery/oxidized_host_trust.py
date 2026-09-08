@@ -16,25 +16,20 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from network_change_delivery.profile_inventory import ProfiledLogicalName
 from network_change_delivery.profiled_live_cml import (
-    ACCESS_NODE_ID,
-    CORE_NODE_ID,
-    JUNOS_NODE_ID,
+    CURRENT_LIVE_REALIZATION,
     LIVE_LAB_ID,
-    TRANSIT_NODE_ID,
+    ProfiledLiveRealizationCatalog,
 )
 
 EXPECTED_HOSTS = {
-    "netbox-device-1": "192.168.4.14",
-    "netbox-device-2": "192.168.4.20",
-    "netbox-device-8": "192.168.4.16",
-    "netbox-device-9": "192.168.4.17",
+    f"netbox-device-{a.device_id}": a.management_address
+    for a in CURRENT_LIVE_REALIZATION.anchors
 }
 EXPECTED_CML_NODE_IDS = {
-    "netbox-device-1": CORE_NODE_ID,
-    "netbox-device-2": JUNOS_NODE_ID,
-    "netbox-device-8": TRANSIT_NODE_ID,
-    "netbox-device-9": ACCESS_NODE_ID,
+    f"netbox-device-{a.device_id}": a.cml_node_id
+    for a in CURRENT_LIVE_REALIZATION.anchors
 }
 SUPPORTED_KEY_ALGORITHMS = frozenset(
     {
@@ -58,17 +53,10 @@ class OxidizedHostTrustError(ValueError):
 class HostTrustNode(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    node: Literal[
-        "netbox-device-1",
-        "netbox-device-2",
-        "netbox-device-8",
-        "netbox-device-9",
-    ]
-    stable_name: Literal["core-02", "edge-junos-01", "transit-ios-01", "access-sw-01"]
+    node: str = Field(pattern=r"^netbox-device-[1-9][0-9]*$", max_length=64)
+    stable_name: ProfiledLogicalName
     cml_node_id: str
-    management_ip: Literal[
-        "192.168.4.14", "192.168.4.20", "192.168.4.16", "192.168.4.17"
-    ]
+    management_ip: str = Field(pattern=r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$")
     algorithm: Literal[
         "ssh-ed25519",
         "ecdsa-sha2-nistp256",
@@ -91,7 +79,7 @@ class HostTrustMetadata(BaseModel):
     lab_id: str
     enrolled_at: datetime
     known_hosts_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    nodes: tuple[HostTrustNode, ...]
+    nodes: tuple[HostTrustNode, ...] = Field(min_length=1)
 
     @field_validator("lab_id")
     @classmethod
@@ -159,39 +147,44 @@ def _fingerprint(encoded_key: str) -> str:
     return f"SHA256:{digest}"
 
 
-def parse_known_hosts(value: bytes) -> dict[str, tuple[str, str]]:
+def parse_known_hosts(
+    value: bytes, *, catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION
+) -> dict[str, tuple[str, str]]:
     """Return exact host -> (algorithm, fingerprint), never key bytes."""
     try:
         text = value.decode("ascii")
     except UnicodeDecodeError:
         raise OxidizedHostTrustError("Oxidized known-host file rejected") from None
+    addresses = {a.management_address for a in catalog.anchors}
     parsed: dict[str, tuple[str, str]] = {}
     for line in text.splitlines():
         fields = line.split()
         if len(fields) != 3:
             raise OxidizedHostTrustError("Oxidized known-host file rejected")
         host, algorithm, encoded = fields
-        if (
-            host not in EXPECTED_HOSTS.values()
-            or algorithm not in SUPPORTED_KEY_ALGORITHMS
-        ):
+        if host not in addresses or algorithm not in SUPPORTED_KEY_ALGORITHMS:
             raise OxidizedHostTrustError("Oxidized known-host identity rejected")
         if host in parsed:
             raise OxidizedHostTrustError("Oxidized known-host identity rejected")
         parsed[host] = (algorithm, _fingerprint(encoded))
-    if set(parsed) != set(EXPECTED_HOSTS.values()):
+    if set(parsed) != set(addresses):
         raise OxidizedHostTrustError("Oxidized known-host population rejected")
     return parsed
 
 
-def _validate_host_trust(root: Path, *, reject_ambiguity: bool) -> HostTrustMetadata:
+def _validate_host_trust(
+    root: Path,
+    *,
+    reject_ambiguity: bool,
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION,
+) -> HostTrustMetadata:
     _validate_root(root)
     if reject_ambiguity and (
         (root / AMBIGUITY_NAME).exists() or (root / AMBIGUITY_NAME).is_symlink()
     ):
         raise OxidizedHostTrustError("Oxidized host-trust publication ambiguous")
     known_hosts = _private_file(root / KNOWN_HOSTS_NAME)
-    parsed = parse_known_hosts(known_hosts)
+    parsed = parse_known_hosts(known_hosts, catalog=catalog)
     try:
         metadata = HostTrustMetadata.model_validate_json(
             _private_file(root / METADATA_NAME)
@@ -208,33 +201,35 @@ def _validate_host_trust(root: Path, *, reject_ambiguity: bool) -> HostTrustMeta
         )
         for item in metadata.nodes
     }
-    stable_names = {
-        "netbox-device-1": "core-02",
-        "netbox-device-2": "edge-junos-01",
-        "netbox-device-8": "transit-ios-01",
-        "netbox-device-9": "access-sw-01",
-    }
+    anchors = {f"netbox-device-{a.device_id}": a for a in catalog.anchors}
+    stable_names = {node: a.logical_name for node, a in anchors.items()}
+    expected_hosts = {node: a.management_address for node, a in anchors.items()}
+    expected_cml_nodes = {node: a.cml_node_id for node, a in anchors.items()}
     if (
         metadata.lab_id != LIVE_LAB_ID
         or metadata.known_hosts_sha256 != digest
-        or set(expected_nodes) != set(EXPECTED_HOSTS)
-        or len(metadata.nodes) != 4
+        or set(expected_nodes) != set(expected_hosts)
+        or len(metadata.nodes) != len(anchors)
         or any(
             expected_nodes[node] != (stable_names[node], ip, *parsed[ip])
-            for node, ip in EXPECTED_HOSTS.items()
+            for node, ip in expected_hosts.items()
         )
         or any(
-            item.cml_node_id != EXPECTED_CML_NODE_IDS.get(item.node)
+            item.cml_node_id != expected_cml_nodes.get(item.node)
             for item in metadata.nodes
         )
-        or len({item.cml_node_id for item in metadata.nodes}) != 4
+        or len({item.cml_node_id for item in metadata.nodes}) != len(anchors)
     ):
         raise OxidizedHostTrustError("Oxidized host-trust metadata rejected")
     return metadata
 
 
-def validate_host_trust(root: Path = DEFAULT_TRUST_ROOT) -> HostTrustMetadata:
-    return _validate_host_trust(root, reject_ambiguity=True)
+def validate_host_trust(
+    root: Path = DEFAULT_TRUST_ROOT,
+    *,
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION,
+) -> HostTrustMetadata:
+    return _validate_host_trust(root, reject_ambiguity=True, catalog=catalog)
 
 
 def _publish(path: Path, value: bytes) -> None:
@@ -269,10 +264,11 @@ def publish_host_trust(
     nodes: tuple[HostTrustNode, ...],
     root: Path = DEFAULT_TRUST_ROOT,
     now: datetime | None = None,
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_LIVE_REALIZATION,
 ) -> HostTrustMetadata:
     """Durably publish one exact, already CML-anchored trust generation."""
     _validate_root(root, create=True)
-    parsed = parse_known_hosts(known_hosts)
+    parsed = parse_known_hosts(known_hosts, catalog=catalog)
     del parsed
     metadata = HostTrustMetadata(
         lab_id=lab_id,
@@ -285,7 +281,7 @@ def publish_host_trust(
     try:
         _publish(root / KNOWN_HOSTS_NAME, known_hosts)
         _publish(root / METADATA_NAME, metadata.model_dump_json().encode() + b"\n")
-        _validate_host_trust(root, reject_ambiguity=False)
+        _validate_host_trust(root, reject_ambiguity=False, catalog=catalog)
         ambiguity.unlink()
         directory = os.open(root, os.O_RDONLY)
         try:

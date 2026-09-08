@@ -10,7 +10,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from network_change_delivery.oxidized_controller import EXPECTED_NODES, CollectionReady
+from network_change_delivery.oxidized_controller import CollectionReady
 from network_change_delivery.oxidized_history import (
     OXIDIZED_GIT_AUTHOR,
     OXIDIZED_GIT_EMAIL,
@@ -22,6 +22,11 @@ from network_change_delivery.oxidized_host_trust import (
 from network_change_delivery.oxidized_private_paths import (
     ensure_private_directory,
     validate_private_file,
+)
+from network_change_delivery.profile_inventory import (
+    OXIDIZED_COLLECTION_SCOPE,
+    ProfiledPopulationScope,
+    oxidized_scope_nodes,
 )
 
 SERVICE_LABEL = "com.ncdp.oxidized"
@@ -144,13 +149,14 @@ def publish_readiness(
     *,
     trust_path: Path = DEFAULT_TRUST_ROOT,
     now: datetime | None = None,
+    scope: ProfiledPopulationScope = OXIDIZED_COLLECTION_SCOPE,
 ) -> CollectionReady:
     refreshed = now or datetime.now(UTC)
     trust = validate_host_trust(trust_path)
     marker = CollectionReady(
         refreshed_at=refreshed,
         expires_at=refreshed + READINESS_TTL,
-        nodes=tuple(sorted(EXPECTED_NODES)),
+        nodes=oxidized_scope_nodes(scope),
         container_id=container_id,
         host_trust_sha256=trust.known_hosts_sha256,
     )

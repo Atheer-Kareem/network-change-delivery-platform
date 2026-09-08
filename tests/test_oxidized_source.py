@@ -86,7 +86,9 @@ class Inventory:
     def resolve_profiled_population(self):
         if self.error:
             raise self.error
-        return SimpleNamespace(devices=self.devices)
+        from profiled_population_fixtures import typed_population_from_subjects
+
+        return typed_population_from_subjects(self.devices, canonicalize=True)
 
 
 class Secrets:
@@ -157,12 +159,16 @@ def test_identical_source_is_not_republished(tmp_path: Path) -> None:
     ],
 )
 def test_population_must_be_exact(population) -> None:
-    with pytest.raises(OxidizedSourceError, match="population"):
+    with pytest.raises(
+        OxidizedSourceError, match="managed inventory resolution failed"
+    ):
         materialize_oxidized_source(Inventory(population), Secrets(), Path("/tmp/x"))
 
 
 def test_duplicate_identity_is_rejected() -> None:
-    with pytest.raises(OxidizedSourceError, match="population"):
+    with pytest.raises(
+        OxidizedSourceError, match="managed inventory resolution failed"
+    ):
         materialize_oxidized_source(
             Inventory((DEVICES[0], DEVICES[0])), Secrets(), Path("/tmp/x")
         )
@@ -194,13 +200,17 @@ def test_consumer_subject_admission_rejects_mismatched_profiled_subject(
         if candidate.device_identity.endswith(":8")
         else (candidate, *DEVICES[1:])
     )
-    with pytest.raises(OxidizedSourceError, match="profiled subject"):
+    with pytest.raises(
+        OxidizedSourceError, match="managed inventory resolution failed"
+    ):
         materialize_oxidized_source(Inventory(population), Secrets(), tmp_path / "o")
 
 
 def test_unsupported_oxidized_profile_fails_closed(tmp_path: Path) -> None:
     candidate = Device(1, "unsupported-profile", "192.0.2.1")  # type: ignore[arg-type]
-    with pytest.raises(OxidizedSourceError, match="profiled subject"):
+    with pytest.raises(
+        OxidizedSourceError, match="managed inventory resolution failed"
+    ):
         materialize_oxidized_source(
             Inventory((candidate, *DEVICES[1:])), Secrets(), tmp_path / "o"
         )
@@ -215,7 +225,9 @@ def test_non_openbao_reference_is_rejected(tmp_path: Path) -> None:
 
 def test_invalid_ipv4_is_rejected_before_publication(tmp_path: Path) -> None:
     invalid = Device(1, AutomationProfileID.CAT8000V_IOSXE, "not-an-ipv4-address")
-    with pytest.raises(OxidizedSourceError, match="credential loading"):
+    with pytest.raises(
+        OxidizedSourceError, match="managed inventory resolution failed"
+    ):
         materialize_oxidized_source(
             Inventory((invalid, *DEVICES[1:])), Secrets(), tmp_path / "oxidized"
         )

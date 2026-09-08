@@ -38,7 +38,7 @@ authorize exact plan → LIVE trust → durable destination and plan/promotion i
 
 The stable target `netbox:dcim.device:<N>` derives `netbox-device-<N>` through
 existing typed identities; no new instance mapping grants authority. The retained
-controller still admits its current fixed population and enforces readiness,
+controller admits the exact declared Oxidized collection scope and enforces readiness,
 verified container, host trust, loopback API and private metadata-only history.
 An existing baseline is mandatory. Before a possible write, PRE's private
 canonical attempt is create-only, mode 0600, bounded, re-read and target-validated.

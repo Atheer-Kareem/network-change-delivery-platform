@@ -26,15 +26,12 @@ from network_change_delivery.oxidized_private_paths import (
     ensure_private_directory,
     validate_private_file,
 )
-
-EXPECTED_NODES = frozenset(
-    {
-        "netbox-device-1",
-        "netbox-device-2",
-        "netbox-device-8",
-        "netbox-device-9",
-    }
+from network_change_delivery.profile_inventory import (
+    OXIDIZED_COLLECTION_SCOPE,
+    ProfiledPopulationScope,
+    oxidized_scope_nodes,
 )
+
 CONTROL_GROUP = "managed"
 API_MAX_BYTES = 64 * 1024
 HTTP_TIMEOUT = 3.0
@@ -60,15 +57,19 @@ class CollectionReady(BaseModel):
     schema_version: Literal["3"] = "3"
     refreshed_at: datetime
     expires_at: datetime
-    nodes: tuple[
-        Literal[
-            "netbox-device-1",
-            "netbox-device-2",
-            "netbox-device-8",
-            "netbox-device-9",
-        ],
-        ...,
-    ]
+    nodes: tuple[str, ...] = Field(min_length=1)
+
+    @field_validator("nodes")
+    @classmethod
+    def valid_nodes(cls, values):
+        import re
+
+        if len(values) != len(set(values)) or any(
+            not re.fullmatch(r"netbox-device-[1-9][0-9]*", value) for value in values
+        ):
+            raise ValueError("readiness node identities rejected")
+        return values
+
     container_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     service_contract: Literal["configuration-collection"] = "configuration-collection"
     host_trust_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -149,6 +150,7 @@ def read_collection_ready(
     *,
     trust_root: Path = DEFAULT_TRUST_ROOT,
     now: datetime | None = None,
+    scope: ProfiledPopulationScope = OXIDIZED_COLLECTION_SCOPE,
 ) -> CollectionReady:
     ambiguity = path.parent.parent / "control" / "readiness-publication-ambiguous"
     try:
@@ -171,8 +173,8 @@ def read_collection_ready(
     if (
         marker.expires_at <= current
         or marker.refreshed_at > current
-        or set(marker.nodes) != EXPECTED_NODES
-        or len(marker.nodes) != 4
+        or set(marker.nodes) != set(oxidized_scope_nodes(scope))
+        or len(marker.nodes) != len(scope.members)
         or marker.container_id != container_id
         or marker.host_trust_sha256 != trust.known_hosts_sha256
     ):
@@ -190,7 +192,10 @@ class OxidizedController:
         trust_root: Path = DEFAULT_TRUST_ROOT,
         *,
         transport: httpx.BaseTransport | None = None,
+        scope: ProfiledPopulationScope = OXIDIZED_COLLECTION_SCOPE,
     ) -> None:
+        self._scope = scope
+        self._expected_nodes = frozenset(oxidized_scope_nodes(scope))
         self._url = validate_loopback_api_url(api_url)
         self._readiness_path = readiness_path
         self._lock_root = lock_root
@@ -214,8 +219,8 @@ class OxidizedController:
             raise OxidizedControlError("Oxidized node status unavailable") from None
         mapped = {node.name: node for node in nodes}
         if (
-            len(nodes) != 4
-            or set(mapped) != EXPECTED_NODES
+            len(nodes) != len(self._expected_nodes)
+            or set(mapped) != self._expected_nodes
             or any(node.group != CONTROL_GROUP for node in nodes)
         ):
             raise OxidizedControlError("Oxidized node population rejected")
@@ -250,7 +255,7 @@ class OxidizedController:
         self, node: str, *, deadline_seconds: float = DEFAULT_DEADLINE
     ) -> CollectionResult:
         if (
-            node not in EXPECTED_NODES
+            node not in self._expected_nodes
             or deadline_seconds <= 0
             or deadline_seconds > DEFAULT_DEADLINE
         ):
@@ -268,6 +273,7 @@ class OxidizedController:
             read_collection_ready(
                 self._readiness_path,
                 self._container_id,
+                scope=self._scope,
                 trust_root=self._trust_root,
                 now=requested_at,
             )

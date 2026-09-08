@@ -319,6 +319,13 @@ class CmlReadinessProfileID(StrEnum):
     JUNOS_NETCONF = "junos_netconf"
 
 
+class CmlBootPolicy(StrEnum):
+    """Reviewed realization behavior, independent of device instance names."""
+
+    NORMAL = "normal"
+    IOSV_PERSISTENCE_RECYCLE = "iosv_first_boot_hold_60_stop_start"
+
+
 class CmlRealizationProfile(BaseModel):
     """CML-only realization data that is not stable inventory identity."""
 
@@ -331,6 +338,7 @@ class CmlRealizationProfile(BaseModel):
     physical_interface_slots: tuple[CmlPhysicalInterfaceSlot, ...]
     bootstrap_profile: CmlBootstrapProfileID
     readiness_profile: CmlReadinessProfileID
+    boot_policy: CmlBootPolicy = CmlBootPolicy.NORMAL
 
     @model_validator(mode="after")
     def interface_slots_are_unambiguous(self) -> CmlRealizationProfile:
@@ -464,6 +472,7 @@ CML_REALIZATION_PROFILE_CATALOG: Mapping[
             ),
             physical_interface_slots=_slots("Gi0/0", "Gi0/1", "Gi0/2", "Gi0/3"),
             bootstrap_profile=CmlBootstrapProfileID.IOSV_MINIMAL,
+            boot_policy=CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE,
             readiness_profile=CmlReadinessProfileID.IOSV_SSH,
         ),
         CmlRealizationProfileID.IOSVL2_2020: CmlRealizationProfile(

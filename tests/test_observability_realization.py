@@ -260,7 +260,7 @@ def test_exact_realization_admission_is_digest_bound_and_private(
     record = admit(client, now)
     client.close()
     assert record.expires_at == now + ADMISSION_TTL
-    assert record.schema_version == "3"
+    assert record.schema_version == "4"
     assert record.lab_id == LAB
     assert record.lab_title == "NCDP Live"
     assert record.lab_state == "STARTED"

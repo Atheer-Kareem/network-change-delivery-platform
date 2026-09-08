@@ -8,22 +8,26 @@ from typing import cast
 
 import httpx
 import pytest
+from test_profiled_realization import inventory_devices
 
 import network_change_delivery.profiled_staging_cml as staging_cml
 from network_change_delivery.architecture_contracts import (
     CML_REALIZATION_PROFILE_CATALOG,
 )
 from network_change_delivery.profiled_staging import (
+    CURRENT_STAGING_TOPOLOGY,
     ProfiledStagingAmbiguousError,
     ProfiledStagingError,
 )
 from network_change_delivery.profiled_staging_cml import (
-    _LINK_SLOTS,
+    ProfiledStagingCmlProfileRecycler,
     ProfiledStagingCmlReader,
-    ProfiledStagingCmlTransitRecycler,
     admit_created_realization,
     admit_no_staging_collision,
+    staging_link_slots,
 )
+
+_LINK_SLOTS = staging_link_slots(inventory_devices(), CURRENT_STAGING_TOPOLOGY)
 
 LAB_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
@@ -139,26 +143,12 @@ def outputs(reader: Reader):
     }
 
 
-def _admit_fixture_addresses(monkeypatch, devices) -> None:
-    monkeypatch.setattr(
-        staging_cml,
-        "STAGING_MANAGEMENT_ADDRESSES",
-        {
-            str(device.logical_name): str(
-                device.management_endpoints.staging.binding.l3_endpoint.address.ip
-            )
-            for device in devices
-        },
-    )
-
-
 def test_precreate_rejects_existing_staging_lab(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from test_profiled_realization import inventory_devices
 
     devices = inventory_devices()
-    _admit_fixture_addresses(monkeypatch, devices)
     monkeypatch.setattr(
         staging_cml,
         "_icmp_address_is_active",
@@ -176,7 +166,6 @@ def test_precreate_rejects_icmp_responsive_endpoint_with_closed_tcp(
     from test_profiled_realization import inventory_devices
 
     devices = inventory_devices()
-    _admit_fixture_addresses(monkeypatch, devices)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -197,7 +186,6 @@ def test_precreate_rejects_tcp_responsive_staging_endpoint(
     from test_profiled_realization import inventory_devices
 
     devices = inventory_devices()
-    _admit_fixture_addresses(monkeypatch, devices)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -221,7 +209,6 @@ def test_precreate_accepts_fully_inactive_staging_endpoints(
     from test_profiled_realization import inventory_devices
 
     devices = inventory_devices()
-    _admit_fixture_addresses(monkeypatch, devices)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -241,7 +228,6 @@ def test_precreate_does_not_treat_icmp_probe_failure_as_occupancy(
     from test_profiled_realization import inventory_devices
 
     devices = inventory_devices()
-    _admit_fixture_addresses(monkeypatch, devices)
 
     def timed_out(*_args, **_kwargs):
         raise subprocess.TimeoutExpired("ping", 0.5)
@@ -254,11 +240,18 @@ def test_precreate_does_not_treat_icmp_probe_failure_as_occupancy(
     admit_no_staging_collision(cast(object, Reader(title="")), devices)
 
 
-def test_precreate_rejects_noncanonical_staging_endpoint() -> None:
+def test_precreate_rejects_wrong_scope_before_endpoint_probe(monkeypatch) -> None:
     from test_profiled_realization import inventory_devices
 
-    with pytest.raises(ProfiledStagingError, match="endpoint rejected"):
-        admit_no_staging_collision(cast(object, Reader(title="")), inventory_devices())
+    monkeypatch.setattr(
+        staging_cml,
+        "_icmp_address_is_active",
+        lambda *_a, **_k: pytest.fail("no probe before scope admission"),
+    )
+    with pytest.raises(ValueError, match="scope"):
+        admit_no_staging_collision(
+            cast(object, Reader(title="")), inventory_devices()[:-1]
+        )
 
 
 @pytest.mark.parametrize("first_status", [404, 405])
@@ -522,12 +515,12 @@ def test_transit_recycler_mutates_only_exact_iosv_once(
         transport=httpx.MockTransport(handler),
         trust_env=False,
     )
-    recycler = ProfiledStagingCmlTransitRecycler(client)
+    recycler = ProfiledStagingCmlProfileRecycler(client)
 
     evidence = recycler.recycle(
         run_id="run-001",
         observed=observed,
-        devices=devices,
+        device=devices[2],
     )
 
     put_paths = [path for method, path in calls if method == "PUT"]
@@ -537,7 +530,7 @@ def test_transit_recycler_mutates_only_exact_iosv_once(
         f"/api/v0/labs/{LAB_ID}/nodes/node-transit/state/start",
     ]
     assert clock.now == 60
-    assert evidence.identity == ("staging-transit-recycle:run-001:transit-ios-01")
+    assert evidence.identity == ("staging-profile-recycle:run-001:transit-ios-01")
     assert evidence.digest.startswith("sha256:")
 
 
@@ -570,7 +563,7 @@ def test_transit_recycler_rejects_profile_mismatch_before_mutation(
     monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
     monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
 
-    recycler = ProfiledStagingCmlTransitRecycler(
+    recycler = ProfiledStagingCmlProfileRecycler(
         httpx.Client(
             base_url="https://cml.invalid",
             transport=httpx.MockTransport(handler),
@@ -585,7 +578,7 @@ def test_transit_recycler_rejects_profile_mismatch_before_mutation(
         recycler.recycle(
             run_id="run-001",
             observed=observed,
-            devices=devices,
+            device=devices[2],
         )
 
     assert "PUT" not in calls
@@ -635,7 +628,7 @@ def test_transit_recycler_uncertain_stop_is_not_replayed(
     monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
     monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
 
-    recycler = ProfiledStagingCmlTransitRecycler(
+    recycler = ProfiledStagingCmlProfileRecycler(
         httpx.Client(
             base_url="https://cml.invalid",
             transport=httpx.MockTransport(handler),
@@ -650,7 +643,7 @@ def test_transit_recycler_uncertain_stop_is_not_replayed(
         recycler.recycle(
             run_id="run-001",
             observed=observed,
-            devices=devices,
+            device=devices[2],
         )
 
     assert stop_calls == 1
@@ -706,7 +699,7 @@ def test_transit_recycler_uncertain_start_is_reconciled_without_replay(
     monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
     monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
 
-    recycler = ProfiledStagingCmlTransitRecycler(
+    recycler = ProfiledStagingCmlProfileRecycler(
         httpx.Client(
             base_url="https://cml.invalid",
             transport=httpx.MockTransport(handler),
@@ -717,11 +710,11 @@ def test_transit_recycler_uncertain_start_is_reconciled_without_replay(
     evidence = recycler.recycle(
         run_id="run-001",
         observed=observed,
-        devices=devices,
+        device=devices[2],
     )
 
     assert start_calls == 1
-    assert evidence.identity == ("staging-transit-recycle:run-001:transit-ios-01")
+    assert evidence.identity == ("staging-profile-recycle:run-001:transit-ios-01")
 
 
 def test_transit_recycler_http_500_is_ambiguous_and_not_replayed(
@@ -765,7 +758,7 @@ def test_transit_recycler_http_500_is_ambiguous_and_not_replayed(
     monkeypatch.setattr(staging_cml.time, "monotonic", clock.monotonic)
     monkeypatch.setattr(staging_cml.time, "sleep", clock.sleep)
 
-    recycler = ProfiledStagingCmlTransitRecycler(
+    recycler = ProfiledStagingCmlProfileRecycler(
         httpx.Client(
             base_url="https://cml.invalid",
             transport=httpx.MockTransport(handler),
@@ -780,7 +773,7 @@ def test_transit_recycler_http_500_is_ambiguous_and_not_replayed(
         recycler.recycle(
             run_id="run-001",
             observed=observed,
-            devices=devices,
+            device=devices[2],
         )
 
     assert stop_calls == 1
@@ -836,12 +829,12 @@ def test_early_recycle_waits_for_transit_not_slow_lab(monkeypatch, first_boot_se
             },
         )
 
-    recycler = ProfiledStagingCmlTransitRecycler(
+    recycler = ProfiledStagingCmlProfileRecycler(
         httpx.Client(
             base_url="https://cml.invalid", transport=httpx.MockTransport(handler)
         )
     )
-    recycler.recycle(run_id="run-001", observed=observed, devices=devices)
+    recycler.recycle(run_id="run-001", observed=observed, device=devices[2])
     assert puts == [
         (
             f"/api/v0/labs/{LAB_ID}/nodes/node-transit/state/stop",
@@ -852,8 +845,8 @@ def test_early_recycle_waits_for_transit_not_slow_lab(monkeypatch, first_boot_se
             first_boot_seconds + 60,
         ),
     ]
-    assert recycler.timings_seconds["transit_first_boot"] == first_boot_seconds
-    assert recycler.timings_seconds["transit_persistence"] == 60
+    assert recycler.timings_seconds["recycle_first_boot"] == first_boot_seconds
+    assert recycler.timings_seconds["recycle_persistence"] == 60
 
 
 @pytest.mark.parametrize("state", ["STARTED", "STOPPED", "UNKNOWN", None])
@@ -877,12 +870,12 @@ def test_unready_initial_transit_never_gets_recycled(monkeypatch, state):
             },
         )
 
-    recycler = ProfiledStagingCmlTransitRecycler(
+    recycler = ProfiledStagingCmlProfileRecycler(
         httpx.Client(
             base_url="https://cml.invalid", transport=httpx.MockTransport(handler)
         )
     )
     with pytest.raises(ProfiledStagingError):
-        recycler.recycle(run_id="run-001", observed=observed, devices=devices)
+        recycler.recycle(run_id="run-001", observed=observed, device=devices[2])
     assert clock.now == (300 if state == "STARTED" else 0)
-    assert set(recycler.timings_seconds) == {"transit_first_boot"}
+    assert set(recycler.timings_seconds) == {"recycle_first_boot"}

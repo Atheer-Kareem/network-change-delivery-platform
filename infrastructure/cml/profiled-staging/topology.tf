@@ -1,15 +1,6 @@
-locals {
-  profiled_staging_positions = {
-    core_02        = { x = 100, y = -400 }
-    edge_junos_01  = { x = 400, y = -200 }
-    transit_ios_01 = { x = 150, y = 100 }
-    access_sw_01   = { x = 450, y = 100 }
-  }
-}
-
 resource "cml2_lab" "profiled_staging" {
   title       = "NCDP Staging ${var.staging_run_id}"
-  description = "Disposable profiled exact-four read-only integration realization."
+  description = "Disposable scoped read-only integration realization."
   notes       = "Terraform owns only this run-scoped CML realization."
 }
 
@@ -40,7 +31,7 @@ resource "cml2_node" "management_switch" {
 }
 
 resource "cml2_node" "device" {
-  for_each        = toset(["core_02", "edge_junos_01", "transit_ios_01", "access_sw_01"])
+  for_each        = toset(nonsensitive(keys(var.devices)))
   lab_id          = cml2_lab.profiled_staging.id
   label           = replace(each.key, "_", "-")
   nodedefinition  = var.devices[each.key].node_definition
@@ -57,8 +48,8 @@ resource "cml2_node" "device" {
   cpus = var.devices[each.key].cpu_cores
   ram  = var.devices[each.key].ram_mb
   tags = ["profiled-staging-device"]
-  x    = local.profiled_staging_positions[each.key].x
-  y    = local.profiled_staging_positions[each.key].y
+  x    = nonsensitive(var.devices[each.key].layout_x)
+  y    = nonsensitive(var.devices[each.key].layout_y)
 }
 
 resource "cml2_link" "system_bridge_management" {
@@ -69,68 +60,22 @@ resource "cml2_link" "system_bridge_management" {
   slot_b = 0
 }
 
-resource "cml2_link" "management_core" {
-  lab_id = cml2_lab.profiled_staging.id
-  node_a = cml2_node.management_switch.id
-  slot_a = 1
-  node_b = cml2_node.device["core_02"].id
-  slot_b = 0
+resource "cml2_link" "management" {
+  for_each = toset(nonsensitive(keys(var.devices)))
+  lab_id   = cml2_lab.profiled_staging.id
+  node_a   = cml2_node.management_switch.id
+  slot_a   = nonsensitive(var.devices[each.key].management_switch_slot)
+  node_b   = cml2_node.device[each.key].id
+  slot_b   = nonsensitive(var.devices[each.key].management_slot)
 }
 
-resource "cml2_link" "management_junos" {
-  lab_id = cml2_lab.profiled_staging.id
-  node_a = cml2_node.management_switch.id
-  slot_a = 2
-  node_b = cml2_node.device["edge_junos_01"].id
-  slot_b = 0
-}
-
-resource "cml2_link" "management_transit" {
-  lab_id = cml2_lab.profiled_staging.id
-  node_a = cml2_node.management_switch.id
-  slot_a = 3
-  node_b = cml2_node.device["transit_ios_01"].id
-  slot_b = 0
-}
-
-resource "cml2_link" "management_access" {
-  lab_id = cml2_lab.profiled_staging.id
-  node_a = cml2_node.management_switch.id
-  slot_a = 4
-  node_b = cml2_node.device["access_sw_01"].id
-  slot_b = 0
-}
-
-resource "cml2_link" "core_junos" {
-  lab_id = cml2_lab.profiled_staging.id
-  node_a = cml2_node.device["core_02"].id
-  slot_a = 3
-  node_b = cml2_node.device["edge_junos_01"].id
-  slot_b = 1
-}
-
-resource "cml2_link" "core_transit" {
-  lab_id = cml2_lab.profiled_staging.id
-  node_a = cml2_node.device["core_02"].id
-  slot_a = 1
-  node_b = cml2_node.device["transit_ios_01"].id
-  slot_b = 1
-}
-
-resource "cml2_link" "junos_transit" {
-  lab_id = cml2_lab.profiled_staging.id
-  node_a = cml2_node.device["edge_junos_01"].id
-  slot_a = 2
-  node_b = cml2_node.device["transit_ios_01"].id
-  slot_b = 2
-}
-
-resource "cml2_link" "core_access" {
-  lab_id = cml2_lab.profiled_staging.id
-  node_a = cml2_node.device["core_02"].id
-  slot_a = 2
-  node_b = cml2_node.device["access_sw_01"].id
-  slot_b = 1
+resource "cml2_link" "data" {
+  for_each = var.data_links
+  lab_id   = cml2_lab.profiled_staging.id
+  node_a   = cml2_node.device[each.value.node_a].id
+  slot_a   = each.value.slot_a
+  node_b   = cml2_node.device[each.value.node_b].id
+  slot_b   = each.value.slot_b
 }
 
 resource "cml2_lifecycle" "profiled_staging" {
@@ -149,13 +94,7 @@ resource "cml2_lifecycle" "profiled_staging" {
 
   depends_on = [
     cml2_link.system_bridge_management,
-    cml2_link.management_core,
-    cml2_link.management_junos,
-    cml2_link.management_transit,
-    cml2_link.management_access,
-    cml2_link.core_junos,
-    cml2_link.core_transit,
-    cml2_link.junos_transit,
-    cml2_link.core_access,
+    cml2_link.management,
+    cml2_link.data,
   ]
 }

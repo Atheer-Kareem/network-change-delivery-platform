@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 
 from network_change_delivery.openbao_oxidized_bootstrap import OpenBaoOxidizedBootstrap
-from network_change_delivery.oxidized_controller import EXPECTED_NODES
 from network_change_delivery.oxidized_host_trust import (
     DEFAULT_TRUST_ROOT,
     validate_host_trust,
@@ -30,7 +29,12 @@ from network_change_delivery.oxidized_source import (
     OxidizedSourcePublicationAmbiguousError,
     materialize_oxidized_source,
 )
-from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
+from network_change_delivery.profile_inventory import (
+    OXIDIZED_COLLECTION_SCOPE,
+    NetBoxProfileInventoryProvider,
+    ProfiledPopulationScope,
+    oxidized_scope_nodes,
+)
 from network_change_delivery.secrets import OpenBaoSecretProvider
 
 STATE_ROOT = Path("/Users/netdevops/.local/state/ncdp/oxidized")
@@ -129,7 +133,7 @@ def _remove_owned(inspect: dict[str, object], image_id: str) -> None:
     _docker("rm", "--force", CONTAINER_NAME)
 
 
-def _wait_nodes() -> None:
+def _wait_nodes(scope: ProfiledPopulationScope = OXIDIZED_COLLECTION_SCOPE) -> None:
     import httpx
 
     with httpx.Client(timeout=2, follow_redirects=False, trust_env=False) as client:
@@ -144,8 +148,8 @@ def _wait_nodes() -> None:
                 if (
                     isinstance(data, list)
                     and {item.get("name") for item in data if isinstance(item, dict)}
-                    == EXPECTED_NODES
-                    and len(data) == 4
+                    == set(oxidized_scope_nodes(scope))
+                    and len(data) == len(scope.members)
                     and all(
                         item.get("group") == "managed"
                         and isinstance(item.get("status"), str)

@@ -164,19 +164,12 @@ def device(
     )
 
 
-def population() -> SimpleNamespace:
-    return SimpleNamespace(
-        devices=(
-            device(1, "core-02", AutomationProfileID.CAT8000V_IOSXE, NetworkOS.IOSXE),
-            device(
-                2, "edge-junos-01", AutomationProfileID.VJUNOS_ROUTER, NetworkOS.JUNOS
-            ),
-            device(
-                8, "transit-ios-01", AutomationProfileID.IOSV_159_3_M12, NetworkOS.IOS
-            ),
-            device(9, "access-sw-01", AutomationProfileID.IOSVL2_2020, NetworkOS.IOS),
-        )
-    )
+def population():
+    from test_profiled_realization import inventory_devices
+
+    from network_change_delivery.profile_inventory import ProfiledInventoryPopulation
+
+    return ProfiledInventoryPopulation(devices=inventory_devices())
 
 
 def desired() -> RoutedUnderlayDesiredState:

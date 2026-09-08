@@ -11,6 +11,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from network_change_delivery.profiled_staging import (
+    CURRENT_STAGING_TOPOLOGY,
     PROFILED_STAGING_TERRAFORM_ADDRESSES,
     ProfiledStagingAmbiguousError,
     ProfiledStagingError,
@@ -39,6 +40,10 @@ def load_script(name: str) -> ModuleType:
 def operations(tmp_path: Path):
     module = load_script("run_profiled_cml_staging")
     value = module.LocalTerraformOperations.__new__(module.LocalTerraformOperations)
+    value.scope = CURRENT_STAGING_TOPOLOGY.scope
+    value.topology = CURRENT_STAGING_TOPOLOGY
+    value._expected_addresses = PROFILED_STAGING_TERRAFORM_ADDRESSES
+    value.recycles = ()
     value._cml_token = None
     value._run_id = "run-001"
     value._run_directory = tmp_path
@@ -80,6 +85,7 @@ def _write_valid_recovery_inputs(run: Path, run_id: str) -> Path:
             "staging_run_id": run_id,
             "lifecycle_state": "DEFINED_ON_CORE",
             "devices": values,
+            "data_links": CURRENT_STAGING_TOPOLOGY.terraform_links(),
         },
     )
     return path
@@ -90,6 +96,10 @@ def _readiness_operations(tmp_path: Path):
 
     module = load_script("run_profiled_cml_staging")
     value = module.LocalTerraformOperations.__new__(module.LocalTerraformOperations)
+    value.scope = CURRENT_STAGING_TOPOLOGY.scope
+    value.topology = CURRENT_STAGING_TOPOLOGY
+    value._expected_addresses = PROFILED_STAGING_TERRAFORM_ADDRESSES
+    value.recycles = ()
     value._cml_token = None
     value._run_id = "run-001"
     value._run_directory = tmp_path
@@ -909,6 +919,7 @@ def test_recovery_executes_exact_retained_subset_without_openbao(
             "staging_run_id": "run-001",
             "lifecycle_state": "DEFINED_ON_CORE",
             "devices": values,
+            "data_links": CURRENT_STAGING_TOPOLOGY.terraform_links(),
         },
     )
     retained = set(tuple(PROFILED_STAGING_TERRAFORM_ADDRESSES)[:4])
@@ -973,11 +984,11 @@ def test_transit_recycle_occurs_after_start_and_before_readiness() -> None:
     admission = source.index("observed = admit_created_realization(")
     start = source.index("self.lab_start_evidence = starter.start(")
     attempted = source.index(
-        'self.transit_recycle_outcome = "attempted"',
+        "self.recycles += (attempt,)",
         start,
     )
     recycle = source.index(
-        "self.transit_recycle_evidence = recycler.recycle(",
+        "evidence = recycler.recycle(",
         attempted,
     )
     readiness = source.index(
@@ -1024,7 +1035,7 @@ def test_runtime_reaches_readiness_only_after_successful_recycle(
         lambda **_: SimpleNamespace(close=lambda: None),
     )
 
-    def admit(*_):
+    def admit(*_, **_kwargs):
         calls.append("admit_realization")
         return observed
 
@@ -1054,17 +1065,17 @@ def test_runtime_reaches_readiness_only_after_successful_recycle(
         return observed.topology_evidence
 
     def readiness(*_):
-        assert value.transit_recycle_outcome == "succeeded"
+        assert value.recycles[0].outcome == "succeeded"
         calls.append("readiness")
         raise ProfiledStagingError("test stops before real readiness")
 
     monkeypatch.setattr(
-        module.ProfiledStagingCmlTransitRecycler,
+        module.ProfiledStagingCmlProfileRecycler,
         "from_environment",
         lambda **_: SimpleNamespace(
             recycle=recycle,
             close=lambda: None,
-            timings_seconds={"transit_first_boot": 30},
+            timings_seconds={"recycle_first_boot": 30},
         ),
     )
     monkeypatch.setattr(value, "_wait_readiness", readiness)
@@ -1074,5 +1085,5 @@ def test_runtime_reaches_readiness_only_after_successful_recycle(
         [] if start_fails else ["recycle"] + ([] if recycle_fails else ["readiness"])
     )
     if not start_fails:
-        assert value.timings_seconds["transit_first_boot"] == 30
+        assert value.timings_seconds["recycle_first_boot"] == 30
     assert value.start_stage == ("attempted" if start_fails else "succeeded")

@@ -264,7 +264,25 @@ def prerequisites(context):
 def verify_human_dependency():
     """Trust the scheduler's unblocker identity only with the exact single block DAG."""
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
-    steps = pipeline["steps"]
+    top_level = pipeline["steps"]
+    groups = [step for step in top_level if "steps" in step]
+    if len(groups) != 1:
+        raise ValueError("human block group rejected")
+    group = groups[0]
+    if (
+        group.get("key") != "runtime-delivery"
+        or "group" not in group
+        or "skip" in group
+        or "if" in group
+        or [step.get("key") for step in group["steps"]] != list(MAIN_KEYS)
+        or any("steps" in step for step in group["steps"])
+    ):
+        raise ValueError("human block group rejected")
+    # The group schedules the fieldless block together with its whole delivery tail.
+    # Receipts remain independently mandatory; path scheduling grants no authority.
+    steps = [step for step in top_level if step is not group] + group["steps"]
+    if any(step.get("key") == group["key"] for step in steps):
+        raise ValueError("human block group rejected")
     indexed = {step["key"]: step for step in steps}
     if len(indexed) != len(steps) or [s["key"] for s in steps if "block" in s] != [
         MAIN_KEYS[2]

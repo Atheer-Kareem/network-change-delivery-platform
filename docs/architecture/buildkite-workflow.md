@@ -10,7 +10,8 @@ converted into successful execution.
 These are Buildkite's documented [dependency semantics](https://buildkite.com/docs/pipelines/configure/depends-on)
 and [wait semantics](https://buildkite.com/docs/pipelines/configure/step-types/wait-step).
 
-All 13 engineering checks remain visible, without path filtering. Automatic
+Nine ordinary engineering checks remain unconditional; four runtime-specific
+checks share the runtime scheduling boundary described below. Automatic
 and manual command retries are disabled. A corrected or uncertain attempt
 requires a new commit/build and any independently required reconciliation.
 
@@ -25,16 +26,61 @@ Engineering validation → validation-complete → Batfish (PR path ends here te
 ```
 
 Canonical PRs temporarily skip CML and cannot schedule the write tail.
-Non-main development builds also skip CML. Canonical non-PR main builds retain
-the complete graph and real same-build CML success prerequisite. The approved
+Non-main development builds also skip CML. Runtime-relevant canonical non-PR main
+builds retain the complete graph and real same-build CML success prerequisite.
+The approved
 [temporary exception and mandatory restoration condition](../roadmap.md#temporary-development-workflow-exceptions)
 are tracked in the capability ledger: restore PR staging on user request or
 before final integrated roadmap acceptance. No success evidence is synthesized
 for skipped staging. Batfish independently rejects arbitrary
 repositories/non-PR branches; its historical key remains
-`pr-batfish-assurance`, but its visible label is general. The bootstrap simply
-uploads the reviewed `.buildkite/pipeline.yml`. There is no separate demo
+`pr-batfish-assurance`, but its visible label is general. The bootstrap uploads
+the reviewed `.buildkite/pipeline.yml` with
+`buildkite-agent pipeline upload --fetch-diff-base`. There is no separate demo
 projection, flag, or renderer.
+
+## Non-runtime scheduling
+
+A change is non-runtime only when every changed path belongs to this reviewed
+exclusion set: `docs/**`, `README.md`, `AGENTS.md`, `.github/CODEOWNERS`,
+`.github/pull_request_template.md`, `tests/**`, or `.gitignore`. All other paths,
+including new top-level paths and other `.github/**` files, are runtime-relevant.
+Mixed changes run the full pipeline. Runtime-affecting content must not be hidden
+under an excluded path; the [repository instructions](../../AGENTS.md) retain
+that review obligation.
+
+The quick path keeps the validation environment, committed diff integrity, Ruff
+lint/format, full Python tests, Ansible lint, package build, Buildkite
+parse/secret scan, NCDP pipeline contract, and `validation-complete`. It skips
+Terraform staging validation, SNMP generation, isolated observability runtime,
+synthetic SNMPv3, Batfish, CML, and all five delivery steps, including the human
+block. This applies to non-runtime PRs and main merges alike.
+
+One YAML `runtime_changes` anchor uses `include: "**"` and the exact exclusion
+set above. The four runtime validations, Batfish, CML and `runtime-delivery`
+group all use that same condition. The group contains the unchanged five-step
+schema-v2 delivery chain because the agent evaluates `if_changed` on commands
+and groups, not bare block steps. The protected DAG validator explicitly admits
+this single group and still requires the exact fieldless block/deploy chain.
+No component-specific filter may omit a required validation receipt while
+promotion remains eligible. All 13 receipts are still required for a real
+promotion; skipped work produces no replacement receipt.
+
+Path scheduling is additional to the existing branch/PR conditions. Runtime PRs
+run all validation and Batfish; CML retains exactly
+`build.branch == "main" && build.pull_request.id == null`. Runtime main merges
+retain real CML and protected delivery eligibility. Retries, queues, child step
+keys/dependencies, soft-fail presentation and independent authorization are
+unchanged.
+
+The installed agent must evaluate changes during upload with `--fetch-diff-base`.
+PR comparison uses the complete branch diff; ordinary main comparison uses the
+latest merge against its parent when fetched base equals HEAD. This assumes main
+advances through one reviewed merge at a time. If Git/base evaluation is
+unavailable, the agent leaves all runtime steps eligible. Parser regressions
+exercise actual exclusions, local PR/main diff bases, and unavailable Git/refs.
+The bootstrap is read-only verified externally; no Buildkite setting change is
+part of this repair. See the [external bootstrap contract](../acceptance/buildkite-external-setup.md#pipeline-bootstrap-and-change-detection).
 
 ## Truthful continuation, independent authorization
 

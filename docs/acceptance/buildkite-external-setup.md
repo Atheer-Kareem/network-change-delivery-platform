@@ -2,6 +2,11 @@
 
 ## Pipeline bootstrap and change detection
 
+The Increment 7 history below is retained. Current schema-v2 scheduling and
+receipt requirements are defined in the
+[current workflow](../architecture/buildkite-workflow.md#non-runtime-scheduling);
+its quick path retains ordinary engineering checks and skips the four runtime validations together with assurance and delivery.
+
 The Buildkite pipeline settings must use this bootstrap command:
 
 ```sh

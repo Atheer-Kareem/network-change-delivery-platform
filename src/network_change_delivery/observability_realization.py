@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import ssl
+import stat
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -403,20 +404,53 @@ def publish_admission(root: Path, admission: RealizationAdmission) -> Path:
     return path
 
 
+def _read_admission_identity(
+    root: Path,
+    *,
+    catalog: ProfiledLiveRealizationCatalog,
+) -> RealizationAdmission:
+    try:
+        validate_observability_root(root)
+        for directory in (root, root / "operator"):
+            metadata = directory.lstat()
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o700
+            ):
+                raise ObservabilityPrivatePathError("realization directory rejected")
+        content = validate_private_file(root / "operator/realization.json")
+        assert content is not None
+        admission = RealizationAdmission.model_validate_json(content)
+        if admission.catalog != catalog:
+            raise ValueError("observability realization scope rejected")
+    except (ValueError, OSError, TypeError):
+        raise ObservabilityRealizationError("realization admission rejected") from None
+    return admission
+
+
+def read_admission_for_refresh(
+    root: Path,
+    *,
+    catalog: ProfiledLiveRealizationCatalog = CURRENT_OBSERVABILITY_REALIZATION,
+) -> RealizationAdmission:
+    """Read validated retained identity only, never current target authority.
+
+    Expiry may have elapsed. The reconciler must freshly admit this exact lab
+    and node set through CML before publishing new admission, targets or readiness.
+    Invalid, missing or historical-version state cannot bootstrap authority.
+    """
+    return _read_admission_identity(root, catalog=catalog)
+
+
 def read_admission(
     root: Path,
     *,
     now: datetime | None = None,
     catalog: ProfiledLiveRealizationCatalog = CURRENT_OBSERVABILITY_REALIZATION,
 ) -> RealizationAdmission:
-    try:
-        content = validate_private_file(root / "operator/realization.json")
-        assert content is not None
-        admission = RealizationAdmission.model_validate_json(content)
-        if admission.catalog != catalog:
-            raise ValueError("observability realization scope rejected")
-    except (ValueError, ObservabilityPrivatePathError):
-        raise ObservabilityRealizationError("realization admission rejected") from None
+    """Read current authority, rejecting expired as well as invalid admission."""
+    admission = _read_admission_identity(root, catalog=catalog)
     current = (now or datetime.now(UTC)).astimezone(UTC)
     if admission.expires_at <= current:
         raise ObservabilityRealizationError("realization admission expired")

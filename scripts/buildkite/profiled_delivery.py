@@ -22,6 +22,9 @@ from network_change_delivery.audit import BuildkiteCorrelation
 from network_change_delivery.audit_store import AuditStore
 from network_change_delivery.inventory import InventoryError
 from network_change_delivery.models import FinalOutcome
+from network_change_delivery.openbao_profiled_deploy_config import (
+    ProtectedRolloutCredentialAuthority,
+)
 from network_change_delivery.profile_inventory import NetBoxProfileInventoryProvider
 from network_change_delivery.profile_read_only_adapter import ProfileReadOnlyAdapter
 from network_change_delivery.profiled_audit import (
@@ -74,8 +77,26 @@ from network_change_delivery.profiled_promotion import (
     ProfiledPlanningPublication,
     ProfiledPromotion,
     authorize,
+    checked_digest,
     digest_bytes,
     promote,
+    verify_validation,
+)
+from network_change_delivery.profiled_rollout import (
+    plan_profiled_rollout,
+    read_profiled_rollout,
+)
+from network_change_delivery.profiled_rollout_intent import (
+    load_committed_rollout_intent,
+)
+from network_change_delivery.profiled_rollout_promotion import (
+    PLAN_TYPES,
+    ROLLOUT_PLANNING_METADATA,
+    ROLLOUT_PROMOTION_BYTES_METADATA,
+    ROLLOUT_PROMOTION_METADATA,
+    RolloutPlanningPublication,
+    admit_rollout_result,
+    promote_rollout,
 )
 from network_change_delivery.secrets import (
     OpenBaoLoginError,
@@ -845,10 +866,128 @@ def evidence_step(context, directory):
     return 3 if failed else 0
 
 
+def rollout_summary(value):
+    lines = [
+        f"Rollout: {value.intent.change_id}",
+        f"Selection count: {len(value.children)}",
+    ]
+    for child in value.children:
+        result = child.result()
+        current = (
+            result.current_description
+            if child.kind == "DEPLOYABLE"
+            else result.observed_description
+        )
+        lines.append(
+            f"{result.target} / {result.device_identity} / {result.interface.name} "
+            f"({result.interface.interface}): {child.kind}; {current} → "
+            f"{result.desired_description}; child digest {result.digest}"
+        )
+    lines.extend(
+        [
+            f"Canaries: {getattr(value, 'canaries', ())}",
+            f"Waves: {getattr(value, 'waves', ())}",
+            f"Parent digest: {value.digest}",
+            "Planning/promotion only: no rollout authorization or execution exists.",
+        ]
+    )
+    return "\n".join(f"- {html.escape(line)}" for line in lines)
+
+
+def rollout_plan_step(context, directory):
+    if context.step != "profiled-rollout-live-plan":
+        raise ValueError("rollout planning step rejected")
+    with plan_boundary("commit/context"):
+        intent = load_committed_rollout_intent(ROOT)
+    # CML's soft-fail UI must not permit new protected collection without receipts.
+    with plan_boundary("commit/context"):
+        receipts, batfish, cml = prerequisites(context)
+        verify_validation(context, receipts)
+        checked_digest(batfish)
+        checked_digest(cml)
+    with plan_boundary("LIVE trust"):
+        validate_profiled_live_host_trust()
+    with plan_boundary("device read-only preflight"):
+        value = plan_profiled_rollout(
+            intent,
+            NetBoxProfileInventoryProvider(),
+            ProtectedRolloutCredentialAuthority(),
+            OpenBaoSecretProvider(),
+            ProfileReadOnlyAdapter(
+                known_hosts=DEFAULT_PROFILED_LIVE_TRUST_ROOT / KNOWN_HOSTS_NAME
+            ),
+            source_commit=context.commit,
+        )
+    with plan_boundary("plan publication"):
+        # Strict dispatch revalidates all original embedded child bytes and digests.
+        raw = value.model_dump_json(indent=2).encode() + b"\n"
+        value = read_profiled_rollout(raw)
+        admit_rollout_result(intent, value, context.commit)
+        kind = "plan" if isinstance(value, PLAN_TYPES) else "compliance"
+        receipt = RolloutPlanningPublication(
+            build_id=context.build_id,
+            commit=context.commit,
+            artifact_kind=kind,
+            parent_schema_version=value.schema_version,
+            artifact_digest=digest_bytes(raw),
+            result_digest=value.digest,
+        )
+        name = artifact_name(context, "rollout-" + kind)
+        write_new(directory / name, raw)
+        upload(context, directory, name)
+        annotate(context, "## Rollout planning\n\n" + rollout_summary(value))
+        publish_metadata(context, ROLLOUT_PLANNING_METADATA, receipt.model_dump_json())
+    return 0
+
+
+def rollout_promotion_step(context, directory):
+    if context.step != "profiled-rollout-promotion":
+        raise ValueError("rollout promotion step rejected")
+    intent = load_committed_rollout_intent(ROOT)
+    receipt = RolloutPlanningPublication.model_validate_json(
+        metadata(context, ROLLOUT_PLANNING_METADATA)
+    )
+    if receipt.build_id != context.build_id or receipt.commit != context.commit:
+        raise ValueError("rollout publication context rejected")
+    raw = download(
+        context,
+        directory,
+        artifact_name(context, "rollout-" + receipt.artifact_kind),
+        "profiled-rollout-live-plan",
+    )
+    parent = receipt.read(context, raw, intent)
+    if not isinstance(parent, PLAN_TYPES):
+        annotate(
+            context, "## Rollout COMPLIANT · no promotion\n\n" + rollout_summary(parent)
+        )
+        return 0
+    value = promote_rollout(
+        context, raw, receipt, *prerequisites(context), intent=intent
+    )
+    name = artifact_name(context, "rollout-promotion")
+    promotion_raw = value.model_dump_json(indent=2).encode() + b"\n"
+    write_new(directory / name, promotion_raw)
+    upload(context, directory, name)
+    annotate(
+        context,
+        "## Rollout promotion · no execution authority\n\n"
+        + rollout_summary(parent)
+        + f"\n\nPromotion digest: `{value.digest}`",
+    )
+    publish_metadata(
+        context, ROLLOUT_PROMOTION_BYTES_METADATA, digest_bytes(promotion_raw)
+    )
+    publish_metadata(context, ROLLOUT_PROMOTION_METADATA, value.digest)
+    return 0
+
+
 def main():
     logging.disable(logging.CRITICAL)
     os.umask(0o077)
-    is_plan = os.environ.get("BUILDKITE_STEP_KEY") == "profiled-live-plan"
+    is_plan = os.environ.get("BUILDKITE_STEP_KEY") in {
+        "profiled-live-plan",
+        "profiled-rollout-live-plan",
+    }
     context = None
     phase = "commit/context"
     try:
@@ -856,13 +995,19 @@ def main():
         checked_command(["scripts/buildkite/verify_commit.sh"])
         handlers = {
             "profiled-live-plan": plan_step,
+            "profiled-rollout-live-plan": rollout_plan_step,
+            "profiled-rollout-promotion": rollout_promotion_step,
             "profiled-promotion": promotion_step,
             "profiled-deploy": deploy_step,
             "profiled-deployment-evidence": evidence_step,
         }
         if context.step not in handlers:
             raise ValueError("unknown profiled command")
-        if context.step in {"profiled-live-plan", "profiled-deploy"}:
+        if context.step in {
+            "profiled-live-plan",
+            "profiled-rollout-live-plan",
+            "profiled-deploy",
+        }:
             phase = "protected environment"
             if is_plan and any(
                 not os.environ.get(key)

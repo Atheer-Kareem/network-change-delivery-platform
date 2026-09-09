@@ -4,7 +4,8 @@ CAP-PROFILED-ROLLOUT is IN PROGRESS under its unchanged [approved
 contract](../roadmap.md#cap-profiled-rollout--bounded-profiled-multi-target-rollout).
 Increments 1 and 2 supply a read-only Python API, immutable planning artifacts
 and composable closed Git-population selector clauses.
-There is no rollout CLI, promotion, authorization, execution or Buildkite path.
+Increment 3 adds [protected planning and parent promotion](profiled-rollout-runtime-planning.md).
+There is no rollout CLI, human authorization or execution path.
 The active single-target intent and current child commands remain unchanged.
 
 ```text
@@ -35,7 +36,9 @@ admitted. Closed selector predicates govern membership; each clause supplies its
 reviewed operation payload. Arbitrary selector/query expressions remain rejected.
 There is no environment, free-text query, discovery or human-block selector.
 The API accepts reviewed data from its caller; it does not establish Git checkout
-or human authorization provenance. That protected integration is pending.
+or human authorization provenance. The protected sibling runtime independently
+loads fixed reviewed Git input; the
+read-only planning API itself does not confer checkout or human authority.
 
 Each member independently needs managed membership, the current explicit
 operation/profile catalog entry, and a positive `RolloutCredentialAdmission`
@@ -49,10 +52,11 @@ credential and deployment checks.
 managed membership != protected credential authority != operation authority != rollout authorization
 ```
 
-The live dedicated Buildkite configuration remains `DEVICE_IDS = (1, 2)`.
-Tests use explicit synthetic decisions for 1/2/8/9; they do not grant or claim
-protected-main access to devices 8/9. The reviewed expansion belongs to later
-protected-runtime integration.
+Increment 3 defines the static protected device set `(1, 2, 8, 9)` in repository
+policy and a `ProtectedRolloutCredentialAuthority` decision provider. Actual
+child secret availability remains independent. Explicitly approved external
+OpenBao/hook activation is now [verified](profiled-rollout-runtime-planning.md#verified-post-review-activation);
+offline tests alone grant no live access. Rollout execution does not exist.
 
 ## Increment 2: closed population selection
 

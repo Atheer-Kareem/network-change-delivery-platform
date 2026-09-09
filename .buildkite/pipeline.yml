@@ -255,6 +255,34 @@ steps:
         allowed: false
         reason: "A new commit/build and explicit recovery of retained state are required."
 
+  - label: "profiled-rollout-live-plan · planning/promotion only"
+    key: profiled-rollout-live-plan
+    depends_on: cml-staging
+    if: build.branch == "main" && build.pull_request.id == null
+    if_changed: *runtime_changes
+    command: .buildkite/scripts/profiled_delivery.sh
+    agents:
+      queue: ncdp-deploy
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+    concurrency: 1
+    concurrency_group: ncdp/profiled-live-delivery
+
+  - label: "profiled-rollout-promotion · planning/promotion only"
+    key: profiled-rollout-promotion
+    depends_on: profiled-rollout-live-plan
+    if: build.branch == "main" && build.pull_request.id == null
+    if_changed: *runtime_changes
+    command: .buildkite/scripts/profiled_delivery.sh
+    agents:
+      queue: ncdp-validation
+    retry:
+      automatic: false
+      manual:
+        allowed: false
+
   # if_changed is evaluated on groups/commands, not bare human blocks.
   - group: "Intent-selected delivery"
     key: runtime-delivery

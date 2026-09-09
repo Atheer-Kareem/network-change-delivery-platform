@@ -294,15 +294,15 @@ def test_authorization_independently_rejects_every_binding(
 @pytest.mark.parametrize(
     "profile", [AutomationProfileID.IOSV_159_3_M12, AutomationProfileID.IOSVL2_2020]
 )
-def test_new_operation_admission_does_not_expand_protected_credentials(profile):
+def test_operation_and_static_permission_do_not_guarantee_secret_availability(profile):
     device, interface = profiled_device(profile)
     from network_change_delivery.openbao_profiled_deploy_config import DEVICE_IDS
     from network_change_delivery.secrets import SecretError
 
     class ProtectedSecrets(FakeSecrets):
         def load(self, target):
-            assert int(target.device_identity.rsplit(":", 1)[1]) not in DEVICE_IDS
-            raise SecretError("protected credential scope denied")
+            assert int(target.device_identity.rsplit(":", 1)[1]) in DEVICE_IDS
+            raise SecretError("exact credential unavailable")
 
     secret = ProtectedSecrets()
     with pytest.raises(ValueError):

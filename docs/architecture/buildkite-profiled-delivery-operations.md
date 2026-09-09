@@ -26,8 +26,9 @@ fieldless and cannot select a target or repair failed prerequisites.
 The active file still selects core-02. [Profile reuse](profile-reuse-write.md)
 explicitly admits CAT8000V, vJunos, IOSv and IOSvL2 description lifecycles.
 Operation admission does not grant protected-main credential authority:
-dedicated deploy credentials still permit only
-devices 1/2. No local installer or credential update is required. Batfish remains
+dedicated deploy credentials now permit exact devices 1/2/8/9 after explicitly
+approved Increment-3 activation, matching the repository definition; see the
+[activation evidence](profiled-rollout-runtime-planning.md#verified-post-review-activation). Batfish remains
 B4 assurance and CML remains realization/integration assurance; neither proves
 or rehearses the exact description candidate. See the [intent contract](intent-delivery.md).
 
@@ -71,7 +72,8 @@ command hook. Do not use an environment/pre-command hook for credential release.
 
 The command hook admits only canonical repository, non-PR main, retry zero,
 queue `ncdp-deploy`, exact command `.buildkite/scripts/profiled_delivery.sh`,
-and step `profiled-live-plan` or `profiled-deploy`. It checks full commit/HEAD
+and exact step `profiled-live-plan`, `profiled-rollout-live-plan` or
+`profiled-deploy` in the reviewed new source. It checks full commit/HEAD
 equality and clean tracked/untracked checkout before sourcing; immediately
 after sourcing it requires the protected expected pipeline UUID. The driver
 repeats context/pipeline binding and uses existing `verify_commit.sh`, including
@@ -148,14 +150,16 @@ The directory is agent-owned `0700`; the pair file is `0600`. The installer
 atomically updates `profiled.env` to source that file instead of reading the
 shared `openbao/operator/approle-role-id` and `approle-secret-id` files.
 NetBox settings, state root and pipeline binding are preserved. The trusted
-command hook is unchanged and reads the dedicated pair only after its existing
+command hook reads the dedicated pair only after its existing
 admission checks; no agent restart is required. A process already running
 retains its own environment.
 
 Rerunning the installer reuses and verifies the existing dedicated pair instead
 of minting another SecretID. It verifies persistent SecretID metadata, token
 TTL/use/effective policy through an operator token lookup, and actual
-`OpenBaoSecretProvider` credential reads for devices 1/2 without printing them.
+`OpenBaoSecretProvider` credential reads for exact devices 1/2/8/9 and unrelated
+path denial without printing values. Post-review activation and verification
+completed using the existing pair, without issuance or rotation.
 It does not contact devices, NetBox or CML, or change any device credential.
 There is no routine preparation/retirement command or automatic rotation.
 The previous bounded-session helper was removed.
@@ -299,3 +303,13 @@ setup, service change or runtime acceptance is performed by this implementation.
 
 CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
 acceptance. See the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).
+
+## Rollout sibling planning and promotion
+
+Increment 3 adds two exact sibling jobs through the same wrapper: protected
+`profiled-rollout-live-plan`, then credential-free `profiled-rollout-promotion`.
+They stop without human authorization or execution. Single-target artifacts,
+active intent and the fieldless human block remain unchanged. See the
+[rollout runtime contract](profiled-rollout-runtime-planning.md) for exact
+publication/promotion namespaces, static credential authority, concurrency and
+completed post-review external activation. Rollout execution remains unavailable.

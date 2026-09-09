@@ -1,0 +1,20 @@
+change_id: CHG-PROFILED-ROLLOUT-20260909
+operation: interface_description
+selectors:
+  - selector:
+      network_oses: [iosxe]
+    interface: GigabitEthernet2
+    desired:
+      description: ncdp-rollout-reviewed-core-20260909
+  - selector:
+      network_oses: [junos]
+    interface: ge-0/0/1
+    desired:
+      description: ncdp-rollout-reviewed-edge-20260909
+  - selector:
+      network_oses: [ios]
+    interface: GigabitEthernet0/1
+    desired:
+      description: ncdp-rollout-reviewed-ios-20260909
+policy:
+  wave_size: 1

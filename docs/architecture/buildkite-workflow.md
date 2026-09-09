@@ -183,8 +183,10 @@ The static DAG, PR CML exception and real-plan assurance prerequisites are uncha
 
 The interface-description catalog explicitly admits CAT8000V, vJunos, IOSv and
 IOSvL2. The [committed intent](intent-delivery.md) selects one exact target; the
-active file still selects core-02. Protected Buildkite credentials remain limited
-to devices 1/2: device 8/9 operation admission alone cannot authorize a main write.
+active file still selects core-02. Installed protected credentials and repository
+policy now permit exact devices 1/2/8/9 after explicitly approved and verified
+activation; operation admission and credential availability still cannot
+authorize a write alone.
 B4 service changes, fleet and SNMP provisioning gain no write authority. Batfish
 and CML remain prerequisite assurance,
 not exact intent-candidate validation or write rehearsal. No replay is added.
@@ -219,3 +221,15 @@ completion; it never retries execution. COMPLIANCE expects no chronology receipt
 
 CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
 acceptance. See the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).
+
+## Increment 3 rollout planning sibling
+
+The runtime-relevant canonical main graph additionally schedules
+`profiled-rollout-live-plan` after CML, then `profiled-rollout-promotion` after
+successful parent planning. They use the same broad runtime-change boundary and
+no retries. Planning shares `ncdp/profiled-live-delivery` concurrency with current
+single-target planning/deployment; promotion has no device credentials. The
+existing `runtime-delivery` group and its fieldless block are unchanged.
+There is no rollout human/deploy/evidence job. PRs and non-runtime changes skip
+both rollout jobs. See [runtime planning](profiled-rollout-runtime-planning.md)
+for receipt requirements and the verified post-review hook/OpenBao activation.

@@ -507,10 +507,10 @@ def test_netbox_only_device_cannot_create_membership(context):
     assert_no_child_activity(context)
 
 
-def test_protected_credential_scope_unchanged():
+def test_protected_credential_scope_is_explicit_current_lab():
     from network_change_delivery.openbao_profiled_deploy_config import DEVICE_IDS
 
-    assert DEVICE_IDS == (1, 2)
+    assert DEVICE_IDS == (1, 2, 8, 9)
 
 
 @pytest.mark.parametrize(

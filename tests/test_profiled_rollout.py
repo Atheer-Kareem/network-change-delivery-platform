@@ -493,7 +493,7 @@ def test_no_write_or_legacy_surface_and_protected_authority_unchanged():
     assert "def promote" not in source
     from network_change_delivery.openbao_profiled_deploy_config import DEVICE_IDS
 
-    assert DEVICE_IDS == (1, 2)
+    assert DEVICE_IDS == (1, 2, 8, 9)
 
 
 @pytest.fixture(autouse=True)

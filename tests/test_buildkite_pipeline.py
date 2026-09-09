@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from network_change_delivery.profiled_promotion import MAIN_KEYS, VALIDATION_KEYS
+from network_change_delivery.profiled_promotion import (
+    MAIN_KEYS,
+    ROLLOUT_KEYS,
+    VALIDATION_KEYS,
+)
 
 ROOT = Path(__file__).parents[1]
 PIPELINE = ROOT / ".buildkite/pipeline.yml"
@@ -26,14 +30,15 @@ def test_exact_order_and_unconditional_command_continuation():
         "validation-complete",
         "pr-batfish-assurance",
         "cml-staging",
+        *ROLLOUT_KEYS,
         *MAIN_KEYS,
     ]
     assert len({step["key"] for step in graph}) == len(graph)
-    assert sum("command" in step for step in graph) == 19
+    assert sum("command" in step for step in graph) == 21
     for step in graph:
         assert "allow_dependency_failure" not in step
         if "command" in step:
-            assert step["soft_fail"] is True
+            assert step.get("soft_fail", False) is (step["key"] not in ROLLOUT_KEYS)
             assert step["retry"]["automatic"] is False
             assert step["retry"]["manual"]["allowed"] is False
         else:
@@ -207,7 +212,12 @@ RUNTIME_VALIDATIONS = {
     "quality-observability-runtime",
     "quality-snmpv3-synthetic",
 }
-RUNTIME_JOBS = RUNTIME_VALIDATIONS | {"pr-batfish-assurance", "cml-staging", *MAIN_KEYS}
+RUNTIME_JOBS = RUNTIME_VALIDATIONS | {
+    "pr-batfish-assurance",
+    "cml-staging",
+    *MAIN_KEYS,
+    *ROLLOUT_KEYS,
+}
 
 
 def test_shared_runtime_boundary_and_receipt_closure():
@@ -384,3 +394,26 @@ def test_installed_buildkite_change_evaluation_fetch_diff_base(tmp_path, mode, r
     assert_scheduling(skipped, runtime or mode == "unavailable-ref")
     if mode == "main":
         assert git("rev-parse", "origin/main") == git("rev-parse", "HEAD")
+
+
+def test_rollout_sibling_stops_at_promotion_without_changing_human_group():
+    indexed = {step["key"]: step for step in steps()}
+    plan, promotion = (indexed[key] for key in ROLLOUT_KEYS)
+    assert plan["depends_on"] == "cml-staging"
+    assert promotion["depends_on"] == "profiled-rollout-live-plan"
+    assert plan["concurrency"] == indexed["profiled-deploy"]["concurrency"] == 1
+    assert (
+        plan["concurrency_group"]
+        == indexed["profiled-deploy"]["concurrency_group"]
+        == "ncdp/profiled-live-delivery"
+    )
+    for step, queue in ((plan, "ncdp-deploy"), (promotion, "ncdp-validation")):
+        assert step["if"] == indexed["cml-staging"]["if"]
+        assert step["command"] == ".buildkite/scripts/profiled_delivery.sh"
+        assert step["agents"] == {"queue": queue}
+        assert not step.get("soft_fail", False)
+        assert step["retry"]["automatic"] is False
+        assert step["retry"]["manual"]["allowed"] is False
+    assert {key for key in indexed if key.startswith("profiled-rollout-")} == set(
+        ROLLOUT_KEYS
+    )

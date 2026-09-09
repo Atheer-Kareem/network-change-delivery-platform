@@ -17,7 +17,7 @@ from network_change_delivery.secrets import (
 
 ROLE_NAME = "ncdp-buildkite-profiled-deploy"
 POLICY_NAME = "ncdp-buildkite-profiled-deploy-read"
-DEVICE_IDS = (1, 2)
+DEVICE_IDS = (1, 2, 8, 9)
 POLICY = exact_device_read_policy(DEVICE_IDS)
 ROLE = {
     "bind_secret_id": True,
@@ -98,6 +98,10 @@ class OpenBaoProfiledDeployConfigurator:
 
     def verify(self, credentials):
         """Verify persistence and actual provider reads; never connect to a device."""
+        for path, expected in ((POLICY_PATH, {"policy": POLICY}), (ROLE_PATH, ROLE)):
+            actual = self.data(self.request("GET", path))
+            if any(actual.get(k) != v for k, v in expected.items()):
+                raise SecretError("installed deploy role/policy contract rejected")
         role_id = self.data(self.request("GET", ROLE_PATH + "/role-id"))["role_id"]
         if credentials.role_id != role_id:
             raise SecretError("dedicated role identity mismatch")
@@ -148,3 +152,34 @@ class OpenBaoProfiledDeployConfigurator:
                     inventory_object_id=f"netbox:dcim.device:{device_id}",
                 )
             )
+
+        # A separate one-use token proves an unrelated exact path is denied.
+        # Require HTTP 403; transport uncertainty or other failures are not denial.
+        token = provider._login()
+        try:
+            response = provider._client.get(
+                "/v1/ncdp/data/devices/999999/ssh", headers={"X-Vault-Token": token}
+            )
+        except httpx.RequestError:
+            raise SecretError(
+                "unrelated path verification uncertain; no retry"
+            ) from None
+        if response.status_code != 403:
+            raise SecretError("unrelated device path was not explicitly denied")
+
+
+class ProtectedRolloutCredentialAuthority:
+    """Static permission decision; child planning still proves secret availability."""
+
+    def admit(self, device_identity: str):
+        from network_change_delivery.profiled_rollout import RolloutCredentialAdmission
+
+        if device_identity not in tuple(f"netbox:dcim.device:{i}" for i in DEVICE_IDS):
+            raise SecretError("protected rollout credential permission denied")
+        device_id = device_identity.rsplit(":", 1)[1]
+        return RolloutCredentialAdmission(
+            authority=ROLE_NAME,
+            device_identity=device_identity,
+            credential_reference=f"openbao:kv-v2:ncdp/devices/{device_id}/ssh",
+            permitted=True,
+        )

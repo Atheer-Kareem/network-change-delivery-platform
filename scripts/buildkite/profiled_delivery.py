@@ -927,7 +927,8 @@ def rollout_summary(value):
             f"Canaries: {getattr(value, 'canaries', ())}",
             f"Waves: {getattr(value, 'waves', ())}",
             f"Parent digest: {value.digest}",
-            "Planning/promotion only: no rollout authorization or execution exists.",
+            "Frozen rollout facts shown; authority and execution state are reported "
+            "by the current workflow step.",
         ]
     )
     return "\n".join(f"- {html.escape(line)}" for line in lines)

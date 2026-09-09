@@ -198,3 +198,65 @@ fresh planning is COMPLIANT. Runtime evidence, fault-injection review and explic
 user sign-off are still required for acceptance. Restore the temporary PR CML
 exception before final integrated roadmap acceptance, per its existing exit
 condition. CAP-OP-ASSURANCE remains DEFERRED; the exception remains ACTIVE now.
+
+## Build #468 safety checkpoint and reviewed replan
+
+Natural canonical-main [Build #468](https://buildkite.com/atheer-kareem/network-change-delivery-platform/builds/468),
+UUID `01a087f4-0ae9-42e2-bc4a-aeaec2271deb`, ran commit
+`69afe47c72d883f3e5edc9385160370d24038827`. The protected rollout consumer
+successfully verified the actual downloaded promotion bytes and semantic digest,
+reconstructed same-build promotion and fieldless authorization, and acquired the
+complete stable-device reservation for devices 1/2/8/9. Actual consumer verification
+closed the earlier external `read_artifacts` verification limitation.
+
+| Retained rollout fact | Value |
+|---|---|
+| Authorization digest | `sha256:327a1c3cb0eb9c94a025550ebd9f97a84161b8763d747c6d315e9d8245e3bd2a` |
+| Durable parent record ID | `01a087f4-1df6-443f-a118-c10559577f97` |
+| Durable parent record digest | `sha256:0220aa240db9f29d6722b4e5309f8691768a1fa03640276e3b7c90d099be02be` |
+| Outcome / stopping reason | `STOPPED` / `PREFLIGHT` |
+| Preflight digest | `null` |
+| Child lifecycles entered | `()` |
+| Rollout writes | 0 |
+| Untouched devices | 1 / 2 / 8 / 9 |
+| `child_evidence_complete` / `evidence_failed` | `true` / `false` |
+| Final validation | Not attempted |
+
+The user also continued the separate single-target human block before rollout
+deployment. That independently authorized change targeted `core-02`,
+`netbox:dcim.device:1`, `GigabitEthernet2`, `netbox:dcim.interface:2`. Its approved
+previous description was `None`; one forward write established
+`ncdp-demo-reviewed-20260909`, independently verified by successful POST. The
+single-target outcome was `SUCCEEDED`, with no recovery. This occurred before
+rollout deploy, whose frozen child still expected current description `None`.
+
+Build #468 had a sufficient independently established stale condition consistent
+with the expected execution-basis rejection. The durable rollout parent records
+only generic `PREFLIGHT` failure; it does not retain the exact thrown preflight
+sub-check or prove an internal exception string. Fresh complete-population
+preflight stopped exposure before any rollout child lifecycle or write, and the
+durable STOPPED parent was established. No automatic retry or replay occurred.
+This is positive runtime safety evidence, not successful rollout acceptance.
+
+Build #468's frozen approval is obsolete. Do not retry, rebuild, resume, unblock
+again, replay artifacts, repair devices or roll back to reuse it. The next reviewed
+change instance is `CHG-PROFILED-ROLLOUT-20260910-R2`. Only the rollout change ID
+changes: operation, selectors, interfaces, desired descriptions, wave size and
+cohort derivation remain identical. Core/edge/IOS descriptions remain respectively
+`ncdp-rollout-reviewed-core-20260909`, `ncdp-rollout-reviewed-edge-20260909` and
+`ncdp-rollout-reviewed-ios-20260909`.
+
+Fresh natural canonical-main planning after merge must establish the new observed
+execution basis (D0); no current-description assumption is encoded. Core Gi2 may
+now be observed at the verified single-target demo value, while the other three
+interfaces may still have no description. Both are expectations, not new evidence.
+This execution basis is separate from B5 accepted managed-state advancement.
+
+The single-target intent remains unchanged at `ncdp-demo-reviewed-20260909`.
+Its next fresh planning result is expected to be COMPLIANT because the previous
+POST established that value, but only fresh planning can prove compliance.
+Positive compliance creates no promotion/write authority, reducing the chance
+that this path changes rollout D0 again. Leave the single-target human block
+untouched during the next runtime procedure regardless. Review the new rollout's
+actual frozen facts before manually authorizing it; never manufacture drift.
+CAP-PROFILED-ROLLOUT remains IN PROGRESS.

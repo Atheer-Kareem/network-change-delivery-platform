@@ -258,7 +258,7 @@ def test_real_planner_publication_and_promotion(runtime, driver, tmp_path, compl
         )
         with pytest.raises(ValueError):
             ProfiledPromotion.model_validate_json(promotion_raw)
-    assert "Planning/promotion only" in runtime.annotations[-1]
+    assert "Frozen rollout facts shown" in runtime.annotations[-1]
 
 
 @pytest.mark.parametrize(
@@ -689,3 +689,65 @@ def test_protected_rollout_caller_reconstructs_before_activity(
         )
         != 0
     )
+
+
+def test_deploy_annotation_preserves_authorization_truth(
+    runtime, driver, tmp_path, monkeypatch
+):
+    """Render the protected caller's annotation after real offline authorization."""
+    _, _, parent = published(runtime, driver, tmp_path)
+    driver.rollout_promotion_step(
+        replace(runtime.ctx, step="profiled-rollout-promotion"), tmp_path
+    )
+    monkeypatch.setenv("BUILDKITE_UNBLOCKER_ID", JOB)
+    authorized = []
+    original_authorize = driver.authorize_rollout
+
+    def authorize(**inputs):
+        result = original_authorize(**inputs)
+        authorized.append(result)
+        return result
+
+    def stopped(**_inputs):
+        assert len(authorized) == 1
+        return SimpleNamespace(
+            record_id=JOB,
+            digest=DIGEST,
+            build_id=BUILD,
+            source_commit=COMMIT,
+            outcome="STOPPED",
+            authorization_digest=authorized[0].digest,
+            preflight_digest=None,
+            children=tuple(c.device for c in parent.children),
+            attempted=(),
+            successful=(),
+            compliant=(),
+            stopping_member=None,
+            stopping_outcome=None,
+            stopping_reason="PREFLIGHT",
+            untouched=tuple(c.device.device_identity for c in parent.children),
+            final_validation_status=None,
+            child_evidence_complete=True,
+            evidence_failed=False,
+            child_records=(),
+        )
+
+    monkeypatch.setattr(driver, "authorize_rollout", authorize)
+    monkeypatch.setattr(driver, "execute_rollout", stopped)
+    monkeypatch.setattr(driver, "ProfiledRolloutAuditStore", lambda *_a, **_k: None)
+    assert (
+        driver.rollout_deploy_step(
+            replace(runtime.ctx, step="profiled-rollout-deploy"), tmp_path
+        )
+        == 3
+    )
+    annotation = runtime.annotations[-1]
+    assert "## Rollout execution" in annotation
+    assert f"Authorization: `{authorized[0].digest}`" in annotation
+    assert "Outcome: **STOPPED**" in annotation
+    assert (
+        "Frozen rollout facts shown; authority and execution state are reported "
+        "by the current workflow step." in annotation
+    )
+    assert "no rollout authorization or execution exists" not in annotation
+    assert "Planning/promotion only" not in annotation

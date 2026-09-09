@@ -517,13 +517,34 @@ failure remains ROOT CAUSE NOT PROVEN. The user accepted the residual bounded
 availability risk for implementation. No staging timing/lifecycle change is
 made. The prerequisite failure phase is now truthfully `assurance prerequisites`.
 
-Installed execution-hook activation remains a separate post-review action;
-OpenBao authority requires no change. Implementation/tests/merge are not capability
+The execution hook was activated after review before PR #164 merged;
+OpenBao authority required no change. Implementation/tests/merge are not capability
 acceptance. Still required: controlled runtime evidence, fault-injection evidence
 review, explicit user sign-off, and restoration of the temporary PR CML exception
 before final integrated roadmap acceptance under its existing exit condition.
 CAP-PROFILED-ROLLOUT remains IN PROGRESS; CAP-OP-ASSURANCE remains DEFERRED and the
 temporary PR/development CML exception remains ACTIVE. No accepted state changes.
+
+#### Build #468 runtime safety checkpoint and replan
+
+Canonical-main Build #468 on `69afe47c72d883f3e5edc9385160370d24038827`
+proved actual promotion consumer verification, fieldless authorization, complete
+1/2/8/9 reservation and a durable `STOPPED` / `PREFLIGHT` result: zero child
+lifecycles, zero rollout writes, all four untouched, no final validation and no
+retry/replay. A preceding separately authorized single-target write changed core
+Gi2 from `None` to `ncdp-demo-reviewed-20260909`, while the frozen rollout still
+expected `None`. This independently established stale condition is consistent with
+the expected execution-basis rejection; the retained parent does not identify the
+exact internal preflight sub-check. See the [exact bounded evidence and next-run
+procedure](architecture/profiled-rollout-execution.md#build-468-safety-checkpoint-and-reviewed-replan).
+
+The obsolete Build #468 approval must not be retried or resumed. New reviewed
+instance `CHG-PROFILED-ROLLOUT-20260910-R2` changes only the rollout change ID;
+selectors, interfaces, desired descriptions and wave policy remain unchanged.
+Fresh main planning establishes actual D0. The unchanged single-target intent is
+expected to plan COMPLIANT, subject to fresh observation; leave its human block
+untouched. This safety checkpoint does not establish successful rollout acceptance.
+CAP-PROFILED-ROLLOUT remains IN PROGRESS.
 
 #### Selection and independent authority
 

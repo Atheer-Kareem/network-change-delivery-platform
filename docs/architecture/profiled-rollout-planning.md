@@ -5,7 +5,8 @@ contract](../roadmap.md#cap-profiled-rollout--bounded-profiled-multi-target-roll
 Increments 1 and 2 supply a read-only Python API, immutable planning artifacts
 and composable closed Git-population selector clauses.
 Increment 3 adds [protected planning and parent promotion](profiled-rollout-runtime-planning.md).
-There is no rollout CLI, human authorization or execution path.
+Increment 4 adds reusable [authorization/preflight/reservation APIs](profiled-rollout-execution-admission.md).
+There is no rollout CLI, Buildkite human block or execution path.
 The active single-target intent and current child commands remain unchanged.
 
 ```text
@@ -208,13 +209,15 @@ cannot be parsed as a rollout PLAN.
 
 ## Remaining increments
 
-Protected integration/credential expansion, promotion and fieldless
-authorization, complete population preflight and fresh child prewrite
-revalidation, overlap admission, canary/wave execution and stop semantics, final
-whole-population validation, parent durable evidence/chronology and runtime
-acceptance remain pending. Future execution must repeat caller-owned admission
-and full preflight, preserve fresh
-child prewrite checks, and stop later exposure on every non-SUCCEEDED child.
+Protected planning, credential expansion and promotion are verified through
+Increment 3. Increment 4 implements pure authorization and fresh preflight plus
+local reservations. The actual Buildkite fieldless block, protected/single-target
+reservation integration, child JIT execution, sequential canaries/waves,
+stop/partial orchestration, final whole-population validation, parent durable
+execution evidence/chronology and multi-target write acceptance remain pending.
+Future execution must pass each original `child.artifact_bytes()` unchanged,
+repeat complete preflight, preserve fresh child JIT checks, and stop later
+exposure on every non-SUCCEEDED child.
 Nothing here weakens one-shot/uncertain-write semantics or introduces atomicity,
 automatic rollback or revival of `fleet-plan`/`fleet-deploy`.
 

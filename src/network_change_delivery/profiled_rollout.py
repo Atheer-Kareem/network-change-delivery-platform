@@ -575,33 +575,10 @@ class _ResolvedInventory:
         return self.interface
 
 
-def plan_profiled_rollout(
-    intent: ProfiledRolloutIntent | ProfiledRolloutSelectionIntent,
-    inventory: RolloutPlanningInventory,
-    credential_authority: RolloutCredentialAuthority,
-    secrets: ProfiledPlanningSecretProvider,
-    collector: ProfiledPlanningCollector,
-    *,
-    source_commit: str,
-    created_at: datetime | None = None,
-) -> ProfiledRolloutPlanningArtifact:
-    """Resolve/admit all members, reuse read-only child planning, then freeze.
-
-    No partial parent is returned or published on any exception. Providers remain
-    caller-owned; this module supplies no credentials, transports or writer.
-    """
-    intent_model = (
-        ProfiledRolloutSelectionIntent
-        if isinstance(intent, ProfiledRolloutSelectionIntent)
-        else ProfiledRolloutIntent
-    )
-    intent = intent_model.model_validate(intent.model_dump())
-    source_commit = TypeAdapter(GitCommit).validate_python(source_commit)
-    observation_time = (
-        TypeAdapter(AwareDatetime).validate_python(created_at)
-        if created_at is not None
-        else None
-    )
+def _admit_rollout_members(
+    intent, inventory, credential_authority, *, expected_targets=None
+):
+    """Resolve the complete population and every selected member without secrets."""
     population = ProfiledInventoryPopulation.model_validate(
         inventory.resolve_profiled_population().model_dump()
     )
@@ -611,6 +588,12 @@ def plan_profiled_rollout(
         planning_intent = intent.explicit_intent(expansion)
     else:
         planning_intent = intent
+    if (
+        expected_targets is not None
+        and tuple(member.target for member in planning_intent.members)
+        != expected_targets
+    ):
+        raise ValueError("stale rollout membership/order")
     by_name = {device.logical_name: device for device in population.devices}
     admitted = []
     identities, interface_ids = set(), set()
@@ -645,6 +628,40 @@ def plan_profiled_rollout(
         if authority.device_identity != device.device_identity:
             raise ValueError("rollout credential decision is for another device")
         admitted.append((member, device, interface, operation, authority))
+
+    return population, expansion, planning_intent, admitted
+
+
+def plan_profiled_rollout(
+    intent: ProfiledRolloutIntent | ProfiledRolloutSelectionIntent,
+    inventory: RolloutPlanningInventory,
+    credential_authority: RolloutCredentialAuthority,
+    secrets: ProfiledPlanningSecretProvider,
+    collector: ProfiledPlanningCollector,
+    *,
+    source_commit: str,
+    created_at: datetime | None = None,
+) -> ProfiledRolloutPlanningArtifact:
+    """Resolve/admit all members, reuse read-only child planning, then freeze.
+
+    No partial parent is returned or published on any exception. Providers remain
+    caller-owned; this module supplies no credentials, transports or writer.
+    """
+    intent_model = (
+        ProfiledRolloutSelectionIntent
+        if isinstance(intent, ProfiledRolloutSelectionIntent)
+        else ProfiledRolloutIntent
+    )
+    intent = intent_model.model_validate(intent.model_dump())
+    source_commit = TypeAdapter(GitCommit).validate_python(source_commit)
+    observation_time = (
+        TypeAdapter(AwareDatetime).validate_python(created_at)
+        if created_at is not None
+        else None
+    )
+    population, expansion, planning_intent, admitted = _admit_rollout_members(
+        intent, inventory, credential_authority
+    )
 
     children = []
     for member, device, interface, operation, authority in admitted:

@@ -166,6 +166,7 @@ def _reserved(
     preflight = final = None
     attempted, successful, child_refs, chronology_refs = [], [], [], []
     stop_member = stop_outcome = reason = None
+    evidence_failed = False
     try:
         preflight = preflight_profiled_rollout(
             context,
@@ -210,8 +211,8 @@ def _reserved(
         except Exception:
             reason, stop_member = "PRE_CHRONOLOGY", identity
             break
-        # Mark possible execution before entering the child boundary. An escaping
-        # exception cannot establish that no write occurred.
+        # Record lifecycle entry only. A validated child record establishes the
+        # write-attempt fact; an escaping exception leaves it unknown.
         attempted.append(identity)
         try:
             execution = execute_profiled_plan(
@@ -233,6 +234,7 @@ def _reserved(
             post = capture_profiled_attempt(plan, expected_before=pre.after_revision)
             persist_attempt_file(directory / f"{child_id}-post.json", post)
             if post.status not in SUCCESS:
+                evidence_failed = True
                 reason, stop_member = (
                     (
                         "CHILD_EXECUTION_UNCERTAIN"
@@ -242,6 +244,7 @@ def _reserved(
                     identity,
                 )
         except Exception:
+            evidence_failed = True
             reason, stop_member = (
                 (
                     "CHILD_EXECUTION_UNCERTAIN"
@@ -284,7 +287,10 @@ def _reserved(
                     "cohort_kind": cohort_kind,
                     "cohort_index": cohort_index,
                     "execution_order": order,
-                    "execution_attempted": True,
+                    "child_lifecycle_entered": True,
+                    "write_attempted": execution.execution.attempted
+                    if execution
+                    else None,
                     "execution_digest": execution_digest,
                     "final_outcome": execution.final_outcome if execution else None,
                     "pre_status": pre.status.value,
@@ -313,6 +319,7 @@ def _reserved(
                     )
                 )
         except Exception:
+            evidence_failed = True
             reason, stop_member = (
                 (
                     "CHILD_EXECUTION_UNCERTAIN"
@@ -336,6 +343,7 @@ def _reserved(
             store.put_model("final", final)
         except Exception:
             final = None
+            evidence_failed = True
             reason = "CHILD_EVIDENCE"
         else:
             if final.status != "PASSED":
@@ -345,6 +353,8 @@ def _reserved(
         if reason is None
         else RolloutOutcome.FINAL_VALIDATION_FAILED
         if reason == "FINAL_VALIDATION"
+        else RolloutOutcome.EVIDENCE_FAILED
+        if evidence_failed and len(successful) == len(cohorts)
         else RolloutOutcome.PARTIAL
         if successful
         else RolloutOutcome.STOPPED
@@ -372,6 +382,10 @@ def _reserved(
             "waves": parent.waves,
             "child_records": tuple(child_refs),
             "chronology_records": tuple(chronology_refs),
+            "child_evidence_complete": len(child_refs)
+            == len(chronology_refs)
+            == len(attempted),
+            "evidence_failed": evidence_failed,
             "compliant": tuple(
                 c.device.device_identity
                 for c in parent.children

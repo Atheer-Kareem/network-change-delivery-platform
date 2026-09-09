@@ -209,7 +209,7 @@ class ProfiledRolloutAuditStore(AuditStore):
             if (
                 child.digest != record.child_audit.digest
                 or child.child.device_identity != record.device_identity
-                or not child.execution_attempted
+                or not child.child_lifecycle_entered
                 or child.pre_status != record.pre.status.value
                 or child.post_status != record.post.status.value
             ):
@@ -261,7 +261,10 @@ class ProfiledRolloutAuditStore(AuditStore):
                     self.read_bytes("execution", record.execution_digest)
                 )
                 verify_profiled_record_plan(execution, approved.result())
-                if execution.final_outcome != record.final_outcome:
+                if (
+                    execution.final_outcome != record.final_outcome
+                    or execution.execution.attempted != record.write_attempted
+                ):
                     raise AuditStoreError("rollout execution outcome mismatch")
             return
         if (
@@ -312,13 +315,46 @@ class ProfiledRolloutAuditStore(AuditStore):
                 or final.selected_devices != auth.selected_devices
             ):
                 raise AuditStoreError("rollout final validation mismatch")
-        if record.outcome == "SUCCEEDED" and (
-            tuple(c.child.device_identity for c in records if c.execution_attempted)
-            != record.attempted
-            or any(c.final_outcome != "SUCCEEDED" for c in records)
-            or len(set(chronology_children)) != len(record.attempted)
+        # All outcomes require the exact entered prefix, with only a documented
+        # final-member evidence failure permitted by the parent model.
+        if (
+            tuple(c.child.device_identity for c in records)
+            != record.attempted[: len(records)]
         ):
-            raise AuditStoreError("rollout success evidence incomplete")
+            raise AuditStoreError("rollout child evidence order rejected")
+        if tuple(chronology_children) != tuple(
+            c.record_id for c in records[: len(chronology_children)]
+        ):
+            raise AuditStoreError("rollout chronology evidence order rejected")
+        for child in records:
+            device = child.child.device_identity
+            if (
+                child.authorization_digest != record.authorization_digest
+                or child.preflight_digest != record.preflight_digest
+                or child.promotion_digest != record.promotion_digest
+                or (device in record.successful) != (child.final_outcome == "SUCCEEDED")
+            ):
+                raise AuditStoreError("rollout child outcome/correlation rejected")
+            if device == record.stopping_member:
+                if record.stopping_reason == "CHILD_EXECUTION_UNCERTAIN" and (
+                    child.execution_digest is not None
+                    or child.write_attempted is not None
+                ):
+                    raise AuditStoreError("rollout uncertain child falsely classified")
+                if (
+                    record.stopping_outcome is not None
+                    and child.final_outcome != record.stopping_outcome
+                ):
+                    raise AuditStoreError("rollout stopping outcome mismatch")
+        for ref in record.chronology_records:
+            chronology = self.read_rollout_record(
+                ProfiledRolloutChronologyRecord, ref.record_id
+            )
+            if chronology.overall_status != "SUCCEEDED" and not (
+                record.evidence_failed
+                and chronology.device_identity == record.stopping_member
+            ):
+                raise AuditStoreError("earlier rollout chronology is incomplete")
 
     @staticmethod
     def _verify_binding(approved, binding):

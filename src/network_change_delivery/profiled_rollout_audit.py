@@ -13,7 +13,10 @@ from network_change_delivery.architecture_contracts import (
     Sha256Digest,
 )
 from network_change_delivery.audit import canonical_json_bytes, sha256_identity
-from network_change_delivery.configuration_observation import OxidizedObservation
+from network_change_delivery.configuration_observation import (
+    ObservationStatus,
+    OxidizedObservation,
+)
 from network_change_delivery.models import FinalOutcome
 from network_change_delivery.profiled_configuration_observation import (
     SUCCESS,
@@ -55,6 +58,7 @@ class RolloutOutcome(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     STOPPED = "STOPPED"
     PARTIAL = "PARTIAL"
+    EVIDENCE_FAILED = "EVIDENCE_FAILED"
     FINAL_VALIDATION_FAILED = "FINAL_VALIDATION_FAILED"
 
 
@@ -90,11 +94,12 @@ class ProfiledRolloutChildAuditRecord(SignedRecord):
     cohort_kind: Literal["CANARY", "WAVE"]
     cohort_index: int = Field(ge=0, le=MAX_MEMBERS)
     execution_order: int = Field(ge=0, lt=MAX_MEMBERS)
-    execution_attempted: bool
+    child_lifecycle_entered: Literal[True]
+    write_attempted: bool | None
     execution_digest: Sha256Digest | None
     final_outcome: FinalOutcome | None
-    pre_status: str | None
-    post_status: str | None
+    pre_status: ObservationStatus
+    post_status: ObservationStatus | None
 
     @model_validator(mode="after")
     def correlated(self):
@@ -104,7 +109,8 @@ class ProfiledRolloutChildAuditRecord(SignedRecord):
             or self.job_id != self.parent_record_id
             or self.child.kind != "DEPLOYABLE"
             or (self.execution_digest is None) != (self.final_outcome is None)
-            or (not self.execution_attempted and self.execution_digest is not None)
+            or (self.execution_digest is None) != (self.write_attempted is None)
+            or self.pre_status not in SUCCESS
         ):
             raise ValueError("rollout child correlation rejected")
         return self
@@ -175,6 +181,8 @@ class ProfiledRolloutAuditRecord(SignedRecord):
     waves: tuple[tuple[DeviceIdentity, ...], ...]
     child_records: tuple[RecordReference, ...]
     chronology_records: tuple[RecordReference, ...]
+    child_evidence_complete: bool
+    evidence_failed: bool
     compliant: tuple[DeviceIdentity, ...]
     attempted: tuple[DeviceIdentity, ...]
     successful: tuple[DeviceIdentity, ...]
@@ -235,23 +243,93 @@ class ProfiledRolloutAuditRecord(SignedRecord):
             )
         ):
             raise ValueError("rollout parent population/outcome rejected")
+        # A prefix denotes child-lifecycle entry, never a confirmed write count.
+        expected_children = tuple(
+            child_record_id(self.record_id, d) for d in self.attempted
+        )
+        expected_chronology = tuple(chronology_record_id(c) for c in expected_children)
+        child_ids = tuple(r.record_id for r in self.child_records)
+        chronology_ids = tuple(r.record_id for r in self.chronology_records)
+        incomplete_last_allowed = (
+            self.evidence_failed
+            and self.stopping_reason in {"CHILD_EVIDENCE", "CHILD_EXECUTION_UNCERTAIN"}
+            and bool(self.attempted)
+            and self.stopping_member == self.attempted[-1]
+        )
+        required = len(self.attempted) - int(incomplete_last_allowed)
+        if (
+            child_ids != expected_children[: len(child_ids)]
+            or chronology_ids != expected_chronology[: len(chronology_ids)]
+            or not required
+            <= len(chronology_ids)
+            <= len(child_ids)
+            <= len(self.attempted)
+            or self.child_evidence_complete
+            != (
+                child_ids == expected_children and chronology_ids == expected_chronology
+            )
+        ):
+            raise ValueError("rollout attempted-prefix evidence coverage rejected")
         all_succeeded = len(self.successful) == len(deployable)
+        reason = self.stopping_reason
+        if reason == "PREFLIGHT":
+            reason_valid = not self.attempted and self.stopping_member is None
+        elif reason == "PRE_CHRONOLOGY":
+            reason_valid = (
+                len(self.attempted) < len(order)
+                and self.stopping_member == order[len(self.attempted)]
+                and self.successful == self.attempted
+            )
+        elif reason in {"CHILD_NON_SUCCESS", "CHILD_EXECUTION_UNCERTAIN"}:
+            reason_valid = (
+                bool(self.attempted)
+                and self.stopping_member == self.attempted[-1]
+                and self.successful == self.attempted[:-1]
+                and (
+                    (
+                        self.stopping_outcome is not None
+                        and self.stopping_outcome != FinalOutcome.SUCCEEDED
+                    )
+                    if reason == "CHILD_NON_SUCCESS"
+                    else self.stopping_outcome is None
+                )
+            )
+        elif reason == "CHILD_EVIDENCE":
+            reason_valid = (
+                self.evidence_failed
+                and bool(self.attempted)
+                and (
+                    self.stopping_member == self.attempted[-1]
+                    or (self.stopping_member is None and all_succeeded)
+                )
+            )
+        else:
+            reason_valid = all_succeeded and self.stopping_member is None
+        if not reason_valid or (
+            self.evidence_failed
+            and reason not in {"CHILD_EVIDENCE", "CHILD_EXECUTION_UNCERTAIN"}
+        ):
+            raise ValueError("rollout stopping/evidence facts rejected")
         if self.outcome == RolloutOutcome.SUCCEEDED:
             valid = (
                 all_succeeded
                 and self.final_validation_status == "PASSED"
-                and self.stopping_reason is None
+                and reason is None
             )
         elif self.outcome == RolloutOutcome.FINAL_VALIDATION_FAILED:
             valid = (
                 all_succeeded
                 and self.final_validation_status == "FAILED"
-                and self.stopping_reason == "FINAL_VALIDATION"
+                and reason == "FINAL_VALIDATION"
+            )
+        elif self.outcome == RolloutOutcome.EVIDENCE_FAILED:
+            valid = (
+                all_succeeded and self.evidence_failed and reason == "CHILD_EVIDENCE"
             )
         elif self.outcome == RolloutOutcome.PARTIAL:
-            valid = bool(self.successful) and self.stopping_reason is not None
+            valid = bool(self.successful) and not all_succeeded and reason is not None
         else:
-            valid = not self.successful and self.stopping_reason is not None
+            valid = not self.successful and reason is not None
         if not valid:
             raise ValueError("rollout parent outcome truth rejected")
         return self

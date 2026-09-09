@@ -437,7 +437,7 @@ def render_index(values: tuple[RecordSummaryPresentation, ...]) -> bytes:
   <h2><a href="/{"rollout-records" if value.rollout else "profiled-records" if value.profiled else "records"}/{value.record_id}">{_escape(value.change_id)}</a></h2>
   <p>{_badge(value.final_outcome)} {approval}</p>
   <dl>
-    <dt>Provenance</dt><dd>{"Current profiled delivery" if value.profiled else "Historical protected delivery"}</dd>
+    <dt>Provenance</dt><dd>{"Current profiled rollout delivery" if value.rollout else "Current profiled delivery" if value.profiled else "Historical protected delivery"}</dd>
     <dt>Generated</dt><dd>{_escape(_index_timestamp(value.generated_at))}</dd>
     <dt>Buildkite build</dt><dd>{_escape(build)}</dd>
     <dt>Git commit</dt><dd class="mono">{_escape(value.commit[:12])}</dd>
@@ -690,11 +690,14 @@ class EvidenceViewerApplication:
                 ("Outcome", record.outcome),
                 ("Build", record.build_number),
                 ("Commit", record.source_commit),
-                ("Parent digest", record.digest),
+                ("Parent digest", record.parent_digest),
+                ("Rollout record digest", record.digest),
                 ("Selected", tuple(c.device_identity for c in record.children)),
                 ("Canaries", record.canaries),
                 ("Waves", record.waves),
-                ("Attempted", record.attempted),
+                ("Child lifecycles entered (not a write count)", record.attempted),
+                ("Child evidence complete", record.child_evidence_complete),
+                ("Evidence failure", record.evidence_failed),
                 ("Successful", record.successful),
                 ("Compliant", record.compliant),
                 ("Untouched", record.untouched),

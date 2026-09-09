@@ -62,9 +62,14 @@ After entering the child execution boundary, one independent POST is attempted,
 including when an unexpected exception escapes. Such an exception means execution
 may have occurred; it does not fabricate a child result or imply zero writes.
 COMPLIANT children never enter write cohorts and receive no execution chronology.
-An attempted member means its child transaction boundary was entered; the exact
-child change record separately establishes whether a forward command was attempted.
-An escaping exception leaves that forward-command fact unknown.
+The parent `attempted` sequence records child lifecycle entry, not a write count.
+Each child audit binds `child_lifecycle_entered=True` after validated PRE. Its
+`write_attempted` is the verified child change record's `execution.attempted`: a
+JIT stale or blocked result can prove False. If the child call escapes without a
+valid record, both `write_attempted` and `final_outcome` are null (unknown), never
+an invented True or False. The store independently verifies these facts against
+the approved child and exact execution record. PRE/POST status fields use the
+closed existing Oxidized observation-status vocabulary.
 
 Only `SUCCEEDED` advances exposure. Every other current or future child outcome
 stops later children, including RECOVERED, AMBIGUOUS, confirmation failure and
@@ -95,13 +100,27 @@ Parent outcomes remain distinct:
 
 - SUCCEEDED: every DEPLOYABLE child succeeded and complete final validation passed.
 - STOPPED: admission or execution stopped before any child successfully completed.
-- PARTIAL: one or more children succeeded before later exposure/evidence stopped.
+- PARTIAL: some, but fewer than all, deployable children succeeded before later
+  exposure or evidence stopped.
 - FINAL_VALIDATION_FAILED: all child transactions succeeded, but complete final D1
   was not proved. This grants no rollback, retry or additional write authority.
+- EVIDENCE_FAILED: all deployable child transactions reported success, but required
+  final/durable evidence was not established. This claims neither rollout success
+  nor partial device delivery; no command is replayed.
 
 Parent evidence identifies attempted, successful, compliant and untouched members,
 the stopping member/reason/outcome, completed canaries/waves, remaining waves and
 final validation when attempted. Artifact absence is never interpreted as compliance.
+
+Every outcome requires child and chronology references in exact attempted-prefix
+order. Preflight failure has no attempted children or references. PRE failure
+requires complete evidence for all earlier entries, excluding the stopping child.
+Child non-success and final validation require complete evidence for every entered
+child. Only a separately recorded evidence failure can leave the final stopping
+child incomplete; earlier children must remain complete.
+`child_evidence_complete` records exact reference coverage; `evidence_failed`
+records publication/chronology failure independently. A child call escaping and
+subsequent evidence failure retain both uncertainty and evidence-failure facts.
 
 ## Distinct durable namespaces
 
@@ -127,7 +146,10 @@ references the independently read-back child audit, with TEMPORALLY_BRACKETED
 relationship and **NOT_PROVEN** causality. Historical observation schemas are
 unchanged. Same-build `profiled-rollout-durable-publication` is published only
 after durable parent readback. Evidence Viewer adds a metadata-only rollout
-index/detail route: no credentials, raw configuration or original artifact bytes.
+index/detail route labeled current profiled rollout delivery. Parent digest means
+the approved rollout planning digest; Rollout record digest identifies the durable
+record separately. Lifecycle entry is never presented as a confirmed write count.
+No credentials, raw configuration or original artifact bytes are displayed.
 
 ## CML availability risk and truthful diagnostics
 

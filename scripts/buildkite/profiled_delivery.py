@@ -1116,13 +1116,16 @@ def rollout_deploy_step(context, directory):
             rollout_summary(parent),
             "Reserved population: "
             f"`{tuple(c.device_identity for c in record.children)}`",
-            f"Attempted: `{record.attempted}`; successful: `{record.successful}`; "
+            f"Child lifecycles entered (not a write count): `{record.attempted}`; "
+            f"successful: `{record.successful}`; "
             f"compliant: `{record.compliant}`",
             f"Stopping member/outcome: `{record.stopping_member}` / "
             f"`{record.stopping_outcome or record.stopping_reason}`",
             f"Untouched: `{record.untouched}`; "
             f"final validation: `{record.final_validation_status}`",
             f"Durable parent: `{record.record_id}` / `{record.digest}`",
+            f"Child evidence complete: `{record.child_evidence_complete}`; "
+            f"evidence failure: `{record.evidence_failed}`",
             "Chronology causality: NOT_PROVEN. No command replay performed.",
         ]
         from network_change_delivery.profiled_rollout_audit import (
@@ -1133,8 +1136,14 @@ def rollout_deploy_step(context, directory):
             child = store.read_rollout_record(
                 ProfiledRolloutChildAuditRecord, ref.record_id
             )
+            write_attempted = (
+                child.write_attempted
+                if child.write_attempted is not None
+                else "UNKNOWN"
+            )
             rows.append(
                 f"`{child.child.device_identity}`: `{child.final_outcome}`; "
+                f"write attempted: `{write_attempted}`; "
                 f"execution `{child.execution_digest}`; "
                 f"PRE/POST `{child.pre_status}` / `{child.post_status}`"
             )

@@ -3,8 +3,10 @@
 CAP-PROFILED-ROLLOUT remains **IN PROGRESS**. Increment 3 repository implementation
 is complete. Protected external planning authority is **ACTIVATED and VERIFIED**
 against reviewed runtime commit `a6dd4762b6ff022c30bd8bb4572571d149080995`.
-No rollout human block, execution, locks, final validation, parent AuditStore
-execution evidence or chronology exists yet.
+The protected runtime still has no rollout human block, execution, locks, final
+validation, parent AuditStore execution evidence or chronology. Increment 4 adds
+reusable [authorization, preflight and local reservations](profiled-rollout-execution-admission.md)
+without connecting them to protected execution.
 
 ## Parallel protected planning path
 
@@ -159,6 +161,32 @@ occurred. No manual Buildkite build or merge was performed. This establishes
 protected planning credential availability; rollout execution still does not
 exist and later-stage runtime acceptance remains pending.
 
+## Increment 3 runtime checkpoint
+
+Natural canonical-main webhook **Build #463** verified Increment 3 on commit
+`97fb312cefa66b9716e1dcee33152404e6d3211a`, build UUID
+`01a08609-fad7-4c4e-86c6-9d052420e8d8`. Both `profiled-rollout-live-plan` and
+`profiled-rollout-promotion` **PASSED**, exit **0**, **not soft-failed**. All 13
+engineering validation receipts existed and verified for this same build/commit.
+
+| Binding | Exact digest |
+|---|---|
+| Batfish success | `sha256:bce02aa833eb99dde60f96ae6f854313defc97ce245516871d3f5e616015219b` |
+| Real CML success | `sha256:cf60ab336cb142510b50c04d15d6be7be9c97356367cace65b87310a5e62b341` |
+| Parent semantic | `sha256:138527ccb624dcf7949b0912b717e7e0f0faf658ddd0e5ed56172a6cbb56a644` |
+| Parent artifact bytes | `sha256:e48492f4f06eb07806da2d68b95fb5d9a64440fd24c0e42b59eb8f5e6479cf9e` |
+| Promotion semantic | `sha256:6136317b6e5775550726a6d2afe027caca5e231a2ab5e9f180cac6023014ec31` |
+| Promotion artifact bytes | `sha256:450503328a9fd24c673a469eb301e81931f2b229bf4a194a5dbf621d81986596` |
+
+The parent was a **schema-v2 rollout PLAN**, with all four children DEPLOYABLE.
+Canaries were stable devices **1, 2**; ordered waves were **[8]**, then **[9]**.
+This was planning and promotion only. That exact committed graph/implementation
+contained no rollout authorization or execution path, and therefore no rollout
+execution artifact, durable execution record or chronology publication path.
+External artifact LIST permission was unavailable; this absence was established
+from the exact graph/implementation, not independent artifact enumeration.
+No capability acceptance is implied by this Increment-3 checkpoint.
+
 ## Post-review activation order
 
 The completed activation followed this bounded procedure. Any future application
@@ -194,8 +222,9 @@ request another activation.
    planning/promotion evidence. No manual protected build is needed, and no
    rollout execution is available.
 
-Runtime acceptance, rollout human authorization, complete pre-execution
-revalidation, overlap admission, JIT child checks, sequential cohort execution,
-stop/partial outcomes, final whole-population validation and parent durable
-execution evidence/chronology remain later approved work. See the
+Increment 4 supplies reusable authorization, preflight and local reservations.
+Protected runtime integration, the actual fieldless rollout block, single-target
+overlap composition, JIT child execution, sequential cohorts, stop/partial
+outcomes, final whole-population validation, parent durable execution evidence,
+chronology and later-stage runtime acceptance remain pending. See the
 [roadmap](../roadmap.md#cap-profiled-rollout--bounded-profiled-multi-target-rollout).

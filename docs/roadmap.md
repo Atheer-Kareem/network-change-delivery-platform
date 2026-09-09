@@ -477,13 +477,34 @@ reviewed runtime commit `a6dd4762b6ff022c30bd8bb4572571d149080995`. The reviewed
 hook was installed and the exact read policy expanded once to 1/2/8/9; the
 existing role and persistent pair were retained. See the bounded
 [activation evidence](architecture/profiled-rollout-runtime-planning.md#verified-post-review-activation).
-Rollout execution still does not exist.
-Rollout fieldless human authorization, complete pre-execution population
-revalidation, overlap locking, JIT child prewrite validation, canary/wave execution,
-stop/partial runtime semantics, final whole-population validation, parent durable
-execution evidence, rollout chronology and runtime acceptance of those later
-stages remain pending.
-CAP-PROFILED-ROLLOUT remains IN PROGRESS; the approved contract below is unchanged.
+Natural canonical-main Build **#463**, UUID
+`01a08609-fad7-4c4e-86c6-9d052420e8d8`, verified protected planning/promotion on
+commit `97fb312cefa66b9716e1dcee33152404e6d3211a`: both jobs PASSED exit 0, not
+soft-failed; all 13 engineering receipts and Batfish/real CML success were bound
+to that build. The schema-v2 parent had four DEPLOYABLE children, canaries 1/2,
+and waves [8], [9]. Exact semantic/byte digests and the artifact-LIST verification
+limitation are recorded in the [runtime checkpoint](architecture/profiled-rollout-runtime-planning.md#increment-3-runtime-checkpoint).
+The committed runtime had no rollout authorization or execution path. This is
+Increment-3 evidence, not acceptance of the whole capability.
+
+#### Increment 4 implementation checkpoint
+
+The [execution-admission foundation](architecture/profiled-rollout-execution-admission.md)
+implements a distinct verified fieldless authorization model/function, mandatory
+exact promotion reconstruction, complete fresh whole-population preflight,
+execution-basis staleness comparison and local stable-device overlap reservations.
+Fresh observation timestamps may differ; classification, reviewed state and
+identity/operation/credential basis may not. Existing child and parent artifact
+bytes remain unchanged; future execution must pass original child artifact bytes.
+
+Still pending: the actual Buildkite rollout human block; integration of
+reservations with protected runtime and single-target overlap; rollout deploy;
+child JIT execution; sequential canary/wave execution and stop/partial
+orchestration; final whole-population validation; parent durable execution
+evidence; rollout chronology; and real multi-target write acceptance.
+There is no rollout execution surface. CAP-PROFILED-ROLLOUT remains IN PROGRESS;
+CAP-OP-ASSURANCE remains DEFERRED and the temporary PR/development CML exception
+remains ACTIVE. No accepted capability state or approved scope changes.
 
 #### Selection and independent authority
 

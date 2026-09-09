@@ -30,11 +30,12 @@ def test_exact_order_and_unconditional_command_continuation():
         "validation-complete",
         "pr-batfish-assurance",
         "cml-staging",
-        *ROLLOUT_KEYS,
+        *ROLLOUT_KEYS[:2],
         *MAIN_KEYS,
+        *ROLLOUT_KEYS[2:],
     ]
     assert len({step["key"] for step in graph}) == len(graph)
-    assert sum("command" in step for step in graph) == 21
+    assert sum("command" in step for step in graph) == 22
     for step in graph:
         assert "allow_dependency_failure" not in step
         if "command" in step:
@@ -222,13 +223,16 @@ RUNTIME_JOBS = RUNTIME_VALIDATIONS | {
 
 def test_shared_runtime_boundary_and_receipt_closure():
     top = yaml.safe_load(PIPELINE.read_text())["steps"]
-    group = top[-1]
+    group = top[-2]
     assert group["key"] == "runtime-delivery"
     assert [s["key"] for s in group["steps"]] == list(MAIN_KEYS)
     assert set(group) == {"group", "key", "if_changed", "steps"}
     gate = group["if_changed"]
     assert gate == {"include": "**", "exclude": NON_RUNTIME}
-    for step in top[:-1]:
+    assert top[-1]["key"] == "rollout-runtime-delivery"
+    assert top[-1]["if_changed"] is gate
+    assert [s["key"] for s in top[-1]["steps"]] == list(ROLLOUT_KEYS[2:])
+    for step in top[:-2]:
         if step["key"] in RUNTIME_JOBS:
             # YAML aliases bind one condition, rather than independent component gates.
             assert step["if_changed"] is gate
@@ -396,9 +400,9 @@ def test_installed_buildkite_change_evaluation_fetch_diff_base(tmp_path, mode, r
         assert git("rev-parse", "origin/main") == git("rev-parse", "HEAD")
 
 
-def test_rollout_sibling_stops_at_promotion_without_changing_human_group():
+def test_rollout_sibling_fieldless_execution_without_changing_single_target_group():
     indexed = {step["key"]: step for step in steps()}
-    plan, promotion = (indexed[key] for key in ROLLOUT_KEYS)
+    plan, promotion = (indexed[key] for key in ROLLOUT_KEYS[:2])
     assert plan["depends_on"] == "cml-staging"
     assert promotion["depends_on"] == "profiled-rollout-live-plan"
     assert plan["concurrency"] == indexed["profiled-deploy"]["concurrency"] == 1
@@ -417,3 +421,18 @@ def test_rollout_sibling_stops_at_promotion_without_changing_human_group():
     assert {key for key in indexed if key.startswith("profiled-rollout-")} == set(
         ROLLOUT_KEYS
     )
+
+
+def test_rollout_fieldless_gate_and_non_soft_failed_execution():
+    indexed = {s["key"]: s for s in steps()}
+    block, deploy = (indexed[k] for k in ROLLOUT_KEYS[2:])
+    assert block["depends_on"] == "profiled-rollout-promotion"
+    assert "fields" not in block and "command" not in block
+    assert deploy["depends_on"] == block["key"]
+    assert deploy["agents"] == {"queue": "ncdp-deploy"}
+    assert deploy["concurrency"] == 1
+    assert (
+        deploy["concurrency_group"] == indexed["profiled-deploy"]["concurrency_group"]
+    )
+    assert "soft_fail" not in deploy
+    assert block["if"] == deploy["if"] == indexed["cml-staging"]["if"]

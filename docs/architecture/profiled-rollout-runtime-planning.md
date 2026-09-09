@@ -3,10 +3,10 @@
 CAP-PROFILED-ROLLOUT remains **IN PROGRESS**. Increment 3 repository implementation
 is complete. Protected external planning authority is **ACTIVATED and VERIFIED**
 against reviewed runtime commit `a6dd4762b6ff022c30bd8bb4572571d149080995`.
-The protected runtime still has no rollout human block, execution, locks, final
-validation, parent AuditStore execution evidence or chronology. Increment 4 adds
-reusable [authorization, preflight and local reservations](profiled-rollout-execution-admission.md)
-without connecting them to protected execution.
+Increment 4 added reusable [authorization, preflight and local reservations](profiled-rollout-execution-admission.md).
+Increment 5 adds the separate [protected execution path](profiled-rollout-execution.md),
+subject to post-review hook activation and explicit human continuation. The
+planning/promotion contracts and historical checkpoint below remain unchanged.
 
 ## Parallel protected planning path
 

@@ -1,8 +1,8 @@
 # Rollout authorization and pre-execution admission
 
-CAP-PROFILED-ROLLOUT Increment 4 adds reusable admission APIs, with no rollout
-execution or protected runtime integration. The existing single-target path,
-Buildkite graph, hook, intents, credential scope and artifact bytes are unchanged.
+CAP-PROFILED-ROLLOUT Increment 4 established these reusable admission APIs.
+Increment 5 composes them in [protected execution](profiled-rollout-execution.md);
+the admission APIs and historical artifact bytes remain unchanged.
 The capability remains **IN PROGRESS**. See the
 [planning/promotion runtime checkpoint](profiled-rollout-runtime-planning.md#increment-3-runtime-checkpoint).
 
@@ -25,7 +25,7 @@ match. Parsing a self-digested detached promotion is insufficient. A positive
 all-COMPLIANT parent cannot mint promotion or authorization.
 
 The verifier is pure: no NetBox, secret read, device collection or reservation.
-It is not a new Buildkite step. The future protected caller must independently
+It is not itself a Buildkite step. The protected caller must independently
 establish canonical clean checkout and fieldless scheduler unblocker provenance;
 typed artifacts and self-digests alone are not authenticated human decisions.
 
@@ -85,21 +85,19 @@ fails the whole acquisition and releases earlier locks. All descriptors close
 on normal result or exception, and process exit releases kernel locks. Persistent
 empty unlocked files are not active reservations.
 
-Authorization acquires zero reservations. Future execution must enter this
+Authorization acquires zero reservations. Protected execution enters this
 context only after human authorization and immediately before complete preflight,
 then retain it through the protected device activity. No lock spans the human
 pause. This is local overlap admission, not distributed locking, cross-host
 atomicity or a fleet transaction.
 
-**Required future integration:** protected single-target execution must acquire
-this same stable-device reservation primitive before device activity, alongside
-rollout execution. The existing Buildkite concurrency group already serializes
-protected jobs, but this increment does not claim accepted cross-path overlap
-protection or change single-target behavior.
+Increment 5 integrates this same primitive into both protected single-target
+and rollout execution after authorization, alongside the shared Buildkite
+concurrency group. Real runtime overlap acceptance remains subject to review.
 
 ## Exact child bytes and remaining execution gates
 
-Future child execution must receive the exact `child.artifact_bytes()` frozen in
+Protected child execution receives the exact `child.artifact_bytes()` frozen in
 the approved parent. Reserializing a parsed child and claiming equivalent bytes
 is not permitted. Existing rollout parent v1/v2, child v2, rollout promotion v1
 and single-target promotion v2 schemas/bytes are unchanged.
@@ -110,12 +108,9 @@ transaction, recovery, AuditStore execution or chronology persistence is called
 by these APIs. Tests trap existing mutation boundaries and exercise local locks
 only in temporary directories.
 
-Still pending: Buildkite fieldless rollout block, protected runtime reservation
-and single-target overlap integration, rollout deploy step, sequential canaries
-and waves, stop/partial orchestration, final whole-population validation, parent
-durable execution evidence, rollout chronology and real multi-target write
-acceptance. Earlier successes will not be automatically rolled back; uncertain
-writes must not be retried. No execution surface is added here.
+Protected execution composition is documented separately. Runtime evidence and
+explicit user acceptance remain pending. Earlier successes are never automatically
+rolled back, and uncertain writes are never retried.
 
 Batfish/CML assurance meaning is unchanged. CAP-OP-ASSURANCE remains DEFERRED;
 the temporary PR/development CML exception remains ACTIVE.

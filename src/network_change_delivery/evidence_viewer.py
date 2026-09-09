@@ -31,6 +31,10 @@ from network_change_delivery.profiled_audit import (
     ProfiledDeliveryAuditRecord,
     ProfiledDeliveryKind,
 )
+from network_change_delivery.profiled_rollout_audit import ProfiledRolloutAuditRecord
+from network_change_delivery.profiled_rollout_audit_store import (
+    ProfiledRolloutAuditStore,
+)
 
 LOOPBACK_ADDRESS = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -123,6 +127,7 @@ class RecordSummaryPresentation:
     approved: bool
     profiled: bool = False
     compliant: bool = False
+    rollout: bool = False
 
 
 @dataclass(frozen=True)
@@ -176,6 +181,21 @@ def _target_presentations(
 def _summary(
     record: ChangeAuditRecord | ProfiledDeliveryAuditRecord,
 ) -> RecordSummaryPresentation:
+    if isinstance(record, ProfiledRolloutAuditRecord):
+        return RecordSummaryPresentation(
+            record.record_id,
+            record.generated_at,
+            record.change_id,
+            record.outcome.value,
+            record.build_number,
+            record.source_commit,
+            tuple(
+                TargetPresentation(c.device_identity, c.interface_identity)
+                for c in record.children
+            ),
+            True,
+            rollout=True,
+        )
     return RecordSummaryPresentation(
         record_id=record.record_id,
         generated_at=record.generated_at,
@@ -414,7 +434,7 @@ def render_index(values: tuple[RecordSummaryPresentation, ...]) -> bytes:
         )
         cards.append(
             f"""<article class="card">
-  <h2><a href="/{"profiled-records" if value.profiled else "records"}/{value.record_id}">{_escape(value.change_id)}</a></h2>
+  <h2><a href="/{"rollout-records" if value.rollout else "profiled-records" if value.profiled else "records"}/{value.record_id}">{_escape(value.change_id)}</a></h2>
   <p>{_badge(value.final_outcome)} {approval}</p>
   <dl>
     <dt>Provenance</dt><dd>{"Current profiled delivery" if value.profiled else "Historical protected delivery"}</dd>
@@ -628,6 +648,9 @@ class EvidenceViewerApplication:
 
     def __init__(self, store: ConfigurationObservationStore) -> None:
         self.store = store
+        self.rollouts = ProfiledRolloutAuditStore(
+            store.root, checkout=Path(__file__).resolve().parents[2], create=False
+        )
 
     def get(self, route: str) -> tuple[HTTPStatus, bytes]:
         parsed = urlsplit(route)
@@ -635,7 +658,11 @@ class EvidenceViewerApplication:
             return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
         if parsed.path == "/":
             records = sorted(
-                (*self.store.iter_records(), *self.store.iter_profiled_records()),
+                (
+                    *self.store.iter_records(),
+                    *self.store.iter_profiled_records(),
+                    *self.rollouts.iter_rollout_records(),
+                ),
                 key=lambda item: (
                     item.generated_at,
                     str(item.record_id),
@@ -646,6 +673,60 @@ class EvidenceViewerApplication:
             return HTTPStatus.OK, render_index(
                 tuple(_summary(item) for item in records)
             )
+        prefix = "/rollout-records/"
+        if parsed.path.startswith(prefix) and parsed.path.count("/") == 2:
+            identity = parsed.path.removeprefix(prefix)
+            try:
+                record_id = UUID(identity)
+                if identity != str(record_id):
+                    raise ValueError("noncanonical identity")
+                record = self.rollouts.read_rollout_record(
+                    ProfiledRolloutAuditRecord, record_id
+                )
+            except (OSError, ValueError):
+                return HTTPStatus.NOT_FOUND, _error_page(HTTPStatus.NOT_FOUND)
+            # Explicit metadata allowlist: never render embedded child source bytes.
+            pairs = (
+                ("Outcome", record.outcome),
+                ("Build", record.build_number),
+                ("Commit", record.source_commit),
+                ("Parent digest", record.digest),
+                ("Selected", tuple(c.device_identity for c in record.children)),
+                ("Canaries", record.canaries),
+                ("Waves", record.waves),
+                ("Attempted", record.attempted),
+                ("Successful", record.successful),
+                ("Compliant", record.compliant),
+                ("Untouched", record.untouched),
+                ("Stopping device", record.stopping_member),
+                (
+                    "Stopping outcome/reason",
+                    record.stopping_outcome or record.stopping_reason,
+                ),
+                ("Final validation", record.final_validation_status),
+                (
+                    "Child audit references",
+                    tuple((str(r.record_id), r.digest) for r in record.child_records),
+                ),
+                (
+                    "Chronology references",
+                    tuple(
+                        (str(r.record_id), r.digest) for r in record.chronology_records
+                    ),
+                ),
+                ("Chronology causality", "NOT_PROVEN"),
+            )
+            body = (
+                "<h1>"
+                + _escape(record.change_id)
+                + "</h1><dl>"
+                + "".join(
+                    "<dt>" + _escape(k) + "</dt><dd>" + _escape(v) + "</dd>"
+                    for k, v in pairs
+                )
+                + "</dl>"
+            )
+            return HTTPStatus.OK, _page("Rollout evidence", body)
         prefix = "/profiled-records/"
         if parsed.path.startswith(prefix) and parsed.path.count("/") == 2:
             identity = parsed.path.removeprefix(prefix)

@@ -10,7 +10,7 @@ deny() { echo "NO WRITE — profiled agent admission rejected" >&2; exit 2; }
    "${BUILDKITE_AGENT_META_DATA_QUEUE:-}" == ncdp-deploy && \
    "${BUILDKITE_RETRY_COUNT:-}" == 0 && \
    "${BUILDKITE_COMMAND:-}" == .buildkite/scripts/profiled_delivery.sh ]] || deny
-case "${BUILDKITE_STEP_KEY:-}" in profiled-live-plan|profiled-rollout-live-plan|profiled-deploy) ;; *) deny ;; esac
+case "${BUILDKITE_STEP_KEY:-}" in profiled-live-plan|profiled-rollout-live-plan|profiled-deploy|profiled-rollout-deploy) ;; *) deny ;; esac
 case "${BUILDKITE_REPO:-}" in
   https://github.com/Atheer-Kareem/network-change-delivery-platform.git|git@github.com:Atheer-Kareem/network-change-delivery-platform.git) ;;
   *) deny ;;
@@ -40,7 +40,7 @@ for variable in NCDP_NETBOX_URL NCDP_NETBOX_TOKEN NCDP_OPENBAO_URL \
   NCDP_OPENBAO_ROLE_ID NCDP_OPENBAO_SECRET_ID NCDP_PROFILED_DELIVERY_STATE_ROOT; do
   [[ -n "${!variable:-}" ]] || deny
 done
-if [[ "$BUILDKITE_STEP_KEY" == profiled-deploy ]]; then
+if [[ "$BUILDKITE_STEP_KEY" == profiled-deploy || "$BUILDKITE_STEP_KEY" == profiled-rollout-deploy ]]; then
   [[ -n "${NCDP_AUDIT_STORE_ROOT:-}" && "$NCDP_AUDIT_STORE_ROOT" == /* && \
      -d "$NCDP_AUDIT_STORE_ROOT" && ! -L "$NCDP_AUDIT_STORE_ROOT" && \
      -O "$NCDP_AUDIT_STORE_ROOT" && "$(mode_of "$NCDP_AUDIT_STORE_ROOT")" == 700 ]] || deny

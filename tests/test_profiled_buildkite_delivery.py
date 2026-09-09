@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -94,6 +95,9 @@ def driver(monkeypatch, tmp_path):
     audit = tmp_path.resolve() / "audit"
     audit.mkdir(mode=0o700)
     monkeypatch.setenv("NCDP_AUDIT_STORE_ROOT", str(audit))
+    state = tmp_path.resolve() / "delivery-state"
+    state.mkdir(mode=0o700)
+    monkeypatch.setenv("NCDP_PROFILED_DELIVERY_STATE_ROOT", str(state))
     monkeypatch.setenv("BUILDKITE_PIPELINE_ID", BUILD)
     monkeypatch.setenv("NCDP_BUILDKITE_PIPELINE_ID", BUILD)
     monkeypatch.setenv("BUILDKITE_BUILD_NUMBER", "42")
@@ -788,10 +792,10 @@ def test_runtime_delivery_group_preserves_exact_human_authority(
     import yaml
 
     graph = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
-    group = graph["steps"][-1]
+    group = graph["steps"][-2]
     children = group["steps"]
     if mutation == "ungrouped":
-        graph["steps"] = graph["steps"][:-1] + children
+        graph["steps"] = [s for s in graph["steps"] if s is not group] + children
     elif mutation == "extra-group":
         graph["steps"].append({"key": "other", "group": "other", "steps": []})
     elif mutation == "nested":
@@ -818,3 +822,48 @@ def test_runtime_delivery_group_preserves_exact_human_authority(
     else:
         with pytest.raises(ValueError, match="human"):
             driver.verify_human_dependency()
+
+
+def test_rollout_reservation_blocks_single_target_before_trust(
+    driver, context, plan, receipts, tmp_path, monkeypatch
+):
+    from network_change_delivery.profiled_rollout_reservation import (
+        reserve_rollout_devices,
+    )
+
+    raw = plan.model_dump_json().encode()
+    promotion = promote(
+        context, raw, receipts, DIGEST, DIGEST, intent=historical_core_intent()
+    )
+    monkeypatch.setattr(driver, "planning_result", lambda *_: (plan, raw))
+    monkeypatch.setattr(
+        driver, "download", lambda *_: promotion.model_dump_json().encode()
+    )
+    monkeypatch.setattr(driver, "prerequisites", lambda *_: (receipts, DIGEST, DIGEST))
+    monkeypatch.setattr(driver, "metadata", lambda *_: promotion.digest)
+    monkeypatch.setenv("BUILDKITE_UNBLOCKER_ID", JOB)
+    events = []
+    monkeypatch.setattr(
+        driver, "validate_profiled_live_host_trust", lambda: events.append("trust")
+    )
+    monkeypatch.setattr(driver, "command", lambda *_a, **_k: events.append("command"))
+    monkeypatch.setattr(driver, "annotate", lambda *_a, **_k: None)
+    with reserve_rollout_devices(
+        Path(os.environ["NCDP_PROFILED_DELIVERY_STATE_ROOT"]), (plan.device_identity,)
+    ):
+        assert driver.deploy_step(context, tmp_path) == 2
+    assert events == []
+
+
+@pytest.mark.parametrize(
+    "audit_case", [None, "missing", "mode", "symlink", "inside", "relative"]
+)
+def test_rollout_deploy_hook_requires_real_deploy_destinations(tmp_path, audit_case):
+    result, _ = run_hook(
+        tmp_path,
+        {"BUILDKITE_STEP_KEY": "profiled-rollout-deploy"},
+        audit_case=audit_case,
+    )
+    assert (result.returncode == 0) is (audit_case is None)
+    assert ("WRAPPER EXECUTED" in result.stdout) is (audit_case is None)
+    assert "protected-secret" not in result.stdout + result.stderr

@@ -48,7 +48,12 @@ MAIN_KEYS = (
     "profiled-deploy",
     "profiled-deployment-evidence",
 )
-ROLLOUT_KEYS = ("profiled-rollout-live-plan", "profiled-rollout-promotion")
+ROLLOUT_KEYS = (
+    "profiled-rollout-live-plan",
+    "profiled-rollout-promotion",
+    "profiled-rollout-human-authorization",
+    "profiled-rollout-deploy",
+)
 CANONICAL_REPOSITORIES = {
     "https://github.com/Atheer-Kareem/network-change-delivery-platform.git",
     "git@github.com:Atheer-Kareem/network-change-delivery-platform.git",
@@ -87,7 +92,12 @@ class ProfiledBuildContext:
         queue = (
             "ncdp-deploy"
             if step
-            in {"profiled-live-plan", "profiled-rollout-live-plan", "profiled-deploy"}
+            in {
+                "profiled-live-plan",
+                "profiled-rollout-live-plan",
+                "profiled-deploy",
+                "profiled-rollout-deploy",
+            }
             else "ncdp-validation"
         )
         if (

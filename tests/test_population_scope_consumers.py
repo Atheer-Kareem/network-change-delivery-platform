@@ -452,6 +452,8 @@ def test_read_only_scopes_never_grant_write_authority():
     assert DEVICE_IDS == (
         1,
         2,
+        8,
+        9,
     )  # passive scopes cannot expand protected credential authority
 
 

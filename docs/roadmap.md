@@ -463,12 +463,23 @@ timestamps remain unchanged. Matching Git population growth requires new
 planning and independent admission, while nonmatching growth does not change
 the bounded parent digest. This is still planning only.
 
-Protected runtime integration, the approved credential expansion 1/2 → 1/2/8/9,
-parent promotion, fieldless human authorization, complete preflight/JIT
-revalidation, overlap admission, canary/wave execution and stop semantics, final
-whole-population validation, parent durable evidence/chronology and runtime
-acceptance remain pending. CAP-PROFILED-ROLLOUT remains IN PROGRESS; the approved
-contract below is unchanged.
+#### Increment 3 implementation checkpoint
+
+Repository implementation adds a fixed committed rollout intent, protected
+all-member read-only planning, exact parent Buildkite publication and independent
+same-build parent promotion. The explicit repository deploy credential definition
+is now devices 1/2/8/9, and reviewed hook source admits rollout planning. Existing
+single-target delivery and its fieldless human block remain unchanged. Rollout
+stops at promotion, which grants no execution authority.
+
+Installed hook activation and live OpenBao policy activation have **not** occurred
+in this implementation mission. They require post-review explicit approval and
+verification before merge, in the [activation order](architecture/profiled-rollout-runtime-planning.md#post-review-activation-order).
+Rollout human authorization, complete pre-execution population revalidation,
+overlap admission, JIT child prewrite validation, canary/wave execution,
+stop-on-non-success execution, final whole-population validation, parent durable
+execution evidence, rollout chronology and runtime acceptance remain pending.
+CAP-PROFILED-ROLLOUT remains IN PROGRESS; the approved contract below is unchanged.
 
 #### Selection and independent authority
 
@@ -509,10 +520,10 @@ receives no protected credential authority automatically.
 
 The OpenBao policy must remain exact-path read-only: no wildcard, list, secret
 write, auth-management or administrative capability. The existing persistent
-deploy-agent identity may be reused if verification passes. The current
-implementation and external role remain at `DEVICE_IDS = (1, 2)` until the
-later protected-runtime integration applies and verifies the expansion;
-the planning increments do not apply it.
+deploy-agent identity may be reused if verification passes. The repository now
+defines the expanded exact set. The installed external role
+remains at devices 1/2 until separately approved post-review activation; repository
+implementation alone does not change installed credential authority.
 
 #### Complete planning and immutable rollout artifact
 

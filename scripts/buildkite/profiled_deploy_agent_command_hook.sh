@@ -10,7 +10,7 @@ deny() { echo "NO WRITE — profiled agent admission rejected" >&2; exit 2; }
    "${BUILDKITE_AGENT_META_DATA_QUEUE:-}" == ncdp-deploy && \
    "${BUILDKITE_RETRY_COUNT:-}" == 0 && \
    "${BUILDKITE_COMMAND:-}" == .buildkite/scripts/profiled_delivery.sh ]] || deny
-case "${BUILDKITE_STEP_KEY:-}" in profiled-live-plan|profiled-deploy) ;; *) deny ;; esac
+case "${BUILDKITE_STEP_KEY:-}" in profiled-live-plan|profiled-rollout-live-plan|profiled-deploy) ;; *) deny ;; esac
 case "${BUILDKITE_REPO:-}" in
   https://github.com/Atheer-Kareem/network-change-delivery-platform.git|git@github.com:Atheer-Kareem/network-change-delivery-platform.git) ;;
   *) deny ;;

@@ -3,7 +3,10 @@
 Current profiled local execution uses AppRole and exact stable-device-ID paths.
 The general operator role remains bounded. Buildkite plan/deploy uses a dedicated
 persistent local SecretID with fresh 300-second, one-use tokens and exact reads
-for devices 1/2; see [installation](buildkite-profiled-delivery-operations.md).
+for exact devices 1/2 in the installed environment pending post-review activation.
+Increment 3 repository policy explicitly expands to 1/2/8/9; no automatic
+population-derived access is granted. See the
+[activation contract](profiled-rollout-runtime-planning.md#post-review-activation-order).
 Buildkite staging consumes the existing device-scoped
 JWT roles through its injected staging provider. Deployment JWT roles below
 remain historical authority records: schema-v1 protected delivery is retired.

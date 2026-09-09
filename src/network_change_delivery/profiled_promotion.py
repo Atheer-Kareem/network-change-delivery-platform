@@ -48,6 +48,7 @@ MAIN_KEYS = (
     "profiled-deploy",
     "profiled-deployment-evidence",
 )
+ROLLOUT_KEYS = ("profiled-rollout-live-plan", "profiled-rollout-promotion")
 CANONICAL_REPOSITORIES = {
     "https://github.com/Atheer-Kareem/network-change-delivery-platform.git",
     "git@github.com:Atheer-Kareem/network-change-delivery-platform.git",
@@ -85,7 +86,8 @@ class ProfiledBuildContext:
         step = environment.get("BUILDKITE_STEP_KEY", "")
         queue = (
             "ncdp-deploy"
-            if step in {"profiled-live-plan", "profiled-deploy"}
+            if step
+            in {"profiled-live-plan", "profiled-rollout-live-plan", "profiled-deploy"}
             else "ncdp-validation"
         )
         if (
@@ -98,7 +100,7 @@ class ProfiledBuildContext:
             or (
                 main
                 and (
-                    step not in MAIN_KEYS
+                    step not in (*MAIN_KEYS, *ROLLOUT_KEYS)
                     or environment.get("BUILDKITE_BRANCH") != "main"
                     or environment.get("BUILDKITE_PULL_REQUEST") != "false"
                     or environment.get("BUILDKITE_PULL_REQUEST_REPO")

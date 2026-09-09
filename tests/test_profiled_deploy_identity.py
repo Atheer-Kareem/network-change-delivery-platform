@@ -119,7 +119,7 @@ class Bao:
                     }
                 },
             )
-        if path in ("/v1/ncdp/data/devices/1/ssh", "/v1/ncdp/data/devices/2/ssh"):
+        if path in tuple(f"/v1/ncdp/data/devices/{i}/ssh" for i in (1, 2, 8, 9)):
             token = request.headers["X-Vault-Token"]
             assert request.method == "GET" and self.tokens[token] == 1
             self.tokens[token] -= 1
@@ -134,6 +134,11 @@ class Bao:
                     }
                 },
             )
+        if path == "/v1/ncdp/data/devices/999999/ssh":
+            token = request.headers["X-Vault-Token"]
+            assert request.method == "GET" and self.tokens[token] == 1
+            self.tokens[token] -= 1
+            return httpx.Response(403)
         raise AssertionError("Unexpected OpenBao path")
 
     def operator(self):
@@ -199,7 +204,7 @@ def test_install_reuses_pair_and_preserves_settings_atomically(
     helper.install(hooks, state, bao.operator())
     assert (hooks / "profiled.env").read_bytes() == first
     assert bao.issued == 1
-    assert len([r for r in bao.calls if r.url.path == "/v1/auth/approle/login"]) == 4
+    assert len([r for r in bao.calls if r.url.path == "/v1/auth/approle/login"]) == 10
     assert all(v == 0 for v in bao.tokens.values())
     assert bao.role == ROLE and bao.policy == {"policy": POLICY}
     for p in (hooks / "profiled.env", state / "approle.env"):
@@ -286,20 +291,30 @@ def test_installer_explicit_operator_authority_only(
     assert "No device access" in capsys.readouterr().out
 
 
-def test_persistent_role_does_not_grant_admin_or_devices_8_9():
+def test_persistent_role_grants_only_exact_four_reads_not_admin():
     assert ROLE["secret_id_ttl"] == ROLE["secret_id_num_uses"] == 0
     assert ROLE["token_ttl"] == ROLE["token_max_ttl"] == 300
     assert ROLE["token_num_uses"] == 1 and ROLE["token_no_default_policy"]
-    assert POLICY.count('capabilities = ["read"]') == 2
-    assert "/1/ssh" in POLICY and "/2/ssh" in POLICY
+    assert POLICY.count('capabilities = ["read"]') == 4
+    assert all(f"/{i}/ssh" in POLICY for i in (1, 2, 8, 9))
     assert not any(
         s in POLICY
-        for s in ("*", "update", "create", "delete", "/8/", "/9/", "sys/", "auth/")
+        for s in (
+            "*",
+            "update",
+            "create",
+            "delete",
+            "/10/",
+            "/999999/",
+            "sys/",
+            "auth/",
+        )
     )
 
 
 @pytest.mark.parametrize(
-    "bad", ["expiry", "uses", "token-ttl", "token-uses", "extra-policy"]
+    "bad",
+    ["expiry", "uses", "token-ttl", "token-uses", "extra-policy", "identity-policy"],
 )
 def test_rejects_bad_installed_or_token_contract(helper, protected, bad):
     hooks, state, _ = protected
@@ -320,6 +335,8 @@ def test_rejects_bad_installed_or_token_contract(helper, protected, bad):
                 data["num_uses"] = 0
             elif bad == "extra-policy":
                 data["policies"].append("default")
+            elif bad == "identity-policy":
+                data["identity_policies"] = ["unexpected"]
             return httpx.Response(200, json={"data": data})
         return result
 
@@ -544,3 +561,26 @@ def test_installer_checks_audit_setting_before_any_openbao_operation(
     assert not bao.calls and bao.issued == 0
     assert protected_file.read_bytes() == before
     assert not state.exists()
+
+
+@pytest.mark.parametrize("outcome", [200, 404, "timeout"])
+def test_unrelated_path_requires_actual_denial_without_retry(outcome):
+    bao = Bao()
+
+    def response(request):
+        if request.url.path == "/v1/ncdp/data/devices/999999/ssh":
+            bao.calls.append(request)
+            if outcome == "timeout":
+                raise httpx.ReadTimeout("uncertain", request=request)
+            return httpx.Response(outcome)
+        return bao.handle(request)
+
+    operator = OpenBaoProfiledDeployConfigurator(
+        URL, "private-admin", transport=httpx.MockTransport(response)
+    )
+    operator.configure()
+    pair = operator.issue()
+    with pytest.raises(SecretError):
+        operator.verify(pair)
+    assert sum(r.url.path == "/v1/ncdp/data/devices/999999/ssh" for r in bao.calls) == 1
+    assert bao.issued == 1

@@ -396,7 +396,7 @@ def test_explicit_catalog_and_family_dispatch_are_separate():
     )
     assert "AutomationProfileID" not in source and "automation_profile_id" not in source
     assert "target.__post_init__()" in source
-    assert DEVICE_IDS == (1, 2)
+    assert DEVICE_IDS == (1, 2, 8, 9)
     assert list(ProfiledOperation) == [ProfiledOperation.INTERFACE_DESCRIPTION]
 
 

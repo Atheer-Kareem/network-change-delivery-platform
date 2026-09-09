@@ -308,8 +308,14 @@ acceptance. See the [current chronology contract](audit-and-configuration-histor
 
 Increment 3 adds two exact sibling jobs through the same wrapper: protected
 `profiled-rollout-live-plan`, then credential-free `profiled-rollout-promotion`.
-They stop without human authorization or execution. Single-target artifacts,
-active intent and the fieldless human block remain unchanged. See the
+Increment 5 adds a separate fieldless rollout human block and protected sequential
+rollout deploy job. Single-target artifacts, active intent and its fieldless
+human block remain unchanged; both deploy paths now share stable-device
+reservations. See the
 [rollout runtime contract](profiled-rollout-runtime-planning.md) for exact
 publication/promotion namespaces, static credential authority, concurrency and
-completed post-review external activation. Rollout execution remains unavailable.
+completed planning-authority activation. The new rollout-deploy hook admission
+requires separate post-review installation before merge. The
+[execution contract](profiled-rollout-execution.md) defines the exact authority,
+stop/evidence semantics and activation procedure; no rollout block is continued
+automatically.

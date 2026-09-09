@@ -353,3 +353,31 @@ steps:
           automatic: false
           manual:
             allowed: false
+
+  - group: "Rollout delivery"
+    key: rollout-runtime-delivery
+    if_changed: *runtime_changes
+    steps:
+      - block: "Authorize exact frozen rollout"
+        key: profiled-rollout-human-authorization
+        depends_on: profiled-rollout-promotion
+        if: build.branch == "main" && build.pull_request.id == null
+        prompt: >-
+          Review the exact same-build rollout promotion, selected interfaces,
+          child plans, canaries and waves. Continuing authorizes only that frozen
+          rollout. No input changes targets or repairs failed prerequisites.
+          Positive all-COMPLIANT planning grants no write authority.
+
+      - label: "Profiled rollout · authorized sequential execution"
+        key: profiled-rollout-deploy
+        depends_on: profiled-rollout-human-authorization
+        if: build.branch == "main" && build.pull_request.id == null
+        command: .buildkite/scripts/profiled_delivery.sh
+        agents:
+          queue: ncdp-deploy
+        retry:
+          automatic: false
+          manual:
+            allowed: false
+        concurrency: 1
+        concurrency_group: ncdp/profiled-live-delivery

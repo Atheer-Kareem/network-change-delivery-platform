@@ -10,7 +10,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -39,6 +39,7 @@ from network_change_delivery.profiled_configuration_observation import (
     SUCCESS,
     Overall,
     ProfiledChronologyPublicationReceipt,
+    _signed,
     build_profiled_observation_record,
     capture_profiled_attempt,
     load_attempt_file,
@@ -86,6 +87,15 @@ from network_change_delivery.profiled_rollout import (
     plan_profiled_rollout,
     read_profiled_rollout,
 )
+from network_change_delivery.profiled_rollout_audit import (
+    ROLLOUT_DURABLE_METADATA,
+    ProfiledRolloutDurablePublicationReceipt,
+)
+from network_change_delivery.profiled_rollout_audit_store import (
+    ProfiledRolloutAuditStore,
+)
+from network_change_delivery.profiled_rollout_authorization import authorize_rollout
+from network_change_delivery.profiled_rollout_execution import execute_rollout
 from network_change_delivery.profiled_rollout_intent import (
     load_committed_rollout_intent,
 )
@@ -98,6 +108,8 @@ from network_change_delivery.profiled_rollout_promotion import (
     admit_rollout_result,
     promote_rollout,
 )
+from network_change_delivery.profiled_rollout_reservation import reserve_rollout_devices
+from network_change_delivery.profiled_write_adapter import ProfiledWriteAdapter
 from network_change_delivery.secrets import (
     OpenBaoLoginError,
     OpenBaoSecretProvider,
@@ -110,6 +122,7 @@ PROTECTED = {"NCDP_NETBOX_TOKEN", "NCDP_OPENBAO_ROLE_ID", "NCDP_OPENBAO_SECRET_I
 PLAN_PHASES = frozenset(
     {
         "commit/context",
+        "assurance prerequisites",
         "protected environment",
         "LIVE trust",
         "NetBox inventory",
@@ -283,44 +296,59 @@ def prerequisites(context):
 
 
 def verify_human_dependency():
-    """Trust the scheduler's unblocker identity only with the exact single block DAG."""
+    """Admit exactly two fieldless authority graphs, without arbitrary nesting."""
     pipeline = yaml.safe_load((ROOT / ".buildkite/pipeline.yml").read_text())
-    top_level = pipeline["steps"]
-    groups = [step for step in top_level if "steps" in step]
-    if len(groups) != 1:
+    top = pipeline["steps"]
+    expected = {
+        "runtime-delivery": list(MAIN_KEYS),
+        "rollout-runtime-delivery": [
+            "profiled-rollout-human-authorization",
+            "profiled-rollout-deploy",
+        ],
+    }
+    groups = [s for s in top if "steps" in s]
+    if len(groups) != 2 or {g.get("key") for g in groups} != set(expected):
         raise ValueError("human block group rejected")
-    group = groups[0]
-    if (
-        group.get("key") != "runtime-delivery"
-        or "group" not in group
-        or "skip" in group
-        or "if" in group
-        or [step.get("key") for step in group["steps"]] != list(MAIN_KEYS)
-        or any("steps" in step for step in group["steps"])
-    ):
-        raise ValueError("human block group rejected")
-    # The group schedules the fieldless block together with its whole delivery tail.
-    # Receipts remain independently mandatory; path scheduling grants no authority.
-    steps = [step for step in top_level if step is not group] + group["steps"]
-    if any(step.get("key") == group["key"] for step in steps):
-        raise ValueError("human block group rejected")
-    indexed = {step["key"]: step for step in steps}
-    if len(indexed) != len(steps) or [s["key"] for s in steps if "block" in s] != [
-        MAIN_KEYS[2]
-    ]:
+    steps = [s for s in top if "steps" not in s]
+    for group in groups:
+        if (
+            "group" not in group
+            or "skip" in group
+            or "if" in group
+            or [s.get("key") for s in group["steps"]] != expected[group["key"]]
+            or any("steps" in s for s in group["steps"])
+        ):
+            raise ValueError("human block group rejected")
+        steps.extend(group["steps"])
+    indexed = {s["key"]: s for s in steps}
+    keys = [s["key"] for s in top] + [s["key"] for g in groups for s in g["steps"]]
+    if len(keys) != len(set(keys)) or {s["key"] for s in steps if "block" in s} != {
+        "profiled-human-authorization",
+        "profiled-rollout-human-authorization",
+    }:
         raise ValueError("human block graph rejected")
-    block = indexed[MAIN_KEYS[2]]
-    deploy = indexed["profiled-deploy"]
-    if (
-        block.get("depends_on") != "profiled-promotion"
-        or "fields" in block
-        or "soft_fail" in block
-        or "skip" in block
-        or deploy.get("depends_on") != MAIN_KEYS[2]
-        or deploy.get("command") != WRAPPER
-        or deploy.get("if") != 'build.branch == "main" && build.pull_request.id == null'
-    ):
-        raise ValueError("human authorization dependency rejected")
+    for prefix in ("profiled", "profiled-rollout"):
+        block, deploy = (
+            indexed[prefix + "-human-authorization"],
+            indexed[prefix + "-deploy"],
+        )
+        condition = 'build.branch == "main" && build.pull_request.id == null'
+        if (
+            block.get("depends_on") != prefix + "-promotion"
+            or any(k in block for k in ("fields", "soft_fail", "skip"))
+            or block.get("if") != condition
+            or deploy.get("depends_on") != prefix + "-human-authorization"
+            or deploy.get("command") != WRAPPER
+            or deploy.get("if") != condition
+            or "skip" in deploy
+            or deploy.get("agents") != {"queue": "ncdp-deploy"}
+            or deploy.get("concurrency") != 1
+            or deploy.get("concurrency_group") != "ncdp/profiled-live-delivery"
+            or deploy.get("retry", {}).get("automatic") is not False
+            or deploy.get("retry", {}).get("manual", {}).get("allowed") is not False
+            or (prefix == "profiled-rollout" and "soft_fail" in deploy)
+        ):
+            raise ValueError("human authorization dependency rejected")
 
 
 def plan_step(context, directory):
@@ -583,6 +611,11 @@ def deploy_compliance(context, directory, value, raw):
 
 
 def deploy_step(context, directory):
+    with ExitStack() as reservations:
+        return _single_deploy(context, directory, reservations)
+
+
+def _single_deploy(context, directory, reservations):
     try:
         verify_human_dependency()
         value, plan_bytes = planning_result(context, directory)
@@ -603,6 +636,12 @@ def deploy_step(context, directory):
             metadata(context, PROMOTION_METADATA),
             unblocker,
             intent=load_committed_intent(ROOT),
+        )
+        reservations.enter_context(
+            reserve_rollout_devices(
+                Path(os.environ["NCDP_PROFILED_DELIVERY_STATE_ROOT"]),
+                (plan.device_identity,),
+            )
         )
         validate_profiled_live_host_trust()
         promotion = ProfiledPromotion.model_validate_json(promotion_bytes)
@@ -900,7 +939,7 @@ def rollout_plan_step(context, directory):
     with plan_boundary("commit/context"):
         intent = load_committed_rollout_intent(ROOT)
     # CML's soft-fail UI must not permit new protected collection without receipts.
-    with plan_boundary("commit/context"):
+    with plan_boundary("assurance prerequisites"):
         receipts, batfish, cml = prerequisites(context)
         verify_validation(context, receipts)
         checked_digest(batfish)
@@ -981,6 +1020,154 @@ def rollout_promotion_step(context, directory):
     return 0
 
 
+def rollout_deploy_step(context, directory):
+    record = None
+    try:
+        if context.step != "profiled-rollout-deploy":
+            raise ValueError("rollout deploy context rejected")
+        verify_human_dependency()
+        intent = load_committed_rollout_intent(ROOT)
+        publication = RolloutPlanningPublication.model_validate_json(
+            metadata(context, ROLLOUT_PLANNING_METADATA)
+        )
+        raw = download(
+            context,
+            directory,
+            artifact_name(context, "rollout-" + publication.artifact_kind),
+            "profiled-rollout-live-plan",
+        )
+        parent = publication.read(context, raw, intent)
+        if not isinstance(parent, PLAN_TYPES):
+            annotate(
+                context,
+                "## Rollout COMPLIANT · zero write authority\n\n"
+                + rollout_summary(parent),
+            )
+            return 0
+        promotion_raw = download(
+            context,
+            directory,
+            artifact_name(context, "rollout-promotion"),
+            "profiled-rollout-promotion",
+        )
+        receipts, batfish, cml = prerequisites(context)
+        inputs = {
+            "context": context,
+            "parent_bytes": raw,
+            "publication": publication,
+            "promotion_bytes": promotion_raw,
+            "receipts": receipts,
+            "batfish": batfish,
+            "cml": cml,
+            "promotion_digest": metadata(context, ROLLOUT_PROMOTION_METADATA),
+            "promotion_artifact_digest": metadata(
+                context, ROLLOUT_PROMOTION_BYTES_METADATA
+            ),
+            "unblocker_id": os.environ.get("BUILDKITE_UNBLOCKER_ID", ""),
+            "intent": intent,
+        }
+        # Authenticate frozen facts before trust or constructing providers.
+        authorize_rollout(**inputs)
+        pipeline_id = os.environ["BUILDKITE_PIPELINE_ID"]
+        if pipeline_id != os.environ["NCDP_BUILDKITE_PIPELINE_ID"]:
+            raise ValueError("rollout pipeline binding rejected")
+        UUID(pipeline_id)
+        build_number = int(os.environ["BUILDKITE_BUILD_NUMBER"])
+        if build_number <= 0:
+            raise ValueError("rollout build number rejected")
+        store = ProfiledRolloutAuditStore(
+            Path(os.environ["NCDP_AUDIT_STORE_ROOT"]), checkout=ROOT
+        )
+        validate_profiled_live_host_trust()
+        trust = DEFAULT_PROFILED_LIVE_TRUST_ROOT / KNOWN_HOSTS_NAME
+        record = execute_rollout(
+            **inputs,
+            store=store,
+            state_root=Path(os.environ["NCDP_PROFILED_DELIVERY_STATE_ROOT"]),
+            directory=directory,
+            pipeline_id=pipeline_id,
+            build_number=build_number,
+            inventory=NetBoxProfileInventoryProvider(),
+            credential_authority=ProtectedRolloutCredentialAuthority(),
+            secrets=OpenBaoSecretProvider(),
+            collector=ProfileReadOnlyAdapter(known_hosts=trust),
+            writer_factory=lambda: ProfiledWriteAdapter(known_hosts=trust),
+        )
+        receipt = _signed(
+            ProfiledRolloutDurablePublicationReceipt,
+            {
+                "record_id": record.record_id,
+                "record_digest": record.digest,
+                "build_id": record.build_id,
+                "source_commit": record.source_commit,
+                "outcome": record.outcome,
+            },
+        )
+        name = artifact_name(context, "rollout-durable-publication")
+        content = receipt.model_dump_json(indent=2).encode() + b"\n"
+        write_new(directory / name, content)
+        upload(context, directory, name)
+        publish_metadata(context, ROLLOUT_DURABLE_METADATA, receipt.model_dump_json())
+        rows = [
+            "## Rollout execution",
+            f"Outcome: **{record.outcome}**",
+            f"Authorization: `{record.authorization_digest}`",
+            f"Preflight: `{record.preflight_digest}`",
+            rollout_summary(parent),
+            "Reserved population: "
+            f"`{tuple(c.device_identity for c in record.children)}`",
+            f"Child lifecycles entered (not a write count): `{record.attempted}`; "
+            f"successful: `{record.successful}`; "
+            f"compliant: `{record.compliant}`",
+            f"Stopping member/outcome: `{record.stopping_member}` / "
+            f"`{record.stopping_outcome or record.stopping_reason}`",
+            f"Untouched: `{record.untouched}`; "
+            f"final validation: `{record.final_validation_status}`",
+            f"Durable parent: `{record.record_id}` / `{record.digest}`",
+            f"Child evidence complete: `{record.child_evidence_complete}`; "
+            f"evidence failure: `{record.evidence_failed}`",
+            "Chronology causality: NOT_PROVEN. No command replay performed.",
+        ]
+        from network_change_delivery.profiled_rollout_audit import (
+            ProfiledRolloutChildAuditRecord,
+        )
+
+        for ref in record.child_records:
+            child = store.read_rollout_record(
+                ProfiledRolloutChildAuditRecord, ref.record_id
+            )
+            write_attempted = (
+                child.write_attempted
+                if child.write_attempted is not None
+                else "UNKNOWN"
+            )
+            rows.append(
+                f"`{child.child.device_identity}`: `{child.final_outcome}`; "
+                f"write attempted: `{write_attempted}`; "
+                f"execution `{child.execution_digest}`; "
+                f"PRE/POST `{child.pre_status}` / `{child.post_status}`"
+            )
+        annotate(context, "\n\n".join(rows), failed=record.outcome != "SUCCEEDED")
+        return 0 if record.outcome == "SUCCEEDED" else 3
+    except Exception:
+        safe_annotation(
+            context,
+            "Rollout admission/execution/publication failed. "
+            "DEVICE OUTCOME MAY BE KNOWN/UNKNOWN FROM CHILD EVIDENCE; "
+            + (
+                "DURABLE ROLLOUT PARENT NOT ESTABLISHED. "
+                if record is None
+                else (
+                    f"Durable parent readback established: {record.record_id} / "
+                    f"{record.digest}; subsequent publication failed. "
+                )
+            )
+            + "Inspect retained private evidence; "
+            "NO COMMAND REPLAY PERFORMED. No automatic resume.",
+        )
+        return 3
+
+
 def main():
     logging.disable(logging.CRITICAL)
     os.umask(0o077)
@@ -997,6 +1184,7 @@ def main():
             "profiled-live-plan": plan_step,
             "profiled-rollout-live-plan": rollout_plan_step,
             "profiled-rollout-promotion": rollout_promotion_step,
+            "profiled-rollout-deploy": rollout_deploy_step,
             "profiled-promotion": promotion_step,
             "profiled-deploy": deploy_step,
             "profiled-deployment-evidence": evidence_step,
@@ -1007,6 +1195,7 @@ def main():
             "profiled-live-plan",
             "profiled-rollout-live-plan",
             "profiled-deploy",
+            "profiled-rollout-deploy",
         }:
             phase = "protected environment"
             if is_plan and any(

@@ -497,14 +497,33 @@ Fresh observation timestamps may differ; classification, reviewed state and
 identity/operation/credential basis may not. Existing child and parent artifact
 bytes remain unchanged; future execution must pass original child artifact bytes.
 
-Still pending: the actual Buildkite rollout human block; integration of
-reservations with protected runtime and single-target overlap; rollout deploy;
-child JIT execution; sequential canary/wave execution and stop/partial
-orchestration; final whole-population validation; parent durable execution
-evidence; rollout chronology; and real multi-target write acceptance.
-There is no rollout execution surface. CAP-PROFILED-ROLLOUT remains IN PROGRESS;
-CAP-OP-ASSURANCE remains DEFERRED and the temporary PR/development CML exception
-remains ACTIVE. No accepted capability state or approved scope changes.
+Increment 4 introduced no execution surface. Its historical artifact bytes and
+admission semantics remain unchanged in the following integration.
+
+#### Increment 5 implementation checkpoint
+
+The [protected execution integration](architecture/profiled-rollout-execution.md)
+adds the fieldless rollout block, exact protected authorization reconstruction,
+rollout and single-target stable-device reservations, whole-population preflight,
+sequential frozen canaries/waves, original child-byte reuse and existing child JIT
+execution. Every non-SUCCEEDED child stops later exposure. Independent final
+whole-population D1 validation, distinct rollout child audit/chronology, durable
+parent correlation/readback and metadata-only Evidence Viewer support complete
+the implementation path. No rollout-level rollback, retry or resume is added.
+
+Build #465's missing CML success correctly stopped protected rollout planning.
+The unchanged-main reproduction succeeded; the repeated post-BOOTED IOSv SSH
+failure remains ROOT CAUSE NOT PROVEN. The user accepted the residual bounded
+availability risk for implementation. No staging timing/lifecycle change is
+made. The prerequisite failure phase is now truthfully `assurance prerequisites`.
+
+Installed execution-hook activation remains a separate post-review action;
+OpenBao authority requires no change. Implementation/tests/merge are not capability
+acceptance. Still required: controlled runtime evidence, fault-injection evidence
+review, explicit user sign-off, and restoration of the temporary PR CML exception
+before final integrated roadmap acceptance under its existing exit condition.
+CAP-PROFILED-ROLLOUT remains IN PROGRESS; CAP-OP-ASSURANCE remains DEFERRED and the
+temporary PR/development CML exception remains ACTIVE. No accepted state changes.
 
 #### Selection and independent authority
 

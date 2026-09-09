@@ -522,7 +522,7 @@ def test_hook_exact_rollout_plan_only_without_audit(tmp_path, step, allowed):
         tmp_path, {"BUILDKITE_STEP_KEY": step}, audit_case="missing"
     )
     assert (result.returncode == 0) is allowed
-    assert marker.exists() is allowed
+    assert marker.exists() is (allowed or step == "profiled-rollout-deploy")
 
 
 def test_single_target_intent_unchanged():
@@ -596,3 +596,96 @@ def test_rollout_hook_dirty_checkout_fails_before_private_env(tmp_path, monkeypa
         tmp_path, {"BUILDKITE_STEP_KEY": "profiled-rollout-live-plan"}
     )
     assert result.returncode == 2 and not marker.exists()
+
+
+@pytest.mark.parametrize("missing", ["cml", "batfish", *VALIDATION_KEYS])
+def test_assurance_phase_fails_before_all_providers(
+    runtime, driver, tmp_path, monkeypatch, missing
+):
+    key = {"cml": driver.CML_METADATA, "batfish": driver.BATFISH_METADATA}.get(
+        missing, "profiled-validation-" + missing
+    )
+    runtime.metadata.pop(key)
+    for name in (
+        "validate_profiled_live_host_trust",
+        "NetBoxProfileInventoryProvider",
+        "OpenBaoSecretProvider",
+        "ProfileReadOnlyAdapter",
+    ):
+        monkeypatch.setattr(driver, name, forbidden)
+    with pytest.raises(driver.PlanPhaseError) as caught:
+        driver.rollout_plan_step(runtime.ctx, tmp_path)
+    assert caught.value.phase == "assurance prerequisites"
+    assert driver.plan_failure(runtime.ctx, caught.value.phase) == 2
+    assert (
+        "Profiled live plan FAILED — phase: assurance prerequisites. No device write."
+        in runtime.annotations[-1]
+    )
+    assert not runtime.inventory.calls and not runtime.collector.calls
+    assert runtime.secrets.reference_calls == runtime.secrets.load_calls == 0
+
+
+def test_positive_all_compliant_continuation_has_no_execution_admission(
+    runtime, driver, tmp_path, monkeypatch
+):
+    runtime.compliant.update(runtime.inventory.pairs)
+    published(runtime, driver, tmp_path)
+    for name in (
+        "authorize_rollout",
+        "reserve_rollout_devices",
+        "execute_rollout",
+        "ProfiledRolloutAuditStore",
+        "validate_profiled_live_host_trust",
+        "OpenBaoSecretProvider",
+        "NetBoxProfileInventoryProvider",
+    ):
+        monkeypatch.setattr(driver, name, forbidden)
+    assert (
+        driver.rollout_deploy_step(
+            replace(runtime.ctx, step="profiled-rollout-deploy"), tmp_path
+        )
+        == 0
+    )
+    assert "zero write authority" in runtime.annotations[-1]
+
+
+@pytest.mark.parametrize(
+    "damage", ["unblocker", "promotion-bytes", "promotion-digest", "cml", "fields"]
+)
+def test_protected_rollout_caller_reconstructs_before_activity(
+    runtime, driver, tmp_path, monkeypatch, damage
+):
+    published(runtime, driver, tmp_path)
+    driver.rollout_promotion_step(
+        replace(runtime.ctx, step="profiled-rollout-promotion"), tmp_path
+    )
+    monkeypatch.setenv("BUILDKITE_UNBLOCKER_ID", JOB)
+    if damage == "unblocker":
+        monkeypatch.delenv("BUILDKITE_UNBLOCKER_ID")
+    elif damage == "promotion-bytes":
+        runtime.metadata[ROLLOUT_PROMOTION_BYTES_METADATA] = "sha256:" + "0" * 64
+    elif damage == "promotion-digest":
+        runtime.metadata[ROLLOUT_PROMOTION_METADATA] = "sha256:" + "0" * 64
+    elif damage == "cml":
+        del runtime.metadata[driver.CML_METADATA]
+    else:
+        import yaml
+
+        path = driver.ROOT / ".buildkite/pipeline.yml"
+        graph = yaml.safe_load(path.read_text())
+        graph["steps"][-1]["steps"][0]["fields"] = []
+        path.write_text(yaml.safe_dump(graph))
+    for name in (
+        "execute_rollout",
+        "ProfiledRolloutAuditStore",
+        "validate_profiled_live_host_trust",
+        "OpenBaoSecretProvider",
+        "NetBoxProfileInventoryProvider",
+    ):
+        monkeypatch.setattr(driver, name, forbidden)
+    assert (
+        driver.rollout_deploy_step(
+            replace(runtime.ctx, step="profiled-rollout-deploy"), tmp_path
+        )
+        != 0
+    )

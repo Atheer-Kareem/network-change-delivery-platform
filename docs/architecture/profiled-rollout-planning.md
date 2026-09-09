@@ -54,8 +54,9 @@ managed membership != protected credential authority != operation authority != r
 
 Increment 3 defines the static protected device set `(1, 2, 8, 9)` in repository
 policy and a `ProtectedRolloutCredentialAuthority` decision provider. Actual
-child secret availability remains independent. External OpenBao/hook activation
-is pending separate post-review approval; offline tests grant no live access.
+child secret availability remains independent. Explicitly approved external
+OpenBao/hook activation is now [verified](profiled-rollout-runtime-planning.md#verified-post-review-activation);
+offline tests alone grant no live access. Rollout execution does not exist.
 
 ## Increment 2: closed population selection
 

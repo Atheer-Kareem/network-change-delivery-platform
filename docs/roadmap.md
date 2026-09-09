@@ -465,20 +465,24 @@ the bounded parent digest. This is still planning only.
 
 #### Increment 3 implementation checkpoint
 
-Repository implementation adds a fixed committed rollout intent, protected
+Repository implementation is complete: a fixed committed rollout intent, protected
 all-member read-only planning, exact parent Buildkite publication and independent
 same-build parent promotion. The explicit repository deploy credential definition
 is now devices 1/2/8/9, and reviewed hook source admits rollout planning. Existing
 single-target delivery and its fieldless human block remain unchanged. Rollout
 stops at promotion, which grants no execution authority.
 
-Installed hook activation and live OpenBao policy activation have **not** occurred
-in this implementation mission. They require post-review explicit approval and
-verification before merge, in the [activation order](architecture/profiled-rollout-runtime-planning.md#post-review-activation-order).
-Rollout human authorization, complete pre-execution population revalidation,
-overlap admission, JIT child prewrite validation, canary/wave execution,
-stop-on-non-success execution, final whole-population validation, parent durable
-execution evidence, rollout chronology and runtime acceptance remain pending.
+Protected external planning authority is **ACTIVATED and VERIFIED** against
+reviewed runtime commit `a6dd4762b6ff022c30bd8bb4572571d149080995`. The reviewed
+hook was installed and the exact read policy expanded once to 1/2/8/9; the
+existing role and persistent pair were retained. See the bounded
+[activation evidence](architecture/profiled-rollout-runtime-planning.md#verified-post-review-activation).
+Rollout execution still does not exist.
+Rollout fieldless human authorization, complete pre-execution population
+revalidation, overlap locking, JIT child prewrite validation, canary/wave execution,
+stop/partial runtime semantics, final whole-population validation, parent durable
+execution evidence, rollout chronology and runtime acceptance of those later
+stages remain pending.
 CAP-PROFILED-ROLLOUT remains IN PROGRESS; the approved contract below is unchanged.
 
 #### Selection and independent authority
@@ -505,9 +509,9 @@ managed membership != protected credential authority != operation authority != r
 
 #### Explicit protected credential amendment
 
-For the current four-device personal lab, future implementation is explicitly
-approved to expand `ncdp-buildkite-profiled-deploy` from exact credential reads
-**1 / 2** to **1 / 2 / 8 / 9**, with the expected repository policy:
+For the current four-device personal lab, the explicitly approved expansion of
+`ncdp-buildkite-profiled-deploy` from exact credential reads **1 / 2** to
+**1 / 2 / 8 / 9** is implemented and externally verified, with repository policy:
 
 ```python
 DEVICE_IDS = (1, 2, 8, 9)
@@ -520,10 +524,10 @@ receives no protected credential authority automatically.
 
 The OpenBao policy must remain exact-path read-only: no wildcard, list, secret
 write, auth-management or administrative capability. The existing persistent
-deploy-agent identity may be reused if verification passes. The repository now
-defines the expanded exact set. The installed external role
-remains at devices 1/2 until separately approved post-review activation; repository
-implementation alone does not change installed credential authority.
+deploy-agent identity was reused after verification. Repository policy and
+installed protected authority now match the expanded exact set. This required
+explicit post-review activation; repository implementation alone did not change
+installed credential authority.
 
 #### Complete planning and immutable rollout artifact
 

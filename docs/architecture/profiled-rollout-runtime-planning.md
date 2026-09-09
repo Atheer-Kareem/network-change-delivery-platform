@@ -1,10 +1,10 @@
 # Protected rollout planning and parent promotion
 
-CAP-PROFILED-ROLLOUT remains **IN PROGRESS**. Increment 3 implements repository
-integration only. Installed OpenBao policy and the external command hook remain
-unchanged until separately approved post-review activation. No rollout human
-block, execution, locks, final validation, parent AuditStore execution evidence
-or chronology exists yet.
+CAP-PROFILED-ROLLOUT remains **IN PROGRESS**. Increment 3 repository implementation
+is complete. Protected external planning authority is **ACTIVATED and VERIFIED**
+against reviewed runtime commit `a6dd4762b6ff022c30bd8bb4572571d149080995`.
+No rollout human block, execution, locks, final validation, parent AuditStore
+execution evidence or chronology exists yet.
 
 ## Parallel protected planning path
 
@@ -125,13 +125,50 @@ candidate assurance. CML remains real same-build realization/readiness/trust and
 read-only integration, not candidate-write rehearsal. CAP-OP-ASSURANCE remains
 DEFERRED; the temporary PR/development CML exception remains ACTIVE.
 
+## Verified post-review activation
+
+Explicitly authorized activation completed against reviewed runtime commit
+`a6dd4762b6ff022c30bd8bb4572571d149080995`, after natural Buildkite #461 passed
+for that exact commit. The working tree was clean and PR #162 remained unmerged.
+The blocked-tail audit established **15 INERT_COMPLIANT**, **7
+INERT_PROMOTION_FAILED**, **0 LIVE_PAUSED_PROMOTION** and **0 UNKNOWN_BLOCKER**.
+No new canonical-main builds appeared in the race check. Historical blocks were
+not canceled, retried or continued. A positive COMPLIANCE path returns before
+consuming promotion/write authority; a failed promotion without its required
+digest cannot authorize deployment. A visible block alone is not a live promotion.
+
+The reviewed hook was installed at the existing agent-owned
+`~/.config/buildkite/ncdp-lab/hooks/ncdp-deploy/command`. Installed bytes matched
+reviewed source; hook and directory retained `netdevops:staff` ownership and
+mode **0700**. `profiled.env` and the dedicated persistent pair remained
+byte-identical. The source/installed hook SHA-256 was
+`d0f23c56581446a14d1accf52a0e63741da31b4e692c1f3094dfedb73ffd11eb`.
+
+`OpenBaoProfiledDeployConfigurator.configure()` ran once. The existing dedicated
+policy expanded exactly once from device reads **1/2** to **1/2/8/9**; the existing
+role was already exact and required no mutation. Independent readback verified
+only those exact KV-v2 read paths, with no wildcard/list/write/admin capability.
+The existing persistent SecretID was reused, not issued or rotated; its TTL/uses
+remain **0/0**. Tokens retain TTL/max TTL **300 seconds**, one use, the dedicated
+policy only, and no default or identity policies. Verification using the existing
+pair returned HTTP **200** for each exact device credential read **1/2/8/9** and
+HTTP **403** for unrelated device **999999**. No credential values were emitted.
+
+No device configuration access, CML, NetBox, AuditStore or observability mutation
+occurred. No manual Buildkite build or merge was performed. This establishes
+protected planning credential availability; rollout execution still does not
+exist and later-stage runtime acceptance remains pending.
+
 ## Post-review activation order
 
-**Documented only; not executed by this PR.** Require explicit user approval of
-the reviewed commit and activation before any external mutation.
+The completed activation followed this bounded procedure. Any future application
+requires its own explicit approval and verification; these instructions do not
+request another activation.
 
-1. Recheck the exact reviewed commit, clean checkout, and that no protected
-   canonical main delivery is running or paused. Inspect Buildkite read-only;
+1. Recheck the exact reviewed commit and clean checkout. Inspect canonical main
+   builds read-only and classify blocked tails against their own contracts.
+   Inert COMPLIANCE/failed-promotion tails do not block activation; a live paused
+   promotion or genuinely unknown authority does. Require no active delivery;
    do not unblock, retry or cancel another delivery as an activation shortcut.
 2. Install only reviewed
    `scripts/buildkite/profiled_deploy_agent_command_hook.sh` as the existing

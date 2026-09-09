@@ -183,10 +183,10 @@ The static DAG, PR CML exception and real-plan assurance prerequisites are uncha
 
 The interface-description catalog explicitly admits CAT8000V, vJunos, IOSv and
 IOSvL2. The [committed intent](intent-delivery.md) selects one exact target; the
-active file still selects core-02. Installed protected credentials remain limited
-to devices 1/2 pending separately
-approved activation. The repository now defines exact 1/2/8/9 permission; operation
-admission and credential availability still cannot authorize a write alone.
+active file still selects core-02. Installed protected credentials and repository
+policy now permit exact devices 1/2/8/9 after explicitly approved and verified
+activation; operation admission and credential availability still cannot
+authorize a write alone.
 B4 service changes, fleet and SNMP provisioning gain no write authority. Batfish
 and CML remain prerequisite assurance,
 not exact intent-candidate validation or write rehearsal. No replay is added.
@@ -232,4 +232,4 @@ single-target planning/deployment; promotion has no device credentials. The
 existing `runtime-delivery` group and its fieldless block are unchanged.
 There is no rollout human/deploy/evidence job. PRs and non-runtime changes skip
 both rollout jobs. See [runtime planning](profiled-rollout-runtime-planning.md)
-for receipt requirements and the post-review hook/OpenBao activation prerequisite.
+for receipt requirements and the verified post-review hook/OpenBao activation.

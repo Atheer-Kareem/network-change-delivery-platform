@@ -84,8 +84,8 @@ current credential path: its privileged CLI and pipeline entry points are
 retired. Current profiled local execution uses the personal-lab AppRole
 mechanism and exact stable-device-ID KV reads. The Buildkite deploy agent uses
 its own persistent SecretID (unlimited lifetime/logins) with fresh 300-second,
-one-use tokens. Installed exact reads remain devices 1/2 pending separately
-approved activation; the repository definition is now exact 1/2/8/9 under
+one-use tokens. Installed and repository exact reads are now devices 1/2/8/9
+after explicitly approved and verified activation under
 [rollout Increment 3](profiled-rollout-runtime-planning.md). This explicitly accepted
 single-user MacBook convenience does not change delivery authorization; the
 general operator AppRole retains its bounded settings.

@@ -26,10 +26,9 @@ fieldless and cannot select a target or repair failed prerequisites.
 The active file still selects core-02. [Profile reuse](profile-reuse-write.md)
 explicitly admits CAT8000V, vJunos, IOSv and IOSvL2 description lifecycles.
 Operation admission does not grant protected-main credential authority:
-dedicated deploy credentials still permit only
-devices 1/2 in the installed environment pending Increment-3 activation.
-The repository definition now explicitly permits 1/2/8/9; see the
-[post-review activation procedure](profiled-rollout-runtime-planning.md#post-review-activation-order). Batfish remains
+dedicated deploy credentials now permit exact devices 1/2/8/9 after explicitly
+approved Increment-3 activation, matching the repository definition; see the
+[activation evidence](profiled-rollout-runtime-planning.md#verified-post-review-activation). Batfish remains
 B4 assurance and CML remains realization/integration assurance; neither proves
 or rehearses the exact description candidate. See the [intent contract](intent-delivery.md).
 
@@ -159,8 +158,8 @@ Rerunning the installer reuses and verifies the existing dedicated pair instead
 of minting another SecretID. It verifies persistent SecretID metadata, token
 TTL/use/effective policy through an operator token lookup, and actual
 `OpenBaoSecretProvider` credential reads for exact devices 1/2/8/9 and unrelated
-path denial without printing values. This repository verifier applies after
-separately approved policy activation; no activation occurred during implementation.
+path denial without printing values. Post-review activation and verification
+completed using the existing pair, without issuance or rotation.
 It does not contact devices, NetBox or CML, or change any device credential.
 There is no routine preparation/retirement command or automatic rotation.
 The previous bounded-session helper was removed.
@@ -313,4 +312,4 @@ They stop without human authorization or execution. Single-target artifacts,
 active intent and the fieldless human block remain unchanged. See the
 [rollout runtime contract](profiled-rollout-runtime-planning.md) for exact
 publication/promotion namespaces, static credential authority, concurrency and
-mandatory post-review external activation before merge.
+completed post-review external activation. Rollout execution remains unavailable.

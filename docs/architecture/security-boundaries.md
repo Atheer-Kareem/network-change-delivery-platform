@@ -56,10 +56,13 @@ unblocker metadata trust the Buildkite scheduler, canonical reviewed main and
 agent owner; they do not provide independent cryptographic proof against a
 compromised administrator, trusted checkout or shared single-user host.
 
-IOSv/IOSvL2 interface-description operation admission reuses the Cisco lifecycle,
-but does not extend `ncdp-buildkite-profiled-deploy` credential permission beyond
-devices 1/2. Devices 8/9 remain unavailable to that role. No fallback identity or
-credential injection is authorized. See [profile reuse](profile-reuse-write.md).
+IOSv/IOSvL2 interface-description operation admission reuses the Cisco lifecycle.
+The separately reviewed rollout activation extended
+`ncdp-buildkite-profiled-deploy` credential permission to the exact set
+1/2/8/9; this is not derived from operation admission or population membership.
+No fallback identity or credential injection is authorized. See
+[profile reuse](profile-reuse-write.md) and [rollout
+acceptance](../acceptance/profiled-rollout.md).
 
 ## Zone 3 — continuous operations
 

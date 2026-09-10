@@ -15,7 +15,7 @@ flowchart LR
   TR --> WR[Profiled write adapter]
   PY --> RO
   PY --> WR
-  WR --> LV[Devices 1/2 write projection]
+  WR --> LV[Devices 1/2/8/9 write projection]
   RO --> EV[Independent observation and evidence]
   WR --> EV
   PI --> OBS[Management observability]
@@ -23,9 +23,9 @@ flowchart LR
   PI --> SNMP[SNMP capability projection: 1/2]
   BK[Buildkite validation · continuation] --> BA[Modeled service assurance]
   BA -->|main; PR staging temporarily skipped| CS[Disposable CML read-only staging]
-  CS -->|same-build success required| PL[Profiled live plan]
-  PL --> PM[Same-build schema-v2 promotion]
-  PM --> HB[Human authorization]
+  CS -->|same-build success required| PL[Single-target or bounded rollout plan]
+  PL --> PM[Same-build immutable promotion]
+  PM --> HB[Fieldless human authorization]
   HB -->|verified prerequisites| WR
 ```
 
@@ -41,8 +41,9 @@ flowchart LR
 Population admission grants no operation by itself. The accepted population
 contract resolves the Git declaration before exact consumer scope projection.
 The [interface-description catalog](profile-reuse-write.md) explicitly admits the
-four reviewed profile combinations. Protected Buildkite credential authority
-still covers only devices 1/2; IOSv/IOSvL2 operation admission does not grant it.
+four reviewed profile combinations. Protected Buildkite credential authority is
+an independently reviewed exact set covering devices 1/2/8/9; profile operation
+admission alone does not grant it.
 The SNMPv3
 SHA256/AES128 projection also currently contains devices 1 and 2 because the
 accepted IOSv/IOSvL2 software lacks that capability. Management observability
@@ -66,10 +67,10 @@ and Oxidized read-only collection consume all four.
 - **Evidence:** schema-v2 `ProfiledChangeRecord` preserves reviewed identities,
   stages and exact plan/approval digests. The provider-derived `execution.changed`
   flag is not reliable observed-transition evidence; see CAP-OUTCOME-TRUTH.
-  Current Buildkite delivery now publishes profiled durable envelopes read by
-  the existing viewer; pre-write destination admission is required. This is
-  offline-verified integration with runtime acceptance pending. PRE/write/POST
-  chronology remains unconnected.
+  Current Buildkite delivery publishes profiled child and rollout-parent durable
+  envelopes read by the existing viewer; pre-write destination admission is
+  required. PRE/write/POST chronology is independently correlated with
+  `TEMPORALLY_BRACKETED` relationship and `NOT_PROVEN` causality.
 - **Continuous operations:** observability and Oxidized are read-only,
   scoped to admitted profiles, and independent of change execution.
 - **Assurance:** Buildkite runs validation plus credential-free profiled
@@ -81,20 +82,25 @@ and Oxidized read-only collection consume all four.
 
 ## Current change boundary
 
-Protected main delivery reads one fixed committed `InterfaceDescriptionIntent`
-from `deployments/live/profiled-demo.yaml`. Its logical target resolves through
-Git/NetBox and profile/operation admission. Plan/compliance, promotion and deploy
-are bound to those exact semantics; a fieldless unblock selects nothing. The
-active intent remains core-02, while CAT8000V and vJunos use the same generic
-protected control path. IOSv/IOSvL2 now reuse the operation lifecycle offline;
-the dedicated main credential policy still excludes devices 8/9. See [intent delivery](intent-delivery.md).
+Protected main delivery retains the fixed single-target
+`InterfaceDescriptionIntent` from `deployments/live/profiled-demo.yaml` and the
+separate bounded rollout intent from `deployments/live/profiled-rollout.yaml`.
+Both resolve through Git/NetBox and profile/operation admission and bind exact
+semantics before a fieldless authorization. The rollout freezes complete
+membership, child bytes, canaries, waves and order before writes, completes
+whole-population preflight, then exposes children sequentially using their
+existing vendor-specific lifecycles. See [intent delivery](intent-delivery.md)
+and the [accepted rollout](../acceptance/profiled-rollout.md).
 
-`ncdp profiled-plan` is the sole ordinary planner. `ncdp profiled-deploy` is the
-sole current device-write entry point and requires a schema-v2 plan, exact
+`ncdp profiled-plan` remains the child planner. `ncdp profiled-deploy` remains
+the child device-write entry point and requires a schema-v2 plan, exact
 canonical digest approval, explicit `--live`, fresh complete preflight, and
-create-only evidence. The [current main acceptance](../acceptance/profiled-main-delivery.md)
-records positive authorized execution and negative fail-closed continuation,
-with user-supplied runtime provenance. Earlier controlled PR #132 acceptance proved one
+create-only evidence. The rollout coordinator adds exact parent authorization,
+complete preflight, overlap reservation, deterministic exposure, final
+whole-population validation and durable parent correlation without replacing the
+child boundary. The [single-target acceptance](../acceptance/profiled-main-delivery.md)
+and [rollout acceptance](../acceptance/profiled-rollout.md) record positive and
+fail-closed runtime evidence. Earlier controlled PR #132 acceptance proved one
 C8000V and one
 vJunos interface-description write with exact independent validation and no
 recovery.
@@ -114,8 +120,9 @@ Historical models, ADRs, acceptance records, and audit parsers retain their
 original serialized meaning. No current CLI, privileged script, or pipeline
 step invokes their executors. Current profiled disposable staging provides read-only
 realization/integration
-assurance. Schema-v2 protected main delivery is implemented and demonstrated;
-profiled fleet rollout and additional write verticals remain separate capabilities.
+assurance. Schema-v2 protected main single-target and bounded profiled rollout
+delivery are implemented, demonstrated and accepted. Additional write verticals
+remain separate capabilities.
 
 See [profile-aware population and realization](profile-aware-population-and-realization.md),
 [change lifecycle](change-lifecycle.md), [security boundaries](security-boundaries.md),
@@ -134,8 +141,9 @@ and transaction semantics.
 
 B5 `ManagedStateStore` durably distinguishes accepted D0, fresh O and proposed
 D1 inside ownership envelopes. It is separate from delivery AuditStore.
-Historical AuditStore, PRE/write/POST correlation and viewer remain supporting
-machinery; current schema-v2 integration is approved future work. Oxidized and
+Historical AuditStore records remain supporting evidence; current schema-v2
+durable publication, viewer support and PRE/write/POST correlation are accepted.
+Oxidized and
 Prometheus/Blackbox → Grafana/Alertmanager operate independently and have no
 write authority. Synthetic SNMPv3 validation remains current; persistent live
 polling is deferred. Packaging includes pinned Python dependencies, Ansible

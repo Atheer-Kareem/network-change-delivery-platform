@@ -26,10 +26,12 @@ complete deployment authority. Managed membership grants no write authority.
 computed from the automation catalog, Cisco family, population or passive scope.
 Future profiles require their own reviewed operation admission. The closed
 profile vocabulary and the sole `interface_description` operation are unchanged.
-The dedicated `ncdp-buildkite-profiled-deploy` policy still has `DEVICE_IDS = (1, 2)`.
-Devices 8/9 are not fully deployable on protected main: admission plus absent
-credential permission cannot authorize a write. No role, policy, installer, TTL,
-SecretID or protected environment changes are part of this implementation.
+At this capability's acceptance, the dedicated
+`ncdp-buildkite-profiled-deploy` policy had `DEVICE_IDS = (1, 2)` and this
+implementation made no credential change. CAP-PROFILED-ROLLOUT subsequently
+expanded and separately accepted the exact protected set 1/2/8/9; profile reuse
+alone still cannot authorize a write. See [rollout
+acceptance](../acceptance/profiled-rollout.md).
 
 ## Reused Cisco lifecycle
 

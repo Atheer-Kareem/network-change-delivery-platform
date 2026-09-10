@@ -22,6 +22,14 @@ reviewed interface-description intent
   -> immutable ProfiledChangeRecord
 ```
 
+Protected main also composes those same child lifecycles through the accepted
+bounded profiled rollout path: exact population resolution and complete child
+planning precede immutable parent promotion and fieldless authorization; complete
+whole-population preflight precedes sequential frozen canaries/waves; every child
+non-success stops later exposure; independent final whole-population validation
+precedes durable parent evidence. The coordinator does not add retry, replay,
+fleet-level rollback or fleet-wide atomicity.
+
 Population membership never implies write capability. The current proof population
 is stable NetBox devices 1, 2, 8, and 9 through
 `ncdp-profiled-inventory` plus `PROFILED_POPULATION_CATALOG`. The current
@@ -32,9 +40,10 @@ interface-description operation admits only:
 - `vjunos_router`: NETCONF/830, an exclusive candidate, commit-confirmed five
   minutes, independent observation, and explicit confirmation.
 
-[Profile reuse](profile-reuse-write.md) admits IOSv/IOSvL2 for this operation,
-but the protected Buildkite deploy identity still cannot read device 8/9
-credentials. Operation admission does not complete deployment authority. No
+[Profile reuse](profile-reuse-write.md) admits IOSv/IOSvL2 for this operation.
+The protected Buildkite deploy identity has a separately reviewed exact
+device-1/2/8/9 credential scope for the accepted rollout; operation admission
+does not complete deployment authority. No
 routed-underlay, OSPF, VLAN/trunk, ACL, or SNMP device-write authority is added.
 
 Protected main delivery selects the same typed intent from the fixed committed
@@ -109,11 +118,11 @@ The schema-v1 fleet engine, protected Buildkite delivery, and disposable
 exact-two Terraform/CML staging were successfully engineered and historically
 accepted. Their typed artifacts and historical ADR/acceptance evidence remain
 valid and parseable, but the legacy execution engine and its current CLI,
-script, and pipeline entry points have been removed. Profiled fleet rollout
-still requires its approved new design. Current schema-v2 main delivery and its
-real disposable staging prerequisite are demonstrated in the user-supplied
-[current acceptance](../acceptance/profiled-main-delivery.md). Staging grants no
-device-write authority.
+script, and pipeline entry points have been removed. Current schema-v2 main
+single-target delivery and bounded profiled rollout are implemented and accepted;
+see the [single-target acceptance](../acceptance/profiled-main-delivery.md) and
+[rollout acceptance](../acceptance/profiled-rollout.md). Their real disposable
+staging prerequisite grants no device-write authority.
 
 The active Buildkite network assurance surface is the credential-free profiled
 PR/main Batfish step followed on non-PR main by disposable CML read-only integration.
@@ -180,5 +189,6 @@ attempt. Exact PRE-after/POST-before binding is required for success; intervenin
 history is ambiguous. TEMPORALLY_BRACKETED with NOT_PROVEN causality never means
 whole-config atomicity, candidate validation or exclusive NCDP causation.
 
-CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
-acceptance. See the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).
+CAP-CONFIG-CHRONOLOGY is accepted. Build #472 further demonstrates complete
+`TEMPORALLY_BRACKETED` rollout child chronology with `NOT_PROVEN` causality. See
+the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).

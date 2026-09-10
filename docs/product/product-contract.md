@@ -1,15 +1,16 @@
 # Product contract
 
 **Current implementation versus product direction:** the current schema-v2
-single-target description path and demonstrated main delivery are summarized in
-[overview](../architecture/overview.md) and [current
-acceptance](../acceptance/profiled-main-delivery.md).
-Fleet/canary properties below remain product direction under CAP-PROFILED-ROLLOUT.
+single-target and bounded profiled rollout description paths are summarized in
+[overview](../architecture/overview.md), [single-target
+acceptance](../acceptance/profiled-main-delivery.md) and [rollout
+acceptance](../acceptance/profiled-rollout.md).
 Current durable evidence and independent chronology are accepted capabilities;
 the [ledger](../roadmap.md) records their boundaries. The explicit
 [operation catalog](../architecture/profile-reuse-write.md) now admits CAT8000V,
 vJunos, IOSv and IOSvL2 interface-description lifecycles. Managed membership alone
-grants nothing; protected Buildkite credentials remain limited to devices 1/2.
+grants nothing; protected Buildkite credentials are explicitly limited to
+devices 1/2/8/9.
 
 ## Product statement and audiences
 

@@ -7,9 +7,10 @@ explicit `cat8000v_iosxe`, `iosv_159_3_m12` and `iosvl2_2020` operation entries
 for one non-empty interface description (up to 240 characters) on an explicitly
 selected, non-protected interface. All three reuse the existing Cisco families;
 family compatibility alone does not admit writes. The protected Buildkite
-credential identity remains limited to devices 1/2, excluding IOSv/IOSvL2
-credentials. New profile admission has offline proof; runtime acceptance remains
-pending. See [profile reuse](profile-reuse-write.md).
+credential identity has a separately reviewed exact device-1/2/8/9 scope. Build
+#472 runtime-accepted the IOSv/IOSvL2 child lifecycles within the bounded rollout.
+See [profile reuse](profile-reuse-write.md) and [rollout
+acceptance](../acceptance/profiled-rollout.md).
 The [profiled CLI acceptance](../acceptance/profiled-deploy-live-acceptance-pr132.md)
 and [current main acceptance](../acceptance/profiled-main-delivery.md) establish
 successful independent validation without recovery writes. The original

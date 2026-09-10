@@ -117,6 +117,7 @@ def test_terraform_graph_is_profiled_management_only_and_exact() -> None:
     "template,management_marker",
     [
         ("cat8000v_minimal.tftpl", "interface GigabitEthernet1"),
+        ("iol_xe_minimal.tftpl", "interface Ethernet0/0"),
         ("iosv_minimal.tftpl", "interface GigabitEthernet0/0"),
         ("iosvl2_routed_management.tftpl", "interface GigabitEthernet0/0"),
     ],
@@ -466,7 +467,10 @@ class Operations:
                 device_identity=device.device_identity,
                 logical_name=device.logical_name,
                 automation_profile_id=device.automation_profile_id,
-                cml_realization_profile_id=device.cml_realization_profile_id,
+                cml_realization_profile_id=(
+                    device.staging_cml_realization_profile_id
+                    or device.cml_realization_profile_id
+                ),
                 cml_node_id=f"node-{device.logical_name}",
                 management_address=str(
                     device.management_endpoints.staging.binding.l3_endpoint.address.ip
@@ -749,7 +753,7 @@ class ReadOnlyAdapter:
     def discover(self, target, _credential):
         device = self.devices[str(target.logical_name)]
         names = {
-            "core-02": ("GigabitEthernet1",),
+            "core-02": ("Ethernet0/0",),
             "edge-junos-01": ("fxp0",),
             "transit-ios-01": tuple(f"Gi0/{index}" for index in range(4)),
             "access-sw-01": tuple(f"GigabitEthernet0/{index}" for index in range(4)),

@@ -26,6 +26,7 @@ from network_change_delivery.profile_inventory import (
     PLATFORM_NETWORK_OS,
     PROFILE_ADMISSION_CATALOG,
     PROFILED_INVENTORY_TAG,
+    PROFILED_POPULATION_BY_NAME,
     PROTECTED_INTERFACE_TAG,
     NetBoxProfileInventoryProvider,
     ProfiledInventoryDevice,
@@ -358,6 +359,21 @@ def test_per_device_resolution_accepts_exact_core_catalog_member() -> None:
     assert resolved.logical_name == "core-02"
     assert resolved.operational_role is OperationalRole.CORE
     assert resolved.automation_profile_id is AutomationProfileID.CAT8000V_IOSXE
+
+
+def test_core_live_and_staging_realizations_are_distinct() -> None:
+    core = provider(fixture_payloads()).resolve("core-02")
+    assert core.cml_realization_profile_id is CmlRealizationProfileID.CAT8000V_17_18_02
+    assert (
+        core.effective_staging_cml_realization_profile_id
+        is CmlRealizationProfileID.IOL_XE_17_18_02
+    )
+    for name in ("edge-junos-01", "transit-ios-01", "access-sw-01"):
+        member = PROFILED_POPULATION_BY_NAME[name]
+        assert (
+            member.staging_cml_realization_profile_id
+            or member.cml_realization_profile_id
+        ) is member.cml_realization_profile_id
 
 
 def test_resolve_interface_returns_exact_stable_identity() -> None:

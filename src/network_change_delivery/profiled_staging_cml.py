@@ -33,6 +33,7 @@ from network_change_delivery.profiled_staging import (
     ProfiledStagingError,
     ProfiledStagingTopology,
     record_staging_duration,
+    staging_interface_name,
     staging_management_slot,
     validate_management_only_bootstrap,
     validate_staging_management_links,
@@ -267,7 +268,9 @@ class ProfiledStagingCmlLabStarter:
             "management_switch": ("management-switch", "unmanaged_switch", None),
         }
         for device in devices:
-            profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+            profile = CML_REALIZATION_PROFILE_CATALOG[
+                device.effective_staging_cml_realization_profile_id
+            ]
             expected[str(device.logical_name).replace("-", "_")] = (
                 str(device.logical_name),
                 profile.node_definition,
@@ -490,7 +493,7 @@ class ProfiledStagingCmlProfileRecycler:
 
         if (
             CML_REALIZATION_PROFILE_CATALOG[
-                device.cml_realization_profile_id
+                device.effective_staging_cml_realization_profile_id
             ].boot_policy
             != CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
         ):
@@ -498,7 +501,9 @@ class ProfiledStagingCmlProfileRecycler:
                 "profiled staging profile recycle profile rejected"
             )
 
-        profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+        profile = CML_REALIZATION_PROFILE_CATALOG[
+            device.effective_staging_cml_realization_profile_id
+        ]
 
         node = self._node(lab_id, node_id)
         image = node.get("image_definition") or node.get("image_definition_id")
@@ -652,9 +657,13 @@ class ProfiledStagingCmlProfileRecycler:
         if member not in observed.topology.scope.members or (
             member.device_identity != device.device_identity
             or member.automation_profile_id != device.automation_profile_id
-            or member.cml_realization_profile_id != device.cml_realization_profile_id
+            or (
+                member.staging_cml_realization_profile_id
+                or member.cml_realization_profile_id
+            )
+            != device.effective_staging_cml_realization_profile_id
             or CML_REALIZATION_PROFILE_CATALOG[
-                device.cml_realization_profile_id
+                device.effective_staging_cml_realization_profile_id
             ].boot_policy
             != CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
         ):
@@ -749,7 +758,9 @@ class ProfiledStagingCmlProfileRecycler:
             "node_id": node_id,
             "device_identity": subject.device_identity,
             "logical_name": str(subject.logical_name),
-            "cml_realization_profile_id": (subject.cml_realization_profile_id),
+            "cml_realization_profile_id": (
+                subject.effective_staging_cml_realization_profile_id
+            ),
             "first_boot_persistence_seconds": (self._FIRST_BOOT_PERSISTENCE_SECONDS),
             "stop_state": stopped,
             "start_state": booted,
@@ -895,7 +906,9 @@ def admit_created_realization(
     by_key = {str(device.logical_name).replace("-", "_"): device for device in devices}
     for key, device in by_key.items():
         node = reader.item(lab_id, "nodes", str(node_ids[key]))
-        profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+        profile = CML_REALIZATION_PROFILE_CATALOG[
+            device.effective_staging_cml_realization_profile_id
+        ]
         image = node.get("image_definition") or node.get("image_definition_id")
         if (
             node.get("label") != str(device.logical_name)
@@ -908,11 +921,12 @@ def admit_created_realization(
         configuration = reader.configuration(lab_id, str(node_ids[key]))
         validate_management_only_bootstrap(configuration)
         endpoint = device.management_endpoints.staging.binding.l3_endpoint
-        management_marker = (
-            device.management_endpoints.staging.binding.l3_endpoint.interface.name
+        management_marker = staging_interface_name(
+            device,
+            device.management_endpoints.staging.binding.l3_endpoint.interface.name,
         )
         if (
-            device.cml_realization_profile_id
+            device.effective_staging_cml_realization_profile_id
             != CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15
         ):
             management_marker = "interface " + management_marker
@@ -921,7 +935,8 @@ def admit_created_realization(
             or str(endpoint.address.ip) not in configuration
             or management_marker not in configuration
             or (
-                device.cml_realization_profile_id == CmlRealizationProfileID.IOSVL2_2020
+                device.effective_staging_cml_realization_profile_id
+                == CmlRealizationProfileID.IOSVL2_2020
                 and " no switchport" not in configuration
             )
         ):
@@ -935,7 +950,7 @@ def admit_created_realization(
         catalog_slots = {
             item.cml_slot
             for item in CML_REALIZATION_PROFILE_CATALOG[
-                device.cml_realization_profile_id
+                device.effective_staging_cml_realization_profile_id
             ].physical_interface_slots
         }
         if not catalog_slots.issubset(slots[key]):
@@ -968,7 +983,7 @@ def admit_created_realization(
             key: {
                 "identity": device.device_identity,
                 "automation_profile": device.automation_profile_id,
-                "cml_profile": device.cml_realization_profile_id,
+                "cml_profile": device.effective_staging_cml_realization_profile_id,
             }
             for key, device in by_key.items()
         },

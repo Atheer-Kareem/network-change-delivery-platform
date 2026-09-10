@@ -324,7 +324,9 @@ def test_two_iosv_instances_receive_same_bounded_recycle_policy(monkeypatch):
     for device in subjects:
         state = {"value": "BOOTED"}
         node_id = observed.node_ids[device.logical_name.replace("-", "_")]
-        profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+        profile = CML_REALIZATION_PROFILE_CATALOG[
+            device.effective_staging_cml_realization_profile_id
+        ]
 
         def handler(
             request, node_id=node_id, device=device, profile=profile, state=state
@@ -653,7 +655,9 @@ def test_same_cml_admission_and_lab_start_code_accepts_scoped_graph(size):
                     "state": "DEFINED_ON_CORE",
                 }
             device = by_id[identity]
-            profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+            profile = CML_REALIZATION_PROFILE_CATALOG[
+                device.effective_staging_cml_realization_profile_id
+            ]
             return {
                 "id": identity,
                 "label": identity,
@@ -668,8 +672,12 @@ def test_same_cml_admission_and_lab_start_code_accepts_scoped_graph(size):
         def configuration(self, _, identity):
             d = by_id[identity]
             binding = d.management_endpoints.staging.binding.l3_endpoint
+            profile = CML_REALIZATION_PROFILE_CATALOG[
+                d.effective_staging_cml_realization_profile_id
+            ]
             return (
-                f"hostname {d.expected_hostname}\ninterface {binding.interface.name}\n"
+                f"hostname {d.expected_hostname}\ninterface "
+                f"{profile.physical_interface_slots[0].interface_name}\n"
                 f" address {binding.address.ip}\n no switchport\n"
             )
 

@@ -195,10 +195,29 @@ def test_cml_slots_exist_only_in_realization_contract() -> None:
         profile.image_definition for profile in CML_REALIZATION_PROFILE_CATALOG.values()
     } == {
         "cat8000v-17-18-02",
+        "iol-xe-17-18-02",
         "iosv-159-3-m12",
         "iosvl2-2020",
         "vjunos-router-23-2r1-15",
     }
+
+
+def test_iol_staging_realization_is_explicit_and_resource_bounded() -> None:
+    profile = CML_REALIZATION_PROFILE_CATALOG[CmlRealizationProfileID.IOL_XE_17_18_02]
+    assert profile.node_definition == "iol-xe"
+    assert profile.image_definition == "iol-xe-17-18-02"
+    assert profile.resources.cpu_cores == 1
+    assert profile.resources.ram_mb == 1024
+    assert [
+        (slot.interface_name, slot.cml_slot)
+        for slot in profile.physical_interface_slots
+    ] == [
+        ("Ethernet0/0", 0),
+        ("Ethernet0/1", 1),
+        ("Ethernet0/2", 2),
+        ("Ethernet0/3", 3),
+    ]
+    assert profile.bootstrap_profile is CmlBootstrapProfileID.IOL_XE_MINIMAL
 
 
 def test_live_and_staging_management_endpoints_are_explicit_and_distinct() -> None:

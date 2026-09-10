@@ -122,13 +122,19 @@ def _validate_profile_pairing(
     *,
     automation_profile_id: AutomationProfileID,
     cml_realization_profile_id: CmlRealizationProfileID,
+    allow_staging_override: bool = False,
 ) -> None:
     # Instance membership is verified against the aggregate's exact scope.
-    if not any(
+    admitted = any(
         rule.automation_profile_id is automation_profile_id
         and rule.cml_realization_profile_id is cml_realization_profile_id
         for rule in PROFILE_ADMISSION_CATALOG.values()
-    ):
+    )
+    staging_override = (
+        automation_profile_id is AutomationProfileID.CAT8000V_IOSXE
+        and cml_realization_profile_id is CmlRealizationProfileID.IOL_XE_17_18_02
+    )
+    if not admitted and not (allow_staging_override and staging_override):
         raise ValueError("realized device does not match the Git profile catalog")
 
 
@@ -156,11 +162,23 @@ def _validate_management_endpoint(
 def _validate_scope(
     devices: tuple[_ScopedBinding, ...], scope: ProfiledPopulationScope
 ) -> None:
-    scope.require_bindings(devices)
+    if tuple(d.device_identity for d in devices) != scope.identities:
+        raise ValueError("consumer membership differs from its declared scope")
     nodes = tuple(device.cml_node_id for device in devices)
     if len(nodes) != len(set(nodes)):
         raise ValueError("profiled realization CML node identities are duplicated")
     for device, member in zip(devices, scope.members, strict=True):
+        expected_cml = (
+            member.staging_cml_realization_profile_id
+            if hasattr(device, "staging_endpoint")
+            else member.cml_realization_profile_id
+        ) or member.cml_realization_profile_id
+        if (
+            device.logical_name != member.logical_name
+            or device.automation_profile_id != member.automation_profile_id
+            or device.cml_realization_profile_id != expected_cml
+        ):
+            raise ValueError("consumer profile binding differs from declared scope")
         if (
             hasattr(device, "operational_role")
             and device.operational_role is not member.operational_role
@@ -255,6 +273,7 @@ class CmlAnchoredHostTrustRecord(BaseModel):
         _validate_profile_pairing(
             automation_profile_id=self.automation_profile_id,
             cml_realization_profile_id=self.cml_realization_profile_id,
+            allow_staging_override=self.environment is RealizationEnvironment.STAGING,
         )
         profile = get_automation_profile(self.automation_profile_id)
         if self.management_port not in {
@@ -312,6 +331,7 @@ class StagingRealizedDevice(BaseModel):
         _validate_profile_pairing(
             automation_profile_id=self.automation_profile_id,
             cml_realization_profile_id=self.cml_realization_profile_id,
+            allow_staging_override=True,
         )
         _validate_management_endpoint(
             device_identity=self.device_identity,
@@ -377,7 +397,7 @@ class StagingRealizationContext(BaseModel):
             or realized.automation_profile_id
             is not profiled_device.automation_profile_id
             or realized.cml_realization_profile_id
-            is not profiled_device.cml_realization_profile_id
+            is not profiled_device.effective_staging_cml_realization_profile_id
             or realized.staging_endpoint != profiled_device.management_endpoints.staging
         ):
             raise ProfiledRealizationError(

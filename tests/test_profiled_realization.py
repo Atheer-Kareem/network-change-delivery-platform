@@ -93,7 +93,10 @@ def staging_devices() -> tuple[StagingRealizedDevice, ...]:
             logical_name=device.logical_name,
             operational_role=device.operational_role,
             automation_profile_id=device.automation_profile_id,
-            cml_realization_profile_id=device.cml_realization_profile_id,
+            cml_realization_profile_id=(
+                device.staging_cml_realization_profile_id
+                or device.cml_realization_profile_id
+            ),
             cml_node_id=node_id,
             staging_endpoint=device.management_endpoints.staging,
             readiness_evidence=evidence(f"ready-{device.logical_name}", "b"),
@@ -374,7 +377,10 @@ def test_staging_context_rejects_wrong_device_or_profile_pairing() -> None:
     with pytest.raises(ProfiledRealizationError, match="does not match"):
         staging_context().staging_read_only_target(wrong_profile)
     wrong_cml_profile = device.model_copy(
-        update={"cml_realization_profile_id": CmlRealizationProfileID.IOSV_159_3_M12}
+        update={
+            "cml_realization_profile_id": CmlRealizationProfileID.IOSV_159_3_M12,
+            "staging_cml_realization_profile_id": None,
+        }
     )
     with pytest.raises(ProfiledRealizationError, match="does not match"):
         staging_context().staging_read_only_target(wrong_cml_profile)

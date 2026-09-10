@@ -293,7 +293,8 @@ The retired demo renderer/path-filter bootstrap is not current architecture.
 PR execution cannot validate the main write tail. The supplied main acceptance
 is linked above; any new run still needs separate authorization and human unblock.
 No static pipeline scheduling, retry policy or main assurance prerequisite is
-changed by the outcome refinement. The PR CML exception remains ACTIVE.
+changed by the outcome refinement. PR/development CML staging is restored under
+the shared runtime filter; the protected tail remains main-only.
 
 ## Current profiled chronology boundary
 

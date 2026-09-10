@@ -22,7 +22,7 @@ flowchart LR
   PI --> OX[Profiled Oxidized]
   PI --> SNMP[SNMP capability projection: 1/2]
   BK[Buildkite validation · continuation] --> BA[Modeled service assurance]
-  BA -->|main; PR staging temporarily skipped| CS[Disposable CML read-only staging]
+  BA -->|runtime-relevant PR/development/main| CS[Disposable CML read-only staging]
   CS -->|same-build success required| PL[Single-target or bounded rollout plan]
   PL --> PM[Same-build immutable promotion]
   PM --> HB[Fieldless human authorization]
@@ -75,8 +75,8 @@ and Oxidized read-only collection consume all four.
   scoped to admitted profiles, and independent of change execution.
 - **Assurance:** Buildkite runs validation plus credential-free profiled
   PR/main Batfish assurance followed on non-PR main by disposable CML read-only staging.
-  PR/development staging is temporarily skipped under the ACTIVE ledger exception.
-  Commands continue on failure;
+  Runtime-relevant PR/development staging is restored under the normal shared
+  runtime filter. Commands continue on failure;
   the separate main-only schema-v2 plan/promotion/human/deploy tail independently
   requires successful prerequisites. PRs have no write tail.
 

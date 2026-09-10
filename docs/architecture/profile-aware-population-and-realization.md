@@ -136,8 +136,9 @@ its explicit observability scope, projected from the resolved managed population
 deriving the service from each automation profile; its separate bounded readiness/admission
 artifact does not use this model directly. Local runtime quality validation is
 active; protected schema-v1 delivery is retired. The profiled
-disposable staging implementation is a required main assurance step; see the
-user-supplied current acceptance. PR/development staging remains temporarily skipped.
+disposable staging implementation is a required assurance step; see the
+user-supplied current acceptance. Runtime-relevant PR/development staging is
+restored under the shared path boundary.
 
 ## CML-anchored host trust
 
@@ -321,7 +322,8 @@ runtime. The final migration retires those staging and protected-delivery entry
 points. The locally accepted profiled staging replacement reuses
 the existing device-scoped Buildkite JWT roles for devices 1/2/8/9 through
 injected providers. Engineering validation and modeled Batfish assurance precede
-CML on non-PR main. The ACTIVE ledger exception temporarily skips PR/development CML.
+CML on runtime-relevant PR/development and non-PR main builds under the restored
+ledger boundary.
 
 The [B3-3 acceptance record](../acceptance/profiled-openbao-onboarding-detour-b3-3.md)
 contains the secret-free applied-state evidence.

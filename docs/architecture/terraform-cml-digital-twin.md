@@ -7,7 +7,8 @@
 > operator-owned `NCDP Live` proof population. The separately designed profiled
 > disposable replacement is [documented here](profiled-disposable-cml-staging.md)
 > and required by the demonstrated [current main delivery](../acceptance/profiled-main-delivery.md).
-> PR/development staging is temporarily skipped under the ACTIVE ledger exception.
+> Runtime-relevant PR/development staging now runs through the restored ledger
+> boundary; non-runtime changes remain excluded by the shared runtime filter.
 
 ## Scope
 

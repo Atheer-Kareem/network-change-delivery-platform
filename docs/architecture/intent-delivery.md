@@ -91,7 +91,8 @@ static block grants zero write authority. Independent chronology maps stable
 Batfish remains the existing B4 D1 assurance prerequisite, not validation of the
 exact interface-description candidate. CML remains same-build realization and
 integration assurance, not a write rehearsal. Main requires real CML success;
-the PR/development exception remains ACTIVE. Existing deploy OpenBao permission
+the restored PR/development staging boundary is documented in the ledger.
+Existing deploy OpenBao permission
 remains devices 1/2 with unchanged role, policy, TTL, token uses and persistent
 personal-lab SecretID tradeoff. No installation or credential update is required.
 

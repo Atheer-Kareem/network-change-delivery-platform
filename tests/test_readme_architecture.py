@@ -19,7 +19,7 @@ def test_readme_embeds_accessible_current_architecture():
     assert "](docs/assets/ncdp-current-architecture.svg)" in readme
     texts = " ".join(element.text or "" for element in root.findall("s:text", NS))
     for phrase in (
-        "PR: no write · CML skip temporary",
+        "PR: no write · CML restored",
         "Batfish first",
         "Main · read-only",
         "Checks + receipts",
@@ -37,7 +37,7 @@ def test_readme_embeds_accessible_current_architecture():
         "edge-junos-01",
         "transit-ios-01",
         "access-sw-01",
-        "Current write projection: devices 1/2 only",
+        "Current write projection: devices 1/2/8/9",
         "Independent validation",
         "AuditStore",
         "Oxidized",
@@ -54,12 +54,9 @@ def test_readme_embeds_accessible_current_architecture():
     ):
         assert retired not in texts
     assert root.find("s:desc", NS) is not None
+    assert "durable parent and child evidence" in root.find("s:desc", NS).text
     assert (
-        "deploy boundary admits AuditStore before a possible write"
-        in root.find("s:desc", NS).text
-    )
-    assert (
-        "current PRE/write/POST correlation is not connected"
+        "Current PRE/write/POST correlation records temporal bracketing"
         in root.find("s:desc", NS).text
     )
     assert all(path.get("d") != "M311 832H339" for path in root.findall("s:path", NS))

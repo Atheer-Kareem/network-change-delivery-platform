@@ -12,7 +12,7 @@ assurance, human authorization, execution and evidence.
 ## Current architecture
 
 ![Current NCDP architecture: managed population and capability admission; continuing
-engineering checks and network-model assurance; main-only disposable CML, immutable
+engineering checks and network-model assurance; runtime-filtered disposable CML, immutable
 schema-v2 promotion, human authorization and independently validated deployment; typed
 artifacts and separate supporting audit/observability
 planes.](docs/assets/ncdp-current-architecture.svg)
@@ -50,10 +50,11 @@ engineering validation → Batfish assurance → disposable CML integration
 → independently revalidated profiled deployment → typed execution evidence
 ```
 
-Canonical non-PR main follows this chain. PR/development builds temporarily
-skip disposable CML under the [ACTIVE roadmap
-exception](docs/roadmap.md#temporary-development-workflow-exceptions)
-and have no delivery tail. Main still requires real same-build CML success.
+Canonical non-PR main follows this chain. PR/development builds
+run the same real disposable CML lifecycle under the [restored roadmap
+boundary](docs/roadmap.md#temporary-development-workflow-exceptions), while
+protected delivery remains main-only. Main still requires real same-build CML
+success.
 Soft failure preserves downstream visibility; it grants no deployment authority.
 Human unblock cannot repair missing prerequisites.
 

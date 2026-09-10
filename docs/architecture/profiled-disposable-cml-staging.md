@@ -4,9 +4,9 @@ Status: the lifecycle introduced in PR #134 and refined in #136 now consumes
 explicit typed staging scope and topology inputs; current evidence is schema v3.
 Historical schema-v2 evidence retains its exact reader and meaning.
 The user-supplied [main-delivery acceptance](../acceptance/profiled-main-delivery.md)
-records the successful chain requiring real CML success. PR/development staging
-is temporarily skipped under the ACTIVE [ledger
-exception](../roadmap.md#temporary-development-workflow-exceptions);
+records the successful chain requiring real CML success. Runtime-relevant
+PR/development staging runs through the same lifecycle under the restored [ledger
+boundary](../roadmap.md#temporary-development-workflow-exceptions);
 canonical non-PR main retains staging and its same-build success digest.
 
 ## Purpose and authority
@@ -234,8 +234,9 @@ and recycler accept the process-memory bearer directly; only bounded Terraform
 subprocesses receive it as `CML2_TOKEN`. Their mutation and GET-only contracts
 are unchanged.
 
-Canonical non-PR main runs validation → Batfish → CML without path filtering.
-PR/development staging is temporarily skipped; validation and PR Batfish remain.
+Runtime-relevant PR/development and canonical non-PR main builds run validation
+→ Batfish → CML without branch filtering. Non-runtime changes remain excluded by
+the shared path boundary.
 Repository commands soft-fail for continuation; staging retains its
 real nonzero exit and truthful evidence, but no longer guarantees aggregate
 Buildkite failure or merge blocking. Verified staging success publishes a

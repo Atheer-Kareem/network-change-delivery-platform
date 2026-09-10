@@ -212,7 +212,10 @@ def test_current_docs_record_retirement_and_authoritative_capability_ledger() ->
     assert "schema-v1 fleet engine" in lifecycle
     assert "historically" in lifecycle and "accepted" in lifecycle
     assert "schema-v2 delivery tail" in workflow
-    assert "Canonical PRs temporarily skip CML" in workflow
+    assert (
+        "Runtime-relevant PR, non-main development and canonical non-PR main builds all"
+        in workflow
+    )
     assert "not restored schema-v1" in workflow
     assert "not paused" not in workflow
     assert "temporarily paused" not in roadmap + lifecycle + workflow

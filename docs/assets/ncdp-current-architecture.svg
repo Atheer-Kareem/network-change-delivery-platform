@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1000" role="img" aria-labelledby="title description">
   <title id="title">NCDP · current profiled architecture</title>
-  <desc id="description">Managed population, profile/capability projection and operation-specific authority are separate. Continuing Buildkite checks and modeled-service Batfish assurance precede main-only disposable CML integration; PR staging is temporarily skipped. Schema-v2 planning, same-build promotion, fieldless human approval and independently revalidated deployment lead to fresh observation and typed artifacts. The main demo writes core-02; the CLI also admits vJunos. The deploy boundary admits AuditStore before a possible write and durably publishes typed results; runtime acceptance is pending. Historical records remain readable; current PRE/write/POST correlation is not connected. Oxidized and management monitoring remain independent. Uncertain mutation stops without retry and requires independent reconciliation.</desc>
+  <desc id="description">Managed population, profile/capability projection and operation-specific authority are separate. Continuing Buildkite checks and modeled-service Batfish assurance precede runtime-filtered disposable CML integration; runtime-relevant PR and development staging is restored while protected planning and deployment remain main-only. Schema-v2 planning, same-build promotion, fieldless human approval and independently revalidated deployment lead to fresh observation and typed artifacts. The bounded profiled rollout is accepted, with durable parent and child evidence. Current PRE/write/POST correlation records temporal bracketing and does not prove causality. Oxidized and management monitoring remain independent. Uncertain mutation stops without retry and requires independent reconciliation.</desc>
   <defs>
     <linearGradient id="canvas" x2="1" y2="1">
       <stop stop-color="#08111f"/><stop offset="1" stop-color="#142139"/>
@@ -34,7 +34,7 @@
   <!-- Review is an assurance lane, never a device-write gate. -->
   <rect x="24" y="124" width="1152" height="203" rx="18" class="panel"/>
   <text x="44" y="161" class="lane">01 / REVIEW &amp; ASSURANCE</text>
-  <text x="1152" y="161" text-anchor="end" class="detail" fill="#c4b5fd">PR: no write · CML skip temporary</text>
+  <text x="1152" y="161" text-anchor="end" class="detail" fill="#c4b5fd">PR: no write · CML restored</text>
   <g stroke-width="1.5">
     <rect x="44" y="185" width="245" height="100" rx="12" class="review"/>
     <rect x="329" y="185" width="245" height="100" rx="12" class="review"/>
@@ -82,7 +82,7 @@
   <rect x="44" y="553" width="815" height="132" rx="12" class="read"/>
   <text x="64" y="589" class="title">NCDP Live · proof population</text>
   <text x="64" y="622" class="detail">core-02 · edge-junos-01 · transit-ios-01 · access-sw-01</text>
-  <text x="64" y="660" class="title" style="fill:#7dd3fc">Current write projection: devices 1/2 only</text>
+  <text x="64" y="660" class="title" style="fill:#7dd3fc">Current write projection: devices 1/2/8/9</text>
 
   <rect x="24" y="738" width="1152" height="152" rx="18" class="panel"/>
   <text x="44" y="775" class="lane">03 / EVIDENCE &amp; OPERATIONS</text>

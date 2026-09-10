@@ -219,17 +219,21 @@ child/receipt. Final evidence verifies both same-build pointers without store
 access. A chronology failure preserves the device outcome but fails evidence
 completion; it never retries execution. COMPLIANCE expects no chronology receipt.
 
-CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
-acceptance. See the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).
+CAP-CONFIG-CHRONOLOGY is accepted. See the [current chronology
+contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).
 
-## Increment 3 rollout planning sibling
+## Current bounded profiled rollout
 
 The runtime-relevant canonical main graph additionally schedules
 `profiled-rollout-live-plan` after CML, then `profiled-rollout-promotion` after
-successful parent planning. They use the same broad runtime-change boundary and
-no retries. Planning shares `ncdp/profiled-live-delivery` concurrency with current
-single-target planning/deployment; promotion has no device credentials. The
-existing `runtime-delivery` group and its fieldless block are unchanged.
-There is no rollout human/deploy/evidence job. PRs and non-runtime changes skip
-both rollout jobs. See [runtime planning](profiled-rollout-runtime-planning.md)
-for receipt requirements and the verified post-review hook/OpenBao activation.
+successful parent planning. A separate `profiled-rollout-human-authorization`
+fieldless block gates `profiled-rollout-deploy`. They use the same broad
+runtime-change boundary and have no retries. Planning and execution share
+`ncdp/profiled-live-delivery` concurrency with current single-target delivery;
+promotion has no device credentials. The deploy job independently verifies the
+exact authorization, completes full-population preflight and overlap admission,
+runs frozen canaries/waves sequentially through existing child lifecycles, then
+performs final validation and publishes durable parent/child evidence. PRs and
+non-runtime changes skip the rollout path. See [runtime planning](profiled-rollout-runtime-planning.md),
+[execution](profiled-rollout-execution.md) and [runtime
+acceptance](../acceptance/profiled-rollout.md).

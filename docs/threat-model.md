@@ -23,9 +23,9 @@ evidence store, and the personal lab and any company environment.
 | Dependency tampering | Frozen lockfile, reviewed updates, immutable base-image digests, deterministic builds and later artifact provenance |
 | Container-image tampering | Digest-pinned bases and controlled builds; execution-image attestation/signature verification is not claimed |
 | Unauthorized manual configuration | Oxidized chronology, desired/live comparison, monitoring, investigation before remediation |
-| False or incomplete evidence | Typed artifacts/digests and independent validation; current profiled durable destination admission and exact artifact correlation; PRE/write/POST remains unconnected, runtime acceptance pending |
+| False or incomplete evidence | Typed artifacts/digests and independent validation; current profiled durable destination admission and exact parent/child correlation; accepted PRE/write/POST temporal bracketing with causality explicitly not proven |
 | Ambiguous write outcome | Stop, no automatic/manual mutation retry, independently reconcile; no speculative recovery after uncertainty |
-| Overlapping fleet changes | Historical fleet target-set intersection; current single-target delivery concurrency and fresh stale-plan checks; profiled rollout restoration pending |
+| Overlapping fleet changes | Current exact stable-device rollout reservation, complete preflight and child JIT checks; shared single-target/rollout concurrency; fail-closed conflicts; no distributed-lock or fleet-atomicity claim |
 | Monitoring failure | Independent monitoring health and alerting; pipeline completion never implies continued health |
 | Source-of-truth inconsistency | Explicit Git/NetBox/device authority split, snapshots, freshness checks, blocking contradictions |
 

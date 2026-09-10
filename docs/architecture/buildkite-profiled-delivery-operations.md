@@ -123,8 +123,9 @@ after command invocation it fails visibly and never replays the device command.
 
 Dedicated AppRole: `ncdp-buildkite-profiled-deploy`.
 Dedicated policy: `ncdp-buildkite-profiled-deploy-read`, permitting only GET reads
-of `ncdp/data/devices/1/ssh` and `ncdp/data/devices/2/ssh`. It grants no
-OpenBao administration, list/wildcard, secret-write or devices 8/9 access.
+of `ncdp/data/devices/1/ssh`, `ncdp/data/devices/2/ssh`,
+`ncdp/data/devices/8/ssh` and `ncdp/data/devices/9/ssh`. It grants no OpenBao
+administration, list/wildcard, secret-write or other device access.
 
 The role requires a SecretID with TTL **0 (non-expiring)** and use limit
 **0 (unlimited)**. Every login issues a **300-second, one-use service token**
@@ -223,9 +224,11 @@ claim isolation from a malicious administrator or compromised trusted main.
 
 The fixed intent uses the already accepted PR #132 target, device 1/core-02,
 interface 2/GigabitEthernet2, with description `ncdp-demo-reviewed-20260909`.
-The existing CLI still admits only interface-description writes on profiles
-1/2; the committed intent currently selects device 1, without a code-level target restriction. Devices 8/9, B4 D1, fleet and
-SNMP writes are not enabled. Already compliant means no plan and no write; do
+The existing CLI admits interface-description writes on the four explicit
+profiles; the committed single-target intent currently selects device 1 without
+a code-level target restriction. The separate accepted rollout selects exact
+devices 1/2/8/9. B4 D1 and SNMP writes are not enabled. Already compliant means
+no plan and no write; do
 not reset device state to manufacture a demonstration.
 
 ## Evidence and failures
@@ -245,9 +248,10 @@ strategy, plan digest and change-required facts. Provider stdout/stderr is
 captured, never dumped. Artifacts contain typed plans/manifests/records, not
 credentials, JWTs, Terraform state or raw device configuration. Current schema-v2
 artifacts now enter the separate profiled AuditStore namespace through
-`profiled-deploy`, and the existing viewer reads them. Current PRE/write/POST is implemented offline
-under CAP-CONFIG-CHRONOLOGY (see below). This chronology integration has offline tests, not new
-runtime acceptance. See the [durable publication contract](audit-and-configuration-history.md#current-buildkite-publication-integration). The accepted
+`profiled-deploy`, and the existing viewer reads them. Current PRE/write/POST is
+accepted under CAP-CONFIG-CHRONOLOGY (see below); Build #472 also demonstrates
+the integrated rollout chronology. See the [durable publication
+contract](audit-and-configuration-history.md#current-buildkite-publication-integration). The accepted
 record reports `execution.changed == false` despite observed state transition;
 that historical provider metadata is not observational change truth. Newly
 normalized missing/censored/non-boolean provider metadata is unknown (`null`),
@@ -301,21 +305,22 @@ execution. Keep that local read-only plane ready; no new credential or protected
 secret setting is introduced. Missing readiness blocks writes. No operator
 setup, service change or runtime acceptance is performed by this implementation.
 
-CAP-CONFIG-CHRONOLOGY is implemented offline and remains IN PROGRESS pending
-acceptance. See the [current chronology contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).
+CAP-CONFIG-CHRONOLOGY is accepted. See the [current chronology
+contract](audit-and-configuration-history.md#current-profiled-configuration-chronology).
 
-## Rollout sibling planning and promotion
+## Current bounded profiled rollout
 
-Increment 3 adds two exact sibling jobs through the same wrapper: protected
+The current path adds two exact sibling jobs through the same wrapper: protected
 `profiled-rollout-live-plan`, then credential-free `profiled-rollout-promotion`.
-Increment 5 adds a separate fieldless rollout human block and protected sequential
+It includes a separate fieldless rollout human block and protected sequential
 rollout deploy job. Single-target artifacts, active intent and its fieldless
 human block remain unchanged; both deploy paths now share stable-device
 reservations. See the
 [rollout runtime contract](profiled-rollout-runtime-planning.md) for exact
 publication/promotion namespaces, static credential authority, concurrency and
-completed planning-authority activation. The new rollout-deploy hook admission
-requires separate post-review installation before merge. The
+completed planning-authority activation. Rollout-deploy hook admission was
+activated after review. The
 [execution contract](profiled-rollout-execution.md) defines the exact authority,
 stop/evidence semantics and activation procedure; no rollout block is continued
-automatically.
+automatically. The [accepted runtime record](../acceptance/profiled-rollout.md)
+preserves the successful Build #472 result and preceding fail-closed evidence.

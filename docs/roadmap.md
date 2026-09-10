@@ -91,13 +91,13 @@ See [workflow](architecture/buildkite-workflow.md) and
 | CAP-POPULATION-SCOPES | Population-derived admission and realization | ACCEPTED |
 | CAP-INTENT-DELIVERY | Intent-selected generic delivery | ACCEPTED |
 | CAP-PROFILE-REUSE-WRITE | Profile-reuse interface-description admission | ACCEPTED |
-| CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | IN PROGRESS |
+| CAP-PROFILED-ROLLOUT | Bounded profiled multi-target rollout | ACCEPTED |
 | CAP-OP-ASSURANCE | Operation-bound service assurance | DEFERRED |
 
 CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE,
-CAP-CONFIG-CHRONOLOGY, CAP-POPULATION-SCOPES, CAP-INTENT-DELIVERY and
-CAP-PROFILE-REUSE-WRITE are accepted;
-other approved capabilities await their own tasks.
+CAP-CONFIG-CHRONOLOGY, CAP-POPULATION-SCOPES, CAP-INTENT-DELIVERY,
+CAP-PROFILE-REUSE-WRITE and CAP-PROFILED-ROLLOUT are accepted.
+CAP-OP-ASSURANCE remains deferred.
 The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
@@ -426,11 +426,11 @@ The temporary PR/development CML exception remains ACTIVE and unchanged.
 
 ### CAP-PROFILED-ROLLOUT — Bounded profiled multi-target rollout
 
-- **State:** IN PROGRESS.
+- **State:** ACCEPTED; explicitly reviewed and accepted by the user.
 - **Scope approval:** the previous USER APPROVED contract was materially amended;
   the user explicitly approved the amended scope below, including the exact
   current-lab protected credential expansion. The approved scope is unchanged.
-  Increment 1 begins implementation; tests and merge do not confer acceptance.
+  Implementation began with Increment 1; tests and merge did not confer acceptance.
 - **Target/value:** restore controlled multi-target delivery through the current
   schema-v2 profiled architecture. A reviewed rollout intent selects a bounded
   subset of the Git-declared managed population. Resolution freezes exact device
@@ -518,12 +518,11 @@ availability risk for implementation. No staging timing/lifecycle change is
 made. The prerequisite failure phase is now truthfully `assurance prerequisites`.
 
 The execution hook was activated after review before PR #164 merged;
-OpenBao authority required no change. Implementation/tests/merge are not capability
-acceptance. Still required: controlled runtime evidence, fault-injection evidence
-review, explicit user sign-off, and restoration of the temporary PR CML exception
-before final integrated roadmap acceptance under its existing exit condition.
-CAP-PROFILED-ROLLOUT remains IN PROGRESS; CAP-OP-ASSURANCE remains DEFERRED and the
-temporary PR/development CML exception remains ACTIVE. No accepted state changes.
+OpenBao authority required no change. At this implementation checkpoint,
+controlled runtime evidence, fault-injection evidence review and explicit user
+sign-off were still required, and CAP-PROFILED-ROLLOUT remained IN PROGRESS.
+Restoration of the temporary PR CML exception remained a separate requirement
+before final integrated roadmap acceptance. CAP-OP-ASSURANCE remained DEFERRED.
 
 #### Build #468 runtime safety checkpoint and replan
 
@@ -543,8 +542,8 @@ instance `CHG-PROFILED-ROLLOUT-20260910-R2` changes only the rollout change ID;
 selectors, interfaces, desired descriptions and wave policy remain unchanged.
 Fresh main planning establishes actual D0. The unchanged single-target intent is
 expected to plan COMPLIANT, subject to fresh observation; leave its human block
-untouched. This safety checkpoint does not establish successful rollout acceptance.
-CAP-PROFILED-ROLLOUT remains IN PROGRESS.
+untouched. This safety checkpoint did not establish successful rollout acceptance;
+CAP-PROFILED-ROLLOUT remained IN PROGRESS at that checkpoint.
 
 #### Build #470 host-interruption checkpoint and R3 replan
 
@@ -568,6 +567,57 @@ preparation, not a capability-state change.
 The next reviewed R3 instance changes only the rollout change ID to
 `CHG-PROFILED-ROLLOUT-20260910-R3`; selectors, interfaces, desired descriptions
 and wave policy remain unchanged. Fresh natural planning owns the new D0.
+
+#### Acceptance and sign-off
+
+The user explicitly accepted CAP-PROFILED-ROLLOUT after reviewing the complete
+implementation and runtime record. Implementation references are merged PRs
+[#158](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/158),
+[#159](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/159),
+[#162](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/162),
+[#163](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/163)
+and [#164](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/164),
+with the reviewed runtime replans merged in
+[#165](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/165)
+and [#166](https://github.com/Atheer-Kareem/network-change-delivery-platform/pull/166).
+
+- **Build #468 safety evidence:** a separately authorized state change made the
+  frozen rollout stale; protected authority verification succeeded, complete
+  preflight stopped, zero rollout children wrote, and no retry/replay occurred.
+- **Build #470 prerequisite safety evidence:** host sleep/connectivity loss left
+  engineering evidence incomplete; assurance prerequisites stopped planning,
+  with no rollout authority/write and no retry/resume.
+- **Build #472 successful runtime evidence:** canonical main build UUID
+  `01a08b20-7e5c-4d84-907f-076f5740fd49`, commit
+  `e1c7b393edcf048ba9369ac5872c953017fcd092`, and change
+  `CHG-PROFILED-ROLLOUT-20260910-R3` completed 13/13 engineering receipts,
+  Batfish 40/40, real CML 4/4, fieldless authorization, complete fresh preflight,
+  exact order `1 → 2 → 8 → 9`, four `SUCCEEDED` children with one forward
+  invocation each, Cisco targeted transactions, Junos commit-confirmed plus
+  confirmation, final whole-population validation and complete durable
+  parent/child evidence. Chronology is `TEMPORALLY_BRACKETED`; causality remains
+  `NOT_PROVEN`. No retry, replay, rollout-level rollback or fleet atomicity is
+  claimed.
+- **Offline fault-injection review:** complete-preflight and reservation failures,
+  uncertain/escaping child execution, JIT staleness, child non-success outcomes,
+  Junos confirmation failures, chronology/evidence failures, final-validation
+  failure and original-child-byte tampering all preserve the specified stop,
+  no-replay and no-rollout-rollback boundaries. No unsafe LIVE failure was
+  manufactured solely for acceptance.
+- **Acceptance record:** the exact authorization, preflight, final-validation,
+  durable-parent and chronology evidence is preserved in the
+  [canonical acceptance record](acceptance/profiled-rollout.md). Passing tests
+  and successful implementation did not confer acceptance; explicit user
+  sign-off did.
+
+The single-target human block in Build #472 was also continued contrary to the
+preferred procedure, but remained compliant with `execution_attempted=false`
+and no device write. The rollout's independent fresh preflight passed afterward,
+so this did not invalidate the R3 evidence. The temporary PR/development CML
+exception remains ACTIVE and unchanged; canonical main still consumed real CML
+for Build #472. Its restoration remains required before FINAL INTEGRATED
+refinement-roadmap acceptance as separate follow-up work. CAP-OP-ASSURANCE
+remains DEFERRED.
 
 #### Selection and independent authority
 
@@ -625,7 +675,7 @@ rollout artifact.
 Each result binds exact device/interface identity, profile/NOS, endpoint,
 operation admission, protection, credential provenance/reference, current
 observation, desired state, child plan/compliance digest and exact child artifact
-bytes. The future immutable profiled rollout artifact must bind:
+bytes. The immutable profiled rollout artifact binds:
 
 - Source commit, rollout change identity and typed intent/selector.
 - Exact frozen membership/order and stable device/interface identities.
@@ -693,7 +743,7 @@ exposure. Every other child outcome stops later exposure, including RECOVERED,
 BLOCKED, FAILED, STALE, AMBIGUOUS and any other non-SUCCEEDED result. Earlier
 successful members are not automatically rolled back.
 
-The future parent must distinguish at least **COMPLIANT**, **SUCCEEDED**,
+The parent distinguishes at least **COMPLIANT**, **SUCCEEDED**,
 **STOPPED**, **PARTIAL** and **FINAL_VALIDATION_FAILED**. It must explicitly
 identify attempted, successful and compliant members; stopping member/outcome;
 untouched/unattempted members; completed canaries/waves; and remaining waves.
@@ -710,7 +760,7 @@ authority.
 
 Preserve current child durable evidence and chronology. Executed children retain
 schema-v2 execution evidence and applicable PRE/write/POST chronology; COMPLIANT
-children retain compliance evidence and require no chronology. A future top-level
+children retain compliance evidence and require no chronology. The top-level
 rollout evidence record references and verifies current child evidence rather
 than duplicating child payloads.
 
@@ -732,7 +782,7 @@ distributed locking, cross-run atomicity or fleet-wide transactions.
 
 #### Acceptance criteria
 
-Eventual acceptance must prove:
+Acceptance evidence establishes:
 
 - Deterministic exact frozen membership for explicit and selector-derived
   populations; protected, unsupported, unknown, ambiguous or mismatched members
@@ -750,9 +800,9 @@ Eventual acceptance must prove:
   lab, exact protected credential reads for **1 / 2 / 8 / 9** must be established
   while arbitrary devices remain denied.
 
-A controlled real multi-target rollout is desirable for the final demo. Do not
-manufacture unsafe/ambiguous failure on real devices to satisfy evidence;
-fault injection/offline tests prove dangerous stop, partial and uncertainty paths.
+Build #472 supplies the controlled real multi-target rollout. Unsafe or ambiguous
+failure was not manufactured on real devices; fault injection/offline tests prove
+dangerous stop, partial and uncertainty paths.
 
 #### Dependencies, implementation scope and exclusions
 
@@ -760,7 +810,7 @@ Dependencies are CAP-OUTCOME-TRUTH — ACCEPTED; CAP-DURABLE-EVIDENCE — ACCEPT
 CAP-CONFIG-CHRONOLOGY — ACCEPTED; CAP-POPULATION-SCOPES — ACCEPTED;
 CAP-INTENT-DELIVERY — ACCEPTED; and CAP-PROFILE-REUSE-WRITE — ACCEPTED.
 
-Future implementation may include profiled rollout intent/selector, immutable
+Implementation includes the profiled rollout intent/selector, immutable
 rollout planning artifact, explicit current device-1/2/8/9 protected credential
 expansion, promotion/human-authorization composition, deterministic canary/wave
 coordination, parent durable evidence, exact overlap admission, Buildkite

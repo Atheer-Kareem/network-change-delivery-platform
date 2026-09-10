@@ -35,8 +35,8 @@ trust, realization and applicable operation admission.
 |---|---|---|---|
 | `core-02` · NetBox 1 | CAT8000V IOS-XE | Explicitly admitted | Available; active intent |
 | `edge-junos-01` · NetBox 2 | vJunos | Explicitly admitted | Available |
-| `transit-ios-01` · NetBox 8 | IOSv | Explicitly admitted | Not currently permitted |
-| `access-sw-01` · NetBox 9 | IOSvL2 | Explicitly admitted | Not currently permitted |
+| `transit-ios-01` · NetBox 8 | IOSv | Explicitly admitted | Available |
+| `access-sw-01` · NetBox 9 | IOSvL2 | Explicitly admitted | Available |
 
 These four reviewed profile/operation combinations are explicit policy. Future
 profiles need their own reviewed operation admission; compatible families alone
@@ -57,8 +57,9 @@ and have no delivery tail. Main still requires real same-build CML success.
 Soft failure preserves downstream visibility; it grants no deployment authority.
 Human unblock cannot repair missing prerequisites.
 
-Protected main delivery selects its single target from a reviewed committed
-[typed intent](docs/architecture/intent-delivery.md), currently core-02.
+Protected main supports the existing reviewed single-target
+[typed intent](docs/architecture/intent-delivery.md), currently core-02, and a
+separate reviewed bounded [profiled rollout](docs/acceptance/profiled-rollout.md).
 `ncdp profiled-plan` freezes exact identity, intent and execution/recovery
 artifacts into a digest-bound schema-v2 plan. `ncdp profiled-deploy` requires that
 exact approval, explicit LIVE authority and fresh preflight. Python owns policy;
@@ -77,8 +78,9 @@ separate staging JWT identities remain current.
 
 ## What has been demonstrated
 
-The [current delivery acceptance](docs/acceptance/profiled-main-delivery.md)
-records user-supplied positive and negative main-delivery evidence:
+The [single-target delivery acceptance](docs/acceptance/profiled-main-delivery.md)
+and [profiled rollout acceptance](docs/acceptance/profiled-rollout.md) record
+positive and negative main-delivery evidence:
 
 - **Authorized success:** core-02 interface description changed, independent
   post-validation observed desired state, and schema-v2 evidence reported
@@ -90,11 +92,16 @@ records user-supplied positive and negative main-delivery evidence:
   target produces typed COMPLIANT evidence, no write plan, no promotion and no
   deployment invocation. This path is [runtime-accepted](docs/acceptance/profiled-durable-publication.md);
   devices must not be reset just to manufacture a demo change.
+- **Bounded rollout:** Build #472 completed the exact frozen order 1 → 2 → 8 →
+  9 with four successful vendor-specific child transactions, independent final
+  whole-population validation and complete durable parent/child evidence. Builds
+  #468 and #470 established stale-preflight and prerequisite fail-closed behavior
+  without rollout writes.
 
 Current plans, promotions and execution records are typed artifacts. They are
 now published through a separate profiled AuditStore envelope and the existing
 viewer, with destination admission before a possible write. COMPLIANT durable publication is runtime-accepted. Independent Oxidized PRE/POST
-chronology for EXECUTION is now implemented offline, with acceptance pending;
+chronology for EXECUTION is accepted;
 it records temporal bracketing, never proven causality. COMPLIANCE requires no
 chronology. See the [current contract](docs/architecture/audit-and-configuration-history.md#current-profiled-configuration-chronology).
 Provider mutation metadata (true/false/unknown) is distinct from independently
@@ -123,8 +130,8 @@ Implementation and acceptance status are explicit in the [capability ledger](doc
 Historical schema-v1 fleet/canary delivery, protected JWT deployment and durable
 configuration chronology remain valuable [engineering
 evidence](docs/architecture/audit-and-configuration-history.md),
-with their executors retired. Current fleet rollout, service writes and broader
-profile write admission are not implemented. No fleet-wide atomicity, enterprise
+with their executors retired. Current schema-v2 bounded profiled rollout is
+accepted. Service writes are not implemented. No fleet-wide atomicity, enterprise
 HA, production isolation or dynamic platform-plugin system is claimed.
 
 ## Explore

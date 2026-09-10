@@ -546,6 +546,29 @@ expected to plan COMPLIANT, subject to fresh observation; leave its human block
 untouched. This safety checkpoint does not establish successful rollout acceptance.
 CAP-PROFILED-ROLLOUT remains IN PROGRESS.
 
+#### Build #470 host-interruption checkpoint and R3 replan
+
+Natural canonical-main Build #470 (`01a08832-aa55-477a-b314-920e2c6ab20a`,
+commit `d0a2eb270d421fdd602748ca879b64187d32d7da`) experienced macOS
+clamshell/sleep and Buildkite connectivity loss while the same host served both
+validation agents. Engineering produced 10/13 valid receipts; pytest,
+package-build and SNMP-generator receipts were absent, and their `-1` values
+are not proven ordinary command exit codes. Observability-runtime passed. Batfish
+and CML passed; rollout planning failed closed at `assurance prerequisites`,
+promotion did not run, and no rollout authority or protected write was created.
+Single-target planning returned COMPLIANT and neither human block was continued.
+
+The incident is classified **LIKELY AGENT/HOST**; its exact server-side cause is
+**NOT PROVEN**. It is not attributed to the separate Build #469 observability
+failure. Build #470 must not be retried or resumed. The host was prepared with
+durable sleep prevention, healthy validation agents and Docker cache cleanup
+that reclaimed 99.4 GiB (free disk 11 GiB → 94 GiB). This is operational
+preparation, not a capability-state change.
+
+The next reviewed R3 instance changes only the rollout change ID to
+`CHG-PROFILED-ROLLOUT-20260910-R3`; selectors, interfaces, desired descriptions
+and wave policy remain unchanged. Fresh natural planning owns the new D0.
+
 #### Selection and independent authority
 
 The reviewed rollout intent may contain an explicit target/interface set and/or

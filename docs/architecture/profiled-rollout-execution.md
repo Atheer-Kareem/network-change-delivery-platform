@@ -260,3 +260,34 @@ that this path changes rollout D0 again. Leave the single-target human block
 untouched during the next runtime procedure regardless. Review the new rollout's
 actual frozen facts before manually authorizing it; never manufacture drift.
 CAP-PROFILED-ROLLOUT remains IN PROGRESS.
+
+## Build #470 host-interruption checkpoint
+
+Natural canonical-main Build #470, UUID `01a08832-aa55-477a-b314-920e2c6ab20a`,
+ran commit `d0a2eb270d421fdd602748ca879b64187d32d7da`. The same local host
+served both validation agents. macOS recorded clamshell sleep while validation
+jobs were active, and both agents lost Buildkite connectivity during that
+interval. Engineering finished with 10/13 valid receipts: pytest,
+package-build and SNMP-generator receipts were absent. Their Buildkite `-1`
+values are not proven ordinary command exit codes; the exact server-side cause
+remains **NOT PROVEN**. Observability-runtime later passed, so its earlier
+Build #469 exit-4 symptom is not attributed to this incident.
+
+Batfish and real CML passed. Rollout planning failed closed at `assurance
+prerequisites` before protected provider activity, and rollout promotion did
+not run. No rollout parent, promotion, authorization or execution authority was
+established. Single-target planning returned COMPLIANT; neither human block was
+continued and zero protected writes occurred. The classification is **LIKELY
+AGENT/HOST**, with no repository, Docker-OOM or resource-exhaustion cause
+established. Build #470 must not be retried or resumed.
+
+The host was subsequently prepared for a fresh natural build: a durable
+`caffeinate -dimsu` assertion is active, both validation agents are healthy, and
+Docker build cache cleanup reclaimed 99.4 GiB of disposable cache, increasing
+free disk from 11 GiB to 94 GiB. No persistent containers, volumes, repository,
+lab state or protected service configuration was removed.
+
+The next reviewed rollout instance is `CHG-PROFILED-ROLLOUT-20260910-R3`.
+Only the change identity changes from R2; selectors, interfaces, desired
+descriptions and wave policy remain byte-identical. Fresh canonical planning
+must establish the new observed basis. CAP-PROFILED-ROLLOUT remains IN PROGRESS.

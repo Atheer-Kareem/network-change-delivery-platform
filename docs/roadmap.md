@@ -50,34 +50,34 @@ validation separately from acceptance evidence and sign-off.
 
 ## Temporary development workflow exceptions
 
-### Disposable CML staging on PR/development builds — ACTIVE
+### Disposable CML staging on PR/development builds — RESTORED/CLOSED
 
-**User-approved temporary exception. Restore PR staging on explicit user request,
-or before final integrated acceptance of the refinement roadmap. This is an exit
-condition, not an optional follow-up.**
-
-Disposable staging currently takes roughly 8–9 minutes at the end of PR
-validation. PR builds cannot enter promotion/deployment, so no later PR step
-consumes its success evidence. While implementing this roadmap, PR/development
-builds skip disposable CML staging through the `cml-staging` scheduling condition:
+This temporary exception existed to avoid repeating an 8–9 minute disposable
+CML lifecycle during refinement implementation when PR builds could not consume
+its success evidence in a protected delivery tail. Its exact temporary scheduling
+condition was:
 
 ```text
 build.branch == "main" && build.pull_request.id == null
 ```
 
-Canonical non-PR main retains the real staging lifecycle and same-build CML
-success digest before schema-v2 promotion/deployment. No placeholder receipt,
-fake artifact, path filter, authorization bypass or retry change is permitted.
-Batfish and engineering validation remain. CML remains an assurance mechanism;
-success is not guaranteed. This exception avoids repeated development execution
-whose result is not consumed, without removing main assurance.
+The exception was closed on 2026-09-11 by this documentation and pipeline
+restoration change. Runtime-relevant PR,
+non-main development and main builds now schedule the existing real
+`cml-staging` lifecycle through the shared `if_changed` runtime boundary. No
+placeholder receipt, fake artifact, path filter, authorization bypass, soft-fail
+or retry change was introduced. Batfish and engineering validation remain
+prerequisites. Canonical non-PR main still requires the same real same-build CML
+success receipt before schema-v2 planning, promotion and protected execution.
 
-To restore PR staging, remove this temporary scheduling condition, update the
-static pipeline contract and current workflow wording, and record the user's
-request or integrated-acceptance restoration evidence here. Keep the original
-staging dependencies, real success publication and main authorization checks.
-See [workflow](architecture/buildkite-workflow.md) and
-`tests/test_buildkite_pipeline.py`.
+CAP-PROFILED-ROLLOUT was accepted using real canonical-main CML in Build #472;
+restoring PR/development staging fulfills that acceptance's documented exit
+condition. PR/development staging has no protected planning, promotion,
+authorization or deployment tail.
+
+The original staging dependencies, real success publication and main
+authorization checks remain unchanged. See [workflow](architecture/buildkite-workflow.md)
+and `tests/test_buildkite_pipeline.py`.
 
 ## Approved capability register
 
@@ -98,7 +98,8 @@ CAP-RUNTIME-VERIFY, CAP-DOCS-TRUTH, CAP-OUTCOME-TRUTH, CAP-DURABLE-EVIDENCE,
 CAP-CONFIG-CHRONOLOGY, CAP-POPULATION-SCOPES, CAP-INTENT-DELIVERY,
 CAP-PROFILE-REUSE-WRITE and CAP-PROFILED-ROLLOUT are accepted.
 CAP-OP-ASSURANCE remains deferred.
-The temporary PR/development CML exception remains ACTIVE and unchanged.
+The temporary PR/development CML exception is RESTORED/CLOSED. CAP-OP-ASSURANCE
+remains DEFERRED.
 
 ### CAP-RUNTIME-VERIFY — Verified profiled deployment runtime
 
@@ -823,9 +824,9 @@ credentials, all-Cisco automatic admission, new write operation beyond current
 admission, speculative retry, fleet-wide automatic rollback, distributed-locking
 or fleet-atomicity claim, retired fleet runtime revival, historical evidence
 rewrite, or false Batfish/CML candidate-assurance claim is permitted.
-CAP-OP-ASSURANCE remains DEFERRED. The temporary PR/development CML exception
-remains ACTIVE until its existing exit condition. Observability and CML repair
-are not part of this governance amendment.
+CAP-OP-ASSURANCE remains DEFERRED. The temporary PR/development CML exception is
+RESTORED/CLOSED. Observability and CML repair are not part of this governance
+amendment.
 
 ### CAP-OP-ASSURANCE — Operation-bound service assurance
 

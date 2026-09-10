@@ -100,11 +100,12 @@ their own milestones and are not rewritten.
 
 ## Preserved boundaries
 
-The active intent, pipeline graph, main-only/non-PR tail, retry zero, fieldless
+The active intent, pipeline graph, main-only/non-PR protected tail, retry zero, fieldless
 human block, hook and same-build prerequisites are unchanged. Batfish is the
 existing B4 D1 prerequisite, not exact description-candidate assurance. CML is
 realization/readiness/trust/read-only integration and cleanup assurance, not a
-candidate write rehearsal. Its PR/development exception remains ACTIVE. The
+candidate write rehearsal. Runtime-relevant PR/development CML staging is
+restored; the protected tail remains main-only. The
 IOSv 60-second persistence recycle is realization policy, never configuration
 recovery.
 

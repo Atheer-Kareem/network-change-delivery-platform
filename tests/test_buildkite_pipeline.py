@@ -61,9 +61,9 @@ def test_pr_vs_main_graph_and_real_human_block():
     assert batfish["concurrency"] == 1
     assert batfish["concurrency_group"] == "ncdp/batfish-assurance"
     cml = indexed["cml-staging"]
-    # Temporary development exception: PR and non-main development jobs skip CML.
-    # The same main-only condition still schedules the full authorized delivery tail.
-    assert cml["if"] == 'build.branch == "main" && build.pull_request.id == null'
+    # Restored staging is eligible for runtime-relevant PR, development and main
+    # builds; the shared if_changed boundary still excludes non-runtime changes.
+    assert "if" not in cml
     assert cml["depends_on"] == ["validation-complete", "pr-batfish-assurance"]
     assert cml["command"] == ".buildkite/scripts/profiled_cml_staging.sh"
     assert cml["agents"] == {"queue": "ncdp-staging"}
@@ -118,18 +118,21 @@ def test_no_legacy_or_separate_demo_projection():
     assert not (ROOT / "scripts/buildkite/render_demo_pipeline.py").exists()
 
 
-def test_temporary_development_cml_exception_retains_real_main_prerequisite():
+def test_restored_cml_retains_real_main_prerequisite_and_no_authority():
     indexed = {step["key"]: step for step in steps()}
     cml = indexed["cml-staging"]
-    assert cml["if"] == 'build.branch == "main" && build.pull_request.id == null'
-    assert cml["if"] == indexed["profiled-live-plan"]["if"]
+    assert "if" not in cml
     assert indexed["profiled-live-plan"]["depends_on"] == "cml-staging"
-    # Skipping a scheduled job cannot produce a substitute receipt command.
+    assert indexed["profiled-live-plan"]["if"] == (
+        'build.branch == "main" && build.pull_request.id == null'
+    )
+    # The real lifecycle remains the sole receipt producer; no substitute receipt
+    # or protected PR delivery path is introduced.
     assert cml["command"] == ".buildkite/scripts/profiled_cml_staging.sh"
     assert "profiled-cml-success" not in PIPELINE.read_text()
     ledger = (ROOT / "docs/roadmap.md").read_text()
-    assert "Disposable CML staging on PR/development builds — ACTIVE" in ledger
-    assert "before final integrated acceptance of the refinement roadmap" in ledger
+    assert "Disposable CML staging on PR/development builds — RESTORED/CLOSED" in ledger
+    assert 'build.branch == "main" && build.pull_request.id == null' in ledger
 
 
 def test_engineering_commands_keep_truthful_exit_and_receipt_last():
@@ -412,7 +415,7 @@ def test_rollout_sibling_fieldless_execution_without_changing_single_target_grou
         == "ncdp/profiled-live-delivery"
     )
     for step, queue in ((plan, "ncdp-deploy"), (promotion, "ncdp-validation")):
-        assert step["if"] == indexed["cml-staging"]["if"]
+        assert step["if"] == 'build.branch == "main" && build.pull_request.id == null'
         assert step["command"] == ".buildkite/scripts/profiled_delivery.sh"
         assert step["agents"] == {"queue": queue}
         assert not step.get("soft_fail", False)
@@ -435,4 +438,8 @@ def test_rollout_fieldless_gate_and_non_soft_failed_execution():
         deploy["concurrency_group"] == indexed["profiled-deploy"]["concurrency_group"]
     )
     assert "soft_fail" not in deploy
-    assert block["if"] == deploy["if"] == indexed["cml-staging"]["if"]
+    assert (
+        block["if"]
+        == deploy["if"]
+        == ('build.branch == "main" && build.pull_request.id == null')
+    )

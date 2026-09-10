@@ -147,7 +147,8 @@ not satisfy the accepted SHA256/AES128 contract. This is a telemetry subset of
 the managed population, not legacy `ncdp-managed` admission. Live SNMP
 remains deferred to 11C-4. The legacy SNMP provisioning write path, schema-v1 disposable
 CML staging and protected schema-v1 delivery are retired. Current profiled CML
-staging remains a main-delivery prerequisite; PR staging is temporarily skipped. Telemetry admission
+staging remains a main-delivery prerequisite; runtime-relevant PR staging is
+restored under the shared path boundary. Telemetry admission
 is the explicit capability projection of the profiled managed population; it does not
 query `ncdp-managed`.
 

@@ -35,8 +35,8 @@ and no automatic/manual retry. Commands soft-fail for visibility; success
 receipts remain required by main promotion. ADR 0027's earlier hard merge-gate
 policy and protected schema-v1 stage are historical.
 
-PR/development disposable CML staging is temporarily skipped under the ACTIVE
-[ledger exception](../roadmap.md#temporary-development-workflow-exceptions).
+PR/development disposable CML staging runs through the same real lifecycle under
+the restored [ledger boundary](../roadmap.md#temporary-development-workflow-exceptions).
 Non-PR main continues through CML and the current schema-v2 delivery tail.
 Batfish models routed underlay, OSPF, VLAN and selected ACL/service behavior;
 it is not derived from the live interface-description plan.

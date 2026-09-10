@@ -120,8 +120,8 @@ The default walkthrough uses retained acceptance evidence. Only for a separately
 authorized fresh main demonstration: **New build → branch main → Start build**,
 with no PR context. Every command reports its real result but soft-fails for scheduling;
 validation wait continues. All steps appear without path filtering.
-PRs run validation/Batfish and temporarily skip CML under the ACTIVE ledger
-exception. Main retains real CML success evidence and also shows plan, promotion, human
+Runtime-relevant PRs run validation/Batfish and the real CML lifecycle under the
+restored ledger boundary. Main retains real CML success evidence and also shows plan, promotion, human
 authorization, current profiled deploy, and final evidence.
 
 A green aggregate is not merge or deployment acceptance. Review the exact

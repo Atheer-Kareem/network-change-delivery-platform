@@ -125,8 +125,9 @@ see the [single-target acceptance](../acceptance/profiled-main-delivery.md) and
 staging prerequisite grants no device-write authority.
 
 The active Buildkite network assurance surface is the credential-free profiled
-PR/main Batfish step followed on non-PR main by disposable CML read-only integration.
-PR/development staging is temporarily skipped under the ACTIVE ledger exception.
+PR/main Batfish step followed by runtime-filtered disposable CML read-only
+integration. Runtime-relevant PR/development staging is restored; non-runtime
+changes remain excluded by the shared path boundary.
 The current main-only Buildkite tail wraps the same schema-v2 plan/deploy
 boundary with immutable same-build promotion and a real human block. Commands
 soft-fail only for presentation; missing validation/assurance/promotion still

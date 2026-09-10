@@ -16,23 +16,20 @@ and manual command retries are disabled. A corrected or uncertain attempt
 requires a new commit/build and any independently required reconciliation.
 
 ```text
-Engineering validation → validation-complete → Batfish (PR path ends here temporarily)
-                                                main only ↓
-                                             disposable CML
+Engineering validation → validation-complete → Batfish → disposable CML
+                                                             main only ↓
                                                        ↓
                              profiled-plan → promotion → HUMAN BLOCK
                                                        ↓
                                   profiled-deploy → deployment evidence
 ```
 
-Canonical PRs temporarily skip CML and cannot schedule the write tail.
-Non-main development builds also skip CML. Runtime-relevant canonical non-PR main
-builds retain the complete graph and real same-build CML success prerequisite.
-The approved
-[temporary exception and mandatory restoration condition](../roadmap.md#temporary-development-workflow-exceptions)
-are tracked in the capability ledger: restore PR staging on user request or
-before final integrated roadmap acceptance. No success evidence is synthesized
-for skipped staging. Batfish independently rejects arbitrary
+Runtime-relevant PR, non-main development and canonical non-PR main builds all
+run the complete graph through the real same-build CML lifecycle. The protected
+planning, promotion, authorization and deployment tail remains main-only. The
+[restored workflow boundary](../roadmap.md#temporary-development-workflow-exceptions)
+records the closed temporary exception. No success evidence is synthesized for
+an unrun or failed staging lifecycle. Batfish independently rejects arbitrary
 repositories/non-PR branches; its historical key remains
 `pr-batfish-assurance`, but its visible label is general. The bootstrap uploads
 the reviewed `.buildkite/pipeline.yml` with

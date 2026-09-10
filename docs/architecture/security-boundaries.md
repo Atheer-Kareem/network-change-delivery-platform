@@ -17,9 +17,9 @@ assurance checks, using only read-only source-of-truth access where required and
 sanitized configuration snapshots.
 
 Disposable profiled CML integration is a separate credentialed assurance
-boundary on `ncdp-staging`. The temporary ACTIVE exception schedules it only
-on canonical non-PR main; retained PR hook admission is used when PR staging is
-explicitly restored. Its success remains a main promotion prerequisite. An agent-owned
+boundary on `ncdp-staging`. Runtime-relevant PR, development and canonical
+non-PR main builds use the same real lifecycle under the shared runtime filter.
+Its success remains a main promotion prerequisite. An agent-owned
 command hook checks the exact command,
 step, queue, canonical repository/PR origin, and retry zero before sourcing its
 protected environment, after repository pre-command hooks. Before sourcing it

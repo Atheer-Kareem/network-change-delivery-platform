@@ -3,9 +3,9 @@
 The current assurance step reuses the profiled lifecycle locally accepted in
 PR #134 and refined in #136. The user-supplied [main-delivery
 acceptance](../acceptance/profiled-main-delivery.md)
-records success through the current required CML prerequisite. PR/development
-staging is temporarily skipped under the ACTIVE [ledger
-exception](../roadmap.md#temporary-development-workflow-exceptions);
+records success through the current required CML prerequisite. Runtime-relevant
+PR/development staging now runs under the restored [ledger
+boundary](../roadmap.md#temporary-development-workflow-exceptions);
 canonical non-PR main retains real staging success evidence. Schema-v1 protected
 delivery remains retired; the separate current
 schema-v2 main delivery tail is described in [workflow](buildkite-workflow.md).

@@ -1,6 +1,6 @@
 hostname ${hostname}
 ip domain name ncdp.local
-username ${username} privilege 15 secret 9 ${password_verifier}
+username ${username} privilege 15 secret 9 ${password_hash}
 interface Ethernet0/0
  ip address ${split("/", management_cidr)[0]} ${cidrnetmask(management_cidr)}
  no shutdown

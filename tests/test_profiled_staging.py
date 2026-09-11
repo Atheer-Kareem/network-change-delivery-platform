@@ -141,6 +141,19 @@ def test_terraform_graph_is_profiled_management_only_and_exact() -> None:
     assert "encrypted-password" in templates
 
 
+def test_cisco_bootstrap_template_inputs_match_terraform_contract() -> None:
+    """Keep Terraform's templatefile credential key aligned across Cisco nodes."""
+    for template in (
+        "cat8000v_minimal.tftpl",
+        "iol_xe_minimal.tftpl",
+        "iosv_minimal.tftpl",
+        "iosvl2_routed_management.tftpl",
+    ):
+        rendered = (TERRAFORM / "bootstrap" / template).read_text(encoding="utf-8")
+        assert "${password_hash}" in rendered
+        assert "${password_verifier}" not in rendered
+
+
 @pytest.mark.parametrize(
     "template,management_marker",
     [

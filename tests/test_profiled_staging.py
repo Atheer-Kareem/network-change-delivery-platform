@@ -74,6 +74,20 @@ def test_core_live_slots_translate_to_iol_staging_slots() -> None:
     ] == [0, 1, 2, 3]
 
 
+def test_staging_interface_name_preserves_unchanged_realization_spelling() -> None:
+    from test_profiled_realization import inventory_devices
+
+    devices = {str(device.logical_name): device for device in inventory_devices()}
+    cases = (
+        ("core-02", "GigabitEthernet1", "Ethernet0/0"),
+        ("transit-ios-01", "GigabitEthernet0/0", "GigabitEthernet0/0"),
+        ("access-sw-01", "GigabitEthernet0/0", "GigabitEthernet0/0"),
+        ("edge-junos-01", "fxp0", "fxp0"),
+    )
+    for logical_name, stable_name, expected in cases:
+        assert staging_interface_name(devices[logical_name], stable_name) == expected
+
+
 def test_iol_staging_variables_inherit_cml_node_definition_resources() -> None:
     from test_profiled_realization import inventory_devices
 

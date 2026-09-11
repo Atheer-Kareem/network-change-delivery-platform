@@ -476,12 +476,16 @@ def staging_member_interface_slot(member, name: str) -> int:
 
 def staging_interface_name(device: ProfiledInventoryDevice, name: str) -> str:
     """Return the effective CML interface name for a stable interface identity."""
+    slot = staging_interface_slot(device, name)
+    if (
+        device.effective_staging_cml_realization_profile_id
+        == device.cml_realization_profile_id
+    ):
+        return name
     profile = CML_REALIZATION_PROFILE_CATALOG[
         device.effective_staging_cml_realization_profile_id
     ]
-    return profile.physical_interface_slots[
-        staging_interface_slot(device, name)
-    ].interface_name
+    return profile.physical_interface_slots[slot].interface_name
 
 
 def staging_management_slot(device: ProfiledInventoryDevice) -> int:

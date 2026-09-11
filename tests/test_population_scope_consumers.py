@@ -25,6 +25,7 @@ from network_change_delivery.profiled_staging import (
     ProfiledStagingLink,
     ProfiledStagingTopology,
     read_profiled_staging_evidence,
+    staging_interface_name,
     staging_terraform_addresses,
     terraform_profiled_device_variables,
 )
@@ -671,14 +672,15 @@ def test_same_cml_admission_and_lab_start_code_accepts_scoped_graph(size):
 
         def configuration(self, _, identity):
             d = by_id[identity]
-            binding = d.management_endpoints.staging.binding.l3_endpoint
-            profile = CML_REALIZATION_PROFILE_CATALOG[
-                d.effective_staging_cml_realization_profile_id
-            ]
+            binding = d.management_endpoints.staging.binding
             return (
                 f"hostname {d.expected_hostname}\ninterface "
-                f"{profile.physical_interface_slots[0].interface_name}\n"
-                f" address {binding.address.ip}\n no switchport\n"
+                f"{
+                    staging_interface_name(
+                        d, binding.physical_attachment.interface.name
+                    )
+                }\n"
+                f" address {binding.l3_endpoint.address.ip}\n no switchport\n"
             )
 
     reader = Reader()

@@ -444,13 +444,16 @@ def staging_interface_slot(device: ProfiledInventoryDevice, name: str) -> int:
         device.effective_staging_cml_realization_profile_id
     ]
     try:
-        return realization_interface_slot(staging, name)
+        slot = realization_interface_slot(staging, name)
     except ValueError:
         live = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
         live_slot = realization_interface_slot(live, name)
         if live_slot >= len(staging.physical_interface_slots):
-            raise
+            raise ValueError("staging interface slot is out of range") from None
         return live_slot
+    if slot >= len(staging.physical_interface_slots):
+        raise ValueError("staging interface slot is out of range")
+    return slot
 
 
 def staging_member_interface_slot(member, name: str) -> int:
@@ -459,13 +462,16 @@ def staging_member_interface_slot(member, name: str) -> int:
         member.staging_cml_realization_profile_id or member.cml_realization_profile_id
     ]
     try:
-        return realization_interface_slot(staging, name)
+        slot = realization_interface_slot(staging, name)
     except ValueError:
         live = CML_REALIZATION_PROFILE_CATALOG[member.cml_realization_profile_id]
         live_slot = realization_interface_slot(live, name)
         if live_slot >= len(staging.physical_interface_slots):
-            raise
+            raise ValueError("staging interface slot is out of range") from None
         return live_slot
+    if slot >= len(staging.physical_interface_slots):
+        raise ValueError("staging interface slot is out of range")
+    return slot
 
 
 def staging_interface_name(device: ProfiledInventoryDevice, name: str) -> str:

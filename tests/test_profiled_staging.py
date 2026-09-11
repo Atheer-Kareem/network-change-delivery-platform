@@ -31,6 +31,9 @@ from network_change_delivery.profiled_staging import (
     ProfiledStagingRecycleEvidence,
     load_recovery_inputs,
     profiled_staging_topology,
+    staging_interface_name,
+    staging_interface_slot,
+    staging_member_interface_slot,
     terraform_profiled_device_variables,
     validate_destroy_only_plan,
     validate_management_only_bootstrap,
@@ -55,6 +58,31 @@ def test_exact_four_profiled_population_and_topology_contract() -> None:
     assert PROFILED_STAGING_NODE_COUNT == 6
     assert PROFILED_STAGING_LINK_COUNT == 9
     assert PROFILED_STAGING_RESOURCE_COUNT == 17
+
+
+def test_core_live_slots_translate_to_iol_staging_slots() -> None:
+    from test_profiled_realization import inventory_devices
+
+    core = inventory_devices()[0]
+    for index in range(1, 5):
+        assert staging_interface_slot(core, f"GigabitEthernet{index}") == index - 1
+    assert staging_interface_name(core, "GigabitEthernet1") == "Ethernet0/0"
+    member = CURRENT_STAGING_TOPOLOGY.scope.member("core-02")
+    assert [
+        staging_member_interface_slot(member, f"GigabitEthernet{index}")
+        for index in range(1, 5)
+    ] == [0, 1, 2, 3]
+
+
+def test_staging_slot_translation_rejects_out_of_range_mapping(monkeypatch) -> None:
+    from test_profiled_realization import inventory_devices
+
+    import network_change_delivery.profiled_staging as staging_module
+
+    core = inventory_devices()[0]
+    monkeypatch.setattr(staging_module, "realization_interface_slot", lambda *_: 4)
+    with pytest.raises(ValueError):
+        staging_interface_slot(core, "GigabitEthernet1")
     assert profiled_staging_topology() == {
         "core_edge": ("core-02:GigabitEthernet4", "edge-junos-01:ge-0/0/0"),
         "core_transit": (

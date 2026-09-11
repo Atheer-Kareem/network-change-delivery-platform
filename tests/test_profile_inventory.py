@@ -27,9 +27,13 @@ from network_change_delivery.profile_inventory import (
     PROFILE_ADMISSION_CATALOG,
     PROFILED_INVENTORY_TAG,
     PROFILED_POPULATION_BY_NAME,
+    PROFILED_POPULATION_CATALOG,
     PROTECTED_INTERFACE_TAG,
+    STAGING_ONLY_CML_REALIZATION_PROFILE_IDS,
     NetBoxProfileInventoryProvider,
     ProfiledInventoryDevice,
+    ProfiledPopulationDeclaration,
+    _admit_profiled_device,
     admit_profile,
 )
 
@@ -374,6 +378,28 @@ def test_core_live_and_staging_realizations_are_distinct() -> None:
             member.staging_cml_realization_profile_id
             or member.cml_realization_profile_id
         ) is member.cml_realization_profile_id
+
+
+def test_core_missing_required_staging_realization_is_rejected() -> None:
+    resolved = provider(fixture_payloads()).resolve("core-02")
+    missing = resolved.model_copy(update={"staging_cml_realization_profile_id": None})
+    with pytest.raises(InventoryError, match="Git-owned population member"):
+        _admit_profiled_device(
+            missing,
+            ProfiledPopulationDeclaration(members=PROFILED_POPULATION_CATALOG),
+            require_staging=True,
+        )
+
+
+def test_realization_admission_closure_excludes_only_reviewed_staging_ids() -> None:
+    admitted = {
+        rule.cml_realization_profile_id for rule in PROFILE_ADMISSION_CATALOG.values()
+    }
+    assert (
+        admitted
+        == set(CmlRealizationProfileID) - STAGING_ONLY_CML_REALIZATION_PROFILE_IDS
+    )
+    assert admitted.isdisjoint(STAGING_ONLY_CML_REALIZATION_PROFILE_IDS)
 
 
 def test_resolve_interface_returns_exact_stable_identity() -> None:

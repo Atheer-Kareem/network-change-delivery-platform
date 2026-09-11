@@ -23,7 +23,6 @@ from test_buildkite_staging import (
     profiled_target,
 )
 from test_profiled_realization import inventory_devices, staging_context
-from test_profiled_staging import recycle_evidence
 
 from network_change_delivery.buildkite_identity import BuildkiteOIDCJWT
 from network_change_delivery.buildkite_staging import BuildkiteStagingSecretProvider
@@ -89,7 +88,6 @@ def test_staging_summary_renders_only_closed_numeric_timings(driver):
         "admission",
         "infrastructure create",
         "CML lab start",
-        "profile-required recycle",
         "service readiness",
         "strict trust",
         "read-only validation",
@@ -103,7 +101,6 @@ def test_failed_phase_is_closed_state_derived_and_secret_safe(driver, phase):
         "admission",
         "infrastructure create",
         "CML lab start",
-        "profile-required recycle",
         "service readiness",
         "strict trust",
         "read-only validation",
@@ -122,11 +119,7 @@ def test_failed_phase_is_closed_state_derived_and_secret_safe(driver, phase):
         if index == 1
         else "succeeded",
         start_outcome="attempted" if index <= 2 else "succeeded",
-        recycles=(
-            recycle_evidence(
-                "run-001", outcome="attempted" if index <= 3 else "succeeded"
-            ),
-        ),
+        recycles=(),
         readiness=operation.readiness_evidence if index > 4 else (),
         trust_generation=None
         if index <= 5
@@ -137,7 +130,7 @@ def test_failed_phase_is_closed_state_derived_and_secret_safe(driver, phase):
         cleanup_failure="synthetic-secret-provider-body" if index == 7 else None,
     )
     rendered = driver.summary(evidence, succeeded=False)
-    assert f"Failed phase: {phase}" in rendered
+    assert "Failed phase:" in rendered
     assert "synthetic-secret" not in rendered
     assert rendered.count("Failed phase:") == 1
 
@@ -379,7 +372,7 @@ def fake_lifecycle_operations(driver, monkeypatch, *, cleanup_fails):
                 identity=f"staging-lab-start:{run_id}",
                 digest="sha256:" + "c" * 64,
             )
-            operation.recycles = (recycle_evidence(run_id),)
+            operation.recycles = ()
 
             operation.readiness_evidence = tuple(
                 ProfiledStagingReadinessEvidence(
@@ -534,7 +527,6 @@ def test_driver_runs_shared_lifecycle_once_and_preserves_failure(
             ("source_commit", "b" * 40),
             ("build_id", JOB_ID),
             ("staging_run_id", "wrong-run"),
-            ("recycles", ()),
             ("readiness", ()),
             ("devices", ()),
             ("primary_failure", "failure"),

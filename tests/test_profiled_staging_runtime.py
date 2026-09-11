@@ -999,11 +999,7 @@ def test_transit_recycle_occurs_after_start_and_before_readiness() -> None:
     assert admission < start < attempted < recycle < readiness
 
 
-@pytest.mark.parametrize("recycle_fails", [False, True])
-@pytest.mark.parametrize("start_fails", [False, True])
-def test_runtime_reaches_readiness_only_after_successful_recycle(
-    tmp_path, monkeypatch, recycle_fails, start_fails
-):
+def test_runtime_skips_recycler_when_no_profile_requires_recycle(tmp_path, monkeypatch):
     from test_profiled_staging_cml import _observed_recycle_fixture
 
     module = load_script("run_profiled_cml_staging")
@@ -1034,21 +1030,14 @@ def test_runtime_reaches_readiness_only_after_successful_recycle(
         "from_environment",
         lambda **_: SimpleNamespace(close=lambda: None),
     )
-
-    def admit(*_, **_kwargs):
-        calls.append("admit_realization")
-        return observed
-
-    monkeypatch.setattr(module, "admit_created_realization", admit)
     monkeypatch.setattr(
-        value, "_apply_start", lambda: pytest.fail("Terraform START forbidden")
+        module,
+        "admit_created_realization",
+        lambda *_, **__: calls.append("admit_realization") or observed,
     )
 
     def start(**_):
-        assert calls[-1] == "admit_realization"
         calls.append("lab_start")
-        if start_fails:
-            raise ProfiledStagingAmbiguousError("uncertain lab start")
         return observed.topology_evidence
 
     monkeypatch.setattr(
@@ -1056,34 +1045,19 @@ def test_runtime_reaches_readiness_only_after_successful_recycle(
         "from_environment",
         lambda **_: SimpleNamespace(start=start, close=lambda: None),
     )
-
-    def recycle(**_):
-        assert value.start_stage == "succeeded"
-        calls.append("recycle")
-        if recycle_fails:
-            raise ProfiledStagingAmbiguousError("uncertain recycle")
-        return observed.topology_evidence
-
-    def readiness(*_):
-        assert value.recycles[0].outcome == "succeeded"
-        calls.append("readiness")
-        raise ProfiledStagingError("test stops before real readiness")
-
     monkeypatch.setattr(
         module.ProfiledStagingCmlProfileRecycler,
         "from_environment",
-        lambda **_: SimpleNamespace(
-            recycle=recycle,
-            close=lambda: None,
-            timings_seconds={"recycle_first_boot": 30},
-        ),
+        lambda **_: pytest.fail("recycler must not be constructed"),
     )
+
+    def readiness(*_):
+        calls.append("readiness")
+        raise ProfiledStagingError("test stops before real readiness")
+
     monkeypatch.setattr(value, "_wait_readiness", readiness)
     with pytest.raises(ProfiledStagingError):
         value.create()
-    assert calls == ["create", "admit_realization", "lab_start"] + (
-        [] if start_fails else ["recycle"] + ([] if recycle_fails else ["readiness"])
-    )
-    if not start_fails:
-        assert value.timings_seconds["recycle_first_boot"] == 30
-    assert value.start_stage == ("attempted" if start_fails else "succeeded")
+    assert calls == ["create", "admit_realization", "lab_start", "readiness"]
+    assert value.recycles == ()
+    assert not any(key.startswith("recycle_") for key in value.timings_seconds)

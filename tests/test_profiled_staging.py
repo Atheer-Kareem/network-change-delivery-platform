@@ -60,6 +60,17 @@ def test_exact_four_profiled_population_and_topology_contract() -> None:
     assert PROFILED_STAGING_RESOURCE_COUNT == 17
 
 
+def test_current_iosv_staging_realization_uses_normal_boot_policy() -> None:
+    from network_change_delivery.architecture_contracts import (
+        CML_REALIZATION_PROFILE_CATALOG,
+        CmlBootPolicy,
+        CmlRealizationProfileID,
+    )
+
+    profile = CML_REALIZATION_PROFILE_CATALOG[CmlRealizationProfileID.IOSV_159_3_M12]
+    assert profile.boot_policy is CmlBootPolicy.NORMAL
+
+
 def test_core_live_slots_translate_to_iol_staging_slots() -> None:
     from test_profiled_realization import inventory_devices
 
@@ -539,8 +550,6 @@ class Operations:
             staging_context,
         )
 
-        self.recycles = (recycle_evidence("run-1"),)
-
         self.readiness_evidence = tuple(
             ProfiledStagingReadinessEvidence(
                 device_identity=device.device_identity,
@@ -726,8 +735,7 @@ def test_successful_lifecycle_evidence_binds_context_topology_and_trust() -> Non
     assert evidence.trust_generation is not None
     assert evidence.create_outcome == "succeeded"
     assert evidence.start_outcome == "succeeded"
-    assert evidence.recycles[0].outcome == "succeeded"
-    assert evidence.recycles[0].evidence is not None
+    assert evidence.recycles == ()
     assert evidence.read_only_outcome == "succeeded"
 
 

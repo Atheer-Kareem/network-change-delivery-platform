@@ -49,12 +49,15 @@ behavior: CML correctly persists the exact static STAGING binding into IOSv
 startup configuration, while legacy AutoInstall/DHCP can still retain the
 running management interface on a DHCP lease during that first boot. A second
 boot from the persisted startup configuration consistently restores the exact
-static STAGING binding. The lifecycle therefore gives the first IOSv boot a
-bounded 60-second persistence interval and then recycles only the independently
-admitted IOSv CML subjects selected by `CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE`.
-The current subject is `transit-ios-01`; multiple IOSv instances receive the same
-policy independently in canonical scope order. CAT8000V, vJunos, and IOSvL2 are not
-recycled. The existing CML reader remains GET-only; a separate run-scoped
+static STAGING binding. The accepted historical lifecycle therefore gave the
+first IOSv boot a bounded 60-second persistence interval and then recycled only
+the independently admitted IOSv CML subjects selected by
+`CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE`. A current refinement candidate is
+testing normal single-boot staging for the active IOSv realization; this remains
+unaccepted until full runtime revalidation succeeds. Under the historical policy,
+the current subject was `transit-ios-01`; multiple IOSv instances received the
+same policy independently in canonical scope order. CAT8000V, vJunos, and IOSvL2
+were not recycled. The existing CML reader remains GET-only; a separate run-scoped
 recycle boundary admits the exact lab UUID, selected node UUID, logical identity,
 IOSv realization profile, and current CML state before issuing exactly one STOP
 and one START request. Uncertain mutation transport is independently reconciled

@@ -490,7 +490,7 @@ CML_REALIZATION_PROFILE_CATALOG: Mapping[
             ),
             physical_interface_slots=_slots("Gi0/0", "Gi0/1", "Gi0/2", "Gi0/3"),
             bootstrap_profile=CmlBootstrapProfileID.IOSV_MINIMAL,
-            boot_policy=CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE,
+            boot_policy=CmlBootPolicy.NORMAL,
             readiness_profile=CmlReadinessProfileID.IOSV_SSH,
         ),
         CmlRealizationProfileID.IOSVL2_2020: CmlRealizationProfile(

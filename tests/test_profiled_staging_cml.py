@@ -27,6 +27,25 @@ from network_change_delivery.profiled_staging_cml import (
     staging_link_slots,
 )
 
+
+@pytest.fixture(autouse=True)
+def historical_iosv_recycle_profile(monkeypatch):
+    """Keep recycler unit tests exercising the retained historical policy."""
+    import network_change_delivery.profiled_staging_cml as staging_cml
+    from network_change_delivery.architecture_contracts import (
+        CML_REALIZATION_PROFILE_CATALOG,
+        CmlBootPolicy,
+        CmlRealizationProfileID,
+    )
+
+    catalog = dict(CML_REALIZATION_PROFILE_CATALOG)
+    profile_id = CmlRealizationProfileID.IOSV_159_3_M12
+    catalog[profile_id] = catalog[profile_id].model_copy(
+        update={"boot_policy": CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE}
+    )
+    monkeypatch.setattr(staging_cml, "CML_REALIZATION_PROFILE_CATALOG", catalog)
+
+
 _LINK_SLOTS = staging_link_slots(inventory_devices(), CURRENT_STAGING_TOPOLOGY)
 
 LAB_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"

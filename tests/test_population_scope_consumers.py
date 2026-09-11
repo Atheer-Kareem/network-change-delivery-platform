@@ -273,125 +273,23 @@ def test_historical_staging_v2_remains_exact_and_distinct():
     assert original.endswith(b"\n")
 
 
-def test_two_iosv_instances_receive_same_bounded_recycle_policy(monkeypatch):
-    from test_profiled_staging_cml import LAB_ID, _RecycleClock
-
+def test_current_staging_has_no_recycle_subjects():
     from network_change_delivery.architecture_contracts import (
         CML_REALIZATION_PROFILE_CATALOG,
         CmlBootPolicy,
     )
-    from network_change_delivery.profiled_realization import EvidenceReference
-    from network_change_delivery.profiled_staging import (
-        ProfiledStagingEvidence,
-        ProfiledStagingRecycleEvidence,
-    )
-    from network_change_delivery.profiled_staging_cml import (
-        ObservedStagingRealization,
-        ProfiledStagingCmlProfileRecycler,
-    )
+    from network_change_delivery.profile_inventory import STAGING_REALIZATION_SCOPE
 
-    _, scope, provider, _ = declared_population(5)
-    devices = provider.resolve_profiled_population().devices
     subjects = tuple(
-        d
-        for d in devices
-        if CML_REALIZATION_PROFILE_CATALOG[d.cml_realization_profile_id].boot_policy
+        member
+        for member in STAGING_REALIZATION_SCOPE.members
+        if CML_REALIZATION_PROFILE_CATALOG[
+            member.staging_cml_realization_profile_id
+            or member.cml_realization_profile_id
+        ].boot_policy
         is CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
     )
-    assert tuple(d.logical_name for d in subjects) == ("transit-ios-01", "synthetic-14")
-    topology = ProfiledStagingTopology(scope=scope, links=())
-    observed = ObservedStagingRealization(
-        lab_id=LAB_ID,
-        lab_title="NCDP Staging scoped-run",
-        node_ids={
-            d.logical_name.replace("-", "_"): f"node-{d.logical_name}" for d in devices
-        },
-        link_ids={},
-        topology_evidence=EvidenceReference(
-            identity="test:topology", digest="sha256:" + "a" * 64
-        ),
-        cml_anchors={},
-        topology=topology,
-    )
-    clock = _RecycleClock()
-    monkeypatch.setattr(
-        "network_change_delivery.profiled_staging_cml.time.monotonic", clock.monotonic
-    )
-    monkeypatch.setattr(
-        "network_change_delivery.profiled_staging_cml.time.sleep", clock.sleep
-    )
-    calls = []
-    evidence = []
-    for device in subjects:
-        state = {"value": "BOOTED"}
-        node_id = observed.node_ids[device.logical_name.replace("-", "_")]
-        profile = CML_REALIZATION_PROFILE_CATALOG[
-            device.effective_staging_cml_realization_profile_id
-        ]
-
-        def handler(
-            request, node_id=node_id, device=device, profile=profile, state=state
-        ):
-            if request.url.path == f"/api/v0/labs/{LAB_ID}":
-                return httpx.Response(200, json={"lab_title": observed.lab_title})
-            if request.method == "GET":
-                assert request.url.path == f"/api/v0/labs/{LAB_ID}/nodes/{node_id}"
-                return httpx.Response(
-                    200,
-                    json={
-                        "label": device.logical_name,
-                        "node_definition": profile.node_definition,
-                        "image_definition": profile.image_definition,
-                        "state": state["value"],
-                    },
-                )
-            assert request.method == "PUT"
-            calls.append(request.url.path)
-            state["value"] = (
-                "STOPPED" if request.url.path.endswith("/stop") else "BOOTED"
-            )
-            return httpx.Response(204)
-
-        recycler = ProfiledStagingCmlProfileRecycler(
-            httpx.Client(
-                base_url="https://cml.invalid", transport=httpx.MockTransport(handler)
-            )
-        )
-        try:
-            ref = recycler.recycle(
-                run_id="scoped-run", observed=observed, device=device
-            )
-        finally:
-            recycler.close()
-        evidence.append(
-            ProfiledStagingRecycleEvidence(
-                device_identity=device.device_identity,
-                logical_name=device.logical_name,
-                policy=profile.boot_policy,
-                outcome="succeeded",
-                evidence=ref,
-            )
-        )
-    assert clock.now == 120
-    assert calls == [
-        f"/api/v0/labs/{LAB_ID}/nodes/node-{d.logical_name}/state/{action}"
-        for d in subjects
-        for action in ("stop", "start")
-    ]
-    result = ProfiledStagingEvidence(
-        scope=scope,
-        staging_run_id="scoped-run",
-        orchestrator="local",
-        lab_title=observed.lab_title,
-        recycles=tuple(evidence),
-    )
-    assert result.schema_version == "3"
-    assert len(result.recycles) == 2
-    assert "transit_recycle_evidence" not in result.model_dump()
-    with pytest.raises(ValueError, match="recycle scope"):
-        ProfiledStagingEvidence.model_validate(
-            result.model_dump() | {"recycles": tuple(reversed(evidence))}
-        )
+    assert subjects == ()
 
 
 def test_read_only_scopes_never_grant_write_authority():

@@ -118,8 +118,9 @@ The authoritative [profiled lifecycle](profiled-disposable-cml-staging.md)
 creates exactly one lab, six nodes, nine links, and one lifecycle resource
 (17 resources). It independently admits topology and stored management-only
 Day-0, performs the separately admitted one-shot CML LAB START,
-observes transit's own first boot plus its 60-second persistence interval,
-recycles only transit-ios-01 while other nodes can still be starting, and proves
+observes transit's own first boot plus its historical 60-second persistence
+interval, recycled only transit-ios-01 while other nodes could still be
+starting, and proves
 exact realization-scope readiness and strict run-scoped trust, collects read-only device
 state, destroys its exact owned graph, proves independent CML absence, and
 retires the whole run directory. No CAT8000V, vJunos, or IOSvL2 recycle is

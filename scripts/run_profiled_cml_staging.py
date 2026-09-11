@@ -498,7 +498,7 @@ class LocalTerraformOperations:
 
         for device in self._devices:
             policy = CML_REALIZATION_PROFILE_CATALOG[
-                device.cml_realization_profile_id
+                device.effective_staging_cml_realization_profile_id
             ].boot_policy
             if policy != CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE:
                 continue
@@ -544,7 +544,7 @@ class LocalTerraformOperations:
                 logical_name=device.logical_name,
                 operational_role=device.operational_role,
                 automation_profile_id=device.automation_profile_id,
-                cml_realization_profile_id=device.cml_realization_profile_id,
+                cml_realization_profile_id=device.effective_staging_cml_realization_profile_id,
                 cml_node_id=node_ids[str(device.logical_name).replace("-", "_")],
                 staging_endpoint=device.management_endpoints.staging,
                 readiness_evidence=EvidenceReference(
@@ -694,7 +694,7 @@ class LocalTerraformOperations:
                                 logical_name=device.logical_name,
                                 automation_profile_id=device.automation_profile_id,
                                 cml_realization_profile_id=(
-                                    device.cml_realization_profile_id
+                                    device.effective_staging_cml_realization_profile_id
                                 ),
                                 cml_node_id=node_ids[
                                     str(device.logical_name).replace("-", "_")
@@ -813,7 +813,7 @@ class LocalTerraformOperations:
                     device_identity=device.device_identity,
                     logical_name=device.logical_name,
                     automation_profile_id=device.automation_profile_id,
-                    cml_realization_profile_id=device.cml_realization_profile_id,
+                    cml_realization_profile_id=device.effective_staging_cml_realization_profile_id,
                     cml_node_id=node_ids[name.replace("-", "_")],
                     management_address=str(endpoint.address.ip),
                     readiness_service=service.service.value,

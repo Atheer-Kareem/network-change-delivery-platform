@@ -23,7 +23,10 @@ Its scope is selected only after full managed resolution through
 `ncdp-profiled-inventory`: core-02 (CAT8000V IOS-XE), edge-junos-01 (vJunos),
 transit-ios-01 (IOSv), and access-sw-01 (IOSvL2). The profile catalog projects
 node definitions, images, device-side ports, readiness services, and CML
-resource policy. No `ncdp-managed`, `InventoryDevice`, legacy inventory
+resource policy. The reviewed optimization candidate binds only disposable
+`core-02` to the qualified IOL XE realization while LIVE remains CAT8000V;
+this is a realization adaptation under benchmark review, not an accepted
+replacement. No `ncdp-managed`, `InventoryDevice`, legacy inventory
 provider, multivendor adapter, planning function, or write adapter participates.
 
 ## Disposable realization

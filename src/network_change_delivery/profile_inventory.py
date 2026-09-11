@@ -26,6 +26,7 @@ from pydantic import (
 )
 
 from network_change_delivery.architecture_contracts import (
+    CML_REALIZATION_PROFILE_CATALOG,
     AutomationProfileID,
     CmlRealizationProfileID,
     ManagementBinding,
@@ -138,6 +139,10 @@ _PROFILE_ADMISSIONS = (
     ),
 )
 
+STAGING_ONLY_CML_REALIZATION_PROFILE_IDS = frozenset(
+    {CmlRealizationProfileID.IOL_XE_17_18_02}
+)
+
 
 def _build_admission_catalog() -> Mapping[tuple[str, str], ProfileAdmission]:
     keys = tuple(
@@ -152,7 +157,12 @@ def _build_admission_catalog() -> Mapping[tuple[str, str], ProfileAdmission]:
         or len(profiles) != len(set(profiles))
         or len(realizations) != len(set(realizations))
         or set(profiles) != set(AutomationProfileID)
-        or set(realizations) != set(CmlRealizationProfileID)
+        or set(realizations)
+        != set(CmlRealizationProfileID) - STAGING_ONLY_CML_REALIZATION_PROFILE_IDS
+        or not STAGING_ONLY_CML_REALIZATION_PROFILE_IDS.issubset(
+            set(CML_REALIZATION_PROFILE_CATALOG)
+        )
+        or set(realizations) & STAGING_ONLY_CML_REALIZATION_PROFILE_IDS
     ):
         raise RuntimeError("profile admission catalog is not exact and closed")
     return MappingProxyType(dict(zip(keys, _PROFILE_ADMISSIONS, strict=True)))
@@ -195,6 +205,7 @@ class ProfiledPopulationMember(BaseModel):
     network_os: NetworkOS
     automation_profile_id: AutomationProfileID
     cml_realization_profile_id: CmlRealizationProfileID
+    staging_cml_realization_profile_id: CmlRealizationProfileID | None = None
 
     @model_validator(mode="after")
     def exact_profile_admission(self) -> ProfiledPopulationMember:
@@ -206,6 +217,18 @@ class ProfiledPopulationMember(BaseModel):
             is not self.cml_realization_profile_id
         ):
             raise ValueError("profiled population member admission is inconsistent")
+        if self.staging_cml_realization_profile_id is not None:
+            from network_change_delivery.architecture_contracts import (
+                get_cml_realization_profile,
+            )
+
+            get_cml_realization_profile(self.staging_cml_realization_profile_id)
+            if (
+                self.staging_cml_realization_profile_id
+                is CmlRealizationProfileID.IOL_XE_17_18_02
+                and self.automation_profile_id is not AutomationProfileID.CAT8000V_IOSXE
+            ):
+                raise ValueError("IOL staging realization requires Cisco IOS-XE")
         return self
 
 
@@ -219,6 +242,7 @@ PROFILED_POPULATION_CATALOG: tuple[ProfiledPopulationMember, ...] = (
         network_os=NetworkOS.IOSXE,
         automation_profile_id=AutomationProfileID.CAT8000V_IOSXE,
         cml_realization_profile_id=CmlRealizationProfileID.CAT8000V_17_18_02,
+        staging_cml_realization_profile_id=CmlRealizationProfileID.IOL_XE_17_18_02,
     ),
     ProfiledPopulationMember(
         device_identity="netbox:dcim.device:2",
@@ -438,6 +462,9 @@ class ProfiledInventoryDevice(BaseModel):
     network_os: NetworkOS
     automation_profile_id: AutomationProfileID
     cml_realization_profile_id: CmlRealizationProfileID
+    staging_cml_realization_profile_id: CmlRealizationProfileID | None = Field(
+        default=None, exclude=True
+    )
     management_endpoints: ManagementEndpointSet
     protected_interfaces: tuple[StableInterfaceIdentity, ...]
 
@@ -452,6 +479,12 @@ class ProfiledInventoryDevice(BaseModel):
             raise ValueError(
                 "resolved profile admission does not match factual metadata"
             )
+        if self.staging_cml_realization_profile_id is not None:
+            from network_change_delivery.architecture_contracts import (
+                get_cml_realization_profile,
+            )
+
+            get_cml_realization_profile(self.staging_cml_realization_profile_id)
         if PLATFORM_NETWORK_OS[self.platform.slug] is not self.network_os:
             raise ValueError("resolved NetBox platform and NOS mismatch")
         if OPERATIONAL_ROLE_BY_SLUG.get(self.role.slug) is not self.operational_role:
@@ -496,10 +529,19 @@ class ProfiledInventoryDevice(BaseModel):
         """Expose stable NetBox identity to structural credential providers."""
         return self.device_identity
 
+    @property
+    def effective_staging_cml_realization_profile_id(self) -> CmlRealizationProfileID:
+        """Return the explicit STAGING realization, falling back to LIVE."""
+        return (
+            self.staging_cml_realization_profile_id or self.cml_realization_profile_id
+        )
+
 
 def _admit_profiled_device(
     device: ProfiledInventoryDevice,
     declaration: ProfiledPopulationDeclaration = PROFILED_MANAGED_POPULATION,
+    *,
+    require_staging: bool = False,
 ) -> ProfiledPopulationMember:
     """Compare resolved NetBox facts with the one Git-owned name binding."""
     member = _expected_profiled_member(device.logical_name, declaration)
@@ -512,6 +554,11 @@ def _admit_profiled_device(
         or device.network_os is not member.network_os
         or device.automation_profile_id is not member.automation_profile_id
         or device.cml_realization_profile_id is not member.cml_realization_profile_id
+        or (
+            require_staging
+            and device.staging_cml_realization_profile_id
+            is not member.staging_cml_realization_profile_id
+        )
     ):
         raise InventoryError(
             "NetBox profile target does not match its Git-owned population member"
@@ -586,7 +633,9 @@ class ProfiledInventoryScope(BaseModel):
         self.scope.require_bindings(self.devices)
         for device in self.devices:
             _admit_profiled_device(
-                device, ProfiledPopulationDeclaration(members=self.scope.members)
+                device,
+                ProfiledPopulationDeclaration(members=self.scope.members),
+                require_staging=self.scope.identity == "disposable-staging",
             )
         return self
 
@@ -963,6 +1012,7 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
                     binding=binding(staging),
                 ),
             )
+            population_member = PROFILED_POPULATION_BY_NAME.get(logical_name)
             return ProfiledInventoryDevice(
                 device_identity=device_identity,
                 logical_name=logical_name,
@@ -974,6 +1024,11 @@ class NetBoxProfileInventoryProvider(NetBoxReadOnlyAPI):
                 network_os=network_os,
                 automation_profile_id=admission.automation_profile_id,
                 cml_realization_profile_id=admission.cml_realization_profile_id,
+                staging_cml_realization_profile_id=(
+                    population_member.staging_cml_realization_profile_id
+                    if population_member is not None
+                    else None
+                ),
                 management_endpoints=endpoints,
                 protected_interfaces=protected,
             )

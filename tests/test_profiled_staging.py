@@ -31,6 +31,9 @@ from network_change_delivery.profiled_staging import (
     ProfiledStagingRecycleEvidence,
     load_recovery_inputs,
     profiled_staging_topology,
+    staging_interface_name,
+    staging_interface_slot,
+    staging_member_interface_slot,
     terraform_profiled_device_variables,
     validate_destroy_only_plan,
     validate_management_only_bootstrap,
@@ -55,6 +58,69 @@ def test_exact_four_profiled_population_and_topology_contract() -> None:
     assert PROFILED_STAGING_NODE_COUNT == 6
     assert PROFILED_STAGING_LINK_COUNT == 9
     assert PROFILED_STAGING_RESOURCE_COUNT == 17
+
+
+def test_core_live_slots_translate_to_iol_staging_slots() -> None:
+    from test_profiled_realization import inventory_devices
+
+    core = inventory_devices()[0]
+    for index in range(1, 5):
+        assert staging_interface_slot(core, f"GigabitEthernet{index}") == index - 1
+    assert staging_interface_name(core, "GigabitEthernet1") == "Ethernet0/0"
+    member = CURRENT_STAGING_TOPOLOGY.scope.member("core-02")
+    assert [
+        staging_member_interface_slot(member, f"GigabitEthernet{index}")
+        for index in range(1, 5)
+    ] == [0, 1, 2, 3]
+
+
+def test_staging_interface_name_preserves_unchanged_realization_spelling() -> None:
+    from test_profiled_realization import inventory_devices
+
+    devices = {str(device.logical_name): device for device in inventory_devices()}
+    cases = (
+        ("core-02", "GigabitEthernet1", "Ethernet0/0"),
+        ("transit-ios-01", "GigabitEthernet0/0", "GigabitEthernet0/0"),
+        ("access-sw-01", "GigabitEthernet0/0", "GigabitEthernet0/0"),
+        ("edge-junos-01", "fxp0", "fxp0"),
+    )
+    for logical_name, stable_name, expected in cases:
+        assert staging_interface_name(devices[logical_name], stable_name) == expected
+
+
+def test_iol_staging_variables_inherit_cml_node_definition_resources() -> None:
+    from test_profiled_realization import inventory_devices
+
+    devices = inventory_devices()
+    credentials = {
+        str(device.logical_name): DeviceCredentials(
+            username="operator", password="unused"
+        )
+        for device in devices
+    }
+    verifiers = {
+        str(device.logical_name): (
+            "$6$ncdpTestSalt$abcdefghijklmnop"
+            if str(device.logical_name) == "edge-junos-01"
+            else "$9$ncdpTestSalt$abcdefghijklmnop"
+        )
+        for device in devices
+    }
+    values = terraform_profiled_device_variables(devices, credentials, verifiers)
+
+    assert values["core_02"]["cpu_cores"] is None
+    assert values["core_02"]["ram_mb"] is None
+
+
+def test_staging_slot_translation_rejects_out_of_range_mapping(monkeypatch) -> None:
+    from test_profiled_realization import inventory_devices
+
+    import network_change_delivery.profiled_staging as staging_module
+
+    core = inventory_devices()[0]
+    monkeypatch.setattr(staging_module, "realization_interface_slot", lambda *_: 4)
+    with pytest.raises(ValueError):
+        staging_interface_slot(core, "GigabitEthernet1")
     assert profiled_staging_topology() == {
         "core_edge": ("core-02:GigabitEthernet4", "edge-junos-01:ge-0/0/0"),
         "core_transit": (
@@ -113,10 +179,24 @@ def test_terraform_graph_is_profiled_management_only_and_exact() -> None:
     assert "encrypted-password" in templates
 
 
+def test_cisco_bootstrap_template_inputs_match_terraform_contract() -> None:
+    """Keep Terraform's templatefile credential key aligned across Cisco nodes."""
+    for template in (
+        "cat8000v_minimal.tftpl",
+        "iol_xe_minimal.tftpl",
+        "iosv_minimal.tftpl",
+        "iosvl2_routed_management.tftpl",
+    ):
+        rendered = (TERRAFORM / "bootstrap" / template).read_text(encoding="utf-8")
+        assert "${password_hash}" in rendered
+        assert "${password_verifier}" not in rendered
+
+
 @pytest.mark.parametrize(
     "template,management_marker",
     [
         ("cat8000v_minimal.tftpl", "interface GigabitEthernet1"),
+        ("iol_xe_minimal.tftpl", "interface Ethernet0/0"),
         ("iosv_minimal.tftpl", "interface GigabitEthernet0/0"),
         ("iosvl2_routed_management.tftpl", "interface GigabitEthernet0/0"),
     ],
@@ -466,7 +546,10 @@ class Operations:
                 device_identity=device.device_identity,
                 logical_name=device.logical_name,
                 automation_profile_id=device.automation_profile_id,
-                cml_realization_profile_id=device.cml_realization_profile_id,
+                cml_realization_profile_id=(
+                    device.staging_cml_realization_profile_id
+                    or device.cml_realization_profile_id
+                ),
                 cml_node_id=f"node-{device.logical_name}",
                 management_address=str(
                     device.management_endpoints.staging.binding.l3_endpoint.address.ip
@@ -749,7 +832,7 @@ class ReadOnlyAdapter:
     def discover(self, target, _credential):
         device = self.devices[str(target.logical_name)]
         names = {
-            "core-02": ("GigabitEthernet1",),
+            "core-02": ("Ethernet0/0",),
             "edge-junos-01": ("fxp0",),
             "transit-ios-01": tuple(f"Gi0/{index}" for index in range(4)),
             "access-sw-01": tuple(f"GigabitEthernet0/{index}" for index in range(4)),

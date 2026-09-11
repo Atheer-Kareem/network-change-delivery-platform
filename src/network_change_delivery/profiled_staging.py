@@ -342,7 +342,8 @@ class ProfiledStagingEvidence(BaseModel):
             ) != (
                 member.device_identity,
                 member.automation_profile_id,
-                member.cml_realization_profile_id,
+                member.staging_cml_realization_profile_id
+                or member.cml_realization_profile_id,
             ):
                 raise ValueError("profiled staging evidence binding rejected")
         if self.devices and tuple(d.logical_name for d in self.devices) != names:
@@ -350,7 +351,9 @@ class ProfiledStagingEvidence(BaseModel):
         subjects = tuple(
             m
             for m in self.scope.members
-            if CML_REALIZATION_PROFILE_CATALOG[m.cml_realization_profile_id].boot_policy
+            if CML_REALIZATION_PROFILE_CATALOG[
+                m.staging_cml_realization_profile_id or m.cml_realization_profile_id
+            ].boot_policy
             is CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
         )
         if tuple(r.device_identity for r in self.recycles) != tuple(
@@ -435,11 +438,60 @@ def realization_interface_slot(profile, name: str) -> int:
     return matches[0]
 
 
+def staging_interface_slot(device: ProfiledInventoryDevice, name: str) -> int:
+    """Resolve a stable interface through the effective STAGING realization."""
+    staging = CML_REALIZATION_PROFILE_CATALOG[
+        device.effective_staging_cml_realization_profile_id
+    ]
+    try:
+        slot = realization_interface_slot(staging, name)
+    except ValueError:
+        live = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+        live_slot = realization_interface_slot(live, name)
+        if live_slot >= len(staging.physical_interface_slots):
+            raise ValueError("staging interface slot is out of range") from None
+        return live_slot
+    if slot >= len(staging.physical_interface_slots):
+        raise ValueError("staging interface slot is out of range")
+    return slot
+
+
+def staging_member_interface_slot(member, name: str) -> int:
+    """Resolve a stable interface through a scope member's STAGING profile."""
+    staging = CML_REALIZATION_PROFILE_CATALOG[
+        member.staging_cml_realization_profile_id or member.cml_realization_profile_id
+    ]
+    try:
+        slot = realization_interface_slot(staging, name)
+    except ValueError:
+        live = CML_REALIZATION_PROFILE_CATALOG[member.cml_realization_profile_id]
+        live_slot = realization_interface_slot(live, name)
+        if live_slot >= len(staging.physical_interface_slots):
+            raise ValueError("staging interface slot is out of range") from None
+        return live_slot
+    if slot >= len(staging.physical_interface_slots):
+        raise ValueError("staging interface slot is out of range")
+    return slot
+
+
+def staging_interface_name(device: ProfiledInventoryDevice, name: str) -> str:
+    """Return the effective CML interface name for a stable interface identity."""
+    slot = staging_interface_slot(device, name)
+    if (
+        device.effective_staging_cml_realization_profile_id
+        == device.cml_realization_profile_id
+    ):
+        return name
+    profile = CML_REALIZATION_PROFILE_CATALOG[
+        device.effective_staging_cml_realization_profile_id
+    ]
+    return profile.physical_interface_slots[slot].interface_name
+
+
 def staging_management_slot(device: ProfiledInventoryDevice) -> int:
     """Resolve management only from the admitted STAGING physical attachment."""
-    profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
-    return realization_interface_slot(
-        profile,
+    return staging_interface_slot(
+        device,
         device.management_endpoints.staging.binding.physical_attachment.interface.name,
     )
 
@@ -496,10 +548,7 @@ class ProfiledStagingTopology(BaseModel):
                     raise ValueError(
                         "staging topology endpoint outside scope or duplicate"
                     )
-                profile = CML_REALIZATION_PROFILE_CATALOG[
-                    member.cml_realization_profile_id
-                ]
-                slot = realization_interface_slot(profile, interface)
+                slot = staging_member_interface_slot(member, interface)
                 if (name, slot) in seen:
                     raise ValueError("staging topology physical endpoint reused")
                 seen.add((name, slot))
@@ -519,10 +568,7 @@ class ProfiledStagingTopology(BaseModel):
             values = {}
             for side, endpoint in zip(("a", "b"), link.endpoints, strict=True):
                 name, interface = endpoint.split(":", 1)
-                profile = CML_REALIZATION_PROFILE_CATALOG[
-                    by_name[name].cml_realization_profile_id
-                ]
-                slot = realization_interface_slot(profile, interface)
+                slot = staging_member_interface_slot(by_name[name], interface)
                 values[f"node_{side}"] = name.replace("-", "_")
                 values[f"slot_{side}"] = slot
             links[link.identity] = values
@@ -617,7 +663,9 @@ def terraform_profiled_device_variables(
     scope.require_bindings(devices)
     values: dict[str, object] = {}
     for index, device in enumerate(devices):
-        profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+        profile = CML_REALIZATION_PROFILE_CATALOG[
+            device.effective_staging_cml_realization_profile_id
+        ]
         endpoint = device.management_endpoints.staging.binding.l3_endpoint
         credential = credentials.get(str(device.logical_name))
         verifier = password_verifiers.get(str(device.logical_name))
@@ -1020,7 +1068,10 @@ def load_recovery_inputs(
     expected = {m.logical_name.replace("-", "_"): m for m in scope.members}
     for name, item in payload["devices"].items():
         member = expected[name]
-        profile = CML_REALIZATION_PROFILE_CATALOG[member.cml_realization_profile_id]
+        profile = CML_REALIZATION_PROFILE_CATALOG[
+            member.staging_cml_realization_profile_id
+            or member.cml_realization_profile_id
+        ]
         hostname = member.logical_name
         service = get_automation_profile(
             member.automation_profile_id
@@ -1091,8 +1142,9 @@ def validate_read_only_collection(
             return re.sub(r"^gi(?=\d)", "gigabitethernet", name.casefold())
 
         names = {normalized(state.interface) for state in states}
-        management = (
-            device.management_endpoints.staging.binding.l3_endpoint.interface.name
+        management = staging_interface_name(
+            device,
+            device.management_endpoints.staging.binding.l3_endpoint.interface.name,
         )
         management_state = next(
             (
@@ -1106,7 +1158,7 @@ def validate_read_only_collection(
             device.management_endpoints.staging.binding.l3_endpoint.address
         )
         realization_profile = CML_REALIZATION_PROFILE_CATALOG[
-            device.cml_realization_profile_id
+            device.effective_staging_cml_realization_profile_id
         ]
         required_physical = {
             normalized(slot.interface_name)
@@ -1139,7 +1191,7 @@ def validate_read_only_collection(
                 device_identity=device.device_identity,
                 logical_name=device.logical_name,
                 automation_profile_id=device.automation_profile_id,
-                cml_realization_profile_id=device.cml_realization_profile_id,
+                cml_realization_profile_id=device.effective_staging_cml_realization_profile_id,
                 cml_node_id=realized.cml_node_id,
                 readiness_seconds=readiness_seconds,
                 readiness_evidence=readiness_evidence,

@@ -176,7 +176,9 @@ def evidence_succeeded(
         == tuple(
             m.device_identity
             for m in evidence.scope.members
-            if CML_REALIZATION_PROFILE_CATALOG[m.cml_realization_profile_id].boot_policy
+            if CML_REALIZATION_PROFILE_CATALOG[
+                m.staging_cml_realization_profile_id or m.cml_realization_profile_id
+            ].boot_policy
             is CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
         )
         and all(item.outcome == "succeeded" for item in evidence.recycles)

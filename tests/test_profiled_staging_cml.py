@@ -82,7 +82,9 @@ class Reader:
                 for item in inventory_devices()
                 if str(item.logical_name).replace("-", "_") == key
             )
-            profile = CML_REALIZATION_PROFILE_CATALOG[device.cml_realization_profile_id]
+            profile = CML_REALIZATION_PROFILE_CATALOG[
+                device.effective_staging_cml_realization_profile_id
+            ]
             return {
                 "label": "wrong" if self.bad == "profile" else str(device.logical_name),
                 "node_definition": (
@@ -117,12 +119,15 @@ class Reader:
             if str(item.logical_name).replace("-", "_") == key
         )
         address = device.management_endpoints.staging.binding.l3_endpoint.address.ip
-        marker = {
-            "core_02": "interface GigabitEthernet1",
-            "edge_junos_01": "fxp0",
-            "transit_ios_01": "interface GigabitEthernet0/0",
-            "access_sw_01": "interface GigabitEthernet0/0\n no switchport",
-        }[key]
+        from network_change_delivery.profiled_staging import staging_interface_name
+
+        interface = staging_interface_name(
+            device,
+            device.management_endpoints.staging.binding.l3_endpoint.interface.name,
+        )
+        marker = f"interface {interface}" if key != "edge_junos_01" else interface
+        if key == "access_sw_01":
+            marker += "\n no switchport"
         forbidden = "\nrouter ospf 1" if self.bad == "day0" else ""
         return (
             f"hostname {device.expected_hostname}\n{marker}\n"

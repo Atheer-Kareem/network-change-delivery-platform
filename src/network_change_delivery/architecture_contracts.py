@@ -262,6 +262,7 @@ class CmlRealizationProfileID(StrEnum):
     """Closed CML realization identities, distinct from automation profiles."""
 
     CAT8000V_17_18_02 = "cml_cat8000v_17_18_02"
+    IOL_XE_17_18_02 = "cml_iol_xe_17_18_02"
     IOSV_159_3_M12 = "cml_iosv_159_3_m12"
     IOSVL2_2020 = "cml_iosvl2_2020"
     VJUNOS_ROUTER_23_2R1_15 = "cml_vjunos_router_23_2r1_15"
@@ -305,6 +306,7 @@ class CmlBootstrapProfileID(StrEnum):
     """Closed minimal-bootstrap template identities."""
 
     CAT8000V_MINIMAL = "cat8000v_minimal"
+    IOL_XE_MINIMAL = "iol_xe_minimal"
     IOSV_MINIMAL = "iosv_minimal"
     IOSVL2_ROUTED_MANAGEMENT = "iosvl2_routed_management"
     VJUNOS_ROUTER_MINIMAL = "vjunos_router_minimal"
@@ -461,6 +463,22 @@ CML_REALIZATION_PROFILE_CATALOG: Mapping[
                 "GigabitEthernet4",
             ),
             bootstrap_profile=CmlBootstrapProfileID.CAT8000V_MINIMAL,
+            readiness_profile=CmlReadinessProfileID.IOSXE_SSH,
+        ),
+        CmlRealizationProfileID.IOL_XE_17_18_02: CmlRealizationProfile(
+            profile_id=CmlRealizationProfileID.IOL_XE_17_18_02,
+            node_definition="iol-xe",
+            image_definition="iol-xe-17-18-02",
+            resources=CmlResourceRequirements(
+                allocation_mode=CmlResourceAllocationMode.NODE_DEFINITION_DEFAULT,
+            ),
+            physical_interface_slots=_slots(
+                "Ethernet0/0",
+                "Ethernet0/1",
+                "Ethernet0/2",
+                "Ethernet0/3",
+            ),
+            bootstrap_profile=CmlBootstrapProfileID.IOL_XE_MINIMAL,
             readiness_profile=CmlReadinessProfileID.IOSXE_SSH,
         ),
         CmlRealizationProfileID.IOSV_159_3_M12: CmlRealizationProfile(

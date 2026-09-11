@@ -470,9 +470,7 @@ CML_REALIZATION_PROFILE_CATALOG: Mapping[
             node_definition="iol-xe",
             image_definition="iol-xe-17-18-02",
             resources=CmlResourceRequirements(
-                allocation_mode=CmlResourceAllocationMode.EXPLICIT,
-                cpu_cores=1,
-                ram_mb=1024,
+                allocation_mode=CmlResourceAllocationMode.NODE_DEFINITION_DEFAULT,
             ),
             physical_interface_slots=_slots(
                 "Ethernet0/0",

@@ -20,6 +20,7 @@ from network_change_delivery.architecture_contracts import (
     CmlBootstrapProfileID,
     CmlReadinessProfileID,
     CmlRealizationProfileID,
+    CmlResourceAllocationMode,
     ManagedField,
     ManagedOwnershipEnvelope,
     ManagedScopeIdentity,
@@ -202,12 +203,16 @@ def test_cml_slots_exist_only_in_realization_contract() -> None:
     }
 
 
-def test_iol_staging_realization_is_explicit_and_resource_bounded() -> None:
+def test_iol_staging_realization_inherits_node_definition_resources() -> None:
     profile = CML_REALIZATION_PROFILE_CATALOG[CmlRealizationProfileID.IOL_XE_17_18_02]
     assert profile.node_definition == "iol-xe"
     assert profile.image_definition == "iol-xe-17-18-02"
-    assert profile.resources.cpu_cores == 1
-    assert profile.resources.ram_mb == 1024
+    assert (
+        profile.resources.allocation_mode
+        is CmlResourceAllocationMode.NODE_DEFINITION_DEFAULT
+    )
+    assert profile.resources.cpu_cores is None
+    assert profile.resources.ram_mb is None
     assert [
         (slot.interface_name, slot.cml_slot)
         for slot in profile.physical_interface_slots
@@ -218,6 +223,28 @@ def test_iol_staging_realization_is_explicit_and_resource_bounded() -> None:
         ("Ethernet0/3", 3),
     ]
     assert profile.bootstrap_profile is CmlBootstrapProfileID.IOL_XE_MINIMAL
+
+
+def test_realization_resource_policies_remain_vendor_specific() -> None:
+    cat = CML_REALIZATION_PROFILE_CATALOG[CmlRealizationProfileID.CAT8000V_17_18_02]
+    junos = CML_REALIZATION_PROFILE_CATALOG[
+        CmlRealizationProfileID.VJUNOS_ROUTER_23_2R1_15
+    ]
+    for profile in (cat, junos):
+        assert profile.resources.allocation_mode is CmlResourceAllocationMode.EXPLICIT
+        assert profile.resources.cpu_cores is not None
+        assert profile.resources.ram_mb is not None
+    for profile_id in (
+        CmlRealizationProfileID.IOSV_159_3_M12,
+        CmlRealizationProfileID.IOSVL2_2020,
+    ):
+        profile = CML_REALIZATION_PROFILE_CATALOG[profile_id]
+        assert (
+            profile.resources.allocation_mode
+            is CmlResourceAllocationMode.NODE_DEFINITION_DEFAULT
+        )
+        assert profile.resources.cpu_cores is None
+        assert profile.resources.ram_mb is None
 
 
 def test_live_and_staging_management_endpoints_are_explicit_and_distinct() -> None:

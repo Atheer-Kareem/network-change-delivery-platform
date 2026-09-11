@@ -74,6 +74,30 @@ def test_core_live_slots_translate_to_iol_staging_slots() -> None:
     ] == [0, 1, 2, 3]
 
 
+def test_iol_staging_variables_inherit_cml_node_definition_resources() -> None:
+    from test_profiled_realization import inventory_devices
+
+    devices = inventory_devices()
+    credentials = {
+        str(device.logical_name): DeviceCredentials(
+            username="operator", password="unused"
+        )
+        for device in devices
+    }
+    verifiers = {
+        str(device.logical_name): (
+            "$6$ncdpTestSalt$abcdefghijklmnop"
+            if str(device.logical_name) == "edge-junos-01"
+            else "$9$ncdpTestSalt$abcdefghijklmnop"
+        )
+        for device in devices
+    }
+    values = terraform_profiled_device_variables(devices, credentials, verifiers)
+
+    assert values["core_02"]["cpu_cores"] is None
+    assert values["core_02"]["ram_mb"] is None
+
+
 def test_staging_slot_translation_rejects_out_of_range_mapping(monkeypatch) -> None:
     from test_profiled_realization import inventory_devices
 

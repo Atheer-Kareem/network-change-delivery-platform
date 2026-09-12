@@ -394,6 +394,56 @@ def test_two_iosv_instances_receive_same_bounded_recycle_policy(monkeypatch):
         )
 
 
+def test_profiled_staging_rejects_unexpected_recycle_evidence_subject():
+    from network_change_delivery.architecture_contracts import (
+        CML_REALIZATION_PROFILE_CATALOG,
+        CmlBootPolicy,
+    )
+    from network_change_delivery.profiled_realization import EvidenceReference
+    from network_change_delivery.profiled_staging import (
+        ProfiledStagingEvidence,
+        ProfiledStagingRecycleEvidence,
+    )
+
+    _, scope, provider, _ = declared_population(5)
+    devices = provider.resolve_profiled_population().devices
+    subjects = tuple(
+        device
+        for device in devices
+        if CML_REALIZATION_PROFILE_CATALOG[
+            device.cml_realization_profile_id
+        ].boot_policy
+        is CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE
+    )
+    unexpected = next(device for device in devices if device not in subjects)
+
+    def evidence(device):
+        return ProfiledStagingRecycleEvidence(
+            device_identity=device.device_identity,
+            logical_name=device.logical_name,
+            policy=CmlBootPolicy.IOSV_PERSISTENCE_RECYCLE,
+            outcome="succeeded",
+            evidence=EvidenceReference(
+                identity=f"staging-profile-recycle:scope-run:{device.logical_name}",
+                digest="sha256:" + "b" * 64,
+            ),
+        )
+
+    with pytest.raises(ValueError, match="profiled staging recycle scope rejected"):
+        ProfiledStagingEvidence.model_validate(
+            {
+                "scope": scope,
+                "staging_run_id": "scope-run",
+                "orchestrator": "local",
+                "lab_title": "NCDP Staging scope-run",
+                "recycles": (
+                    *(evidence(device) for device in subjects),
+                    evidence(unexpected),
+                ),
+            }
+        )
+
+
 def test_read_only_scopes_never_grant_write_authority():
     from network_change_delivery.architecture_contracts import AutomationProfileID
     from network_change_delivery.profile_inventory import (
